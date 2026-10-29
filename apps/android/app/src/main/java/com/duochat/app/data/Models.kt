@@ -25,6 +25,29 @@ enum class TransportKind(val wire: String) {
     }
 }
 
+enum class MessageMode(val wire: String) {
+    CLOUD("cloud"),
+    DIRECT("direct");
+
+    companion object {
+        fun fromWire(value: String?): MessageMode =
+            entries.firstOrNull { it.wire == value } ?: CLOUD
+    }
+}
+
+fun allowsCloudWrites(mode: MessageMode): Boolean = mode == MessageMode.CLOUD
+
+fun canAttemptDelivery(
+    mode: MessageMode,
+    cloudConnected: Boolean,
+    p2pConnected: Boolean,
+): Boolean =
+    if (mode == MessageMode.DIRECT) {
+        p2pConnected
+    } else {
+        cloudConnected || p2pConnected
+    }
+
 data class ChatMessage(
     val messageId: String,
     val clientMessageId: String,
@@ -106,6 +129,7 @@ data class ChatState(
     val uid: String = "",
     val peerUid: String = "",
     val conversationId: String = "",
+    val messageMode: MessageMode = MessageMode.CLOUD,
     val selfProfile: UserProfile? = null,
     val peerProfile: UserProfile? = null,
     val messages: List<ChatMessage> = emptyList(),

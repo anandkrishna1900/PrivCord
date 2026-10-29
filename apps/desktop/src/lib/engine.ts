@@ -50,8 +50,9 @@ import {
   type DeviceIdentity,
 } from './identity';
 import { LocalStore, type OutboxRow } from './localDb';
-import { shouldAttempt } from './outbox';
+import { allowsCloudWrites, canAttemptDelivery, shouldAttempt } from './outbox';
 import { PeerTransport } from './p2p';
+import type { MessageMode } from './settings';
 
 export type EnginePhase = 'starting' | 'ready' | 'error' | 'stopped';
 export type P2PState = 'idle' | 'connecting' | 'connected' | 'failed';
@@ -62,6 +63,7 @@ export interface ChatState {
   uid: string;
   peerUid: string;
   conversationId: string;
+  messageMode: MessageMode;
   selfProfile: UserProfile | null;
   peerProfile: UserProfile | null;
   messages: ChatMessage[];
@@ -88,6 +90,7 @@ export interface EngineDeps {
   conversationId: string;
   email: string;
   displayName: string;
+  messageMode?: MessageMode;
   store: LocalStore;
   onNotify: (message: ChatMessage) => void;
 }
@@ -160,6 +163,7 @@ export class ChatEngine {
       uid: deps.uid,
       peerUid: deps.peerUid,
       conversationId: deps.conversationId,
+      messageMode: deps.messageMode ?? 'cloud',
       selfProfile: null,
       peerProfile: null,
       messages: [],
@@ -507,6 +511,38 @@ export class ChatEngine {
     await this.deliver(messageId);
   }
 
+  private async requeueFailedMessages(): Promise<void> {
+    const failed = [...this.messages.values()].filter(
+      (message) => message.senderId === this.deps.uid && message.deliveryState === 'FAILED',
+    );
+    if (failed.length === 0) return;
+    for (const message of failed) {
+      const queued: ChatMessage = { ...message, deliveryState: 'QUEUED' };
+      this.messages.set(queued.messageId, queued);
+      await this.deps.store.updateMessage(queued.messageId, { deliveryState: 'QUEUED' });
+      const existing = this.outbox.get(queued.messageId);
+      const row: OutboxRow =
+        existing ?? {
+          messageId: queued.messageId,
+          recipientId: this.deps.peerUid,
+          payload: JSON.stringify(queued),
+          createdAt: Date.now(),
+          attemptCount: 0,
+          lastAttemptAt: null,
+          deliveryState: 'QUEUED',
+          lastError: null,
+        };
+      row.attemptCount = 0;
+      row.lastAttemptAt = null;
+      row.deliveryState = 'QUEUED';
+      row.lastError = null;
+      this.outbox.set(queued.messageId, row);
+      await this.deps.store.enqueueOutbox(row);
+      this.p2pSent.delete(queued.messageId);
+    }
+    this.emitMessages();
+  }
+
   private async deliver(messageId: string): Promise<void> {
     const message = this.messages.get(messageId);
     if (!message || message.senderId !== this.deps.uid || message.syncedToCloud) return;
@@ -544,7 +580,15 @@ export class ChatEngine {
       }
     }
 
-    if (this.cloudOk && !this.cloudInFlight.has(messageId)) {
+    if (this.state.messageMode === 'direct') {
+      if (changed) {
+        this.emitMessages();
+        this.updateConnection();
+      }
+      return;
+    }
+
+    if (allowsCloudWrites(this.state.messageMode) && this.cloudOk && !this.cloudInFlight.has(messageId)) {
       this.cloudInFlight.add(messageId);
       try {
         await writeMessage(this.deps.conversationId, message);
@@ -612,7 +656,15 @@ export class ChatEngine {
       const now = Date.now();
       for (const row of rows) {
         if (!shouldAttempt(row, now)) continue;
-        if (!this.cloudOk && !this.p2pReady()) continue;
+        if (
+          !canAttemptDelivery({
+            mode: this.state.messageMode,
+            cloudConnected: this.cloudOk,
+            p2pConnected: this.p2pReady(),
+          })
+        ) {
+          continue;
+        }
         await this.deliver(row.messageId);
       }
       this.emitMessages();
@@ -656,19 +708,14 @@ export class ChatEngine {
       if (ok) {
         this.setState({ lastSyncAt: Date.now() });
         if (!wasOk) {
-          for (const message of this.messages.values()) {
-            if (message.senderId === this.deps.uid && message.deliveryState === 'FAILED') {
-              const reset: ChatMessage = { ...message, deliveryState: 'QUEUED' };
-              this.messages.set(message.messageId, reset);
-              void this.deps.store.updateMessage(message.messageId, {
-                deliveryState: 'QUEUED',
-              });
-            }
-          }
+          await this.requeueFailedMessages();
           this.p2pSent.clear();
           void this.drainOutbox();
           this.setState({
-            notice: 'Cloud synchronization restored. Reconciling queued messages.',
+            notice:
+              this.state.messageMode === 'direct'
+                ? 'Cloud signaling restored. Direct messages remain on this device.'
+                : 'Cloud synchronization restored. Reconciling queued messages.',
           });
         }
       } else if (wasOk) {
@@ -703,6 +750,27 @@ export class ChatEngine {
     if (visible) void this.markRead();
   }
 
+  setMessageMode(mode: MessageMode): void {
+    if (mode === this.state.messageMode) return;
+    this.setState({
+      messageMode: mode,
+      notice:
+        mode === 'direct'
+          ? 'Direct mode enabled. New messages stay on this device until the direct channel accepts them.'
+          : 'Cloud mode enabled. Pending messages will be uploaded to the cloud.',
+    });
+    if (mode === 'cloud') {
+      this.lastReadWritten = null;
+      void this.markRead();
+      if (this.cloudOk) void this.drainOutbox();
+    } else {
+      this.p2pSent.clear();
+      void this.requeueFailedMessages()
+        .then(() => this.drainOutbox())
+        .catch(() => undefined);
+    }
+  }
+
   private async markRead(): Promise<void> {
     const ordered = this.sortedMessages();
     const last = ordered[ordered.length - 1];
@@ -721,7 +789,7 @@ export class ChatEngine {
     if (changed) this.emitMessages();
     if (this.lastReadWritten !== last.messageId) {
       this.lastReadWritten = last.messageId;
-      if (this.cloudOk) {
+      if (allowsCloudWrites(this.state.messageMode) && this.cloudOk) {
         void writeReadState(
           this.deps.conversationId,
           this.deps.uid,
@@ -1039,6 +1107,10 @@ export class ChatEngine {
           deliveryState: updated.deliveryState,
           readAt: updated.readAt,
         });
+        if (this.state.messageMode === 'direct' && updated.deliveryState !== 'FAILED') {
+          this.outbox.delete(updated.messageId);
+          await this.deps.store.removeOutbox(updated.messageId).catch(() => undefined);
+        }
         this.emitMessages();
         return;
       }

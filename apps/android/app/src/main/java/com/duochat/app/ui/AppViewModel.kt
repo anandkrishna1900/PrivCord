@@ -8,6 +8,7 @@ import com.duochat.app.AppConfig
 import com.duochat.app.data.AppSettings
 import com.duochat.app.data.ChatState
 import com.duochat.app.data.CloudRepository
+import com.duochat.app.data.MessageMode
 import com.duochat.app.data.MessageStore
 import com.duochat.app.data.SettingsRepository
 import com.duochat.app.data.local.DuoDatabase
@@ -156,6 +157,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             store = store,
             repository = repository,
             identityManager = identityManager,
+            initialMessageMode = settingsRepository.settings.value.messageMode,
             onNotify = { message ->
                 if (!visible) {
                     DuoNotifications.showIncoming(
@@ -227,6 +229,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateSettings(patch: AppSettings.() -> AppSettings) {
         settingsRepository.update(patch)
+    }
+
+    fun setMessageMode(mode: MessageMode) {
+        settingsRepository.update { copy(messageMode = mode) }
+        engine?.setMessageMode(mode)
     }
 
     fun send(text: String, onResult: (Result<Unit>) -> Unit) {

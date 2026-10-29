@@ -34,6 +34,9 @@ class DuoChatApp : Application() {
                 // Configuration errors are surfaced on the setup screen.
             }
         }
+        if (FirebaseApp.getApps(this).isEmpty()) {
+            runCatching { FirebaseApp.initializeApp(this) }
+        }
         AppConfig.firebaseReady = FirebaseApp.getApps(this).isNotEmpty()
         if (!AppConfig.firebaseReady) return
         if (AppConfig.emulatorHost.isBlank()) return

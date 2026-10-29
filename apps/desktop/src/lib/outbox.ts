@@ -1,6 +1,20 @@
 import type { OutboxRow } from './localDb';
+import type { MessageMode } from './settings';
 
 export type SendRoute = 'cloud' | 'p2p' | 'queue';
+
+export function allowsCloudWrites(mode: MessageMode): boolean {
+  return mode === 'cloud';
+}
+
+export function canAttemptDelivery(input: {
+  mode: MessageMode;
+  cloudConnected: boolean;
+  p2pConnected: boolean;
+}): boolean {
+  if (input.mode === 'direct') return input.p2pConnected;
+  return input.cloudConnected || input.p2pConnected;
+}
 
 export function chooseRoute(input: {
   cloudConnected: boolean;

@@ -11,6 +11,7 @@ data class AppSettings(
     val accent: String = ACCENTS.first().second,
     val notificationsEnabled: Boolean = true,
     val notificationPreviews: Boolean = true,
+    val messageMode: MessageMode = MessageMode.CLOUD,
 )
 
 val ACCENTS: List<Pair<String, String>> = listOf(
@@ -36,6 +37,7 @@ class SettingsRepository(context: Context) {
             .putString("accent", next.accent)
             .putBoolean("notificationsEnabled", next.notificationsEnabled)
             .putBoolean("notificationPreviews", next.notificationPreviews)
+            .putString("messageMode", next.messageMode.wire)
             .apply()
     }
 
@@ -47,6 +49,7 @@ class SettingsRepository(context: Context) {
             accent = if (Regex("^#[0-9a-fA-F]{6}$").matches(accent)) accent else ACCENTS.first().second,
             notificationsEnabled = prefs.getBoolean("notificationsEnabled", true),
             notificationPreviews = prefs.getBoolean("notificationPreviews", true),
+            messageMode = MessageMode.fromWire(prefs.getString("messageMode", null)),
         )
     }
 }

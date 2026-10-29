@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import { ChatEngine, type ChatState } from '../lib/engine';
 import { LocalStore } from '../lib/localDb';
 import { createTextCipher } from '../lib/encryption';
 import { notifyIncoming } from '../lib/notifications';
 import { config } from '../config';
+import type { MessageMode } from '../lib/settings';
 
 export interface UseChatEngine {
   state: ChatState | null;
@@ -12,10 +13,16 @@ export interface UseChatEngine {
   fatal: string | null;
 }
 
-export function useChatEngine(user: User, peerUid: string): UseChatEngine {
+export function useChatEngine(
+  user: User,
+  peerUid: string,
+  messageMode: MessageMode,
+): UseChatEngine {
   const [state, setState] = useState<ChatState | null>(null);
   const [engine, setEngine] = useState<ChatEngine | null>(null);
   const [fatal, setFatal] = useState<string | null>(null);
+  const modeRef = useRef(messageMode);
+  modeRef.current = messageMode;
 
   useEffect(() => {
     let cancelled = false;
@@ -32,6 +39,7 @@ export function useChatEngine(user: User, peerUid: string): UseChatEngine {
         conversationId: config.conversationId,
         email: user.email ?? '',
         displayName: user.displayName ?? '',
+        messageMode: modeRef.current,
         store,
         onNotify: (message) => {
           const name =
@@ -61,6 +69,10 @@ export function useChatEngine(user: User, peerUid: string): UseChatEngine {
       setState(null);
     };
   }, [user.uid, user.email, user.displayName, peerUid]);
+
+  useEffect(() => {
+    engine?.setMessageMode(messageMode);
+  }, [engine, messageMode]);
 
   return { state, engine, fatal };
 }

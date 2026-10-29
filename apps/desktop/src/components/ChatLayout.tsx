@@ -143,6 +143,7 @@ export function ChatLayout({
       : formatLastSeen(state.peerProfile?.lastSeenAt ?? null);
   const noticeVisible = state.notice && state.notice !== dismissed;
   const errorVisible = state.error;
+  const directMode = settings.messageMode === 'direct';
 
   return (
     <div className={`app-shell ${sidebarOpen ? 'sidebar-open' : ''}`}>
@@ -235,6 +236,16 @@ export function ChatLayout({
             </div>
           </div>
           <div className="chat-header-actions">
+            <span
+              className={`mode-pill ${directMode ? 'direct' : ''}`}
+              title={
+                directMode
+                  ? 'Direct mode: no cloud message upload'
+                  : 'Cloud mode: messages sync through the cloud'
+              }
+            >
+              {directMode ? 'Direct' : 'Cloud'}
+            </span>
             <button
               type="button"
               className="connection-button"
@@ -330,6 +341,7 @@ export function ChatLayout({
           onLoadOlder={() => void engine?.loadOlder()}
           onRetry={(messageId) => void engine?.retry(messageId)}
           peerDirect={state.p2pConnected}
+          directMode={directMode}
         />
 
         <Composer
@@ -337,8 +349,9 @@ export function ChatLayout({
             engine?.send(text) ?? Promise.resolve({ ok: false as const, error: 'Not ready.' })
           }
           disabled={state.phase !== 'ready'}
-          connected={state.cloudConnected || state.p2pConnected}
-          queued={!state.cloudConnected && !state.p2pConnected}
+          connected={directMode ? state.p2pConnected : state.cloudConnected || state.p2pConnected}
+          queued={directMode ? !state.p2pConnected : !state.cloudConnected && !state.p2pConnected}
+          directMode={directMode}
         />
       </main>
 

@@ -5,3 +5,4 @@ export * from './states';
 export * from './signaling';
 export * from './peerAuth';
 export * from './safetyNumber';
+export * from './pairing';

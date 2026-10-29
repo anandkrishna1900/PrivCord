@@ -1,12 +1,14 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage, DeliveryState } from '@duochat/protocol';
 import { formatDay, formatTime } from '../lib/format';
+import { copyText } from '../lib/clipboard';
 import { Avatar } from './Avatar';
 import {
   AlertIcon,
   CheckCheckIcon,
   CheckIcon,
   ClockIcon,
+  CopyIcon,
   LoaderIcon,
   ShieldIcon,
 } from './Icons';
@@ -62,6 +64,7 @@ export function MessageList({
   onLoadOlder,
   onRetry,
   peerDirect,
+  directMode,
 }: {
   messages: ChatMessage[];
   selfUid: string;
@@ -71,10 +74,18 @@ export function MessageList({
   onLoadOlder: () => void;
   onRetry: (messageId: string) => void;
   peerDirect: boolean;
+  directMode: boolean;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
   const didInitialScroll = useRef(false);
+  const [copyStatus, setCopyStatus] = useState<'copied' | 'failed' | null>(null);
+
+  async function handleCopy(text: string) {
+    const copied = await copyText(text);
+    setCopyStatus(copied ? 'copied' : 'failed');
+    window.setTimeout(() => setCopyStatus(null), 1800);
+  }
 
   useEffect(() => {
     const element = scrollRef.current;
@@ -101,9 +112,9 @@ export function MessageList({
           </div>
           <h2>Your private conversation starts here</h2>
           <p>
-            Only the two approved accounts can read this thread. Messages are
-            stored locally and synchronized through the cloud when it is
-            available.
+            {directMode
+              ? 'Only the two approved accounts can read this thread. Messages are stored locally and sent only over an authenticated direct connection.'
+              : 'Only the two approved accounts can read this thread. Messages are stored locally and synchronized through the cloud when it is available.'}
           </p>
           <span className="empty-hint">
             {peerDirect
@@ -172,6 +183,15 @@ export function MessageList({
                 >
                   <p className="bubble-text">{message.text}</p>
                   <span className="bubble-meta">
+                    <button
+                      type="button"
+                      className="bubble-copy"
+                      onClick={() => void handleCopy(message.text)}
+                      title="Copy message"
+                      aria-label="Copy message"
+                    >
+                      <CopyIcon size={12} />
+                    </button>
                     <span className="bubble-time">{formatTime(message.clientCreatedAt)}</span>
                     {own ? (
                       <DeliveryIndicator
@@ -186,6 +206,15 @@ export function MessageList({
           );
         })}
       </div>
+      {copyStatus ? (
+        <div
+          className={`copy-toast ${copyStatus === 'failed' ? 'error' : ''}`}
+          role="status"
+          aria-live="polite"
+        >
+          {copyStatus === 'copied' ? 'Message copied' : 'Could not copy message'}
+        </div>
+      ) : null}
     </div>
   );
 }

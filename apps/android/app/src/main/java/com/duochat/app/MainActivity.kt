@@ -117,6 +117,7 @@ private fun RootScreen(viewModel: AppViewModel) {
                     onChangeDisplayName = viewModel::changeDisplayName,
                     onClearLocalData = viewModel::clearLocalData,
                     onUpdateSettings = viewModel::updateSettings,
+                    onSetMessageMode = viewModel::setMessageMode,
                     onCreateManualOffer = viewModel::createManualOffer,
                     onApplyManualAnswer = viewModel::applyManualAnswer,
                     onAcceptManualOffer = viewModel::acceptManualOffer,

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { OutboxRow } from './localDb';
-import { chooseRoute, retryDelayMs, shouldAttempt } from './outbox';
+import {
+  allowsCloudWrites,
+  canAttemptDelivery,
+  chooseRoute,
+  retryDelayMs,
+  shouldAttempt,
+} from './outbox';
 
 function row(overrides: Partial<OutboxRow> = {}): OutboxRow {
   return {
@@ -28,6 +34,54 @@ describe('chooseRoute', () => {
 
   it('queues when neither transport is ready', () => {
     expect(chooseRoute({ cloudConnected: false, p2pConnected: false })).toBe('queue');
+  });
+});
+
+describe('message mode routing', () => {
+  it('disables cloud writes in direct mode', () => {
+    expect(allowsCloudWrites('direct')).toBe(false);
+    expect(allowsCloudWrites('cloud')).toBe(true);
+  });
+
+  it('does not fall back to cloud in direct mode', () => {
+    expect(
+      canAttemptDelivery({
+        mode: 'direct',
+        cloudConnected: true,
+        p2pConnected: false,
+      }),
+    ).toBe(false);
+    expect(
+      canAttemptDelivery({
+        mode: 'direct',
+        cloudConnected: false,
+        p2pConnected: true,
+      }),
+    ).toBe(true);
+  });
+
+  it('preserves cloud and direct attempts in cloud mode', () => {
+    expect(
+      canAttemptDelivery({
+        mode: 'cloud',
+        cloudConnected: true,
+        p2pConnected: false,
+      }),
+    ).toBe(true);
+    expect(
+      canAttemptDelivery({
+        mode: 'cloud',
+        cloudConnected: false,
+        p2pConnected: true,
+      }),
+    ).toBe(true);
+    expect(
+      canAttemptDelivery({
+        mode: 'cloud',
+        cloudConnected: false,
+        p2pConnected: false,
+      }),
+    ).toBe(false);
   });
 });
 

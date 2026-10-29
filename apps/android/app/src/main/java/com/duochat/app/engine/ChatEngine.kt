@@ -9,12 +9,15 @@ import com.duochat.app.data.DeliveryState
 import com.duochat.app.data.EnginePhase
 import com.duochat.app.data.IncomingSignal
 import com.duochat.app.data.MAX_TEXT_LENGTH
+import com.duochat.app.data.MessageMode
 import com.duochat.app.data.MessageStore
 import com.duochat.app.data.OutboxRow
 import com.duochat.app.data.P2PState
 import com.duochat.app.data.PeerKeySource
 import com.duochat.app.data.PeerTrust
 import com.duochat.app.data.TransportKind
+import com.duochat.app.data.allowsCloudWrites
+import com.duochat.app.data.canAttemptDelivery
 import com.duochat.app.data.compareMessages
 import com.duochat.app.data.countCodePoints
 import com.duochat.app.data.createOutgoingMessage
@@ -52,6 +55,7 @@ class ChatEngine(
     private val store: MessageStore,
     private val repository: CloudRepository,
     private val identityManager: AndroidIdentityManager,
+    initialMessageMode: MessageMode = MessageMode.CLOUD,
     private val onNotify: (ChatMessage) -> Unit,
 ) {
     private val _state = MutableStateFlow(
@@ -59,10 +63,12 @@ class ChatEngine(
             uid = uid,
             peerUid = peerUid,
             conversationId = conversationId,
+            messageMode = initialMessageMode,
         ),
     )
     val state: StateFlow<ChatState> = _state.asStateFlow()
 
+    private var messageMode = initialMessageMode
     private val messages = linkedMapOf<String, ChatMessage>()
     private val outbox = linkedMapOf<String, OutboxRow>()
     private val knownIds = mutableSetOf<String>()
@@ -152,6 +158,32 @@ class ChatEngine(
         if (isVisible) scope.launch { markRead() }
     }
 
+    fun setMessageMode(mode: MessageMode) {
+        if (mode == messageMode) return
+        messageMode = mode
+        _state.update {
+            it.copy(
+                messageMode = mode,
+                notice = if (mode == MessageMode.DIRECT) {
+                    "Direct mode enabled. New messages stay on this device until the direct channel accepts them."
+                } else {
+                    "Cloud mode enabled. Pending messages will be uploaded to the cloud."
+                },
+            )
+        }
+        if (mode == MessageMode.CLOUD) {
+            lastReadWritten = null
+            scope.launch { markRead() }
+            if (cloudOk) scope.launch { drainOutbox() }
+        } else {
+            p2pSent.clear()
+            scope.launch {
+                requeueFailedMessages()
+                drainOutbox()
+            }
+        }
+    }
+
     fun clearNotice() {
         _state.update { it.copy(notice = null, error = null) }
     }
@@ -229,6 +261,38 @@ class ChatEngine(
         p2pSent.remove(messageId)
         emitMessages()
         deliver(messageId)
+    }
+
+    private suspend fun requeueFailedMessages() {
+        val failed = messages.values.filter {
+            it.senderId == uid && it.deliveryState == DeliveryState.FAILED
+        }
+        if (failed.isEmpty()) return
+        for (message in failed) {
+            val queued = message.copy(deliveryState = DeliveryState.QUEUED)
+            messages[queued.messageId] = queued
+            store.updateMessage(queued.messageId, deliveryState = DeliveryState.QUEUED)
+            val existing = outbox[queued.messageId]
+            val row = (existing ?: OutboxRow(
+                messageId = queued.messageId,
+                recipientId = peerUid,
+                payload = queued.messageId,
+                createdAt = System.currentTimeMillis(),
+                attemptCount = 0,
+                lastAttemptAt = null,
+                deliveryState = DeliveryState.QUEUED,
+                lastError = null,
+            )).copy(
+                attemptCount = 0,
+                lastAttemptAt = null,
+                deliveryState = DeliveryState.QUEUED,
+                lastError = null,
+            )
+            outbox[queued.messageId] = row
+            store.enqueueOutbox(row)
+            p2pSent.remove(queued.messageId)
+        }
+        emitMessages()
     }
 
     suspend fun loadOlder() {
@@ -624,7 +688,15 @@ class ChatEngine(
             }
         }
 
-        if (cloudOk && messageId !in cloudInFlight) {
+        if (messageMode == MessageMode.DIRECT) {
+            if (changed) {
+                emitMessages()
+                updateConnection()
+            }
+            return
+        }
+
+        if (allowsCloudWrites(messageMode) && cloudOk && messageId !in cloudInFlight) {
             cloudInFlight += messageId
             try {
                 repository.writeMessage(conversationId, message)
@@ -706,7 +778,7 @@ class ChatEngine(
             val now = System.currentTimeMillis()
             for (row in rows) {
                 if (!shouldAttempt(row, now)) continue
-                if (!cloudOk && peer?.isReady != true) continue
+                if (!canAttemptDelivery(messageMode, cloudOk, peer?.isReady == true)) continue
                 deliver(row.messageId)
             }
             emitMessages()
@@ -761,17 +833,17 @@ class ChatEngine(
             if (ok) {
                 _state.update { it.copy(lastSyncAt = System.currentTimeMillis()) }
                 if (!wasOk) {
-                    for (message in messages.values.toList()) {
-                        if (message.senderId == uid && message.deliveryState == DeliveryState.FAILED) {
-                            val reset = message.copy(deliveryState = DeliveryState.QUEUED)
-                            messages[reset.messageId] = reset
-                            store.updateMessage(reset.messageId, deliveryState = DeliveryState.QUEUED)
-                        }
-                    }
+                    requeueFailedMessages()
                     p2pSent.clear()
                     drainOutbox()
                     _state.update {
-                        it.copy(notice = "Cloud synchronization restored. Reconciling queued messages.")
+                        it.copy(
+                            notice = if (messageMode == MessageMode.DIRECT) {
+                                "Cloud signaling restored. Direct messages remain on this device."
+                            } else {
+                                "Cloud synchronization restored. Reconciling queued messages."
+                            },
+                        )
                     }
                 }
             } else if (wasOk) {
@@ -822,7 +894,7 @@ class ChatEngine(
         if (changed) emitMessages()
         if (lastReadWritten != last.messageId) {
             lastReadWritten = last.messageId
-            if (cloudOk) {
+            if (allowsCloudWrites(messageMode) && cloudOk) {
                 runCatching {
                     repository.writeReadState(conversationId, uid, last.messageId)
                 }
@@ -967,6 +1039,10 @@ class ChatEngine(
             readAt = updated.readAt,
             setReadAt = updated.readAt != null,
         )
+        if (messageMode == MessageMode.DIRECT && updated.deliveryState != DeliveryState.FAILED) {
+            outbox.remove(messageId)
+            store.removeOutbox(messageId)
+        }
         emitMessages()
     }
 

@@ -56,6 +56,7 @@ import com.duochat.app.AppConfig
 import com.duochat.app.data.ACCENTS
 import com.duochat.app.data.AppSettings
 import com.duochat.app.data.ChatState
+import com.duochat.app.data.MessageMode
 import com.duochat.app.data.PeerTrust
 import com.duochat.app.data.presentConnection
 
@@ -68,6 +69,7 @@ fun SettingsDialog(
     onDismiss: () -> Unit,
     onRequestNotifications: () -> Unit,
     onUpdateSettings: (AppSettings.() -> AppSettings) -> Unit,
+    onSetMessageMode: (MessageMode) -> Unit,
     onChangeDisplayName: (String, (Result<Unit>) -> Unit) -> Unit,
     onClearLocalData: ((Result<Unit>) -> Unit) -> Unit,
     onReconnect: () -> Unit,
@@ -80,6 +82,7 @@ fun SettingsDialog(
     var clearConfirm by remember { mutableStateOf(false) }
     var clearStatus by remember { mutableStateOf<String?>(null) }
     var clearing by remember { mutableStateOf(false) }
+    var confirmCloudUpload by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -272,6 +275,74 @@ fun SettingsDialog(
 
                 val presentation = presentConnection(state.connectionMode, state.queuedCount)
                 SectionTitle("Connection")
+                Text(
+                    "Message route",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ChoiceChip("Cloud", settings.messageMode == MessageMode.CLOUD) {
+                        if (
+                            settings.messageMode == MessageMode.DIRECT &&
+                            state.queuedCount > 0
+                        ) {
+                            confirmCloudUpload = true
+                        } else {
+                            onSetMessageMode(MessageMode.CLOUD)
+                        }
+                    }
+                    ChoiceChip("Direct", settings.messageMode == MessageMode.DIRECT) {
+                        confirmCloudUpload = false
+                        onSetMessageMode(MessageMode.DIRECT)
+                    }
+                }
+                Text(
+                    when (settings.messageMode) {
+                        MessageMode.CLOUD ->
+                            "Messages use the normal cloud sync path alongside the direct channel."
+                        MessageMode.DIRECT ->
+                            "Messages use only the authenticated direct channel. No message text is uploaded to the cloud."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (confirmCloudUpload) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(Modifier.padding(12.dp)) {
+                            Text(
+                                "Upload ${state.queuedCount} queued message" +
+                                    if (state.queuedCount == 1) "?" else "s?",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                "Switching to Cloud mode uploads messages that are still waiting " +
+                                    "to be delivered. Cancel to keep them local in Direct mode.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick = {
+                                        confirmCloudUpload = false
+                                        onSetMessageMode(MessageMode.CLOUD)
+                                    },
+                                ) {
+                                    Text("Switch & upload")
+                                }
+                                TextButton(onClick = { confirmCloudUpload = false }) {
+                                    Text("Cancel")
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
                 Text(
                     presentation.detail,
                     style = MaterialTheme.typography.bodySmall,

@@ -21,7 +21,7 @@ function SignedInView({
   settings: AppSettings;
   updateSettings: (patch: Partial<AppSettings>) => void;
 }) {
-  const { state, engine, fatal } = useChatEngine(user, peerUid);
+  const { state, engine, fatal } = useChatEngine(user, peerUid, settings.messageMode);
   return (
     <ChatLayout
       user={user}

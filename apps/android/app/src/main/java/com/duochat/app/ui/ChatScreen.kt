@@ -2,10 +2,13 @@ package com.duochat.app.ui
 
 import android.Manifest
 import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +18,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,6 +36,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Key
@@ -42,6 +48,8 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -64,6 +72,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -76,6 +87,7 @@ import com.duochat.app.data.ChatState
 import com.duochat.app.data.ConnectionTone
 import com.duochat.app.data.DeliveryState
 import com.duochat.app.data.MAX_TEXT_LENGTH
+import com.duochat.app.data.MessageMode
 import com.duochat.app.data.P2PState
 import com.duochat.app.data.PeerTrust
 import com.duochat.app.data.countCodePoints
@@ -105,6 +117,7 @@ fun ChatScreen(
     onChangeDisplayName: (String, (Result<Unit>) -> Unit) -> Unit,
     onClearLocalData: ((Result<Unit>) -> Unit) -> Unit,
     onUpdateSettings: (AppSettings.() -> AppSettings) -> Unit,
+    onSetMessageMode: (MessageMode) -> Unit,
     onCreateManualOffer: ((Result<String>) -> Unit) -> Unit,
     onApplyManualAnswer: (String, (Result<Unit>) -> Unit) -> Unit,
     onAcceptManualOffer: ((String, (Result<String>) -> Unit) -> Unit),
@@ -179,10 +192,21 @@ fun ChatScreen(
             )
         },
         bottomBar = {
+            val directMode = settings.messageMode == MessageMode.DIRECT
             Composer(
                 enabled = state.phase == com.duochat.app.data.EnginePhase.READY,
-                connected = state.cloudConnected || state.p2pConnected,
-                queued = !state.cloudConnected && !state.p2pConnected,
+                connected = if (directMode) {
+                    state.p2pConnected
+                } else {
+                    state.cloudConnected || state.p2pConnected
+                },
+                queued = if (directMode) {
+                    !state.p2pConnected
+                } else {
+                    !state.cloudConnected && !state.p2pConnected
+                },
+                directMode = directMode,
+                modifier = Modifier.navigationBarsPadding().imePadding(),
                 onSend = onSend,
             )
         },
@@ -192,7 +216,7 @@ fun ChatScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            ConnectionSummary(state)
+            ConnectionSummary(state, settings.messageMode)
             state.error?.let { message ->
                 Banner(
                     icon = Icons.Filled.ErrorOutline,
@@ -244,6 +268,7 @@ fun ChatScreen(
             onDismiss = { settingsOpen = false },
             onRequestNotifications = requestNotifications,
             onUpdateSettings = onUpdateSettings,
+            onSetMessageMode = onSetMessageMode,
             onChangeDisplayName = onChangeDisplayName,
             onClearLocalData = onClearLocalData,
             onReconnect = onReconnect,
@@ -274,14 +299,18 @@ fun ChatScreen(
 }
 
 @Composable
-private fun ConnectionSummary(state: ChatState) {
+private fun ConnectionSummary(state: ChatState, messageMode: MessageMode) {
     val presentation = presentConnection(state.connectionMode, state.queuedCount)
-    val toneColor = when (presentation.tone) {
-        ConnectionTone.ONLINE -> MaterialTheme.colorScheme.primary
-        ConnectionTone.DIRECT -> Color(0xFF0D9488)
-        ConnectionTone.BUSY -> Color(0xFFD97706)
-        ConnectionTone.OFFLINE -> MaterialTheme.colorScheme.onSurfaceVariant
-        ConnectionTone.ERROR -> MaterialTheme.colorScheme.error
+    val toneColor = if (messageMode == MessageMode.DIRECT) {
+        if (state.p2pConnected) Color(0xFF0D9488) else Color(0xFFD97706)
+    } else {
+        when (presentation.tone) {
+            ConnectionTone.ONLINE -> MaterialTheme.colorScheme.primary
+            ConnectionTone.DIRECT -> Color(0xFF0D9488)
+            ConnectionTone.BUSY -> Color(0xFFD97706)
+            ConnectionTone.OFFLINE -> MaterialTheme.colorScheme.onSurfaceVariant
+            ConnectionTone.ERROR -> MaterialTheme.colorScheme.error
+        }
     }
     Row(
         modifier = Modifier
@@ -298,13 +327,25 @@ private fun ConnectionSummary(state: ChatState) {
         )
         Spacer(Modifier.width(8.dp))
         Text(
-            presentation.label,
+            if (messageMode == MessageMode.DIRECT) {
+                if (state.p2pConnected) "Direct mode · connected" else "Direct mode · waiting"
+            } else {
+                "Cloud mode · ${presentation.label}"
+            },
             style = MaterialTheme.typography.labelSmall,
             color = toneColor,
         )
         Spacer(Modifier.width(8.dp))
         Text(
-            presentation.detail,
+            if (messageMode == MessageMode.DIRECT) {
+                if (state.p2pConnected) {
+                    "Messages use the direct channel only. No message text is uploaded to the cloud."
+                } else {
+                    "Messages stay on this device until a direct channel accepts them."
+                }
+            } else {
+                presentation.detail
+            },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -394,8 +435,13 @@ private fun MessageList(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Only the two approved accounts can read this thread. Messages are " +
-                        "stored locally and synchronized through the cloud when it is available.",
+                    if (state.messageMode == MessageMode.DIRECT) {
+                        "Only the two approved accounts can read this thread. Messages are " +
+                            "stored locally and sent only over an authenticated direct connection."
+                    } else {
+                        "Only the two approved accounts can read this thread. Messages are " +
+                            "stored locally and synchronized through the cloud when it is available."
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -475,6 +521,7 @@ private fun DaySeparator(label: String) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MessageBubble(
     message: ChatMessage,
@@ -484,6 +531,10 @@ private fun MessageBubble(
     grouped: Boolean,
     onRetry: (String) -> Unit,
 ) {
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    var menuOpen by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (own) Arrangement.End else Arrangement.Start,
@@ -494,49 +545,76 @@ private fun MessageBubble(
                 if (showAvatar) InitialsAvatar(peerName, 26)
             }
         }
-        Surface(
-            color = if (own) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.surfaceVariant
-            },
-            shape = RoundedCornerShape(
-                topStart = 18.dp,
-                topEnd = 18.dp,
-                bottomStart = if (own || grouped) 18.dp else 4.dp,
-                bottomEnd = if (!own || grouped) 18.dp else 4.dp,
-            ),
-            modifier = Modifier.widthIn(max = 310.dp),
-        ) {
-            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                Text(
-                    text = message.text,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = if (own) {
-                        MaterialTheme.colorScheme.onPrimary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-                Spacer(Modifier.height(3.dp))
-                Row(
-                    modifier = Modifier.align(Alignment.End),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
+        Box {
+            Surface(
+                color = if (own) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                },
+                shape = RoundedCornerShape(
+                    topStart = 18.dp,
+                    topEnd = 18.dp,
+                    bottomStart = if (own || grouped) 18.dp else 4.dp,
+                    bottomEnd = if (!own || grouped) 18.dp else 4.dp,
+                ),
+                modifier = Modifier
+                    .widthIn(max = 310.dp)
+                    .combinedClickable(
+                        onClick = {},
+                        onLongClick = { menuOpen = true },
+                    ),
+            ) {
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                     Text(
-                        formatTime(message.clientCreatedAt),
-                        style = MaterialTheme.typography.labelSmall,
+                        text = message.text,
+                        style = MaterialTheme.typography.bodyLarge,
                         color = if (own) {
-                            MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f)
+                            MaterialTheme.colorScheme.onPrimary
                         } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                            MaterialTheme.colorScheme.onSurfaceVariant
                         },
                     )
-                    if (own) {
-                        Spacer(Modifier.width(4.dp))
-                        DeliveryIndicator(message.deliveryState) { onRetry(message.messageId) }
+                    Spacer(Modifier.height(3.dp))
+                    Row(
+                        modifier = Modifier.align(Alignment.End),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            formatTime(message.clientCreatedAt),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (own) {
+                                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f)
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                            },
+                        )
+                        if (own) {
+                            Spacer(Modifier.width(4.dp))
+                            DeliveryIndicator(message.deliveryState) { onRetry(message.messageId) }
+                        }
                     }
                 }
+            }
+            DropdownMenu(
+                expanded = menuOpen,
+                onDismissRequest = { menuOpen = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Copy message") },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Filled.ContentCopy,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    },
+                    onClick = {
+                        clipboard.setText(AnnotatedString(message.text))
+                        menuOpen = false
+                        Toast.makeText(context, "Message copied", Toast.LENGTH_SHORT).show()
+                    },
+                )
             }
         }
     }
@@ -588,6 +666,8 @@ private fun Composer(
     enabled: Boolean,
     connected: Boolean,
     queued: Boolean,
+    directMode: Boolean,
+    modifier: Modifier = Modifier,
     onSend: (String, (Result<Unit>) -> Unit) -> Unit,
 ) {
     var text by remember { mutableStateOf("") }
@@ -611,7 +691,11 @@ private fun Composer(
         }
     }
 
-    Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 3.dp,
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -640,6 +724,7 @@ private fun Composer(
                         Text(
                             when {
                                 connected -> "Write a message…"
+                                directMode -> "Write a message — it stays local until a direct channel is ready…"
                                 queued -> "Write a message — it will queue until a connection returns…"
                                 else -> "Reconnecting…"
                             },
@@ -688,7 +773,11 @@ private fun Composer(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    "Messages stay on this device until transport accepts them",
+                    if (directMode) {
+                        "Direct mode · no cloud message upload"
+                    } else {
+                        "Messages stay on this device until transport accepts them"
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

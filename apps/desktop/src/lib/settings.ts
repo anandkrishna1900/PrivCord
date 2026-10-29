@@ -1,10 +1,12 @@
 export type ThemeMode = 'system' | 'dark' | 'light';
+export type MessageMode = 'cloud' | 'direct';
 
 export interface AppSettings {
   theme: ThemeMode;
   accent: string;
   notificationsEnabled: boolean;
   notificationPreviews: boolean;
+  messageMode: MessageMode;
 }
 
 export const ACCENTS = [
@@ -22,12 +24,16 @@ const DEFAULTS: AppSettings = {
   accent: ACCENTS[0].value,
   notificationsEnabled: true,
   notificationPreviews: true,
+  messageMode: 'cloud',
 };
 
-export function loadSettings(): AppSettings {
+export function normalizeMessageMode(value: unknown): MessageMode {
+  return value === 'direct' ? 'direct' : 'cloud';
+}
+
+export function parseSettings(raw: string | null): AppSettings {
+  if (!raw) return { ...DEFAULTS };
   try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    if (!raw) return { ...DEFAULTS };
     const parsed = JSON.parse(raw) as Partial<AppSettings>;
     return {
       theme:
@@ -46,10 +52,15 @@ export function loadSettings(): AppSettings {
         typeof parsed.notificationPreviews === 'boolean'
           ? parsed.notificationPreviews
           : DEFAULTS.notificationPreviews,
+      messageMode: normalizeMessageMode(parsed.messageMode),
     };
   } catch {
     return { ...DEFAULTS };
   }
+}
+
+export function loadSettings(): AppSettings {
+  return parseSettings(localStorage.getItem(SETTINGS_KEY));
 }
 
 export function saveSettings(settings: AppSettings): void {

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { presentConnection } from '@duochat/protocol';
 import type { ChatEngine, ChatState } from '../lib/engine';
-import type { AppSettings, ThemeMode } from '../lib/settings';
+import type { AppSettings, MessageMode, ThemeMode } from '../lib/settings';
 import { ACCENTS } from '../lib/settings';
 import { copyText } from '../lib/clipboard';
 import { ensureNotificationPermission } from '../lib/notifications';
@@ -106,6 +106,7 @@ export function SettingsDialog({
   const [savingName, setSavingName] = useState(false);
   const [nameStatus, setNameStatus] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [confirmCloudUpload, setConfirmCloudUpload] = useState(false);
   const [clearConfirm, setClearConfirm] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [permission, setPermission] = useState<string>('');
@@ -115,6 +116,7 @@ export function SettingsDialog({
     setSection(initialSection);
     setName(state?.selfProfile?.displayName ?? '');
     setNameStatus(null);
+    setConfirmCloudUpload(false);
     setClearConfirm(false);
     setCopied(false);
     setPermission(
@@ -167,6 +169,20 @@ export function SettingsDialog({
     const granted = await ensureNotificationPermission();
     setPermission(granted ? 'granted' : 'denied');
     updateSettings({ notificationsEnabled: granted });
+  }
+
+  function chooseMessageMode(mode: MessageMode) {
+    if (mode === settings.messageMode) return;
+    if (
+      mode === 'cloud' &&
+      settings.messageMode === 'direct' &&
+      (state?.queuedCount ?? 0) > 0
+    ) {
+      setConfirmCloudUpload(true);
+      return;
+    }
+    setConfirmCloudUpload(false);
+    updateSettings({ messageMode: mode });
   }
 
   const mode = state?.connectionMode ?? 'OFFLINE_QUEUED';
@@ -335,8 +351,67 @@ export function SettingsDialog({
             <section className="settings-section">
               <header>
                 <h3>Connection & diagnostics</h3>
-                <p className="muted">{presentation.detail}</p>
+                <p className="muted">
+                  {settings.messageMode === 'direct'
+                    ? 'Direct message route selected. Cloud is used only for signaling and profile metadata.'
+                    : presentation.detail}
+                </p>
               </header>
+              <div className="setting-block">
+                <span className="setting-label">Message route</span>
+                <div className="segmented" role="group" aria-label="Message route">
+                  {(['cloud', 'direct'] as MessageMode[]).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      className={settings.messageMode === mode ? 'active' : ''}
+                      onClick={() => chooseMessageMode(mode)}
+                      aria-pressed={settings.messageMode === mode}
+                    >
+                      {mode === 'cloud' ? 'Cloud' : 'Direct'}
+                    </button>
+                  ))}
+                </div>
+                <p className="muted small">
+                  {settings.messageMode === 'direct'
+                    ? 'Messages use only the authenticated peer channel. No message text is uploaded to the cloud.'
+                    : 'Messages use the normal cloud sync path alongside the direct channel.'}
+                </p>
+              </div>
+              {confirmCloudUpload ? (
+                <div className="callout warning" role="alert">
+                  <InfoIcon size={17} />
+                  <div>
+                    <strong>
+                      Upload {state?.queuedCount ?? 0} queued message
+                      {(state?.queuedCount ?? 0) === 1 ? '?' : 's?'}
+                    </strong>
+                    <p>
+                      Switching to Cloud mode uploads messages that are still waiting
+                      to be delivered. Cancel to keep them local in Direct mode.
+                    </p>
+                    <div className="button-row">
+                      <button
+                        type="button"
+                        className="button primary small"
+                        onClick={() => {
+                          setConfirmCloudUpload(false);
+                          updateSettings({ messageMode: 'cloud' });
+                        }}
+                      >
+                        Switch &amp; upload
+                      </button>
+                      <button
+                        type="button"
+                        className="button ghost small"
+                        onClick={() => setConfirmCloudUpload(false)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
               <div className={`connection-summary tone-${presentation.tone}`}>
                 <span className="connection-dot" />
                 <strong>{presentation.label}</strong>
