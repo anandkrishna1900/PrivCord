@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build output
+dist/
+build/
+target/
+.gradle/
+apps/android/local.properties
+apps/android/.idea/
+apps/android/**/build/
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+apps/desktop/.env
+apps/desktop/.env.*
+!apps/desktop/.env.example
+apps/android/google-services.json
+firebase/rules-tests/.env
+serviceAccount*.json
+*service-account*.json
+.firebaserc.local
+
+# Local data / logs
+*.log
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+apps/desktop/src-tauri/gen/
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
