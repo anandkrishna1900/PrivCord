@@ -25,35 +25,40 @@ data class NetworkConfig(
     val bluetooth: Boolean = true,
     val transportMode: TransportMode = TransportMode.AUTOMATIC,
 ) {
-    fun toJson(): String = JSONObject()
-        .put("stun", JSONArray(stun))
-        .put(
-            "turn",
-            JSONArray(
-                turn.map {
-                    JSONObject()
-                        .put("urls", JSONArray(it.urls))
-                        .put("username", it.username)
-                        .put("credential", it.credential)
-                },
-            ),
-        )
-        .put(
-            "signaling",
-            JSONArray(
-                signaling.map {
-                    when (it) {
-                        is SignalingConfig.Nostr -> JSONObject().put("kind", "nostr").put("relays", JSONArray(it.relays))
-                        is SignalingConfig.Relay -> JSONObject().put("kind", "relay").put("url", it.url)
-                    }
-                },
-            ),
-        )
-        .put("storeForward", storeForward)
-        .put("forceRelay", forceRelay)
-        .put("bluetooth", bluetooth)
-        apply { if (transportMode != TransportMode.AUTOMATIC) put("transportMode", transportMode.name) }
-        .toString()
+    fun toJson(): String {
+        val json = JSONObject()
+            .put("stun", JSONArray(stun))
+            .put(
+                "turn",
+                JSONArray(
+                    turn.map {
+                        JSONObject()
+                            .put("urls", JSONArray(it.urls))
+                            .put("username", it.username)
+                            .put("credential", it.credential)
+                    },
+                ),
+            )
+            .put(
+                "signaling",
+                JSONArray(
+                    signaling.map {
+                        when (it) {
+                            is SignalingConfig.Nostr -> JSONObject().put("kind", "nostr").put("relays", JSONArray(it.relays))
+                            is SignalingConfig.Relay -> JSONObject().put("kind", "relay").put("url", it.url)
+                        }
+                    },
+                ),
+            )
+            .put("storeForward", storeForward)
+            .put("forceRelay", forceRelay)
+            .put("bluetooth", bluetooth)
+
+        if (transportMode != TransportMode.AUTOMATIC) {
+            json.put("transportMode", transportMode.name)
+        }
+        return json.toString()
+    }
 
     companion object {
         val DEFAULT_STUN = listOf(
