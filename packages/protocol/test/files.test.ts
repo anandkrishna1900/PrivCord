@@ -6,6 +6,7 @@ import {
   createOutgoingMessage,
   fileChunks,
   isInlineImage,
+  isInlineVideo,
   makeFileOffer,
   parseDeclinedFrame,
   parseFileChunk,
@@ -93,6 +94,10 @@ describe('file transfer', () => {
     expect(sanitizeMime('IMAGE/PNG')).toBe('image/png');
     expect(isInlineImage('image/png')).toBe(true);
     expect(isInlineImage('image/svg+xml')).toBe(false);
+    expect(isInlineVideo('video/mp4')).toBe(true);
+    expect(isInlineVideo('VIDEO/WEBM')).toBe(true);
+    expect(isInlineVideo('application/pdf')).toBe(false);
+    expect(isInlineVideo('image/png')).toBe(false);
   });
 
   it('validates offer and chunk frames', () => {

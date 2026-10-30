@@ -45,12 +45,25 @@ Local kill switch activation operates strictly within the local device boundary:
 - **Large groups and offline members.** Messages for a member you cannot reach yet are queued and sent
   when the link opens.
 
-## 5. Not available
+## 5. App lock
+- **Android** uses the system prompt (fingerprint, face or screen lock) every time the app opens and after
+  30 seconds out of sight. **Windows** uses a Windows Hello passkey (WebAuthn, user verification required,
+  the signature is checked against the stored public key) when the app opens, after 5 minutes out of
+  sight, and on "Lock now". Turning it off needs the same proof.
+- It keeps other people at an unlocked device out. It is **not** protection against someone who copies the
+  files off the disk (they are encrypted with a separate key) and it does not stop the app from receiving
+  messages while locked: notifications can still show message text unless you turn previews off.
+- Not tested on a real Windows Hello prompt or a real Android biometric prompt; the desktop flow is tested
+  against a virtual authenticator and the Android decision rules by unit tests.
+- Video and image previews are decoded by the system's media components. Other file types are never
+  opened by PrivCord, only saved.
+
+## 6. Not available
 - Files are limited to **8 MB**, go **device to device** (never through a server or the offline
   relay) and need a WebRTC link, so they are not sent over Bluetooth. A file for someone offline waits
   on your device and is sent when they reconnect. In a group a file is sent separately to every member
   (up to 9 copies), so it uses your upload each time. Received files are saved encrypted on the
-  device; "Save" writes an ordinary file. Only PNG, JPEG, GIF and WebP are previewed, never SVG.
+  device; "Save" writes an ordinary file. Only PNG, JPEG, GIF and WebP images and MP4, WebM, QuickTime and Ogg videos get a preview, never SVG, and no other file type is opened.
   File saving from the packaged desktop app has only been exercised in the browser suite.
 - No push notifications (there is no server to send them).
 - No multi-hop Bluetooth mesh.

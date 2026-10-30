@@ -25,6 +25,8 @@ data class MessageEntity(
     val conversationId: String = LEGACY_CONVERSATION_ID,
     /** Group messages only: how many members it had to reach (the delivery detail is this minus the pending outbox rows). */
     val totalRecipients: Int = 0,
+    /** Encrypted JSON: message type, reply reference and file description. Null for plain text. */
+    val extraCipher: String? = null,
 ) {
     companion object {
         const val LEGACY_CONVERSATION_ID = "duo"
@@ -193,7 +195,7 @@ interface DuoDao {
         ContactEntity::class,
         GroupLogEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class DuoDatabase : RoomDatabase() {
@@ -322,6 +324,13 @@ abstract class DuoDatabase : RoomDatabase() {
                 db.execSQL("DROP TABLE IF EXISTS group_members")
                 db.execSQL("DROP TABLE IF EXISTS group_epoch_keys")
                 db.execSQL("DROP TABLE IF EXISTS file_transfers")
+            }
+        }
+
+        /** v5 -> v6: replies and files (the extra column holds both, encrypted). Nothing is dropped. */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN extraCipher TEXT")
             }
         }
     }

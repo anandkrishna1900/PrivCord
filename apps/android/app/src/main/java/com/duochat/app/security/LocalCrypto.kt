@@ -42,6 +42,20 @@ class LocalCrypto(context: Context, uid: String) {
         return PREFIX + iv + "." + body
     }
 
+    /** Files at rest: output is the 12-byte IV followed by the AES-GCM ciphertext. */
+    fun encryptBytes(bytes: ByteArray): ByteArray {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, secretKey())
+        return cipher.iv + cipher.doFinal(bytes)
+    }
+
+    fun decryptBytes(payload: ByteArray): ByteArray {
+        require(payload.size > 28) { "Malformed encrypted file." }
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, secretKey(), GCMParameterSpec(128, payload.copyOfRange(0, 12)))
+        return cipher.doFinal(payload, 12, payload.size - 12)
+    }
+
     /**
      * Kill switch helper: delete the AES local-encryption key from the
      * Android Keystore. Any ciphertext previously sealed with it becomes

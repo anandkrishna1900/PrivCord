@@ -11,6 +11,25 @@ import com.duochat.app.data.ChatSummary
 import com.duochat.app.data.ContactTrust
 import com.duochat.app.data.ContactView
 import com.duochat.app.data.ConnectionPath
+import com.duochat.app.data.AssembleResult
+import com.duochat.app.data.DeclineReason
+import com.duochat.app.data.FileAssembler
+import com.duochat.app.data.FileChunk
+import com.duochat.app.data.FileMeta
+import com.duochat.app.data.FileOffer
+import com.duochat.app.data.MAX_FILE_BYTES
+import com.duochat.app.data.MAX_GROUP_MEMBERS
+import com.duochat.app.data.MessageType
+import com.duochat.app.data.ReplyRef
+import com.duochat.app.data.acceptsDirect
+import com.duochat.app.data.canStartDirect
+import com.duochat.app.data.declinedFrame
+import com.duochat.app.data.fileChunks
+import com.duochat.app.data.filePreviewText
+import com.duochat.app.data.makeReplyRef
+import com.duochat.app.data.parseDeclined
+import com.duochat.app.data.sanitizeFileName
+import com.duochat.app.data.validateFileSize
 import com.duochat.app.data.DeliveryState
 import com.duochat.app.data.EnginePhase
 import com.duochat.app.data.GroupView
@@ -58,7 +77,9 @@ import com.duochat.app.signaling.SignalingStatus
 import com.duochat.app.signaling.SignalingTransport
 import com.duochat.app.signaling.transportsFor
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -95,6 +116,8 @@ class ChatEngine(
     private val legacyNickname: () -> String,
     private val isMuted: (String) -> Boolean,
     private val onNotify: (IncomingNotice) -> Unit,
+    /** The "stay group-only" privacy setting when the engine starts; later changes arrive via [setGroupOnly]. */
+    initialGroupOnly: Boolean = false,
     /** Null where Bluetooth cannot be used at all (for example in unit tests). */
     private val ble: BleEnvironment? = null,
 ) {
@@ -156,6 +179,16 @@ class ChatEngine(
     private var bleManualAttempt = false
     private val relayed = mutableSetOf<String>()
     private var notice: String? = null
+
+    /** Privacy: people we only know through a group stay group-only for us. */
+    private var groupOnly = initialGroupOnly
+
+    /** What each connected friend told us about their own setting (re-announced on every link). */
+    private val peerGroupOnly = HashMap<String, Boolean>()
+    private val assemblers = HashMap<String, FileAssembler>()
+    private val lastChunkAt = HashMap<String, Long>()
+    private val sendingFiles = mutableSetOf<String>()
+    private val progress = HashMap<String, Float>()
 
     private val selfUid: String
         get() = identity?.uid.orEmpty()
@@ -368,7 +401,8 @@ class ChatEngine(
     /** "Check it's really them": the safety numbers matched. */
     suspend fun markChecked(uid: String) {
         val friend = friends[uid] ?: return
-        friend.trust = ContactTrust.VERIFIED
+        // A safety-number check is not a pairing: direct messages follow the group-only rules, and swapping
+        // invites (addFriend) is what pairs two people for good.
         friend.checkedAt = System.currentTimeMillis()
         store.putContact(entityFrom(friend))
         emit()
@@ -411,20 +445,62 @@ class ChatEngine(
         return friend.card
     }
 
+    /** Can we start or continue a direct chat with them? See [canStartDirect]. */
+    private fun canDirect(uid: String): Boolean {
+        val f = friends[uid] ?: return false
+        return canStartDirect(f.trust, groupOnly, peerGroupOnly[uid])
+    }
+
+    private fun acceptsDirectFrom(uid: String): Boolean {
+        val f = friends[uid] ?: return false
+        return acceptsDirect(f.trust, groupOnly)
+    }
+
+    /** Turn the group-only privacy setting on or off and tell everyone we are connected to. */
+    fun setGroupOnly(value: Boolean) {
+        if (groupOnly == value) return
+        groupOnly = value
+        for (link in links.values) if (link.session.isReady) link.session.sendJson(privacyFrame())
+        emit()
+    }
+
+    private fun privacyFrame() = JSONObject().put("v", 1).put("kind", "privacy").put("groupOnly", groupOnly)
+
+    /** Why this conversation cannot be written to right now, or null if it can. */
+    private fun cannotWrite(conversationId: String): String? {
+        val friend = friends[conversationId]
+        if (friend != null) {
+            if (canDirect(conversationId)) return null
+            return if (groupOnly) {
+                "You stay group-only with people you meet in groups. To message ${friend.name} directly, swap invites (Add friend)."
+            } else {
+                "${friend.name} stays group-only, so you can talk in your groups but not directly. To message them, swap invites (Add friend)."
+            }
+        }
+        val group = coordinator?.state(conversationId) ?: return "Unknown chat."
+        return if (group.members.containsKey(selfUid)) null else "You are no longer in this group."
+    }
+
     suspend fun createGroup(name: String, memberUids: List<String>): Result<String> = runCatching {
         val coordinator = coordinator ?: throw IllegalStateException("Identity is not ready.")
         val clean = name.trim()
         if (clean.isEmpty()) throw IllegalArgumentException("Give the group a name.")
-        val cards = memberUids.distinct().map { cardOfFriend(it) }
+        val cards = memberUids.distinct().map { requireDirect(it); cardOfFriend(it) }
         val created = coordinator.createGroup(clean, cards)
         applyGroupResult(created.result, null)
         say("Group \"$clean\" created.")
         created.groupId
     }
 
+    /** Group-only people are not offered for groups: their identity is not spread through us. */
+    private fun requireDirect(uid: String) {
+        if (!canDirect(uid)) throw IllegalArgumentException("Pick friends you can message directly.")
+    }
+
     suspend fun addToGroup(groupId: String, uids: List<String>): Result<Unit> = runCatching {
         val coordinator = coordinator ?: throw IllegalStateException("Identity is not ready.")
         for (uid in uids.distinct()) {
+            requireDirect(uid)
             val card = cardOfFriend(uid)
             try {
                 applyGroupResult(coordinator.addMember(groupId, card), null)
@@ -538,10 +614,17 @@ class ChatEngine(
     // Sending
     // ---------------------------------------------------------------------
 
-    suspend fun send(conversationId: String, rawText: String): Result<Unit> {
+    /** The quote that goes with a reply, taken from our own copy of the message. */
+    private fun replyFor(conversationId: String, replyToId: String?): ReplyRef? {
+        val original = replyToId?.let { messages[it] } ?: return null
+        return if (original.conversationId == conversationId) makeReplyRef(original) else null
+    }
+
+    suspend fun send(conversationId: String, rawText: String, replyToId: String? = null): Result<Unit> {
         if (identity == null) return Result.failure(IllegalStateException("Identity is not ready yet."))
         return try {
             val coordinator = coordinator ?: throw IllegalStateException("Identity is not ready yet.")
+            cannotWrite(conversationId)?.let { throw IllegalStateException(it) }
             val isGroup = coordinator.state(conversationId) != null
             val recipients: List<String> = if (isGroup) {
                 if (!coordinator.isMember(conversationId, selfUid)) throw IllegalStateException("You are no longer in this group.")
@@ -552,7 +635,7 @@ class ChatEngine(
                 if (!friends.containsKey(conversationId)) throw IllegalStateException("This friend is no longer in your list.")
                 listOf(conversationId)
             }
-            val base = createOutgoingMessage(selfUid, rawText)
+            val base = createOutgoingMessage(selfUid, rawText, replyFor(conversationId, replyToId))
             val message = base.copy(conversationId = conversationId, totalRecipients = if (isGroup) recipients.size else 0)
             messages[message.messageId] = message
             store.putMessage(message)
@@ -573,13 +656,66 @@ class ChatEngine(
         }
     }
 
+    /** Send a file (at most 8 MB) to a friend or a group. It goes straight to each person over the direct link. */
+    suspend fun sendFile(
+        conversationId: String, rawName: String, mime: String, bytes: ByteArray, replyToId: String? = null,
+    ): Result<Unit> {
+        if (identity == null) return Result.failure(IllegalStateException("Identity is not ready yet."))
+        return try {
+            val coordinator = coordinator ?: throw IllegalStateException("Identity is not ready yet.")
+            cannotWrite(conversationId)?.let { throw IllegalStateException(it) }
+            validateFileSize(bytes.size)?.let { throw IllegalArgumentException(it) }
+            val isGroup = coordinator.state(conversationId) != null
+            val recipients = if (isGroup) coordinator.recipients(conversationId) else listOf(conversationId)
+            if (recipients.isEmpty()) throw IllegalStateException("Add someone to this group first.")
+            val id = java.util.UUID.randomUUID().toString()
+            val offer = FileOffer.create(id, if (isGroup) conversationId else null, rawName, mime, bytes, System.currentTimeMillis(), replyFor(conversationId, replyToId))
+            withContext(Dispatchers.IO) { store.putFile(id, bytes) }
+            val message = ChatMessage(
+                messageId = id, clientMessageId = id, senderId = selfUid, text = offer.name,
+                clientCreatedAt = offer.clientCreatedAt, conversationId = conversationId,
+                totalRecipients = if (isGroup) recipients.size else 0,
+                type = MessageType.FILE, replyTo = offer.replyTo,
+                file = FileMeta(offer.name, offer.mime, offer.size, offer.sha256),
+            )
+            messages[id] = message
+            store.putMessage(message)
+            val now = System.currentTimeMillis()
+            for (uid in recipients) {
+                val row = OutboxRow(id, uid, id, now, 0, null, DeliveryState.QUEUED, null)
+                outbox[row.key] = row
+                store.enqueueOutbox(row, conversationId)
+            }
+            emit()
+            scope.launch { for (uid in recipients) deliverTo(uid) }
+            Result.success(Unit)
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+    }
+
+    /** The bytes of a stored file, for showing or saving it. */
+    suspend fun getFile(messageId: String): Pair<FileMeta, ByteArray>? {
+        val meta = messages[messageId]?.file ?: return null
+        val bytes = withContext(Dispatchers.IO) { runCatching { store.getFile(messageId) }.getOrNull() } ?: return null
+        return meta to bytes
+    }
+
     suspend fun retry(messageId: String) {
         val message = messages[messageId] ?: return
         if (message.senderId != selfUid) return
         for (row in outbox.values.filter { it.messageId == messageId }) {
+            // A refused message (FAILED) is tried again from the start.
+            if (row.deliveryState == DeliveryState.FAILED) {
+                val again = row.copy(deliveryState = DeliveryState.QUEUED)
+                outbox[row.key] = again
+                store.updateOutboxDelivery(again, DeliveryState.QUEUED, null)
+            }
             links[row.recipientId]?.sent?.remove(messageId)
             deliverTo(row.recipientId)
         }
+        if (coordinator?.state(message.conversationId) != null) refreshGroupMessage(messageId)
+        else setDirectState(message.copy(deliveryState = DeliveryState.QUEUED), DeliveryState.QUEUED, null)
     }
 
     /** Sends everything queued for [uid] over their link if it is up; otherwise it stays queued. */
@@ -591,15 +727,21 @@ class ChatEngine(
         for (row in outbox.values.filter { it.recipientId == uid }.sortedBy { it.createdAt }) {
             val message = messages[row.messageId] ?: continue
             if (message.senderId != selfUid || row.messageId in link.sent) continue
+            if (row.deliveryState == DeliveryState.FAILED) continue
+            if (message.type == MessageType.FILE) {
+                pushFile(uid, link, message, row)
+                continue
+            }
             val isGroup = coordinator?.state(message.conversationId) != null
             val frame = if (isGroup) {
                 if (coordinator?.isMember(message.conversationId, uid) != true) continue
-                GroupFrame.Message(message.conversationId, message.messageId, message.text, message.clientCreatedAt).toJson()
+                GroupFrame.Message(message.conversationId, message.messageId, message.text, message.clientCreatedAt, message.replyTo).toJson()
             } else {
                 JSONObject().put("v", 1).put("kind", "message")
                     .put("messageId", message.messageId).put("clientMessageId", message.clientMessageId)
                     .put("senderId", message.senderId).put("text", message.text)
                     .put("clientCreatedAt", message.clientCreatedAt)
+                    .also { o -> message.replyTo?.let { o.put("replyTo", it.toJson()) } }
             }
             if (!session.sendJson(frame)) return
             link.sent += row.messageId
@@ -608,6 +750,68 @@ class ChatEngine(
             store.updateOutboxDelivery(row, DeliveryState.SENT, now)
             if (isGroup) refreshGroupMessage(message.messageId) else setDirectState(message, DeliveryState.SENT, TransportKind.P2P)
         }
+        emit()
+    }
+
+    /** Stream one file to one recipient: offer, then ordered chunks, pausing while the channel is backed up. */
+    private fun pushFile(uid: String, link: Link, message: ChatMessage, row: OutboxRow) {
+        val key = "$uid|${message.messageId}"
+        if (!link.session.isWebRtc || key in sendingFiles) return // too slow over Bluetooth: it waits for an internet link
+        sendingFiles += key
+        scope.launch {
+            try {
+                val meta = message.file ?: return@launch
+                val bytes = withContext(Dispatchers.IO) { runCatching { store.getFile(message.messageId) }.getOrNull() }
+                if (bytes == null) {
+                    failRow(row, "This file is no longer stored on this phone.")
+                    return@launch
+                }
+                val isGroup = coordinator?.state(message.conversationId) != null
+                val offer = FileOffer(
+                    message.messageId, if (isGroup) message.conversationId else null, meta.name, meta.mime, meta.size, meta.sha256,
+                    message.clientCreatedAt, message.replyTo,
+                )
+                if (!link.session.sendJson(offer.toJson())) return@launch
+                val total = (bytes.size + com.duochat.app.data.FILE_CHUNK_BYTES - 1) / com.duochat.app.data.FILE_CHUNK_BYTES
+                var sentChunks = 0
+                for (chunk in fileChunks(message.messageId, bytes)) {
+                    if (!link.session.isReady || !link.session.awaitWritable()) return@launch // the next link opening starts over
+                    if (!link.session.sendJson(chunk.toJson())) return@launch
+                    sentChunks++
+                    if (sentChunks % PROGRESS_EVERY == 0) {
+                        progress[message.messageId] = sentChunks.toFloat() / total
+                        emit()
+                    }
+                }
+                link.sent += message.messageId
+                val now = System.currentTimeMillis()
+                outbox[row.key] = row.copy(deliveryState = DeliveryState.SENT, lastAttemptAt = now)
+                store.updateOutboxDelivery(row, DeliveryState.SENT, now)
+                if (isGroup) refreshGroupMessage(message.messageId) else setDirectState(message, DeliveryState.SENT, TransportKind.P2P)
+            } finally {
+                sendingFiles -= key
+                progress.remove(message.messageId)
+                emit()
+            }
+        }
+    }
+
+    /** The receiver refused (or we cannot send): mark just this recipient as failed and say why. */
+    private suspend fun failRow(row: OutboxRow, why: String) {
+        val failed = row.copy(deliveryState = DeliveryState.FAILED)
+        outbox[row.key] = failed
+        store.updateOutboxDelivery(row, DeliveryState.FAILED, System.currentTimeMillis())
+        val message = messages[row.messageId]
+        if (message != null) {
+            if (coordinator?.state(message.conversationId) != null) {
+                refreshGroupMessage(row.messageId)
+            } else {
+                val updated = message.copy(deliveryState = DeliveryState.FAILED)
+                messages[message.messageId] = updated
+                store.updateMessage(message.messageId, deliveryState = DeliveryState.FAILED)
+            }
+        }
+        say(why)
         emit()
     }
 
@@ -633,6 +837,7 @@ class ChatEngine(
         val rows = outbox.values.filter { it.messageId == messageId }
         val state = when {
             rows.isEmpty() -> DeliveryState.DELIVERED
+            rows.any { it.deliveryState == DeliveryState.FAILED } -> DeliveryState.FAILED
             rows.any { it.deliveryState == DeliveryState.SENT } -> DeliveryState.SENT
             else -> DeliveryState.QUEUED
         }
@@ -799,6 +1004,8 @@ class ChatEngine(
             friend.card = peerCard.copy(name = friend.card.name)
             store.setContactProof(uid, peerCard.proof)
         }
+        assemblers[uid]?.clear()
+        link.session.sendJson(privacyFrame())
         coordinator?.onLinkOpen(uid)?.forEach { sendFrame(it) }
         deliverTo(uid)
         if (openChat == uid && appVisible) markRead(uid)
@@ -840,6 +1047,11 @@ class ChatEngine(
     private suspend fun handleDirectMessage(uid: String, message: ChatMessage) {
         val link = links[uid] ?: return
         if (!link.session.isReady || message.senderId != uid || !friends.containsKey(uid)) return
+        // People we only know through a group can message the group, not us, if we chose to stay group-only.
+        if (!acceptsDirectFrom(uid)) {
+            link.session.sendJson(declinedFrame(message.messageId, DeclineReason.DIRECT_NOT_ACCEPTED))
+            return
+        }
         ingest(message.copy(conversationId = uid), uid) { ack -> link.session.sendJson(ack) }
     }
 
@@ -870,12 +1082,31 @@ class ChatEngine(
         if (appVisible && openChat == message.conversationId) return
         val group = coordinator?.state(message.conversationId)
         val title = if (group != null) group.name else nameOf(fromUid)
-        val body = if (group != null) "${nameOf(fromUid)}: ${message.text}" else message.text
+        val text = if (message.type == MessageType.FILE) filePreviewText(message.text) else message.text
+        val body = if (group != null) "${nameOf(fromUid)}: $text" else text
         onNotify(IncomingNotice(message.messageId, message.conversationId, title, body))
     }
 
     private suspend fun handleFrame(fromUid: String, frame: JSONObject) {
         if (!friends.containsKey(fromUid)) return
+        when (frame.optString("kind")) {
+            "privacy" -> {
+                (frame.opt("groupOnly") as? Boolean)?.let { peerGroupOnly[fromUid] = it; emit() }
+                return
+            }
+            "declined" -> {
+                parseDeclined(frame)?.let { (id, reason) -> handleDeclined(fromUid, id, reason) }
+                return
+            }
+            "file_offer" -> {
+                FileOffer.parse(frame)?.let { receiveOffer(fromUid, it) }
+                return
+            }
+            "file_chunk" -> {
+                FileChunk.parse(frame)?.let { receiveChunk(fromUid, it) }
+                return
+            }
+        }
         val parsed = parseGroupFrame(frame) ?: return
         val coordinator = coordinator ?: return
         when (parsed) {
@@ -884,6 +1115,7 @@ class ChatEngine(
                     messageId = parsed.messageId, clientMessageId = parsed.messageId, senderId = fromUid, text = parsed.text,
                     clientCreatedAt = parsed.clientCreatedAt, transport = TransportKind.P2P,
                     deliveryState = DeliveryState.DELIVERED, conversationId = parsed.groupId,
+                    replyTo = parsed.replyTo,
                 )
                 if (messages.containsKey(message.messageId)) {
                     // Duplicate (resend after a lost ack): just acknowledge again.
@@ -905,6 +1137,82 @@ class ChatEngine(
             }
             is GroupFrame.RelayBlob -> handleRelay(fromUid, parsed)
             else -> applyGroupResult(coordinator.handle(fromUid, parsed), fromUid)
+        }
+    }
+
+    private suspend fun handleDeclined(uid: String, messageId: String, reason: DeclineReason) {
+        val row = outbox["$messageId|$uid"] ?: return
+        val who = nameOf(uid)
+        if (reason == DeclineReason.DIRECT_NOT_ACCEPTED && friends[uid]?.trust == ContactTrust.INTRODUCED) peerGroupOnly[uid] = true
+        failRow(
+            row,
+            when (reason) {
+                DeclineReason.DIRECT_NOT_ACCEPTED -> "$who stays group-only, so this was not delivered. You can still talk in your groups, or swap invites to message directly."
+                DeclineReason.TOO_LARGE -> "$who refused the file because it is too large."
+                DeclineReason.BUSY -> "$who is receiving other files right now. Try again in a moment."
+                DeclineReason.BAD_FILE -> "$who could not receive the file."
+            },
+        )
+    }
+
+    private fun assembler(uid: String): FileAssembler = assemblers.getOrPut(uid) { FileAssembler() }
+
+    private fun receiveOffer(uid: String, offer: FileOffer) {
+        val link = links[uid] ?: return
+        fun decline(reason: DeclineReason) { link.session.sendJson(declinedFrame(offer.messageId, reason)) }
+        val groupId = offer.groupId
+        if (groupId != null) {
+            if (coordinator?.checkMessage(uid, groupId) != MessageVerdict.OK) return decline(DeclineReason.BAD_FILE)
+        } else if (!acceptsDirectFrom(uid)) {
+            return decline(DeclineReason.DIRECT_NOT_ACCEPTED)
+        }
+        if (offer.size > MAX_FILE_BYTES) return decline(DeclineReason.TOO_LARGE)
+        // Already have it (the sender is retrying after a dropped link): just confirm.
+        if (messages.containsKey(offer.messageId)) {
+            link.session.sendJson(
+                JSONObject().put("v", 1).put("kind", "ack").put("messageId", offer.messageId)
+                    .put("state", "DELIVERED").put("at", System.currentTimeMillis()),
+            )
+            return
+        }
+        assembler(uid).begin(offer)?.let { return decline(it) }
+        lastChunkAt[uid] = System.currentTimeMillis()
+    }
+
+    private suspend fun receiveChunk(uid: String, chunk: FileChunk) {
+        val link = links[uid] ?: return
+        lastChunkAt[uid] = System.currentTimeMillis()
+        val asm = assembler(uid)
+        if (asm.progress(chunk.messageId) == null) return // not a transfer we accepted
+        when (val result = asm.chunk(chunk)) {
+            is AssembleResult.More -> {
+                if (chunk.index % PROGRESS_EVERY == 0) {
+                    progress[chunk.messageId] = (asm.progress(chunk.messageId) ?: 0.0).toFloat()
+                    emit()
+                }
+            }
+            is AssembleResult.Failed -> {
+                progress.remove(chunk.messageId)
+                link.session.sendJson(declinedFrame(chunk.messageId, result.reason))
+                emit()
+            }
+            is AssembleResult.Done -> {
+                progress.remove(chunk.messageId)
+                val offer = result.offer
+                val convId = offer.groupId ?: uid
+                if (offer.groupId != null && coordinator?.checkMessage(uid, offer.groupId) != MessageVerdict.OK) return
+                withContext(Dispatchers.IO) { store.putFile(offer.messageId, result.bytes) }
+                ingest(
+                    ChatMessage(
+                        messageId = offer.messageId, clientMessageId = offer.messageId, senderId = uid, text = offer.name,
+                        clientCreatedAt = offer.clientCreatedAt, transport = TransportKind.P2P,
+                        deliveryState = DeliveryState.DELIVERED, conversationId = convId,
+                        type = MessageType.FILE, replyTo = offer.replyTo,
+                        file = FileMeta(offer.name, offer.mime, offer.size, offer.sha256),
+                    ),
+                    uid,
+                ) { ack -> link.session.sendJson(ack) }
+            }
         }
     }
 
@@ -1161,6 +1469,10 @@ class ChatEngine(
                 _state.update { it.copy(signaling = hub?.status() ?: SignalingStatus.IDLE) }
                 dropBluetoothIfDisabled()
                 pendingGroup.expire(System.currentTimeMillis())
+                val nowMs = System.currentTimeMillis()
+                for ((uid, asm) in assemblers) {
+                    if (asm.activeCount > 0 && nowMs - (lastChunkAt[uid] ?: 0L) > STALL_MS) asm.clear()
+                }
                 flushUndelivered()
                 connectDueLinks()
                 maybeBluetooth()
@@ -1443,6 +1755,7 @@ class ChatEngine(
                 f.uid, f.name, f.trust, f.introducedBy?.let { nameOf(it) }, f.checked, linkStatus(f.uid),
                 links[f.uid]?.path.takeIf { linkStatus(f.uid) == LinkStatus.CONNECTED },
                 runCatching { identityManager.deriveSafetyNumber(current.publicJwk, f.card.sign) }.getOrDefault(""),
+                direct = canDirect(f.uid),
             )
         }
         val groups = coordinator?.groupIds().orEmpty().mapNotNull { id ->
@@ -1454,6 +1767,7 @@ class ChatEngine(
                     m.uid, nameOf(m.uid), m.uid == current.uid, m.role == "admin",
                     if (m.addedBy == m.uid) null else nameOf(m.addedBy),
                     friends[m.uid]?.trust, if (m.uid == current.uid) null else linkStatus(m.uid),
+                    canMessage = m.uid != current.uid && canDirect(m.uid),
                 )
             }.sortedWith(compareBy({ !it.isMe }, { !it.isAdmin }, { it.name.lowercase() }))
             val removedBySomeoneElse = everLeft && coordinator?.let { c ->
@@ -1463,13 +1777,14 @@ class ChatEngine(
                 id, s.name, members, iAmMember, s.members[current.uid]?.role == "admin",
                 if (iAmMember) null else if (removedBySomeoneElse) "You were removed" else "You left",
                 members.count { it.link == LinkStatus.CONNECTED },
+                full = s.members.size >= MAX_GROUP_MEMBERS,
             )
         }.sortedBy { it.name.lowercase() }
         val summaries = ArrayList<ChatSummary>()
-        for (c in contacts) {
+        for (c in contacts.filter { it.direct }) {
             val list = shaped[c.uid].orEmpty()
             summaries += ChatSummary(
-                c.uid, false, c.name, list.lastOrNull()?.text, list.lastOrNull()?.clientCreatedAt ?: c.uid.let { friends[it]?.createdAt ?: 0L },
+                c.uid, false, c.name, list.lastOrNull()?.let { previewOf(it) }, list.lastOrNull()?.clientCreatedAt ?: c.uid.let { friends[it]?.createdAt ?: 0L },
                 list.count { it.senderId != selfUid && it.readAt == null }, c.link,
                 when (c.link) {
                     LinkStatus.CONNECTED -> "Connected"
@@ -1482,7 +1797,7 @@ class ChatEngine(
             val list = shaped[g.groupId].orEmpty()
             val others = g.members.count { !it.isMe }
             summaries += ChatSummary(
-                g.groupId, true, g.name, list.lastOrNull()?.let { m -> (if (m.senderId == selfUid) "You" else nameOf(m.senderId)) + ": " + m.text },
+                g.groupId, true, g.name, list.lastOrNull()?.let { m -> (if (m.senderId == selfUid) "You" else nameOf(m.senderId)) + ": " + previewOf(m) },
                 list.lastOrNull()?.clientCreatedAt ?: 0L, list.count { it.senderId != selfUid && it.readAt == null },
                 if (g.connectedCount > 0) LinkStatus.CONNECTED else if (others == 0) LinkStatus.OFFLINE else LinkStatus.OFFLINE,
                 g.exitNote ?: "${g.members.size} members" + if (others > 0) " · ${g.connectedCount} connected" else "",
@@ -1492,11 +1807,14 @@ class ChatEngine(
         _state.update {
             it.copy(
                 contacts = contacts, groups = groups, chats = summaries, messages = shaped,
-                queuedCount = outbox.size, linkCount = links.values.count { l -> l.session.isReady },
+                queuedCount = outbox.values.count { r -> r.deliveryState != DeliveryState.FAILED },
+                transfers = progress.toMap(), groupOnly = groupOnly, linkCount = links.values.count { l -> l.session.isReady },
                 notice = notice ?: it.notice,
             )
         }
     }
+
+    private fun previewOf(m: ChatMessage): String = if (m.type == MessageType.FILE) filePreviewText(m.text) else m.text
 
     private fun randomNonce(): String {
         val bytes = ByteArray(24)
@@ -1505,6 +1823,8 @@ class ChatEngine(
     }
 
     private companion object {
+        const val PROGRESS_EVERY = 8
+        const val STALL_MS = 30_000L
         const val TICK_MS = 4_000L
         const val SIGNAL_TTL_SEC = 120
         const val MSG_TTL_SEC = 7 * 24 * 3600

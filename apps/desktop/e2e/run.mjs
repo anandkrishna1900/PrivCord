@@ -323,8 +323,8 @@ await scenario(9, 'dead-link detection: a vanished peer is noticed within ~15s',
 });
 
 /* 10 ----------------------------------------------------------------- */
-async function namedDevice(ctx, network, name) {
-  const dev = await device(browser, appUrl, network);
+async function namedDevice(ctx, network, name, url = appUrl) {
+  const dev = await device(browser, url, network);
   ctx.cleanups.push(() => dev.context.close());
   dev.name = name;
   await onboard(dev.page);
@@ -552,6 +552,14 @@ await scenario(13, 'files: images preview, exactly 8 MB arrives intact, 8 MB + 1
   await B.page.waitForSelector('.file-bubble:has-text("x.svg")', { timeout: 30000 });
   check((await B.page.locator('.file-bubble:has-text("x.svg") img').count()) === 0, 'SVG is not rendered as an image');
   check((await B.page.evaluate(() => window.__pwned)) === undefined, 'SVG script did not run');
+  // 2b. video gets a player, other files (a PDF here) get only a card with Save
+  await sendFile(A.page, { name: 'clip.mp4', mime: 'video/mp4', buffer: Buffer.alloc(20000, 3) });
+  await B.page.waitForSelector('.file-bubble:has-text("clip.mp4") video.file-video', { timeout: 30000 });
+  check((await B.page.locator('.file-bubble:has-text("clip.mp4") button[aria-label^="Save"]').count()) === 1, 'video also has Save');
+  await sendFile(A.page, { name: 'notes.pdf', mime: 'application/pdf', buffer: Buffer.alloc(2000, 5) });
+  await B.page.waitForSelector('.file-bubble:has-text("notes.pdf")', { timeout: 30000 });
+  check((await B.page.locator('.file-bubble:has-text("notes.pdf") video, .file-bubble:has-text("notes.pdf") img').count()) === 0, 'a PDF has no preview, only the card');
+  ctx.note('video has a player and Save; other files are a plain card');
   // 3. exactly 8 MB of random data
   const max = Buffer.alloc(8 * 1024 * 1024);
   for (let i = 0; i < max.length; i += 65536) globalThis.crypto.getRandomValues(max.subarray(i, i + 65536));
@@ -636,6 +644,73 @@ await scenario(14, 'group limit: 10 members is the maximum and the UI says so', 
   for (const o of others.slice(0, 2)) await o.page.waitForSelector('.chat-row:has-text("Full house")', { timeout: 90000 });
   const errs = [owner, ...others].flatMap((d) => d.errors);
   check(errs.length === 0, 'no page errors', errs);
+});
+
+/* 15 ----------------------------------------------------------------- */
+await scenario(15, 'app lock: passkey (virtual Windows Hello) gates the app; failed verification stays locked; Lock now; turning off needs a passkey', async (ctx) => {
+  const relay = await startRelay(false);
+  ctx.cleanups.push(relay.close);
+  // WebAuthn refuses IP addresses as the relying party, so use the host name `localhost` (the packaged app uses tauri.localhost).
+  const dev = await namedDevice(ctx, relayNet(relay.url), 'Lock', appUrl.replace('127.0.0.1', 'localhost'));
+  const page = dev.page;
+  const cdp = await dev.context.newCDPSession(page);
+  await cdp.send('WebAuthn.enable');
+  const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', {
+    options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true },
+  });
+  const setUv = (v) => cdp.send('WebAuthn.setUserVerified', { authenticatorId, isUserVerified: v });
+  const lockSwitch = () => page.locator('button[role="switch"][aria-label^="Lock PrivCord"]');
+  const openSecurity = async () => {
+    await page.click('button[aria-label="Settings"]');
+    await page.click('.tab:has-text("Security")');
+  };
+  check((await page.locator('.lock-screen').count()) === 0, 'not locked by default');
+  await openSecurity();
+  await lockSwitch().click();
+  await page.waitForFunction(() => document.querySelector('button[role="switch"][aria-label^="Lock PrivCord"]')?.getAttribute('aria-checked') === 'true');
+  await page.keyboard.press('Escape');
+  ctx.note('passkey created, lock turned on');
+  // Reload: the lock screen asks Windows Hello (the virtual authenticator verifies) and opens.
+  await page.reload();
+  await page.waitForSelector('.chat-panel, .sidebar', { timeout: 20000 });
+  await page.waitForSelector('.lock-screen', { state: 'detached', timeout: 20000 });
+  ctx.note('after a restart the passkey prompt passed and the app opened');
+  // User verification fails (wrong face/PIN): stays locked.
+  await setUv(false);
+  await page.reload();
+  await page.waitForSelector('.lock-screen', { timeout: 20000 });
+  await sleep(2500);
+  check((await page.locator('.lock-screen').count()) === 1, 'still locked when the passkey is not verified');
+  check((await page.locator('.lock-screen .status-text').count()) === 1, 'the lock screen says it did not work');
+  ctx.note('unverified passkey: app stays locked');
+  await setUv(true);
+  await page.click('.lock-screen button:has-text("Unlock")');
+  await page.waitForSelector('.lock-screen', { state: 'detached', timeout: 20000 });
+  // Lock now.
+  await setUv(false);
+  await openSecurity();
+  await page.click('button:has-text("Lock now")');
+  await page.waitForSelector('.lock-screen', { timeout: 10000 });
+  await setUv(true);
+  await page.click('.lock-screen button:has-text("Unlock")');
+  await page.waitForSelector('.lock-screen', { state: 'detached', timeout: 20000 });
+  await page.keyboard.press('Escape');
+  ctx.note('Lock now locks; the passkey unlocks');
+  // Turning the lock off needs the passkey; with a failed verification it stays on.
+  await openSecurity();
+  await setUv(false);
+  await lockSwitch().click();
+  await page.waitForSelector('.status-text.error', { timeout: 20000 });
+  check((await lockSwitch().getAttribute('aria-checked')) === 'true', 'cannot turn the lock off without the passkey');
+  await setUv(true);
+  await lockSwitch().click();
+  await page.waitForFunction(() => document.querySelector('button[role="switch"][aria-label^="Lock PrivCord"]')?.getAttribute('aria-checked') === 'false', null, { timeout: 20000 });
+  await page.keyboard.press('Escape');
+  await page.reload();
+  await page.waitForSelector('.sidebar', { timeout: 20000 });
+  check((await page.locator('.lock-screen').count()) === 0, 'no lock after turning it off');
+  ctx.note('turning the lock off needs the passkey, then the app opens freely');
+  check(dev.errors.length === 0, 'no page errors', dev.errors);
 });
 
 console.log('\n=== SUMMARY ===');

@@ -4,6 +4,7 @@ import com.duochat.app.ble.BleTransport
 import com.duochat.app.ble.SecureBleLink
 import com.duochat.app.data.AUTH_TIMEOUT_MS
 import com.duochat.app.data.ChatMessage
+import com.duochat.app.data.ReplyRef
 import com.duochat.app.data.ConnectionPath
 import com.duochat.app.data.DeliveryState
 import com.duochat.app.data.MAX_TEXT_LENGTH
@@ -105,6 +106,9 @@ class PeerSession(
     val hasPendingConnection: Boolean
         get() = transport is WebRtcTransport
 
+    val isWebRtc: Boolean
+        get() = transport is WebRtcTransport
+
     val isBluetooth: Boolean
         get() = transport is SecureBleLink
 
@@ -131,6 +135,9 @@ class PeerSession(
     }
 
     fun sendJson(value: JSONObject): Boolean = transport?.sendJson(value.toString()) == true
+
+    /** See [LinkTransport.awaitWritable]. */
+    suspend fun awaitWritable(): Boolean = transport?.awaitWritable() ?: false
 
     fun close() {
         cancelTimer()
@@ -325,7 +332,9 @@ class PeerSession(
             "ack" -> if (auth.authenticated) handleAck(frame)
             "read" -> if (auth.authenticated) handleRead(frame)
             "message" -> if (auth.authenticated) handlePeerMessage(frame)
-            "gmsg", "group_push", "group_events", "group_have", "relay_blob" -> if (isReady) listener.onFrame(frame)
+            "gmsg", "group_push", "group_events", "group_have", "relay_blob",
+            "declined", "file_offer", "file_chunk", "privacy",
+            -> if (isReady) listener.onFrame(frame)
         }
     }
 
@@ -497,6 +506,7 @@ class PeerSession(
         if (senderId != auth.hello?.uid) return
         if (text.trim().isEmpty() || countCodePoints(text) > MAX_TEXT_LENGTH) return
         if (clientCreatedAt <= 0) return
+        val replyTo = if (frame.has("replyTo")) ReplyRef.fromJson(frame.opt("replyTo")) ?: return else null
         listener.onPeerMessage(
             ChatMessage(
                 messageId = messageId,
@@ -507,6 +517,7 @@ class PeerSession(
                 transport = TransportKind.P2P,
                 deliveryState = DeliveryState.DELIVERED,
                 readAt = null,
+                replyTo = replyTo,
             ),
         )
     }

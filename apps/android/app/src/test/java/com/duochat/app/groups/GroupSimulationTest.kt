@@ -103,8 +103,8 @@ class GroupSimulationTest {
     }
 
     @Test
-    fun `25 members each added by their neighbour all converge and connect to each other`() {
-        val n = 25
+    fun `10 members (the limit) each added by their neighbour all converge and connect to each other`() {
+        val n = 10
         val (net, nodes) = chain(n, "P")
         val first = nodes[0].coord.createGroup("Everyone", listOf(nodes[1].p.card))
         net.run(nodes[0], first.result)
@@ -124,7 +124,7 @@ class GroupSimulationTest {
 
     @Test
     fun `growth survives members dropping offline and converges after they return`() {
-        val n = 12
+        val n = 10
         val (net, nodes) = chain(n, "Q")
         val first = nodes[0].coord.createGroup("Flaky", listOf(nodes[1].p.card))
         net.run(nodes[0], first.result)
@@ -153,5 +153,27 @@ class GroupSimulationTest {
         val left = coordB.leave(g.groupId)
         assertEquals(listOf(g.groupId), left.left)
         assertNull(coordB.myGroups().firstOrNull())
+    }
+
+    @Test
+    fun `the 11th member is refused when authoring and a group of 11 cannot be created`() {
+        val people = List(12) { TestPerson.numbered(it + 60, "L$it") }
+        val net = SimNet()
+        val nodes = people.map { net.add(SimNode(it)) }
+        for (i in 1 until 12) { nodes[0].pin(people[i]); nodes[i].pin(people[0]) }
+        net.reconcile()
+        val created = nodes[0].coord.createGroup("Full", people.subList(1, 10).map { it.card })
+        net.run(nodes[0], created.result)
+        assertEquals(10, nodes[0].coord.state(created.groupId)!!.members.size)
+        val refused = runCatching { nodes[0].coord.addMember(created.groupId, people[10].card) }.exceptionOrNull()
+        assertTrue(refused is GroupException && refused.message!!.contains("full"))
+        // An 11th add authored elsewhere (a modified client) is dropped by every replica's fold.
+        val log = GroupLog.fromJson(created.groupId, nodes[0].coord.export()[created.groupId]!!)
+        val extra = GroupEvents.sign(created.groupId, "add", people[1].uid, 1L, log.heads(), people[10].uid, people[10].card, null, people[1].signer)
+        log.add(extra)
+        assertEquals(10, log.state()!!.members.size)
+        assertFalse(log.state()!!.members.containsKey(people[10].uid))
+        val tooBig = runCatching { SimNode(people[0]).coord.createGroup("Too big", people.subList(1, 12).map { it.card }) }.exceptionOrNull()
+        assertTrue(tooBig is GroupException && tooBig.message!!.contains("at most 10"))
     }
 }

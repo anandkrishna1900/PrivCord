@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { formatBytes, isInlineImage, type DeliveryState } from '@duochat/protocol';
+import { formatBytes, isInlineImage, isInlineVideo, type DeliveryState } from '@duochat/protocol';
 import type { FileMeta } from '../lib/localDb';
 import type { UiMessage } from '../lib/engine';
 import { formatDay, formatTime } from '../lib/format';
@@ -23,7 +23,9 @@ function FileBubble({ message, loadFile }: { message: UiMessage; loadFile: LoadF
   const meta = message.file;
   const [url, setUrl] = useState<string | null>(null);
   const [missing, setMissing] = useState(false);
-  const preview = !!meta && isInlineImage(meta.mime);
+  const isImage = !!meta && isInlineImage(meta.mime);
+  const isVideo = !!meta && isInlineVideo(meta.mime);
+  const preview = isImage || isVideo;
 
   useEffect(() => {
     if (!preview) return;
@@ -64,7 +66,8 @@ function FileBubble({ message, loadFile }: { message: UiMessage; loadFile: LoadF
   if (!meta) return <p className="bubble-text">{message.text}</p>;
   return (
     <div className="file-bubble">
-      {preview && url ? <img className="file-image" src={url} alt={meta.name} /> : null}
+      {isImage && url ? <img className="file-image" src={url} alt={meta.name} /> : null}
+      {isVideo && url ? <video className="file-video" src={url} controls preload="metadata" playsInline /> : null}
       <div className="file-card">
         <span className="file-icon" aria-hidden="true">
           <FileIcon size={22} />
@@ -246,6 +249,11 @@ export function MessageList({
                 <div
                   className={`bubble ${own ? 'own' : 'theirs'}`}
                   title={new Date(message.clientCreatedAt).toISOString()}
+                  onContextMenu={(event) => {
+                    // Right-click replies (the touch-screen equivalent of press and hold).
+                    event.preventDefault();
+                    onReply(message);
+                  }}
                 >
                   {!own && isGroup && !grouped ? (
                     <span className="bubble-sender">{message.senderName}</span>

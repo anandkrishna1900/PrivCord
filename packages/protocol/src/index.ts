@@ -17,6 +17,7 @@ export * from './connectivity/secureChannel';
 
 export * from './connectivity/mesh';
 export * from './files';
+export * from './privacy';
 export * from './e2ee/groupCrypto';
 export * from './groups/events';
 export * from './groups/log';

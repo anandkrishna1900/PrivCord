@@ -75,7 +75,7 @@ Existing direct-chat frames (`message`, `ack`, `read`, `ping`, `pong`) are uncha
 Files: sent to each recipient over the already-authenticated WebRTC link (not Bluetooth, not the relay),
 paused while the channel's send buffer is full. The receiver checks size, order and SHA-256 and then
 sends the normal `ack`. At most 2 incoming transfers per peer; a stalled one is dropped after 30 s.
-Names are sanitised, MIME types are validated, and only PNG/JPEG/GIF/WebP are previewed. Acks work for
+Names are sanitised, MIME types are validated, and only PNG/JPEG/GIF/WebP images and MP4/WebM/QuickTime/Ogg videos are previewed. Acks work for
 group messages too (`messageId` is globally unique).
 
 ## 4. What every engine must do

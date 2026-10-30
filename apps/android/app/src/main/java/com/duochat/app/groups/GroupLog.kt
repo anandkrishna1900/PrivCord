@@ -1,5 +1,6 @@
 package com.duochat.app.groups
 
+import com.duochat.app.data.MAX_GROUP_MEMBERS
 import com.duochat.app.security.ContactCard
 import org.json.JSONObject
 
@@ -145,6 +146,8 @@ class GroupLog(val groupId: String) {
                 "add" -> {
                     val target = e.target!!
                     if (!cardOk(e.cardJson, target)) continue
+                    // Hard size limit. The fold order is deterministic, so every replica drops the same overflow adds.
+                    if (!state.members.containsKey(target) && state.members.size >= MAX_GROUP_MEMBERS) continue
                     if (!state.members.containsKey(target)) {
                         val card = GroupEvents.cardFromJson(e.cardJson) ?: continue
                         state.members[target] = GroupMemberInfo(target, card, "member", e.actor)

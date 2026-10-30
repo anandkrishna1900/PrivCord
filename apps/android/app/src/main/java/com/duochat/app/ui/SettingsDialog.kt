@@ -468,6 +468,41 @@ SectionTitle("Appearance")
                 Spacer(Modifier.height(14.dp))
 
 SectionTitle("Security")
+                val appContext = LocalContext.current
+                val lockAvailable = remember { com.duochat.app.security.AppLock.available(appContext) }
+                ToggleRow(
+                    title = "Lock with fingerprint, face or screen lock",
+                    description = if (lockAvailable) {
+                        "Ask for it every time PrivCord opens, and again after it has been out of sight for 30 seconds. It keeps other people who pick up your phone out; it does not replace the encryption of your chats."
+                    } else {
+                        "Not available: set a screen lock (PIN, pattern or password) or a fingerprint in your phone's settings first."
+                    },
+                    checked = settings.appLock && lockAvailable,
+                    enabled = lockAvailable,
+                    onChange = { value ->
+                        if (value) {
+                            onUpdateSettings { copy(appLock = true) }
+                        } else {
+                            // Turning it off needs the same proof as opening the app.
+                            val activity = appContext as? androidx.fragment.app.FragmentActivity
+                            if (activity == null) {
+                                onUpdateSettings { copy(appLock = false) }
+                            } else {
+                                com.duochat.app.security.AppLock.prompt(activity, "Turn off app lock") { ok, _ ->
+                                    if (ok) onUpdateSettings { copy(appLock = false) }
+                                }
+                            }
+                        }
+                    },
+                )
+                Spacer(Modifier.height(10.dp))
+                ToggleRow(
+                    title = "Stay group-only with people I meet in groups",
+                    description = "You still read and reply in the groups you share, but nobody you only know through a group can message you directly, and you cannot message them, unless you swap invites yourselves.",
+                    checked = settings.groupOnly,
+                    onChange = { value -> onUpdateSettings { copy(groupOnly = value) } },
+                )
+                Spacer(Modifier.height(10.dp))
                 Text(
                     "Messages are encrypted on this phone with a key in the Android Keystore and travel straight between " +
                         "phones; no server can read or keep them. Deleting here never touches your friends' phones.",

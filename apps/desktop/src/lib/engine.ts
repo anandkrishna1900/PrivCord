@@ -1,5 +1,7 @@
 import {
   FileAssembler,
+  acceptsDirect as acceptsDirectFrom,
+  canStartDirect,
   GroupCoordinator,
   MAX_FILE_BYTES,
   MAX_GROUP_MEMBERS,
@@ -537,14 +539,13 @@ export class ChatEngine {
   private canDirect(uid: string): boolean {
     const rec = this.contacts.get(uid);
     if (!rec) return false;
-    if (rec.trust === 'verified') return true;
-    return !this.groupOnly && this.peerGroupOnly.get(uid) !== true;
+    return canStartDirect(rec.trust, this.groupOnly, this.peerGroupOnly.get(uid));
   }
 
   /** Do we accept a direct message from them? Their setting does not matter here, ours does. */
   private acceptsDirect(uid: string): boolean {
     const rec = this.contacts.get(uid);
-    return !!rec && (rec.trust === 'verified' || !this.groupOnly);
+    return !!rec && acceptsDirectFrom(rec.trust, this.groupOnly);
   }
 
   /** Turn our group-only privacy setting on or off and tell everyone we are connected to. */

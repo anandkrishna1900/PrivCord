@@ -13,8 +13,10 @@ Bluetooth.
 - **Add a friend in seconds.** Show your invite (QR or text), scan or paste theirs. That is the whole setup.
 - **Chat one-to-one** with end-to-end encryption. Messages go straight from device to device.
 - **Reply** to any message. The quote shows for everyone, in chats and groups.
-- **Send files up to 8 MB** (photos show inline). They go straight to the other device, free, with no
-  upload to anyone's server.
+- **Send files up to 8 MB.** Photos and videos show a preview you can open; every file can be saved.
+  They go straight to the other device, free, with no upload to anyone's server.
+- **Lock the app.** Android asks for your fingerprint, face or screen lock; Windows asks for Windows Hello
+  (a passkey). Turn it on or off in Settings > Security.
 - **Make groups of up to 10.** Create a group, add friends, and anyone in the group can add more people.
   If you add Ben and Ben adds Cat, you and Cat connect automatically. No codes to swap.
 - **Stay private in groups.** Turn on *Stay group-only* (Settings > Security) and people you only meet
@@ -98,6 +100,7 @@ the Tauri build (`npm run tauri:dev`, needs Rust) for the real thing. Run your o
 | Bluetooth | Link encryption and framing in code and on a simulated radio | **Any real Bluetooth radio**. Windows can only search, so a phone must be the other side |
 | Android app | Compiles, unit tests, debug APK builds | The new engine and screens on a device or emulator; release build |
 | Windows installer | Built by CI | Run on a clean machine; signing |
+| App lock | Desktop: passkey create/verify/refuse flow against a virtual authenticator in a real browser. Android: the lock rules (unit tests) | **Real Windows Hello and real Android biometric prompts** |
 | Relay | Automated tests | Docker image, production TLS |
 
 Not available: push notifications, files over Bluetooth, and a multi-hop Bluetooth mesh

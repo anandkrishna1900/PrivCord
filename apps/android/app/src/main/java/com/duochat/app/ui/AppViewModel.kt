@@ -32,7 +32,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val database by lazy {
         Room.databaseBuilder(application, DuoDatabase::class.java, "duochat.db")
             .addMigrations(
-                DuoDatabase.MIGRATION_1_2, DuoDatabase.MIGRATION_2_3, DuoDatabase.MIGRATION_3_4, DuoDatabase.MIGRATION_4_5,
+                DuoDatabase.MIGRATION_1_2, DuoDatabase.MIGRATION_2_3, DuoDatabase.MIGRATION_3_4, DuoDatabase.MIGRATION_4_5, DuoDatabase.MIGRATION_5_6,
             )
             .build()
     }
@@ -90,7 +90,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         stopEngine()
         val application = getApplication<Application>()
         val crypto = LocalCrypto(application, LOCAL_ID)
-        val store = MessageStore(database.dao(), crypto)
+        val store = MessageStore(database.dao(), crypto, java.io.File(application.filesDir, "privcord-files"))
         val created = ChatEngine(
             scope = viewModelScope,
             handshakeId = AppConfig.conversationId,
@@ -102,6 +102,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             isMuted = { id -> id in settingsRepository.settings.value.mutedChats },
             ble = com.duochat.app.ble.AndroidBleEnvironment(application),
             onNotify = { notice -> DuoNotifications.showNotice(application, notice, settingsRepository.settings.value) },
+            initialGroupOnly = settingsRepository.settings.value.groupOnly,
         )
         engine = created
         if (visible) created.setVisible(true)
@@ -130,12 +131,39 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         engine?.setOpenChat(conversationId)
     }
 
+    private val _locked = MutableStateFlow(false)
+
+    /** True while the app lock covers the app. */
+    val locked: StateFlow<Boolean> = _locked.asStateFlow()
+    private var leftAt = 0L
+
+    /** The screen left the foreground. */
+    fun onLeft() {
+        leftAt = System.currentTimeMillis()
+    }
+
+    /** The screen came (back) to the foreground: lock if the lock is on and the app was away long enough. */
+    fun onEntered() {
+        val lock = com.duochat.app.security.AppLock.shouldLock(
+            enabled = settingsRepository.settings.value.appLock,
+            available = com.duochat.app.security.AppLock.available(getApplication()),
+            leftAt = leftAt,
+            now = System.currentTimeMillis(),
+        )
+        if (lock) _locked.value = true
+    }
+
+    fun unlock() {
+        _locked.value = false
+    }
+
     fun updateSettings(patch: AppSettings.() -> AppSettings) {
         val before = settingsRepository.settings.value
         settingsRepository.update(patch)
         val after = settingsRepository.settings.value
         if (after.network != before.network) engine?.reloadNetwork()
         if (after.displayName != before.displayName) engine?.onOwnNameChanged()
+        if (after.groupOnly != before.groupOnly) engine?.setGroupOnly(after.groupOnly)
     }
 
     fun toggleMute(conversationId: String) {
@@ -182,8 +210,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun renameGroup(groupId: String, name: String, onResult: (Result<Unit>) -> Unit) =
         withEngine(onResult) { it.renameGroup(groupId, name) }
 
-    fun send(conversationId: String, text: String, onResult: (Result<Unit>) -> Unit) =
-        withEngine(onResult) { it.send(conversationId, text) }
+    fun send(conversationId: String, text: String, replyToId: String?, onResult: (Result<Unit>) -> Unit) =
+        withEngine(onResult) { it.send(conversationId, text, replyToId) }
+
+    fun sendFile(conversationId: String, name: String, mime: String, bytes: ByteArray, replyToId: String?, onResult: (Result<Unit>) -> Unit) =
+        withEngine(onResult) { it.sendFile(conversationId, name, mime, bytes, replyToId) }
+
+    suspend fun getFile(messageId: String) = engine?.getFile(messageId)
 
     fun retry(messageId: String) {
         viewModelScope.launch { engine?.retry(messageId) }

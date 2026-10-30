@@ -48,6 +48,13 @@ export function isInlineImage(mime: string): boolean {
   return INLINE_IMAGE.has(mime.toLowerCase());
 }
 
+/** Video types that play inline. Decoding is done by the system's own media stack. */
+const INLINE_VIDEO = new Set(['video/mp4', 'video/webm', 'video/quicktime', 'video/ogg']);
+
+export function isInlineVideo(mime: string): boolean {
+  return INLINE_VIDEO.has(mime.toLowerCase());
+}
+
 /** A file name that is safe to show and to save under: no path, no control characters, bounded length. */
 export function sanitizeFileName(raw: string): string {
   // eslint-disable-next-line no-control-regex
