@@ -698,7 +698,22 @@ private fun Composer(
                     modifier = Modifier.padding(bottom = 6.dp),
                 )
             }
+            val fileLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.GetContent(),
+            ) { uri ->
+                if (uri != null) {
+                    onSend("[Attachment: " + (uri.lastPathSegment ?: "file") + "]") {}
+                }
+            }
             Row(verticalAlignment = Alignment.Bottom) {
+                IconButton(
+                    onClick = { fileLauncher.launch("*/*") },
+                    enabled = enabled,
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    Text("📎", style = MaterialTheme.typography.titleMedium)
+                }
+                Spacer(Modifier.width(4.dp))
                 OutlinedTextField(
                     value = text,
                     onValueChange = {
