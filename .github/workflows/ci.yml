@@ -20,12 +20,16 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # The desktop signaling test runs against the real relay, so its dependencies come first.
+      - name: Relay dependencies
+        working-directory: relay
+        run: npm ci
       - run: npm run typecheck
       - run: npm test
       - run: npm run build:desktop
       - name: Relay tests
         working-directory: relay
-        run: npm ci && npm test
+        run: npm test
       - run: npm audit --omit=dev --audit-level=high
 
   e2e:
@@ -55,7 +59,16 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      - uses: android-actions/setup-android@v3
+      # The Android interop tests start the real relay and a Nostr relay with node.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Relay dependencies
+        working-directory: relay
+        run: npm ci
+      # The runner image already ships the Android SDK; just accept its licenses so Gradle can fetch platform 35.
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager --licenses > /dev/null || true
       - uses: gradle/actions/setup-gradle@v4
       - name: Test and assemble
         working-directory: apps/android
