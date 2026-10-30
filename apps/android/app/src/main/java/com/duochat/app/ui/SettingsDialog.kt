@@ -56,6 +56,7 @@ import com.duochat.app.data.ACCENTS
 import com.duochat.app.data.AppSettings
 import com.duochat.app.data.ChatState
 import com.duochat.app.data.NetworkConfig
+import com.duochat.app.data.SignalingConfig
 import com.duochat.app.data.TurnServer
 import com.duochat.app.data.PeerTrust
 import com.duochat.app.data.presentConnection
@@ -82,6 +83,14 @@ fun SettingsDialog(
     var turnUser by remember { mutableStateOf(firstTurn?.username.orEmpty()) }
     var turnSecret by remember { mutableStateOf(firstTurn?.credential.orEmpty()) }
     var networkStatus by remember { mutableStateOf<String?>(null) }
+    var nostrText by remember {
+        mutableStateOf(
+            settings.network.signaling.filterIsInstance<SignalingConfig.Nostr>().flatMap { it.relays }.joinToString("\n"),
+        )
+    }
+    var relayText by remember {
+        mutableStateOf(settings.network.signaling.filterIsInstance<SignalingConfig.Relay>().joinToString("\n") { it.url })
+    }
     var clearConfirm by remember { mutableStateOf(false) }
     var clearStatus by remember { mutableStateOf<String?>(null) }
     var clearing by remember { mutableStateOf(false) }
@@ -389,12 +398,35 @@ fun SettingsDialog(
                 HorizontalDivider()
                 Spacer(Modifier.height(14.dp))
 
-                SectionTitle("Network (STUN / TURN)")
+                SectionTitle("Network")
                 Text(
                     "STUN only tells your device its public address; no messages pass through " +
                         "it. TURN relays your already end-to-end encrypted connection when no " +
                         "direct path exists (strict NAT or firewalls). Both are optional. " +
                         "Changes apply to the next connection.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = nostrText,
+                    onValueChange = { nostrText = it },
+                    label = { Text("Signaling: Nostr relays (finds your friend; one per line)") },
+                    minLines = 2,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = relayText,
+                    onValueChange = { relayText = it },
+                    label = { Text("Signaling: your own DuoChat relay (one per line)") },
+                    minLines = 1,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "Signaling status: ${state.signaling.name.lowercase()}. Leave both empty to use connection codes only. " +
+                        "Use wss:// addresses (Android blocks plain ws://). Signaling only carries sealed, signed " +
+                        "connection setup, never messages.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -435,13 +467,29 @@ fun SettingsDialog(
                     "Only use TURN. Hides your IP address from your friend; needs a TURN server.",
                     settings.network.forceRelay,
                 ) { onUpdateSettings { copy(network = network.copy(forceRelay = it)) } }
+                ToggleRow(
+                    "Store-and-forward (messages while your friend is offline)",
+                    "Sends each message, encrypted for your friend, to the relays above so it arrives when they come " +
+                        "online. Off by default. These messages have no forward secrecy.",
+                    settings.network.storeForward,
+                ) { onUpdateSettings { copy(network = network.copy(storeForward = it)) } }
+                ToggleRow(
+                    "Bluetooth (works with no internet)",
+                    "Also look for your friend over Bluetooth LE when you are close by. Experimental and untested on devices.",
+                    settings.network.bluetooth,
+                ) { onUpdateSettings { copy(network = network.copy(bluetooth = it)) } }
                 Spacer(Modifier.height(4.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = {
                             val urls = NetworkConfig.parseTurnUrls(turnUrls)
                             val hasTurnInput = turnUrls.isNotBlank() || turnUser.isNotBlank() || turnSecret.isNotBlank()
-                            if (hasTurnInput && (urls.isEmpty() || turnUser.isBlank() || turnSecret.isBlank())) {
+                            val nostrLines = nostrText.split('\n', ',', ' ').map { it.trim() }.filter { it.isNotEmpty() }
+                            val relayLines = relayText.split('\n', ',', ' ').map { it.trim() }.filter { it.isNotEmpty() }
+                            val badWs = (nostrLines + relayLines).firstOrNull { !NetworkConfig.isWsUrl(it) }
+                            if (badWs != null) {
+                                networkStatus = "Not a ws:// or wss:// address: $badWs"
+                            } else if (hasTurnInput && (urls.isEmpty() || turnUser.isBlank() || turnSecret.isBlank())) {
                                 networkStatus = "TURN needs at least one turn:/turns: URL, a username and a credential."
                             } else {
                                 val turn = if (urls.isEmpty()) {
@@ -454,6 +502,10 @@ fun SettingsDialog(
                                         network = network.copy(
                                             stun = NetworkConfig.parseStunList(stunText),
                                             turn = turn,
+                                            signaling = buildList {
+                                                if (nostrLines.isNotEmpty()) add(SignalingConfig.Nostr(nostrLines))
+                                                relayLines.forEach { add(SignalingConfig.Relay(it)) }
+                                            },
                                         ),
                                     )
                                 }
@@ -468,6 +520,8 @@ fun SettingsDialog(
                             val defaults = AppConfig.defaultNetworkConfig()
                             onUpdateSettings { copy(network = defaults) }
                             stunText = defaults.stun.joinToString("\n")
+                            nostrText = defaults.signaling.filterIsInstance<SignalingConfig.Nostr>().flatMap { it.relays }.joinToString("\n")
+                            relayText = ""
                             turnUrls = defaults.turn.firstOrNull()?.urls?.joinToString("\n").orEmpty()
                             turnUser = defaults.turn.firstOrNull()?.username.orEmpty()
                             turnSecret = defaults.turn.firstOrNull()?.credential.orEmpty()

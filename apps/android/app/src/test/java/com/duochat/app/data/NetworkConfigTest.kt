@@ -26,10 +26,33 @@ class NetworkConfigTest {
     @Test
     fun `invalid urls and incomplete turn entries are dropped`() {
         val parsed = NetworkConfig.fromJson(
-            """{"stun":["stun:ok:1","http://bad"],"turn":[{"urls":["turn:a:1"],"username":"","credential":"x"}]}""",
+            """{"stun":["stun:ok:1","http://bad"],"turn":[{"urls":["turn:a:1"],"credential":"x"}]}""",
         )
         assertEquals(listOf("stun:ok:1"), parsed.stun)
         assertTrue(parsed.turn.isEmpty())
+    }
+
+    @Test
+    fun `matches the TypeScript parser on shared vectors`() {
+        val cases = com.duochat.app.security.Vectors.all.getJSONArray("network")
+        assertTrue(cases.length() >= 6)
+        for (i in 0 until cases.length()) {
+            val c = cases.getJSONObject(i)
+            val raw = if (c.isNull("raw")) null else c.getString("raw")
+            assertEquals(
+                "case $i: $raw",
+                com.duochat.app.security.CanonicalJson.of(c.getJSONObject("expected")),
+                com.duochat.app.security.CanonicalJson.of(org.json.JSONObject(NetworkConfig.fromJson(raw).toJson())),
+            )
+        }
+    }
+
+    @Test
+    fun `websocket urls are validated`() {
+        assertTrue(NetworkConfig.isWsUrl("wss://relay.example"))
+        assertTrue(NetworkConfig.isWsUrl("ws://127.0.0.1:8787"))
+        assertEquals(false, NetworkConfig.isWsUrl("https://not-ws"))
+        assertEquals(false, NetworkConfig.isWsUrl("x"))
     }
 
     @Test

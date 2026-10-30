@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Send
@@ -106,6 +107,10 @@ fun ChatScreen(
     onRetry: (String) -> Unit,
     onClearNotice: () -> Unit,
     onConfirmPeer: () -> Unit,
+    onOwnCard: () -> String,
+    onPreviewContact: (String) -> Result<Unit>,
+    onConfirmContact: () -> Unit,
+    onCancelContact: () -> Unit,
     onCancelManual: () -> Unit,
     onResetPairing: () -> Unit,
     onClearLocalData: ((Result<Unit>) -> Unit) -> Unit,
@@ -120,6 +125,7 @@ fun ChatScreen(
 ) {
     var settingsOpen by remember { mutableStateOf(false) }
     var manualOpen by remember { mutableStateOf(false) }
+    var contactOpen by remember { mutableStateOf(false) }
     var nukeOpen by remember { mutableStateOf(false) }
     var clearChatOpen by remember { mutableStateOf(false) }
 
@@ -173,8 +179,11 @@ fun ChatScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { contactOpen = true }) {
+                        Icon(Icons.Filled.PersonAdd, contentDescription = "Add your friend")
+                    }
                     IconButton(onClick = { manualOpen = true }) {
-                        Icon(Icons.Filled.Key, contentDescription = "Connect to your friend")
+                        Icon(Icons.Filled.Key, contentDescription = "Connect with a code")
                     }
                     IconButton(onClick = { settingsOpen = true }) {
                         Icon(Icons.Filled.Settings, contentDescription = "Settings")
@@ -259,6 +268,17 @@ fun ChatScreen(
                 settingsOpen = false
                 nukeOpen = true
             },
+        )
+    }
+
+    if (contactOpen) {
+        ContactDialog(
+            state = state,
+            ownCard = onOwnCard,
+            onPreview = onPreviewContact,
+            onConfirm = onConfirmContact,
+            onCancel = onCancelContact,
+            onDismiss = { contactOpen = false },
         )
     }
 

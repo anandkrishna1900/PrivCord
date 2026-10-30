@@ -5,7 +5,7 @@ debug APK builds, and the JVM unit tests pass (see "Verification").
 
 ## What exists
 
-* **No Firebase, no accounts.** `grep -ri firebase apps/android` returns nothing.
+* **No the old cloud backend, no accounts.** `grep -ri cloud apps/android` returns nothing.
 * **Mandatory 12-word recovery identity** (`security/Bip39.kt`, `RecoveryIdentity.kt`). First run shows the
   phrase, makes you re-enter two words, and only then creates the identity (`ui/Onboarding.kt`, no skip).
   "I already have a phrase" restores one. The same phrase gives the **same keys and uid as the TypeScript

@@ -1,3 +1,4 @@
+import java.util.Base64
 import java.util.Properties
 
 plugins {
@@ -16,6 +17,17 @@ val localProperties = Properties().apply {
 
 fun setting(name: String, fallback: String = ""): String =
     (localProperties.getProperty(name) ?: System.getenv(name) ?: fallback).trim()
+
+// Release signing comes only from the environment (CI secrets or your shell); nothing is committed.
+// Without it, `assembleRelease` produces an UNSIGNED apk that must not be distributed.
+val releaseKeystore: File? =
+    System.getenv("DUOCHAT_KEYSTORE_PATH")?.let { file(it) }
+        ?: System.getenv("DUOCHAT_KEYSTORE_B64")?.takeIf { it.isNotBlank() }?.let { encoded ->
+            layout.buildDirectory.file("release.keystore").get().asFile.also {
+                it.parentFile.mkdirs()
+                it.writeBytes(Base64.getMimeDecoder().decode(encoded))
+            }
+        }
 
 fun com.android.build.api.dsl.ApplicationDefaultConfig.buildConfigString(name: String, value: String) {
     val escaped = value.replace("\\", "\\\\").replace("\"", "\\\"")
@@ -39,11 +51,24 @@ android {
         buildConfigString("TURN_CREDENTIAL", setting("turn.credential"))
     }
 
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = releaseKeystore
+                storePassword = System.getenv("DUOCHAT_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("DUOCHAT_KEY_ALIAS")
+                keyPassword = System.getenv("DUOCHAT_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = false
         }
         release {
+            signingConfig = signingConfigs.findByName("release")
+            // Minification is off on purpose: it has not been tested on a device (WebRTC, Room, reflection).
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -96,6 +121,8 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    // WebSocket client for the signaling relay and Nostr relays.
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")

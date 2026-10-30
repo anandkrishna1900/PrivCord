@@ -15,6 +15,9 @@ import com.duochat.app.notifications.DuoNotifications
 import com.duochat.app.security.AndroidIdentityManager
 import com.duochat.app.security.LOCAL_ID
 import com.duochat.app.security.LocalCrypto
+import android.net.ConnectivityManager
+import android.net.Network
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -52,8 +55,44 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private var stateJob: Job? = null
     private var visible = false
 
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            // A new network is a reason to retry signaling now instead of waiting out the backoff.
+            viewModelScope.launch { engine?.onNetworkAvailable() }
+        }
+    }
+
     init {
         startEngine()
+        runCatching {
+            application.getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(networkCallback)
+        }
+    }
+
+    /** First run / restore: derive the identity from the 12-word phrase, then start the engine. */
+    fun createIdentity(phrase: String, passphrase: String, onResult: (Result<Unit>) -> Unit) {
+        viewModelScope.launch {
+            val result = runCatching {
+                kotlinx.coroutines.withContext(Dispatchers.Default) { identityManager.createFromPhrase(phrase, passphrase) }
+                Unit
+            }
+            onResult(result)
+            if (result.isSuccess) startEngine()
+        }
+    }
+
+    fun ownCard(): String = engine?.ownCard(settingsRepository.settings.value.peerNickname.ifBlank { null }) ?: ""
+
+    fun previewContact(text: String): Result<Unit> = runCatching {
+        (engine ?: throw IllegalStateException("Chat is not ready.")).previewContact(text)
+    }
+
+    fun confirmContact() {
+        engine?.confirmContact()
+    }
+
+    fun cancelContact() {
+        engine?.cancelContact()
     }
 
     /** (Re)starts the chat engine. Also used by the "Try again" button. */
@@ -103,7 +142,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun updateSettings(patch: AppSettings.() -> AppSettings) {
+        val before = settingsRepository.settings.value.network
         settingsRepository.update(patch)
+        if (settingsRepository.settings.value.network != before) engine?.reloadNetwork()
     }
 
     fun send(text: String, onResult: (Result<Unit>) -> Unit) {
@@ -251,6 +292,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
+        runCatching {
+            getApplication<Application>().getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(networkCallback)
+        }
         stopEngine()
         super.onCleared()
     }

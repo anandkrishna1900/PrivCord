@@ -23,6 +23,7 @@ import com.duochat.app.ui.ChatScreen
 import com.duochat.app.ui.DuoChatTheme
 import com.duochat.app.ui.FatalScreen
 import com.duochat.app.ui.LoadingScreen
+import com.duochat.app.ui.OnboardingScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -68,6 +69,8 @@ private fun RootScreen(viewModel: AppViewModel) {
         state == null || state.phase == EnginePhase.STOPPED ||
             state.phase == EnginePhase.STARTING -> LoadingScreen("Opening your encrypted local conversation…")
 
+        state.phase == EnginePhase.NEEDS_IDENTITY -> OnboardingScreen(onCreate = viewModel::createIdentity)
+
         state.phase == EnginePhase.ERROR -> FatalScreen(
             message = state.error ?: "The chat engine could not start.",
             onRetry = viewModel::startEngine,
@@ -80,6 +83,10 @@ private fun RootScreen(viewModel: AppViewModel) {
             onRetry = viewModel::retry,
             onClearNotice = viewModel::clearNotice,
             onConfirmPeer = viewModel::confirmPeer,
+            onOwnCard = viewModel::ownCard,
+            onPreviewContact = viewModel::previewContact,
+            onConfirmContact = viewModel::confirmContact,
+            onCancelContact = viewModel::cancelContact,
             onCancelManual = viewModel::cancelManual,
             onResetPairing = viewModel::resetPairing,
             onClearLocalData = viewModel::clearLocalData,

@@ -35,7 +35,7 @@ class PeerSession(
     private val identityManager: AndroidIdentityManager,
     private val identity: () -> DeviceIdentity?,
     private val pinned: () -> PinnedPeer?,
-    private val pinPeer: (uid: String, deviceId: String, key: PublicJwk) -> Unit,
+    private val pinPeer: (uid: String, deviceId: String, key: PublicJwk, dh: PublicJwk) -> Unit,
     private val iceServers: () -> List<PeerConnection.IceServer>,
     private val forceRelay: () -> Boolean,
     private val listener: Listener,
@@ -61,6 +61,7 @@ class PeerSession(
         val deviceId: String,
         val nonce: String,
         val key: PublicJwk,
+        val dh: PublicJwk,
     )
 
     private data class Auth(
@@ -77,6 +78,8 @@ class PeerSession(
     private var auth = Auth()
     private var transport: WebRtcTransport? = null
     private var authJob: Job? = null
+    private var livenessJob: Job? = null
+    private val liveness = LivenessMonitor()
     private val frameQueue = ArrayDeque<String>()
     private var processingFrames = false
     private var manualExpectedKey: PublicJwk? = null
@@ -124,7 +127,7 @@ class PeerSession(
         val hello = auth.hello ?: return
         if (!auth.authenticated) return
         auth.trust = PeerTrust.CONFIRMED
-        pinPeer(hello.uid, hello.deviceId, hello.key)
+        pinPeer(hello.uid, hello.deviceId, hello.key, hello.dh)
         publishState(P2PState.CONNECTED)
     }
 
@@ -165,6 +168,30 @@ class PeerSession(
     private fun cancelTimer() {
         authJob?.cancel()
         authJob = null
+        livenessJob?.cancel()
+        livenessJob = null
+    }
+
+    /**
+     * Once authenticated: ping every few seconds and drop the link when nothing at all has arrived for
+     * [Liveness.DEAD_LINK_MS], so the normal reconnect logic can take over.
+     */
+    private fun startLiveness() {
+        livenessJob?.cancel()
+        liveness.reset()
+        livenessJob = scope.launch {
+            while (true) {
+                delay(Liveness.PING_INTERVAL_MS)
+                if (!auth.authenticated) return@launch
+                when (liveness.tick()) {
+                    LivenessMonitor.Tick.LOST -> {
+                        failPeer("Connection to your friend was lost. Reconnecting...")
+                        return@launch
+                    }
+                    LivenessMonitor.Tick.PING -> sendJson(Liveness.ping(System.currentTimeMillis()))
+                }
+            }
+        }
     }
 
     private fun handleOpen() {
@@ -175,6 +202,7 @@ class PeerSession(
         }
         cancelTimer()
         auth = Auth(myNonce = randomNonce())
+        liveness.reset()
         frameQueue.clear()
         listener.onStateChanged(P2PState.CONNECTING, false, PeerTrust.NONE, null, null)
         sendHello()
@@ -215,6 +243,7 @@ class PeerSession(
     }
 
     private fun enqueueFrame(raw: String) {
+        liveness.onInbound()
         frameQueue.addLast(raw)
         if (processingFrames) return
         processingFrames = true
@@ -240,6 +269,8 @@ class PeerSession(
             "hello" -> handleHello(frame)
             "auth_proof" -> handleProof(frame)
             "auth_ok" -> handleAuthOk(frame)
+            "ping" -> Liveness.parse(frame)?.let { if (auth.authenticated) sendJson(Liveness.pong(it.at)) }
+            "pong" -> Unit // already counted as proof of life when it arrived
             "ack" -> if (auth.authenticated) handleAck(frame)
             "read" -> if (auth.authenticated) handleRead(frame)
             "message" -> if (auth.authenticated) handlePeerMessage(frame)
@@ -292,7 +323,7 @@ class PeerSession(
             }
             auth.trust = PeerTrust.UNVERIFIED
         }
-        auth.hello = Hello(uid, deviceId, nonce, key)
+        auth.hello = Hello(uid, deviceId, nonce, key, dh)
         sendProofIfReady()
     }
 
@@ -372,8 +403,9 @@ class PeerSession(
             null
         }
         // Refresh the pinned record for a verified reconnect.
-        if (auth.trust == PeerTrust.VERIFIED) pinPeer(hello.uid, hello.deviceId, hello.key)
+        if (auth.trust == PeerTrust.VERIFIED) pinPeer(hello.uid, hello.deviceId, hello.key, hello.dh)
         publishState(P2PState.CONNECTED)
+        startLiveness()
         if (auth.trust == PeerTrust.UNVERIFIED) {
             listener.onNotice(
                 "Connected. Compare the safety number with your friend, then mark it " +

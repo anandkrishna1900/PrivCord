@@ -10,12 +10,13 @@ const val MANUAL_SIGNAL_PREFIX = "DUO1:"
 
 enum class DeliveryState { QUEUED, SENT, DELIVERED, READ, FAILED }
 
-/** Messages only ever travel over the direct data channel. */
+/** `p2p`: direct data channel. `relay`: sealed blob held by a store-and-forward relay. */
 enum class TransportKind(val wire: String) {
-    P2P("p2p");
+    P2P("p2p"),
+    RELAY("relay");
 
     companion object {
-        fun fromWire(value: String?): TransportKind? = if (value == "p2p") P2P else null
+        fun fromWire(value: String?): TransportKind? = entries.firstOrNull { it.wire == value }
     }
 }
 
@@ -45,7 +46,8 @@ data class OutboxRow(
     val lastError: String?,
 )
 
-enum class EnginePhase { STARTING, READY, ERROR, STOPPED }
+/** NEEDS_IDENTITY: first run, the 12-word phrase flow must finish before anything else. */
+enum class EnginePhase { STARTING, NEEDS_IDENTITY, READY, ERROR, STOPPED }
 enum class P2PState { IDLE, CONNECTING, CONNECTED, FAILED }
 enum class PeerTrust { NONE, VERIFIED, UNVERIFIED, CONFIRMED }
 
@@ -118,7 +120,12 @@ data class ChatState(
     val paired: Boolean = false,
     /** Null until the channel is open and the selected candidate pair has been read. */
     val connectionPath: ConnectionPath? = null,
+    val signaling: com.duochat.app.signaling.SignalingStatus = com.duochat.app.signaling.SignalingStatus.IDLE,
+    /** A friend's card that was pasted but not yet confirmed by the user. */
+    val pendingContact: PendingContact? = null,
 )
+
+data class PendingContact(val uid: String, val safetyNumber: String, val name: String?)
 
 fun deriveConnectionMode(
     p2pConnected: Boolean,
@@ -151,7 +158,7 @@ fun presentConnection(mode: ConnectionMode, queuedMessages: Int = 0): Connection
 
         ConnectionMode.RECONNECTING -> ConnectionPresentation(
             "Reconnecting",
-            "Connection lost. Exchange a new connection code to reconnect.",
+            "Connection lost. Reconnecting automatically when signaling is configured, otherwise exchange a new connection code.",
             ConnectionTone.BUSY,
             p2p = false,
         )

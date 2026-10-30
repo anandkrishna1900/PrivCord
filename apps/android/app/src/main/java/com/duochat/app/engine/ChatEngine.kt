@@ -9,8 +9,12 @@ import com.duochat.app.data.MessageStore
 import com.duochat.app.data.OutboxRow
 import com.duochat.app.data.P2PState
 import com.duochat.app.data.PeerTrust
+import com.duochat.app.data.PendingContact
 import com.duochat.app.data.TransportKind
+import com.duochat.app.data.MAX_TEXT_LENGTH
 import com.duochat.app.data.compareMessages
+import com.duochat.app.data.countCodePoints
+import com.duochat.app.data.isValidClientMessageId
 import com.duochat.app.data.createOutgoingMessage
 import com.duochat.app.data.deriveConnectionMode
 import com.duochat.app.data.needsDelivery
@@ -19,9 +23,19 @@ import com.duochat.app.p2p.ManualSignalCodec
 import com.duochat.app.p2p.PeerSession
 import com.duochat.app.p2p.iceServers
 import com.duochat.app.security.AndroidIdentityManager
+import com.duochat.app.security.ContactCard
+import com.duochat.app.security.ContactCards
+import com.duochat.app.security.Contact
 import com.duochat.app.security.DeviceIdentity
+import com.duochat.app.security.Seal
+import com.duochat.app.security.SealedBlob
 import com.duochat.app.security.PinnedPeer
 import com.duochat.app.security.PublicJwk
+import com.duochat.app.signaling.SignalingHub
+import com.duochat.app.signaling.SignalingStatus
+import com.duochat.app.signaling.SignalingTransport
+import com.duochat.app.signaling.reconnectDelayMs
+import com.duochat.app.signaling.transportsFor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -34,10 +48,11 @@ import org.json.JSONObject
 import java.security.SecureRandom
 
 /**
- * Direct-only chat engine: no accounts, no cloud. Messages travel over the
- * WebRTC data channel to the one pinned peer; anything unsent stays queued
- * (encrypted at rest) and is sent when the channel opens. Mirrors
- * apps/desktop/src/lib/engine.ts.
+ * Chat engine: no accounts, no required server. Messages travel over the WebRTC data channel to the
+ * one pinned peer; anything unsent stays queued (encrypted at rest) and is sent when the channel
+ * opens. Paired friends reconnect automatically through the configured signaling (sealed offers and
+ * answers), and an optional store-and-forward relay can hold sealed messages for an offline friend.
+ * Mirrors apps/desktop/src/lib/engine.ts.
  */
 class ChatEngine(
     private val scope: CoroutineScope,
@@ -62,13 +77,25 @@ class ChatEngine(
     private var lastReadWritten: String? = null
     private var tickJob: Job? = null
     private var pathJob: Job? = null
+    private var hub: SignalingHub? = null
+    private var pendingCard: Contact? = null
+    private var lastOfferAt = 0L
+    private var offerAttempt = 0
+    private var manualActive = false
+    private var offerTimeout: Job? = null
+    private val relayed = mutableSetOf<String>()
 
     private val selfUid: String
         get() = identity?.uid.orEmpty()
 
     suspend fun start() {
         try {
-            val loadedIdentity = identityManager.loadOrCreate()
+            val loadedIdentity = identityManager.load()
+            if (loadedIdentity == null) {
+                // First run: nothing works until the 12-word phrase flow has created an identity.
+                _state.update { it.copy(phase = EnginePhase.NEEDS_IDENTITY) }
+                return
+            }
             identity = loadedIdentity
             pinned = identityManager.loadPinnedPeer()
 
@@ -90,6 +117,7 @@ class ChatEngine(
             }
             peer = buildPeerSession(loadedIdentity)
             updateConnection()
+            startSignaling()
             startTicking()
         } catch (error: Exception) {
             if (!stopped) {
@@ -104,6 +132,9 @@ class ChatEngine(
         stopped = true
         tickJob?.cancel()
         pathJob?.cancel()
+        offerTimeout?.cancel()
+        hub?.stop()
+        hub = null
         peer?.close()
         peer = null
         _state.update { it.copy(phase = EnginePhase.STOPPED) }
@@ -143,7 +174,10 @@ class ChatEngine(
             outbox[row.messageId] = row
             store.enqueueOutbox(row)
             emitMessages()
-            scope.launch { deliver(message.messageId) }
+            scope.launch {
+                deliver(message.messageId)
+                relayPending()
+            }
             Result.success(Unit)
         } catch (error: Exception) {
             Result.failure(error)
@@ -238,6 +272,12 @@ class ChatEngine(
     private fun resetConnection(notice: String) {
         peer?.close()
         pinned = null
+        pendingCard = null
+        manualActive = false
+        hub?.stop()
+        hub = null
+        offerTimeout?.cancel()
+        relayed.clear()
         p2pSent.clear()
         lastReadWritten = null
         pathJob?.cancel()
@@ -245,6 +285,8 @@ class ChatEngine(
             it.copy(
                 paired = false,
                 peerUid = null,
+                pendingContact = null,
+                signaling = SignalingStatus.IDLE,
                 p2pState = P2PState.IDLE,
                 p2pConnected = false,
                 peerTrust = PeerTrust.NONE,
@@ -302,6 +344,7 @@ class ChatEngine(
     suspend fun createManualOffer(): String {
         val currentIdentity = identity ?: throw IllegalStateException("Identity is not ready.")
         val session = peer ?: throw IllegalStateException("Direct messaging is not ready.")
+        manualActive = true
         _state.update { it.copy(notice = null) }
         session.setExpectedPeerKey(null)
         return try {
@@ -340,6 +383,7 @@ class ChatEngine(
         checkSignalIdentity(decoded)
         _state.update { it.copy(notice = null) }
         val session = peer ?: throw IllegalStateException("Direct messaging is not ready.")
+        manualActive = true
         session.setExpectedPeerKey(decoded.publicKeyJwk)
         return try {
             ManualSignalCodec.encode(
@@ -352,6 +396,7 @@ class ChatEngine(
     }
 
     fun cancelManual() {
+        manualActive = false
         peer?.setExpectedPeerKey(null)
         peer?.close()
         pathJob?.cancel()
@@ -374,7 +419,7 @@ class ChatEngine(
         identityManager = identityManager,
         identity = { identity },
         pinned = { pinned },
-        pinPeer = { uid, deviceId, key -> pin(uid, deviceId, key) },
+        pinPeer = { uid, deviceId, key, dh -> pin(uid, deviceId, key, dh) },
         iceServers = { networkConfig().iceServers() },
         forceRelay = { networkConfig().forceRelay },
         listener = object : PeerSession.Listener {
@@ -433,10 +478,12 @@ class ChatEngine(
         },
     )
 
-    private fun pin(uid: String, deviceId: String, key: PublicJwk) {
-        identityManager.pinPeer(uid, deviceId, key)
-        pinned = PinnedPeer(uid, deviceId, key)
+    private fun pin(uid: String, deviceId: String, key: PublicJwk, dh: PublicJwk) {
+        identityManager.pinPeer(uid, deviceId, key, dh)
+        val firstTime = pinned == null
+        pinned = PinnedPeer(uid, deviceId, key, dh)
         _state.update { it.copy(paired = true, peerUid = uid) }
+        if (firstTime) startSignaling(force = true)
     }
 
     /** Reads the real route (host / srflx / relay) once the channel is up; retries while stats settle. */
@@ -455,6 +502,9 @@ class ChatEngine(
     }
 
     private fun onChannelReady() {
+        manualActive = false
+        offerAttempt = 0
+        offerTimeout?.cancel()
         p2pSent.clear()
         lastReadWritten = null
         flushUndelivered()
@@ -493,7 +543,8 @@ class ChatEngine(
         tickJob = scope.launch {
             while (!stopped) {
                 delay(TICK_MS)
-                if (peer?.isReady == true) flushUndelivered()
+                _state.update { it.copy(signaling = hub?.status() ?: SignalingStatus.IDLE) }
+                if (peer?.isReady == true) flushUndelivered() else maybeOffer()
             }
         }
     }
@@ -537,6 +588,11 @@ class ChatEngine(
     private suspend fun handlePeerMessage(message: ChatMessage) {
         val session = peer ?: return
         if (!session.isReady || message.senderId == selfUid) return
+        ingest(message) { ack -> session.sendJson(ack) }
+    }
+
+    /** Store a message from the paired friend, acknowledge it, notify. Shared by the direct and relay paths. */
+    private suspend fun ingest(message: ChatMessage, sendAck: (JSONObject) -> Unit) {
         val existing = messages[message.messageId]
         val merged = if (existing != null) {
             existing.copy(
@@ -549,7 +605,7 @@ class ChatEngine(
         messages[merged.messageId] = merged
         store.putMessage(merged)
         emitMessages()
-        session.sendJson(
+        sendAck(
             JSONObject()
                 .put("v", 1)
                 .put("kind", "ack")
@@ -605,6 +661,232 @@ class ChatEngine(
         _state.update { it.copy(messages = sortedMessages(), queuedCount = outbox.size) }
     }
 
+
+    // ---------------------------------------------------------------------
+    // Contacts: exchange public cards, compare the safety number, pin
+    // ---------------------------------------------------------------------
+
+    fun ownCard(name: String? = null): String {
+        val current = identity ?: throw IllegalStateException("Identity is not ready.")
+        return ContactCards.encode(ContactCard(current.publicJwk, current.dhJwk, current.identityProof, name?.ifBlank { null }))
+    }
+
+    /** Validate a pasted contact card and show its safety number. Nothing is saved yet. */
+    fun previewContact(text: String) {
+        val current = identity ?: throw IllegalStateException("Identity is not ready.")
+        val contact = ContactCards.decode(text) ?: throw IllegalArgumentException("This is not a valid DuoChat contact card.")
+        if (contact.uid == current.uid) throw IllegalArgumentException("This is your own contact card.")
+        val pin = pinned
+        if (pin != null && pin.uid != contact.uid) {
+            throw IllegalArgumentException("You are already paired with someone else. Reset pairing in Settings first.")
+        }
+        val safety = identityManager.deriveSafetyNumber(current.publicJwk, contact.card.sign)
+        pendingCard = contact
+        _state.update { it.copy(pendingContact = PendingContact(contact.uid, safety, contact.card.name)) }
+    }
+
+    /** The user compared the safety number over a separate channel: pin the contact. */
+    fun confirmContact() {
+        val contact = pendingCard ?: return
+        pin(contact.uid, "card", contact.card.sign, contact.card.dh)
+        pendingCard = null
+        offerAttempt = 0
+        lastOfferAt = 0
+        val signalingOn = networkConfig().signaling.isNotEmpty()
+        _state.update {
+            it.copy(
+                pendingContact = null,
+                notice = if (signalingOn) "Friend saved. Connecting automatically whenever you are both online."
+                else "Friend saved. No signaling is configured, so connect with a code (Settings > Network).",
+            )
+        }
+        startSignaling(force = true)
+    }
+
+    fun cancelContact() {
+        pendingCard = null
+        _state.update { it.copy(pendingContact = null) }
+    }
+
+    // ---------------------------------------------------------------------
+    // Signaling: find the paired friend again without typing codes
+    // ---------------------------------------------------------------------
+
+    /** Apply changed STUN/TURN/signaling settings; they take effect on the next connection. */
+    fun reloadNetwork() {
+        startSignaling(force = true)
+        _state.update { it.copy(notice = "Network settings applied. They take effect on the next connection.") }
+    }
+
+    /** The device gained a network: reconnect the signaling sockets now instead of waiting out the backoff. */
+    fun onNetworkAvailable() {
+        if (stopped || identity == null) return
+        offerAttempt = 0
+        lastOfferAt = 0
+        if (hub?.status() != SignalingStatus.ONLINE) startSignaling(force = true)
+    }
+
+    private fun startSignaling(force: Boolean = false) {
+        if (stopped) return
+        if (hub != null && !force) return
+        hub?.stop()
+        hub = null
+        val pin = pinned
+        val config = networkConfig()
+        if (pin?.dh == null || config.signaling.isEmpty()) {
+            _state.update { it.copy(signaling = SignalingStatus.IDLE) }
+            return
+        }
+        val created = SignalingHub(transportsFor(config, scope))
+        hub = created
+        created.start(Seal.mailboxFor(selfUid)) { blob, id, via -> scope.launch { handleBlob(blob, id, via) } }
+        offerAttempt = 0
+        lastOfferAt = 0
+        _state.update { it.copy(signaling = created.status()) }
+    }
+
+    private fun sealToPeer(payload: JSONObject): Pair<SealedBlob, String>? {
+        val pin = pinned ?: return null
+        val dh = pin.dh ?: return null
+        val blob = Seal.seal(payload, selfUid, pin.uid, dh) { identityManager.signRaw(it) }
+        return blob to Seal.mailboxFor(pin.uid)
+    }
+
+    private suspend fun putToPeer(payload: JSONObject, kind: String, ttlSec: Int) {
+        val (blob, mailbox) = sealToPeer(payload) ?: throw IllegalStateException("No signaling is available.")
+        (hub ?: throw IllegalStateException("No signaling is available.")).put(mailbox, blob, kind, ttlSec)
+    }
+
+    private fun isInitiator(): Boolean = pinned?.let { selfUid < it.uid } == true
+
+    private suspend fun handleBlob(blob: SealedBlob, id: String, via: SignalingTransport) {
+        val pin = pinned ?: return
+        val payload = Seal.open(blob, selfUid, identityManager::dhAgree, pin.key, pin.uid) ?: return
+        try {
+            when (payload.optString("t")) {
+                "ready" -> if (isInitiator()) lastOfferAt = 0
+                "offer" -> {
+                    val session = peer ?: return
+                    val sdp = payload.optString("sdp")
+                    if (isInitiator() || manualActive || session.isReady || sdp.isEmpty()) return
+                    session.setExpectedPeerKey(null)
+                    val answer = session.acceptOffer(sdp)
+                    putToPeer(JSONObject().put("t", "answer").put("sdp", answer), "sig", SIGNAL_TTL_SEC)
+                    armOfferTimeout()
+                }
+                "answer" -> {
+                    val session = peer ?: return
+                    val sdp = payload.optString("sdp")
+                    if (!isInitiator() || !session.hasPendingConnection || session.isReady || sdp.isEmpty()) return
+                    session.applyAnswer(sdp)
+                }
+                "msg" -> {
+                    val messageId = payload.optString("id")
+                    val text = payload.optString("text")
+                    val at = (payload.opt("at") as? Number)?.toLong()
+                    if (!isValidClientMessageId(messageId) || at == null || at <= 0 ||
+                        text.trim().isEmpty() || countCodePoints(text) > MAX_TEXT_LENGTH
+                    ) {
+                        return
+                    }
+                    ingest(
+                        ChatMessage(
+                            messageId = messageId,
+                            clientMessageId = messageId,
+                            senderId = pin.uid,
+                            text = text,
+                            clientCreatedAt = at,
+                            transport = TransportKind.RELAY,
+                            deliveryState = DeliveryState.DELIVERED,
+                        ),
+                    ) {
+                        scope.launch {
+                            runCatching { putToPeer(JSONObject().put("t", "ack").put("id", messageId), "msg", MSG_TTL_SEC) }
+                        }
+                    }
+                    hub?.remove(via, Seal.mailboxFor(selfUid), id)
+                }
+                "ack" -> {
+                    val messageId = payload.optString("id")
+                    val message = messages[messageId] ?: return
+                    if (message.senderId != selfUid) return
+                    handleAck(messageId, DeliveryState.DELIVERED, System.currentTimeMillis())
+                    hub?.remove(via, Seal.mailboxFor(selfUid), id)
+                }
+            }
+        } catch (error: Exception) {
+            _state.update { it.copy(notice = "Signaling failed: ${error.message ?: "unknown error"}") }
+        }
+    }
+
+    private fun armOfferTimeout() {
+        offerTimeout?.cancel()
+        offerTimeout = scope.launch {
+            delay(OFFER_TIMEOUT_MS)
+            val session = peer
+            if (session != null && !session.isReady && !manualActive) {
+                session.close()
+                _state.update { it.copy(p2pState = P2PState.FAILED, notice = "Could not reach your friend. Retrying...") }
+                updateConnection()
+            }
+        }
+    }
+
+    /** Reconnect to a paired friend automatically, backing off between attempts (5 s doubling to 120 s). */
+    private suspend fun maybeOffer() {
+        val pin = pinned
+        val current = hub
+        relayPending()
+        if (pin?.dh == null || current == null || current.status() != SignalingStatus.ONLINE || manualActive) return
+        val session = peer ?: return
+        val now = System.currentTimeMillis()
+        if (_state.value.p2pState == P2PState.CONNECTING) return
+        if (now - lastOfferAt < reconnectDelayMs(offerAttempt)) return
+        lastOfferAt = now
+        offerAttempt += 1
+        try {
+            if (!isInitiator()) {
+                // Tell the friend we are online so they can offer straight away.
+                putToPeer(JSONObject().put("t", "ready"), "sig", SIGNAL_TTL_SEC)
+                return
+            }
+            session.setExpectedPeerKey(null)
+            val sdp = session.createOffer()
+            putToPeer(JSONObject().put("t", "offer").put("sdp", sdp), "sig", SIGNAL_TTL_SEC)
+            armOfferTimeout()
+        } catch (error: Exception) {
+            session.close()
+            _state.update { it.copy(p2pState = P2PState.IDLE, notice = "Could not reach signaling: ${error.message ?: "unknown error"}") }
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Optional store-and-forward (off by default)
+    // ---------------------------------------------------------------------
+
+    private suspend fun relayPending() {
+        val current = hub ?: return
+        if (!networkConfig().storeForward || pinned?.dh == null || peer?.isReady == true) return
+        if (current.status() != SignalingStatus.ONLINE) return
+        for (message in sortedMessages()) {
+            if (message.senderId != selfUid || !needsDelivery(message.deliveryState)) continue
+            if (!relayed.add(message.messageId)) continue
+            try {
+                putToPeer(
+                    JSONObject().put("t", "msg").put("id", message.messageId).put("text", message.text)
+                        .put("at", message.clientCreatedAt),
+                    "msg",
+                    MSG_TTL_SEC,
+                )
+                messages[message.messageId] = message.copy(transport = TransportKind.RELAY, deliveryState = DeliveryState.SENT)
+                store.updateMessage(message.messageId, deliveryState = DeliveryState.SENT, transport = TransportKind.RELAY)
+                emitMessages()
+            } catch (_: Exception) {
+                relayed.remove(message.messageId)
+            }
+        }
+    }
+
     private fun randomNonce(): String {
         val bytes = ByteArray(24)
         SecureRandom().nextBytes(bytes)
@@ -613,5 +895,8 @@ class ChatEngine(
 
     private companion object {
         const val TICK_MS = 4_000L
+        const val SIGNAL_TTL_SEC = 120
+        const val MSG_TTL_SEC = 7 * 24 * 3600
+        const val OFFER_TIMEOUT_MS = 40_000L
     }
 }

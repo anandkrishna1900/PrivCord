@@ -71,6 +71,10 @@ cd apps/android
 * TURN defaults can be baked in at build time through `local.properties`
   (`turn.url`, `turn.username`, `turn.credential`); users can also change STUN and TURN in
   the app. Do not ship long-lived TURN credentials in a public build.
+* The release build (`assembleRelease`/`bundleRelease`) was **not completed** in the development
+  sandbox (the lint dependency download was rate-limited); only the debug build and unit tests
+  were run, and the signing configuration was checked with `signingReport`. Do a full release
+  build on a normal machine or in CI before shipping. Minification is deliberately off.
 * There is no push service: Android receives messages only while the app is running and
   connected. See [ANDROID_STATUS.md](ANDROID_STATUS.md) for what is implemented and untested.
 

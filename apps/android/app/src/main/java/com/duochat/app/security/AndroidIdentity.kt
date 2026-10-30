@@ -51,6 +51,8 @@ data class PinnedPeer(
     val uid: String,
     val deviceId: String,
     val key: PublicJwk,
+    /** The contact's ECDH identity key; needed to seal blobs to them. Null for pins from older versions. */
+    val dh: PublicJwk? = null,
 )
 
 class AndroidIdentityManager(context: Context) {
@@ -70,31 +72,49 @@ class AndroidIdentityManager(context: Context) {
         return created
     }
 
+    @Volatile
+    private var dhPrivate: PrivateKey? = null
+
+    fun hasIdentity(): Boolean = readKey("identity.sign") != null && readKey("identity.dh") != null &&
+        !prefs.getString("identity.proof", null).isNullOrEmpty()
+
     /**
-     * Identity keys are software P-256 keys, stored encrypted under a
-     * non-exportable Android Keystore AES key (the same scheme the local
-     * message store uses), so a recovery-phrase-derived identity can replace
-     * them later.
+     * Create (or replace) the identity from the 12-word phrase. The phrase is never stored; only the
+     * derived private keys are, encrypted under a non-exportable Android Keystore AES key (the same
+     * scheme the local message store uses). Returns the uid.
      */
     @Synchronized
-    fun loadOrCreate(): DeviceIdentity {
-        var sign = readKey("identity.sign")
-        var dh = readKey("identity.dh")
-        if (sign == null || dh == null) {
-            sign = generateKey().also { writeKey("identity.sign", it) }
-            dh = generateKey().also { writeKey("identity.dh", it) }
-            prefs.edit().remove("identity.proof").apply()
-        }
-        signPrivate = privateKeyFrom(sign.d)
-        val signPublic = PublicJwk(sign.x, sign.y)
-        val dhPublic = PublicJwk(dh.x, dh.y)
-        var proof = prefs.getString("identity.proof", null)
-        if (proof.isNullOrEmpty()) {
-            proof = signBytes(IdentityCodec.identityProofPayload(dhPublic))
-            prefs.edit().putString("identity.proof", proof).apply()
-        }
-        return DeviceIdentity(IdentityCodec.uidFor(dhPublic), deviceId(), signPublic, dhPublic, proof)
+    fun createFromPhrase(phrase: String, passphrase: String = ""): String {
+        val keys = RecoveryIdentity.derive(phrase, passphrase)
+        writeKey("identity.sign", StoredKey(keys.signD, keys.signPub.x, keys.signPub.y))
+        writeKey("identity.dh", StoredKey(keys.dhD, keys.dhPub.x, keys.dhPub.y))
+        prefs.edit()
+            .putString("identity.proof", EcKeys.sign(keys.signD, IdentityCodec.identityProofPayload(keys.dhPub)))
+            .apply()
+        signPrivate = null
+        dhPrivate = null
+        return keys.uid
     }
+
+    /** The stored identity, or null on first run (the app then forces the 12-word phrase flow). */
+    @Synchronized
+    fun load(): DeviceIdentity? {
+        val sign = readKey("identity.sign") ?: return null
+        val dh = readKey("identity.dh") ?: return null
+        val proof = prefs.getString("identity.proof", null)
+        if (proof.isNullOrEmpty()) return null
+        signPrivate = privateKeyFrom(sign.d)
+        dhPrivate = privateKeyFrom(dh.d)
+        val dhPublic = PublicJwk(dh.x, dh.y)
+        return DeviceIdentity(IdentityCodec.uidFor(dhPublic), deviceId(), PublicJwk(sign.x, sign.y), dhPublic, proof)
+    }
+
+    /** ECDH with our identity DH key (used to open sealed blobs). */
+    fun dhAgree(peer: PublicJwk): ByteArray =
+        EcKeys.agree(dhPrivate ?: error("Identity is not loaded."), peer)
+
+    /** ECDSA-SHA256 over raw bytes with our identity signing key (base64url r||s). */
+    fun signRaw(message: ByteArray): String = signBytes(message)
 
     fun sign(challenge: String): String = signBytes(challenge.toByteArray(Charsets.UTF_8))
 
@@ -112,6 +132,7 @@ class AndroidIdentityManager(context: Context) {
      */
     fun deleteIdentityKey() {
         signPrivate = null
+        dhPrivate = null
         prefs.edit()
             .remove("identity.sign")
             .remove("identity.dh")
@@ -124,10 +145,12 @@ class AndroidIdentityManager(context: Context) {
     }
 
     /** Pin [key] as the one trusted peer; any previously pinned peer is forgotten. */
-    fun pinPeer(uid: String, deviceId: String, key: PublicJwk) {
+    fun pinPeer(uid: String, deviceId: String, key: PublicJwk, dh: PublicJwk? = null) {
         val editor = prefs.edit()
-        prefs.all.keys.filter { it.startsWith("peer.") }.forEach { editor.remove(it) }
-        editor.putString("peer.$uid.$deviceId", key.fingerprint()).apply()
+        prefs.all.keys.filter { it.startsWith("peer.") || it.startsWith("peerdh.") }.forEach { editor.remove(it) }
+        editor.putString("peer.$uid.$deviceId", key.fingerprint())
+        if (dh != null) editor.putString("peerdh.$uid", dh.fingerprint())
+        editor.apply()
     }
 
     fun loadPinnedPeer(): PinnedPeer? {
@@ -137,7 +160,9 @@ class AndroidIdentityManager(context: Context) {
             val dot = rest.indexOf('.')
             if (dot <= 0 || dot == rest.lastIndex) continue
             val key = PublicJwk.fromFingerprint(value as? String ?: "") ?: continue
-            return PinnedPeer(rest.substring(0, dot), rest.substring(dot + 1), key)
+            val uid = rest.substring(0, dot)
+            val dh = prefs.getString("peerdh.$uid", null)?.let { PublicJwk.fromFingerprint(it) }
+            return PinnedPeer(uid, rest.substring(dot + 1), key, dh)
         }
         return null
     }
@@ -148,7 +173,8 @@ class AndroidIdentityManager(context: Context) {
      */
     fun erasePeerKey(uid: String?): Int {
         val doomed = prefs.all.keys.filter { key ->
-            if (uid.isNullOrEmpty()) key.startsWith("peer.") else key.startsWith("peer.$uid.")
+            if (uid.isNullOrEmpty()) key.startsWith("peer.") || key.startsWith("peerdh.")
+            else key.startsWith("peer.$uid.") || key == "peerdh.$uid"
         }
         val editor = prefs.edit()
         for (key in doomed) editor.remove(key)
