@@ -223,7 +223,7 @@ fun HomeScreen(
                         items(groups) { group ->
                             ConversationListItem(
                                 title = group.name,
-                                subtitle = "Epoch " + group.currentEpoch + " • Decentralized E2EE",
+                                subtitle = "End-to-end encrypted group",
                                 online = true,
                                 unreadCount = null,
                                 time = group.createdAt,
@@ -241,7 +241,7 @@ fun HomeScreen(
                         EmptyStatePrompt(
                             icon = Icons.Filled.Group,
                             title = "No group chats yet",
-                            subtitle = "Tap the + button to create a decentralized E2EE group chat with epoch key rotation.",
+                            subtitle = "Tap the + button to create a group. Messages are end-to-end encrypted.",
                             buttonText = "Create Group",
                             onAction = { showCreateGroupDialog = true },
                         )
@@ -250,7 +250,7 @@ fun HomeScreen(
                             items(groups) { group ->
                                 ConversationListItem(
                                     title = group.name,
-                                    subtitle = "Epoch " + group.currentEpoch + " • MLS group rotation",
+                                    subtitle = "End-to-end encrypted group",
                                     online = true,
                                     unreadCount = null,
                                     time = group.createdAt,
@@ -344,37 +344,52 @@ fun HomeScreen(
 
     if (showCreateGroupDialog) {
         var groupNameInput by remember { mutableStateOf("") }
+        var groupCreateError by remember { mutableStateOf<String?>(null) }
+        var groupCreating by remember { mutableStateOf(false) }
         AlertDialog(
-            onDismissRequest = { showCreateGroupDialog = false },
+            onDismissRequest = { if (!groupCreating) showCreateGroupDialog = false },
             title = { Text("Create Group Chat") },
             text = {
                 Column {
                     Text(
-                        "Groups use decentralized epoch key rotation (forward secrecy & eviction isolation).",
+                        "Give your group a name. Messages are end-to-end encrypted and stored only on members' devices.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = groupNameInput,
-                        onValueChange = { groupNameInput = it },
+                        onValueChange = { groupNameInput = it; groupCreateError = null },
                         label = { Text("Group Name") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
+                        isError = groupCreateError != null,
                     )
+                    groupCreateError?.let {
+                        Spacer(Modifier.height(4.dp))
+                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        if (groupNameInput.isNotBlank()) {
-                            onCreateGroup(groupNameInput.trim()) {}
-                            showCreateGroupDialog = false
+                        if (groupNameInput.isNotBlank() && !groupCreating) {
+                            groupCreating = true
+                            groupCreateError = null
+                            onCreateGroup(groupNameInput.trim()) { result ->
+                                groupCreating = false
+                                if (result.isSuccess) {
+                                    showCreateGroupDialog = false
+                                } else {
+                                    groupCreateError = result.exceptionOrNull()?.message ?: "Failed to create group. Please try again."
+                                }
+                            }
                         }
                     },
-                    enabled = groupNameInput.isNotBlank(),
+                    enabled = groupNameInput.isNotBlank() && !groupCreating,
                 ) {
-                    Text("Create")
+                    Text(if (groupCreating) "Creating…" else "Create")
                 }
             },
             dismissButton = {

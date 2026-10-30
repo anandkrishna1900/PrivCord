@@ -32,6 +32,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val database by lazy {
         Room.databaseBuilder(application, DuoDatabase::class.java, "duochat.db")
             .addMigrations(DuoDatabase.MIGRATION_1_2, DuoDatabase.MIGRATION_2_3, DuoDatabase.MIGRATION_3_4)
+            .fallbackToDestructiveMigration()
             .build()
     }
 
