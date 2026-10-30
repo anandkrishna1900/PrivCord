@@ -21,6 +21,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import com.duochat.app.data.local.ContactEntity
+import com.duochat.app.data.local.GroupEntity
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
@@ -29,7 +31,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val identityManager = AndroidIdentityManager(application)
     private val database by lazy {
         Room.databaseBuilder(application, DuoDatabase::class.java, "duochat.db")
-            .addMigrations(DuoDatabase.MIGRATION_1_2, DuoDatabase.MIGRATION_2_3)
+            .addMigrations(DuoDatabase.MIGRATION_1_2, DuoDatabase.MIGRATION_2_3, DuoDatabase.MIGRATION_3_4)
             .build()
     }
 
@@ -64,6 +66,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         startEngine()
+        loadConversations()
         runCatching {
             application.getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(networkCallback)
         }
@@ -300,6 +303,73 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } finally {
                 startEngine()
             }
+        }
+    }
+
+    private val _contacts = MutableStateFlow<List<ContactEntity>>(emptyList())
+    val contacts: StateFlow<List<ContactEntity>> = _contacts.asStateFlow()
+
+    private val _groups = MutableStateFlow<List<GroupEntity>>(emptyList())
+    val groups: StateFlow<List<GroupEntity>> = _groups.asStateFlow()
+
+    fun loadConversations() {
+        viewModelScope.launch {
+            runCatching {
+                _contacts.value = database.dao().loadContacts()
+                _groups.value = database.dao().loadGroups()
+            }
+        }
+    }
+
+    fun addContact(name: String, uid: String, onResult: (Result<Unit>) -> Unit = {}) {
+        viewModelScope.launch {
+            val res = runCatching {
+                val entity = ContactEntity(
+                    uid = uid,
+                    name = name,
+                    signPubX = "",
+                    signPubY = "",
+                    dhPubX = "",
+                    dhPubY = "",
+                    identityProof = "",
+                    safetyNumber = "000000",
+                )
+                database.dao().putContact(entity)
+                loadConversations()
+            }
+            onResult(res)
+        }
+    }
+
+    fun createGroup(name: String, onResult: (Result<Unit>) -> Unit = {}) {
+        viewModelScope.launch {
+            val res = runCatching {
+                val groupId = java.util.UUID.randomUUID().toString()
+                val entity = GroupEntity(
+                    groupId = groupId,
+                    name = name,
+                    avatarUrl = null,
+                    createdBy = LOCAL_ID,
+                    createdAt = System.currentTimeMillis(),
+                )
+                database.dao().putGroup(entity)
+                loadConversations()
+            }
+            onResult(res)
+        }
+    }
+
+    fun removeContact(uid: String) {
+        viewModelScope.launch {
+            database.dao().deleteContact(uid)
+            loadConversations()
+        }
+    }
+
+    fun removeGroup(groupId: String) {
+        viewModelScope.launch {
+            database.dao().deleteGroup(groupId)
+            loadConversations()
         }
     }
 

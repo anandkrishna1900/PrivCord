@@ -50,6 +50,8 @@ private fun RootScreen(viewModel: AppViewModel) {
     val chat by viewModel.chat.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val killSwitchReport by viewModel.killSwitchReport.collectAsStateWithLifecycle()
+    val contacts by viewModel.contacts.collectAsStateWithLifecycle()
+    val groups by viewModel.groups.collectAsStateWithLifecycle()
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -98,6 +100,12 @@ private fun RootScreen(viewModel: AppViewModel) {
             onBluetoothPermissionResult = viewModel::refreshBluetooth,
             onRunNuke = viewModel::runNuke,
             onRunChatSwitch = viewModel::runChatSwitch,
+            contacts = contacts,
+            groups = groups,
+            onAddContact = viewModel::addContact,
+            onCreateGroup = viewModel::createGroup,
+            onRemoveContact = viewModel::removeContact,
+            onRemoveGroup = viewModel::removeGroup,
             killSwitchReport = killSwitchReport,
             onAcknowledgeKillSwitch = viewModel::acknowledgeKillSwitch,
         )
