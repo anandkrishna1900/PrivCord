@@ -79,7 +79,7 @@ export function MessageList({
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
   const didInitialScroll = useRef(false);
-  const lastIdRef = useRef<string>();
+  const lastIdRef = useRef<string | undefined>(undefined);
   const [copyStatus, setCopyStatus] = useState<'copied' | 'failed' | null>(null);
 
   async function handleCopy(text: string) {
