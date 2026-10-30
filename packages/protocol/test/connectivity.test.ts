@@ -13,6 +13,7 @@ import {
   open,
   parseNetworkConfig,
   seal,
+  SecureChannel,
   selectedPairFromStats,
   uidFromDh,
 } from '../src';
@@ -64,7 +65,7 @@ describe('sealed blobs', () => {
   it('delivers a payload only the recipient can read, signed by the sender', async () => {
     const { a, b } = await pair();
     const blob = await seal({
-      payload: { t: 'msg', text: 'hi' },
+      payload: { t: 'msg', text: 'plaintext-marker-7731' },
       fromUid: a.uid,
       toUid: b.uid,
       toDh: b.card.dh,
@@ -72,7 +73,7 @@ describe('sealed blobs', () => {
     });
     const wire = decodeBlob(encodeBlob(blob));
     expect(wire).not.toBeNull();
-    expect(JSON.stringify(wire)).not.toContain('hi');
+    expect(JSON.stringify(wire)).not.toContain('plaintext-marker-7731');
     const opened = await open({
       blob: wire!,
       ownUid: b.uid,
@@ -80,7 +81,7 @@ describe('sealed blobs', () => {
       senderSign: a.card.sign,
       senderUid: a.uid,
     });
-    expect(opened).toEqual({ t: 'msg', text: 'hi' });
+    expect(opened).toEqual({ t: 'msg', text: 'plaintext-marker-7731' });
   });
 
   it('drops blobs for someone else, from someone else, or tampered', async () => {
@@ -195,5 +196,58 @@ describe('connection path', () => {
     ];
     expect(selectedPairFromStats({ forEach: (cb) => fallback.forEach(cb) })).toEqual({ local: 'host', remote: 'host' });
     expect(selectedPairFromStats({ forEach: () => undefined })).toBeNull();
+  });
+});
+
+describe('secure channel (Bluetooth link encryption)', () => {
+  async function pairUp() {
+    const a = await person();
+    const b = await person();
+    const mk = (me: typeof a, other: typeof a) =>
+      SecureChannel.create({ ownUid: me.uid, peerUid: other.uid, signPriv: me.identity.signKey.privJwk, peerSign: other.card.sign });
+    const ca = await mk(a, b);
+    const cb = await mk(b, a);
+    await ca.accept(await cb.hello());
+    await cb.accept(await ca.hello());
+    return { a, b, ca, cb };
+  }
+
+  it('encrypts both directions between the paired contacts', async () => {
+    const { ca, cb } = await pairUp();
+    const frame = await ca.encrypt({ kind: 'message', text: 'secret over bluetooth' });
+    expect(JSON.stringify(frame)).not.toContain('secret');
+    expect(await cb.decrypt(frame)).toEqual({ kind: 'message', text: 'secret over bluetooth' });
+    expect(await ca.decrypt(await cb.encrypt({ ok: 1 }))).toEqual({ ok: 1 });
+  });
+
+  it('rejects tampering and replay', async () => {
+    const { ca, cb } = await pairUp();
+    const f1 = await ca.encrypt({ n: 1 });
+    await expect(cb.decrypt({ ...f1, ct: f1.ct.slice(0, -2) + (f1.ct.endsWith('AA') ? 'BB' : 'AA') })).rejects.toThrow();
+    expect(await cb.decrypt(f1)).toEqual({ n: 1 });
+    await expect(cb.decrypt(f1)).rejects.toThrow(/replayed/i);
+  });
+
+  it('refuses a handshake not signed by the pinned contact', async () => {
+    const a = await person();
+    const b = await person();
+    const evil = await person();
+    const ca = await SecureChannel.create({ ownUid: a.uid, peerUid: b.uid, signPriv: a.identity.signKey.privJwk, peerSign: b.card.sign });
+    const impostor = await SecureChannel.create({ ownUid: b.uid, peerUid: a.uid, signPriv: evil.identity.signKey.privJwk, peerSign: a.card.sign });
+    await expect(ca.accept(await impostor.hello())).rejects.toThrow(/not signed/i);
+  });
+
+  it('derives fresh keys every session (forward secrecy)', async () => {
+    const one = await pairUp();
+    const f = await one.ca.encrypt({ same: true });
+    const two = await pairUp();
+    await expect(two.cb.decrypt(f)).rejects.toThrow();
+  });
+
+  it('cannot be used before the handshake finishes', async () => {
+    const a = await person();
+    const b = await person();
+    const ca = await SecureChannel.create({ ownUid: a.uid, peerUid: b.uid, signPriv: a.identity.signKey.privJwk, peerSign: b.card.sign });
+    await expect(ca.encrypt({})).rejects.toThrow();
   });
 });

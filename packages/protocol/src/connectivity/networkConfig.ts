@@ -18,6 +18,8 @@ export interface NetworkConfig {
   storeForward: boolean;
   /** Use only TURN (hides your IP from the peer; needs a TURN server). */
   forceRelay: boolean;
+  /** Also look for the paired friend over Bluetooth LE (needs a Bluetooth-capable build). */
+  bluetooth: boolean;
 }
 
 export const DEFAULT_NOSTR_RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.primal.net'];
@@ -28,6 +30,7 @@ export const DEFAULT_NETWORK_CONFIG: NetworkConfig = {
   signaling: [{ kind: 'nostr', relays: [...DEFAULT_NOSTR_RELAYS] }],
   storeForward: false,
   forceRelay: false,
+  bluetooth: true,
 };
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0 && v.length <= 512;
@@ -85,6 +88,7 @@ export function parseNetworkConfig(raw: string | null | undefined): NetworkConfi
     signaling,
     storeForward: p.storeForward === true,
     forceRelay: p.forceRelay === true,
+    bluetooth: p.bluetooth !== false,
   };
 }
 
