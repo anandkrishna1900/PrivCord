@@ -88,14 +88,15 @@ async function pairedDevices(ctx, network, { connectNow = true } = {}) {
   ctx.cleanups.push(() => a.context.close(), () => b.context.close());
   await onboard(a.page);
   await onboard(b.page);
-  const { numbers } = await pair(a.page, b.page);
+  const pairResult = await pair(a.page, b.page);
+  const { numbers } = pairResult;
   check(numbers[0] === numbers[1] && numbers[0].length > 10, 'both sides show the same safety number', numbers);
   ctx.note(`safety number ${numbers[0]}`);
   if (connectNow) {
     await connected(a.page);
     await connected(b.page);
   }
-  return { a, b };
+  return { a, b, pairResult };
 }
 
 /* 2 + 3 + 4 --------------------------------------------------------- */
@@ -103,7 +104,7 @@ let shared = null;
 await scenario(2, 'cards + safety number, AUTOMATIC connection via relay (no codes), messages both ways', async (ctx) => {
   const relay = await startRelay(false);
   ctx.cleanups.push(relay.close);
-  const { a, b } = await pairedDevices(ctx, relayNet(relay.url));
+  const { a, b, pairResult } = await pairedDevices(ctx, relayNet(relay.url));
   ctx.note('connected automatically, zero codes pasted');
   await say(a.page, 'hello from A');
   await b.page.waitForSelector('text=hello from A', { timeout: 15000 });
@@ -114,7 +115,7 @@ await scenario(2, 'cards + safety number, AUTOMATIC connection via relay (no cod
   check(ticksA.some((t) => /Delivered|Read/.test(t)), 'A sees a delivered/read tick', ticksA);
   ctx.note(`A ticks: ${JSON.stringify(ticksA)}`);
   check([...a.errors, ...b.errors].length === 0, 'no page errors', [...a.errors, ...b.errors]);
-  shared = { relay, a, b };
+  shared = { relay, a, b, cards: pairResult.cards };
   ctx.cleanups.length = 0; // keep alive for 3 and 4
   shared.cleanup = async () => { await a.context.close(); await b.context.close(); await relay.close(); };
 });
@@ -139,46 +140,50 @@ await scenario(3, 'reload both: automatic reconnect, queued offline message flus
 
 await scenario(4, 'third identity cannot connect to a paired contact; foreign/tampered cards rejected', async (ctx) => {
   check(shared, 'needs scenario 2');
-  const { a, b } = shared;
-  const c = await device(browser, appUrl, relayNet(shared.relay.url));
+  const { a, b, cards } = shared;
+  const relayUrl = shared.relay.url;
+  // C: a stranger. C pairs with A's card on its own side and tries to reach A.
+  const c = await device(browser, appUrl, relayNet(relayUrl));
   ctx.cleanups.push(() => c.context.close());
   await onboard(c.page);
-  // A is paired with B: C's card must be refused, garbage refused, tampered B card refused
-  await a.page.keyboard.press('Escape');
   await c.page.click('button[aria-label="Add your friend"]');
   const cardC = await c.page.locator('textarea[aria-label="Your contact card"]').inputValue();
-  await c.page.keyboard.press('Escape');
-  await a.page.click('button[aria-label="Add your friend"]');
-  check((await a.page.locator('text=Friend saved').count()) > 0, 'paired device shows the paired state, not the add form');
-  await a.page.keyboard.press('Escape');
-  // reset A's pairing to reach the form with a stale pairing check: use B's dialog instead (also paired). Test engine rules through a fresh device D paired to nobody.
-  const d = await device(browser, appUrl, relayNet(shared.relay.url));
+  await c.page.fill('textarea[aria-label="Friend\'s contact card"]', cards[0]);
+  await c.page.click('button:has-text("Continue")');
+  await c.page.waitForSelector('.verify-panel .safety-number');
+  await c.page.click('text=Numbers match, save friend');
+  check((await a.page.locator('text=Friend saved').count()) === 0, 'sanity');
+  const marker = 'stranger says hi';
+  await sleep(1000);
+  // Wait long enough for several offer/ready rounds, then check A never connected to C.
+  await sleep(50000);
+  const cPlaceholder = await c.page.locator('.composer textarea').getAttribute('placeholder');
+  check(cPlaceholder !== 'Write a message…', 'stranger C is not connected to A', cPlaceholder);
+  await say(c.page, marker);
+  await sleep(3000);
+  check((await a.page.locator(`text=${marker}`).count()) === 0, 'A never received C\'s message');
+  check((await b.page.locator(`text=${marker}`).count()) === 0, 'B never received C\'s message');
+  ctx.note('after 50s C is still disconnected; A and B (paired to each other) are unaffected');
+  await say(a.page, 'still fine after stranger');
+  await b.page.waitForSelector('text=still fine after stranger', { timeout: 20000 });
+  // Card validation on a fresh, unpaired device D
+  const d = await device(browser, appUrl, relayNet(relayUrl));
   ctx.cleanups.push(() => d.context.close());
   await onboard(d.page);
   await d.page.click('button[aria-label="Add your friend"]');
-  const cardB = await b.page.evaluate(() => null); // placeholder, B's card comes from a pre-pair device below
   const tryCard = async (text) => {
     await d.page.fill('textarea[aria-label="Friend\'s contact card"]', text);
     await d.page.click('button:has-text("Continue")');
-    await sleep(500);
+    await sleep(600);
     return (await d.page.locator('.status-text.error').count()) > 0;
   };
-  check(await tryCard('hello'), 'garbage card rejected');
+  check(await tryCard('hello'), 'garbage rejected');
   check(await tryCard('DUOID1:AAAA'), 'malformed card rejected');
-  const good = cardC;
-  const tampered = good.slice(0, 40) + (good[40] === 'A' ? 'B' : 'A') + good.slice(41);
+  const tampered = cardC.slice(0, 60) + (cardC[60] === 'A' ? 'B' : 'A') + cardC.slice(61);
   check(await tryCard(tampered), 'tampered card rejected');
-  const ownCard = await d.page.locator('textarea[aria-label="Your contact card"]').inputValue();
-  check(await tryCard(ownCard), 'own card rejected');
+  const own = await d.page.locator('textarea[aria-label="Your contact card"]').inputValue();
+  check(await tryCard(own), 'own card rejected');
   ctx.note('garbage / malformed / tampered / own cards all rejected');
-  // C tries to pair with A on its side and connect: A (pinned to B) must never accept C
-  await c.page.click('button[aria-label="Add your friend"]');
-  await a.page.click('button[aria-label="Settings"]');
-  await a.page.keyboard.press('Escape');
-  const cardA = await a.page.evaluate(() => null);
-  void cardA; void cardB;
-  await c.page.keyboard.press('Escape');
-  ctx.note('A pinned to B only; unsolicited identity C has no path in (sealed blobs from C fail the pinned-sender check)');
 });
 
 /* 5 ------------------------------------------------------------------ */
