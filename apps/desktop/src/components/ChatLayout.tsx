@@ -136,8 +136,9 @@ export function ChatLayout({
   }
 
   const peerActive = state.p2pConnected;
+  const relayed = state.path?.kind === 'relayed';
   const subline = state.p2pConnected
-    ? 'Direct connection active'
+    ? (state.path?.label ?? 'Direct connection active')
     : state.paired
       ? 'Not connected'
       : 'Not paired yet';
@@ -161,7 +162,7 @@ export function ChatLayout({
           <Avatar name={selfName} size={42} />
           <div>
             <strong>{selfName}</strong>
-            <span className="muted small">You</span>
+            <span className="muted small">This device</span>
           </div>
         </div>
 
@@ -169,7 +170,7 @@ export function ChatLayout({
           <Avatar name={peerName} size={42} online={peerActive} />
           <div>
             <strong>{peerName}</strong>
-            <span className="muted small">{subline}</span>
+            <span className={`muted small ${relayed ? 'path-relayed' : ''}`}>{subline}</span>
           </div>
         </div>
 
@@ -222,7 +223,7 @@ export function ChatLayout({
             <Avatar name={peerName} size={40} online={peerActive} />
             <div>
               <h1>{peerName}</h1>
-              <p className="muted small">{subline}</p>
+              <p className={`muted small ${relayed ? 'path-relayed' : ''}`}>{subline}</p>
             </div>
           </div>
           <div className="chat-header-actions">

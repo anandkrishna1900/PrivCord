@@ -48,7 +48,6 @@ data class OutboxRow(
 enum class EnginePhase { STARTING, READY, ERROR, STOPPED }
 enum class P2PState { IDLE, CONNECTING, CONNECTED, FAILED }
 enum class PeerTrust { NONE, VERIFIED, UNVERIFIED, CONFIRMED }
-enum class PeerKeySource { PINNED, MANUAL }
 
 enum class ConnectionMode {
     P2P_CONNECTED,

@@ -2647,3 +2647,59 @@ div:has(+ div > .message-row.grouped.own) > .message-row .bubble {
     display: none;
   }
 }
+
+.path-relayed {
+  color: var(--warning) !important;
+}
+
+/* ---------- Radios and checkboxes (the global input rule made them full width) ---------- */
+
+input[type='radio'],
+input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  padding: 0;
+  accent-color: var(--accent-fill);
+  box-shadow: none;
+}
+
+.option-row {
+  padding: 14px 15px;
+  margin: 12px 0;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  transition: border-color 0.16s ease, background 0.16s ease;
+}
+
+.option-row:hover {
+  border-color: var(--border-strong);
+}
+
+.option-row:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.option-row:focus-within,
+.check-row:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-md);
+}
+
+.option-row > div {
+  min-width: 0;
+}
+
+.option-row strong {
+  font-size: 0.86rem;
+  letter-spacing: 0.02em;
+}
+
+.check-row {
+  line-height: 1.45;
+  font-size: 0.88rem;
+  color: var(--text-soft);
+}

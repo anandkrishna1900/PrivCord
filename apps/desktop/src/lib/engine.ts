@@ -467,7 +467,9 @@ export class ChatEngine {
       peerTrust: 'none',
       safetyNumber: null,
       notice: wasConnected
-        ? 'Direct connection lost. Exchange a new connection code to reconnect.'
+        ? this.hub
+          ? 'Direct connection lost. Reconnecting automatically when your friend is online.'
+          : 'Direct connection lost. Exchange a new connection code to reconnect.'
         : this.state.notice,
     });
     this.updateConnection();

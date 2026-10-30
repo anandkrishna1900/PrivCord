@@ -127,6 +127,7 @@ export function RecoveryDialog({
       onClose={onClose}
       title={currentMode === 'backup' ? 'Your 12-word recovery phrase' : 'Restore your identity'}
       eyebrow="Cryptographic Identity"
+      dismissible={!required}
       wide
     >
       <div className="recovery-flow">

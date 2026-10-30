@@ -108,7 +108,7 @@ export function bleEpoch(nowMs: number): number {
 
 /** HMAC-SHA-256(secret, "duochat-ble-tag-v1|" + epoch) truncated to 8 bytes. `secret` is the 32-byte contact ECDH secret. */
 export async function bleTag(secret: Uint8Array, epoch: number): Promise<Uint8Array> {
-  const key = await crypto.subtle.importKey('raw', secret, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const key = await crypto.subtle.importKey('raw', secret.slice().buffer, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`duochat-ble-tag-v1|${epoch}`));
   return new Uint8Array(mac).slice(0, BLE_TAG_BYTES);
 }

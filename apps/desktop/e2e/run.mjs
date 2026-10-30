@@ -199,7 +199,9 @@ await scenario(5, 'store-and-forward: offline message arrives via relay; off = n
     const text = `offline msg storeForward=${enabled}`;
     await say(a.page, text);
     await a.page.waitForSelector(`text=${text}`);
-    await sleep(8000);
+    // A only notices the dead channel after ~10-20s; until then the message sits in the closed channel.
+    if (enabled) for (let i = 0; i < 60 && queued() === 0; i += 1) await sleep(1000);
+    else await sleep(30000);
     if (!enabled) {
       check(queued() === 0, 'storeForward off: nothing persisted on the relay', queued());
       ctx.note('storeForward off: relay queue.jsonl has 0 put records');
