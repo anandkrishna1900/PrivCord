@@ -3,6 +3,7 @@ package com.duochat.app.engine
 import com.duochat.app.ble.BleAvailability
 import com.duochat.app.ble.BleEnvironment
 import com.duochat.app.ble.bleReconnectDelayMs
+import com.duochat.app.ble.bluetoothStatusFor
 import com.duochat.app.data.BluetoothStatus
 import com.duochat.app.data.ChatMessage
 import com.duochat.app.data.ChatState
@@ -892,18 +893,14 @@ class ChatEngine(
     /** Re-reads what Bluetooth can do right now (permission, adapter, pairing) for the Settings row. */
     fun refreshBluetooth() {
         val session = peer
-        val status = when {
-            !networkConfig().bluetooth -> BluetoothStatus.DISABLED
-            ble == null -> BluetoothStatus.UNSUPPORTED
-            session?.isBluetooth == true && session.isReady -> BluetoothStatus.CONNECTED
-            session?.isBluetooth == true -> BluetoothStatus.SEARCHING
-            else -> when (ble.availability()) {
-                BleAvailability.UNSUPPORTED -> BluetoothStatus.UNSUPPORTED
-                BleAvailability.NEEDS_PERMISSION -> BluetoothStatus.NEEDS_PERMISSION
-                BleAvailability.ADAPTER_OFF -> BluetoothStatus.ADAPTER_OFF
-                BleAvailability.READY -> if (pinned?.dh == null) BluetoothStatus.NOT_PAIRED else BluetoothStatus.READY
-            }
-        }
+        val status = bluetoothStatusFor(
+            enabledInSettings = networkConfig().bluetooth,
+            hasEnvironment = ble != null,
+            linkIsBluetooth = session?.isBluetooth == true,
+            linkReady = session?.isReady == true,
+            availability = ble?.availability(),
+            paired = pinned?.dh != null,
+        )
         if (_state.value.bluetooth != status) _state.update { it.copy(bluetooth = status) }
     }
 
