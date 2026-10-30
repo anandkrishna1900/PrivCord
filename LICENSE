@@ -1,202 +1,144 @@
+PrivCord Community & Non-Commercial License (PC-NC)
+Copyright © 2026 anandkrishna1900. All rights reserved.
+Original Project: PrivCord
+Original Creator: anandkrishna1900
+Official Repository: https://github.com/anandkrishna1900/PrivCord
+Licensing Contact: blackydog0007@gmail.com
 
-                                 Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
+1. Definitions
+For the purposes of this license:
+"Software" means the original PrivCord source code, application, documentation, and other materials owned by the original copyright holder and distributed under this license.
+"Original Creator" means anandkrishna1900, the original creator and copyright holder of the Software.
+"Derivative Work" means a modified version, adaptation, extension, or other work based on or incorporating substantial portions of the Software.
+"Commercial Use" means using the Software or a Derivative Work primarily for commercial advantage, monetary compensation, or the operation of a commercial product or service. This includes selling the Software, offering paid access, charging subscription fees, monetizing its functionality, or incorporating it into a commercial product or service.
+"Network Service" means a version of the Software or a Derivative Work operated on a server or otherwise made available to users over a network.
+"Corresponding Source Code" means the complete source code, including modifications and additional code necessary to build, install, run, and modify the relevant version, excluding separately licensed third-party components that are not owned by the Original Creator.
 
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+2. Grant of Permission
+Subject to the conditions of this license, permission is granted to individuals and organisations to:
+Access and study the Software.
+Use the Software for personal purposes.
+Use the Software for educational and research purposes.
+Copy and modify the source code.
+Create personal or non-commercial Derivative Works.
+Build and compile modified versions.
+Distribute original or modified versions for non-commercial purposes.
+Make modified versions available as non-commercial Network Services.
+All permissions granted under this license are conditional upon compliance with its terms.
 
-   1. Definitions.
+3. Attribution Requirements
+The Original Creator must receive clear and appropriate credit whenever the Software or a Derivative Work is used, modified, built, published, or redistributed.
+Attribution must include:
+Original Project: PrivCord
+Original Creator: anandkrishna1900
+Original Repository: https://github.com/anandkrishna1900/PrivCord
+The attribution must be reasonably visible and accessible.
+For distributed applications, attribution must appear in at least one appropriate location, such as:
+An About or Credits section within the application.
+A credits page or documentation accompanying the application.
+A clearly visible acknowledgement in the project's repository or distribution page.
+Original copyright notices and this license must be retained in redistributed copies.
+You may not claim to be the original creator of PrivCord or misrepresent the origin of the original Software.
 
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
+4. Source Code Disclosure for Distributed Versions
+If you distribute, publish, share, or otherwise make a modified version or Derivative Work available to other people, you must:
+Make the complete Corresponding Source Code of that version publicly available.
+Include all modifications and additions made to the original Software.
+Make the source code available under this same license.
+Include the original copyright and attribution notices.
+Include a copy of this license.
+Provide a convenient link to the source code wherever the modified application or build is distributed.
+This requirement applies to, but is not limited to:
+Modified Android applications.
+Modified desktop applications.
+Modified installers and executable builds.
+Modified versions published on GitHub or other repositories.
+Modified versions distributed through application stores.
+Modified applications shared privately with other people.
+A person may use or modify the Software privately without publishing their modifications, provided they do not distribute the modified version or make it available as a Network Service.
 
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
+5. Network Use and Source Code Disclosure
+If you modify the Software or create a Derivative Work and make that modified version available to users over a network, you must:
+Publish the complete Corresponding Source Code of the version being operated.
+Include all modifications and additions made to the original Software.
+Make the source code available under this same license.
+Preserve the original copyright and attribution notices.
+Provide users of the Network Service with a clearly visible and accessible link to the Corresponding Source Code.
+Ensure that users can obtain the source code without unreasonable restrictions or additional payment.
+This requirement applies even if the modified Software is never distributed as an installable application.
+Examples include:
+Hosting a modified PrivCord messaging service.
+Operating a modified server or backend based on PrivCord.
+Providing modified PrivCord functionality through a website.
+Offering a modified version of PrivCord as an online service.
+Operating a modified version that users access through an application or network connection.
+Merely operating an unmodified version of the original Software does not, by itself, require publication of private configuration or deployment information.
+This section does not grant permission for Commercial Use. All commercial use remains subject to Section 6.
 
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
+6. Commercial Use and Licensing Permission
+Commercial use of PrivCord is not permitted without prior written permission from the Original Creator.
+You must obtain explicit written authorisation before using the Software or any Derivative Work for commercial purposes.
+Commercial activities include, but are not limited to:
+Selling PrivCord or a modified version.
+Offering PrivCord as a paid product.
+Charging subscription or access fees.
+Monetising PrivCord functionality.
+Offering PrivCord as a commercial hosted service.
+Incorporating PrivCord into a commercial product.
+Using PrivCord or a Derivative Work as part of a revenue-generating business offering.
+To request commercial permission, contact:
+Email: blackydog0007@gmail.com
+Commercial permission may be granted or refused at the sole discretion of the Original Creator.
+Any approved commercial use must:
+Retain appropriate attribution to the Original Creator.
+Follow the conditions specified in the written commercial agreement.
+Respect any additional licensing, payment, or distribution conditions agreed upon.
+A commercial licence may establish terms that differ from this community license.
+No commercial permission is granted merely because someone has access to the public source code.
 
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
+7. Restrictions
+Without prior written permission from the Original Creator, you may not:
+Use the Software or a Derivative Work for Commercial Use.
+Remove or deliberately conceal the original copyright notices.
+Remove or misrepresent the Original Creator's attribution.
+Distribute modified builds without publishing their Corresponding Source Code as required by this license.
+Operate modified Network Services without publishing their Corresponding Source Code as required by this license.
+Claim ownership of the original PrivCord project or its original code.
+Present PrivCord as an independently created project when it is based on the original Software.
 
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
+8. Third-Party Components
+This license applies only to the original code and materials owned by the Original Creator.
+Third-party libraries, frameworks, dependencies, fonts, icons, images, and other externally licensed materials remain subject to their respective licences.
+Nothing in this license overrides the rights or obligations established by third-party licences.
+Users are responsible for complying with the applicable licences of third-party components.
 
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
+9. Intellectual Property and Trademarks
+The Original Creator retains ownership of the original PrivCord code and associated intellectual property.
+This license does not grant permission to use any trademarks, logos, branding, or names associated with PrivCord in a way that implies official endorsement, affiliation, or ownership.
+You may identify PrivCord as the original project from which your Derivative Work originates, provided that the attribution is accurate and does not imply endorsement.
 
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
+10. Termination
+The permissions granted under this license automatically terminate if you fail to comply with its terms.
+Upon termination, you must stop exercising the permissions granted under this license unless your rights are reinstated under applicable law or through written permission from the Original Creator.
+Termination does not eliminate obligations or liabilities arising from violations that occurred before termination.
 
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
+11. No Warranty
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.
+THIS INCLUDES, WITHOUT LIMITATION, WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT.
+THE ORIGINAL CREATOR SHALL NOT BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM THE USE OF, DISTRIBUTION OF, OR INABILITY TO USE THE SOFTWARE, TO THE EXTENT PERMITTED BY APPLICABLE LAW.
 
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
+12. Limitation of Liability
+To the maximum extent permitted by applicable law, the Original Creator shall not be responsible for indirect, incidental, special, exemplary, or consequential damages, including loss of data, profits, business opportunities, or service availability arising from the use of the Software.
 
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
+13. Changes to This License
+The Original Creator may publish updated versions of this license.
+Unless expressly stated otherwise, a new version does not automatically change the terms applicable to copies already received under an earlier version.
 
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
+14. Contact and Permissions
+For questions, permissions, commercial licensing, or other licensing enquiries, contact:
+anandkrishna1900
+Email: blackydog0007@gmail.com
+Official Repository:
+https://github.com/anandkrishna1900/PrivCord
 
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
-
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
-
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
-
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
-
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
-
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
-
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
-
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
-
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
-
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
-
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
-
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
-
-   END OF TERMS AND CONDITIONS
-
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "[]"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
-
-   Copyright [yyyy] [name of copyright owner]
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
+END OF PRIVCORD COMMUNITY & NON-COMMERCIAL LICENSE

@@ -125,11 +125,14 @@ and, in restrictive networks, TURN infrastructure, whichever you choose.
 
 ## License and credit
 
-Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). You may use, modify and
-distribute DuoChat, including commercially, under its terms. Contributions are accepted under
-the same license.
+PrivCord Community & Non-Commercial License (PC-NC). See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Non-commercial, personal, and research use is permitted subject to the conditions of the license.
+Commercial use requires prior written authorization from the Original Creator.
 
-**Created by [anandkrishna1900](https://github.com/anandkrishna1900).** If you use or
-redistribute this code or a work derived from it, you must keep the `NOTICE` file (or reproduce
-its attribution in your documentation or product) and the copyright notices. Please credit
-"DuoChat by anandkrishna1900".
+**Created by [anandkrishna1900](https://github.com/anandkrishna1900).**
+- **Original Project**: PrivCord
+- **Original Creator**: anandkrishna1900
+- **Official Repository**: https://github.com/anandkrishna1900/PrivCord
+- **Commercial Licensing & Inquiries**: [blackydog0007@gmail.com](mailto:blackydog0007@gmail.com)
+
+If you use or redistribute this code or a work derived from it, you must keep the `NOTICE` file, retain the original copyright and attribution notices, and credit "PrivCord by anandkrishna1900".
