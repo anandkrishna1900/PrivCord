@@ -21,9 +21,9 @@ Commercial permission is required for activities including:
 
 ## How to Request Commercial Permission
 To request a commercial licence, contact:
-- **Email**: [blackydog0007@gmail.com](mailto:blackydog0007@gmail.com)
+- **X (Twitter)**: https://x.com/AnandKrishnaK1
 
-Use the following email subject:
+Send a message that starts with:
 ```text
 Commercial Licensing Request – PrivCord
 ```
@@ -70,7 +70,7 @@ All commercial use must comply with the PrivCord Community & Non-Commercial Lice
 
 ## Contact
 - **Licensing Contact**: anandkrishna1900
-- **Email**: [blackydog0007@gmail.com](mailto:blackydog0007@gmail.com)
+- **X (Twitter)**: https://x.com/AnandKrishnaK1
 - **GitHub**: https://github.com/anandkrishna1900
 - **Official Repository**: https://github.com/anandkrishna1900/PrivCord
 

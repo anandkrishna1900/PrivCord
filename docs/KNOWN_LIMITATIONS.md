@@ -23,3 +23,23 @@ Local kill switch activation operates strictly within the local device boundary:
 ## 3. Network & Transport Constraints
 - **Direct P2P NAT Traversal**: In symmetrical NAT environments where STUN cannot resolve a direct route, WebRTC falls back to encrypted TURN relays. While traffic is end-to-end encrypted, metadata (IP address, packet timing) is visible to the relay operator.
 
+---
+
+## 4. Groups
+- **Full mesh.** Every member connects to every other member, so a group of N means N-1 links per
+  device. The logic is simulated to 25 members and tested with 6 real browsers; phones may struggle
+  well before 30. The apps cap simultaneous links at 30.
+- **Introductions are trust.** Anyone who is added to a group by a member you already trust becomes a
+  contact (labelled "Introduced by NAME"). A malicious or compromised member could introduce an
+  impostor. Use Verify (the safety numbers) for people who matter.
+- **Removal is forward-looking.** A removed member keeps what they already received, and nothing can
+  delete it.
+- **New members get no history.** They see messages sent after they joined.
+- **Admin is the creator.** Only the creator can remove others or rename the group.
+- **Large groups and offline members.** Messages for a member you cannot reach yet are queued and sent
+  when the link opens.
+
+## 5. Not available
+- No file or photo attachments.
+- No push notifications (there is no server to send them).
+- No multi-hop Bluetooth mesh.

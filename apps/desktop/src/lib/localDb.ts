@@ -14,6 +14,14 @@ export interface OutboxRow {
   lastError: string | null;
 }
 
+/** A message plus where it belongs and how each recipient is doing (one entry for a direct chat). */
+export interface StoredMessage extends ChatMessage {
+  /** Contact uid for a direct chat, group id for a group chat. */
+  conversationId: string;
+  /** Delivery state per recipient uid. `deliveryState` is the weakest of these. */
+  recipients?: Record<string, DeliveryState>;
+}
+
 interface MessageRow {
   message_id: string;
   client_message_id: string;
@@ -24,6 +32,8 @@ interface MessageRow {
   transport: string;
   delivery_state: string;
   read_at: number | null;
+  conversation_id?: string;
+  recips?: string | null;
 }
 
 interface OutboxDbRow {
@@ -50,10 +60,22 @@ function emptyBrowserState(): BrowserState {
   return { messages: [], outbox: [], meta: {} };
 }
 
-function rowToMessage(row: MessageRow): Omit<ChatMessage, 'text'> & {
+function parseRecips(raw: string | null | undefined): Record<string, DeliveryState> | undefined {
+  if (!raw) return undefined;
+  try {
+    const value = JSON.parse(raw) as Record<string, DeliveryState>;
+    return value && typeof value === 'object' ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function rowToMessage(row: MessageRow): Omit<StoredMessage, 'text'> & {
   textCipher: string;
 } {
   return {
+    conversationId: row.conversation_id ?? '',
+    recipients: parseRecips(row.recips),
     messageId: row.message_id,
     clientMessageId: row.client_message_id,
     senderId: row.sender_id,
@@ -100,9 +122,19 @@ export class LocalStore {
             message_type TEXT NOT NULL,
             transport TEXT NOT NULL,
             delivery_state TEXT NOT NULL,
-            read_at INTEGER
+            read_at INTEGER,
+            conversation_id TEXT NOT NULL DEFAULT '',
+            recips TEXT
           )
         `);
+        // Databases created by older versions lack these columns: add them (errors mean "already there").
+        for (const column of ["conversation_id TEXT NOT NULL DEFAULT ''", 'recips TEXT']) {
+          try {
+            await this.sql.execute(`ALTER TABLE messages ADD COLUMN ${column}`);
+          } catch {
+            // already present
+          }
+        }
         await this.sql.execute(`
           CREATE TABLE IF NOT EXISTS outbox (
             message_id TEXT PRIMARY KEY,
@@ -152,7 +184,7 @@ export class LocalStore {
     localStorage.setItem(BROWSER_KEY, JSON.stringify(state));
   }
 
-  async loadMessages(limit = MAX_MESSAGES): Promise<ChatMessage[]> {
+  async loadMessages(limit = MAX_MESSAGES): Promise<StoredMessage[]> {
     let rows: MessageRow[] = [];
     if (this.sql) {
       rows = await this.sql.select<MessageRow[]>(
@@ -172,7 +204,7 @@ export class LocalStore {
         )
         .slice(-limit);
     }
-    const messages: ChatMessage[] = [];
+    const messages: StoredMessage[] = [];
     for (const row of rows) {
       const base = rowToMessage(row);
       const { textCipher, ...rest } = base;
@@ -185,8 +217,10 @@ export class LocalStore {
     return messages;
   }
 
-  private async toRow(message: ChatMessage): Promise<MessageRow> {
+  private async toRow(message: StoredMessage): Promise<MessageRow> {
     return {
+      conversation_id: message.conversationId,
+      recips: message.recipients ? JSON.stringify(message.recipients) : null,
       message_id: message.messageId,
       client_message_id: message.clientMessageId,
       sender_id: message.senderId,
@@ -199,19 +233,21 @@ export class LocalStore {
     };
   }
 
-  async putMessage(message: ChatMessage): Promise<void> {
+  async putMessage(message: StoredMessage): Promise<void> {
     const row = await this.toRow(message);
     if (this.sql) {
       await this.sql.execute(
         `INSERT INTO messages (
           message_id, client_message_id, sender_id, text_cipher, client_created_at,
-          message_type, transport, delivery_state, read_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+          message_type, transport, delivery_state, read_at, conversation_id, recips
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
         ON CONFLICT(message_id) DO UPDATE SET
           text_cipher = excluded.text_cipher,
           transport = excluded.transport,
           delivery_state = excluded.delivery_state,
-          read_at = excluded.read_at`,
+          read_at = excluded.read_at,
+          conversation_id = excluded.conversation_id,
+          recips = excluded.recips`,
         [
           row.message_id,
           row.client_message_id,
@@ -222,6 +258,8 @@ export class LocalStore {
           row.transport,
           row.delivery_state,
           row.read_at,
+          row.conversation_id ?? '',
+          row.recips ?? null,
         ],
       );
       return;
@@ -244,6 +282,8 @@ export class LocalStore {
       deliveryState?: DeliveryState;
       transport?: 'p2p' | 'relay';
       readAt?: number | null;
+      conversationId?: string;
+      recipients?: Record<string, DeliveryState>;
     },
   ): Promise<void> {
     if (this.sql) {
@@ -257,6 +297,8 @@ export class LocalStore {
         add('delivery_state', patch.deliveryState);
       if (patch.transport !== undefined) add('transport', patch.transport);
       if (patch.readAt !== undefined) add('read_at', patch.readAt);
+      if (patch.conversationId !== undefined) add('conversation_id', patch.conversationId);
+      if (patch.recipients !== undefined) add('recips', JSON.stringify(patch.recipients));
       if (assignments.length === 0) return;
       values.push(messageId);
       await this.sql.execute(
@@ -271,7 +313,24 @@ export class LocalStore {
     if (patch.deliveryState !== undefined) row.delivery_state = patch.deliveryState;
     if (patch.transport !== undefined) row.transport = patch.transport;
     if (patch.readAt !== undefined) row.read_at = patch.readAt;
+    if (patch.conversationId !== undefined) row.conversation_id = patch.conversationId;
+    if (patch.recipients !== undefined) row.recips = JSON.stringify(patch.recipients);
     this.writeBrowser(state);
+  }
+
+  /** Small encrypted JSON blobs (contacts, groups): names and membership are private. */
+  async getSecret<T>(key: string): Promise<T | null> {
+    const raw = await this.getMeta(`secret.${key}`);
+    if (!raw) return null;
+    try {
+      return JSON.parse(await this.decrypt(raw)) as T;
+    } catch {
+      return null;
+    }
+  }
+
+  async setSecret(key: string, value: unknown): Promise<void> {
+    await this.setMeta(`secret.${key}`, await this.encrypt(JSON.stringify(value)));
   }
 
   async loadOutbox(): Promise<OutboxRow[]> {

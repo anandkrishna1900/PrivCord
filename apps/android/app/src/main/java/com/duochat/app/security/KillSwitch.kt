@@ -390,6 +390,8 @@ class AppWideHooks(
         val dao = database.dao()
         dao.clearMessages()
         dao.clearOutbox()
+        dao.clearContacts()
+        dao.clearGroupLogs()
     }
 
     private fun deleteLocalCryptoKey() {

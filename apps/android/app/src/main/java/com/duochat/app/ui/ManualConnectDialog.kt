@@ -134,7 +134,7 @@ fun ManualConnectDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                if (state.p2pConnected) {
+                if (state.manual.connected) {
                     Spacer(Modifier.height(12.dp))
                     Surface(
                         color = MaterialTheme.colorScheme.primaryContainer,
@@ -373,7 +373,7 @@ fun ManualConnectDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                val safety = state.safetyNumber
+                val safety = state.manual.safetyNumber
                 if (safety != null) {
                     Spacer(Modifier.height(10.dp))
                     Surface(
@@ -419,7 +419,7 @@ fun ManualConnectDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        when (state.peerTrust) {
+                        when (state.manual.trust) {
                             PeerTrust.CONFIRMED -> "confirmed"
                             PeerTrust.VERIFIED -> "verified (paired device)"
                             PeerTrust.UNVERIFIED -> "unverified"
@@ -432,8 +432,8 @@ fun ManualConnectDialog(
                 Spacer(Modifier.height(10.dp))
                 Button(
                     onClick = onConfirmPeer,
-                    enabled = state.peerTrust == PeerTrust.UNVERIFIED ||
-                        state.peerTrust == PeerTrust.VERIFIED,
+                    enabled = state.manual.trust == PeerTrust.UNVERIFIED ||
+                        state.manual.trust == PeerTrust.VERIFIED,
                 ) {
                     Icon(
                         Icons.Filled.Shield,

@@ -1,60 +1,41 @@
-# PrivCord / DuoChat — Complete Architecture Documentation
+# Architecture
 
-## Overview
-PrivCord (DuoChat) is an end-to-end encrypted, zero-account, decentralized messaging application supporting Android and Desktop. It operates without centralized accounts, phone numbers, or cloud databases.
+PrivCord is an end-to-end encrypted messenger with no accounts and no required backend. This page
+is the map; details live in the linked documents.
 
-## 1. Identity & Cryptography
-- **BIP-39**: 12-word mnemonic seed derivation.
-- **NIST P-256 (secp256r1)**:
-  - ECDSA: Authenticated signing for contact cards, ephemeral handshakes, and sealed mailboxes.
-  - ECDH: Point-to-point key agreement and ephemeral link forward-secrecy.
-- **HKDF-SHA-256**: Key derivation for ratchets, link encryption, and storage encryption.
-- **AES-256-GCM**: Frame and message content authenticated encryption with associated data (AAD).
+## Layers
 
-## 2. Multi-Contact Architecture (Phase 1)
-- Multi-peer storage schema (Room Database v4 / SQLite).
-- Individual conversation threads isolated by `conversationId`.
-- Independent connection and signaling sessions per contact.
-- Contact cards with cryptographically bound signatures and safety numbers.
+| Layer | What it does | Where |
+|---|---|---|
+| **Identity** | A 12-word BIP-39 phrase derives the identity keys (ECDSA P-256 for signing, ECDH P-256 for key agreement). A user id is the fingerprint of the ECDH key. Same phrase, same identity, on any device. | `packages/protocol/src/recovery`, [IDENTITY_AND_RECOVERY.md](IDENTITY_AND_RECOVERY.md) |
+| **Contacts** | A friend is a pinned identity card (exchanged by QR or invite text). `verified` = cards exchanged directly. `introduced` = learned from a group, added by a member. | `connectivity/contactCard.ts` |
+| **Links** | One authenticated, encrypted channel per contact: WebRTC data channel, or Bluetooth LE with its own forward-secret channel. After connecting, both sides prove their keys match the pinned ones. Heartbeat detects dead links. | `peerAuth.ts`, `connectivity/secureChannel.ts`, [BLE_TRANSPORT.md](BLE_TRANSPORT.md) |
+| **Finding each other** | Sealed (encrypted + signed) offers and answers delivered by signaling: public Nostr relays and/or your own relay, or through a mutual friend. Optional store-and-forward for offline friends. | `connectivity/seal.ts`, `relay/`, [CONNECTIVITY.md](CONNECTIVITY.md) |
+| **Groups** | A group is a signed event log every member holds. Members can add members; the added member's card is the introduction, so everyone connects to them automatically. Messages go to each member over that member's own link. | `groups/`, [GROUPS.md](GROUPS.md) |
+| **Storage** | Messages, contacts and group logs are stored locally with message text encrypted at rest. An outbox keeps unsent messages per recipient. | desktop `lib/localDb.ts`, Android Room |
 
-## 3. Group Messaging Architecture (Phase 2)
-- **Epoch-Based Group Sender Keys (`GroupSessionManager`)**:
-  - Each group contains distinct epochs.
-  - Forward-secrecy & break-in recovery: Keys rotate on epoch change.
-  - Evicted members cannot decrypt future epoch messages.
-  - Ephemeral epoch keys distributed via pairwise sealed envelopes.
+## Data flow for one message
 
-## 4. Bluetooth Multi-Hop Mesh (Phase 3)
-- **Mesh Packet Protocol (`MeshRouter` / `AndroidMeshRouter`)**:
-  - Format: `{ packetId, originUid, destUid, ttl, maxHops, timestamp, payload }`.
-  - Loop prevention: 16-byte random packet IDs deduplicated across sliding cache.
-  - Zero plaintext leakage: Intermediate relay nodes forward ciphertext envelopes without message keys.
-  - Store-Carry-Forward: Nodes store unexpired packets for offline neighbors.
+1. You send. The message is stored locally and queued once per recipient (one for a friend, one per
+   member for a group).
+2. For each recipient whose link is open, the message goes straight over that link and is acknowledged.
+3. Everyone else stays queued; when their link opens (automatically, as soon as both are reachable)
+   the queue is flushed. With store-and-forward on, a sealed copy can also wait on a relay.
 
-## 5. Automatic Transport Selection (Phase 4)
-- **Fallback Strategy**:
-  1. Direct Bluetooth Low Energy link.
-  2. BLE Mesh Multi-hop route.
-  3. Internet WebRTC Direct DataChannel.
-  4. Encrypted Nostr / Self-hosted Relay queue.
-  5. Local encrypted outbox queue.
-- UI status reflects actual transmission state: `QUEUED`, `SENT`, `DELIVERED`, `READ`, `FAILED`.
+## What servers can see
 
-## 6. Encrypted File Sharing (Phase 5)
-- **Chunked File Transfer (`FileTransferManager`)**:
-  - Fixed-size chunking (16KB – 64KB).
-  - Per-transfer unique AES-256-GCM encryption key.
-  - SHA-256 cryptographic verification of reassembled payload.
-  - Progress tracking, pause, resume, and incomplete transfer cleanup.
+Nothing in this design needs a server that reads messages. The optional services are different roles
+and are configured separately:
 
-## 7. Android Background Receiving (Phase 6)
-- Persistent `DuoBackgroundService` with `connectedDevice` foreground service type.
-- Network callback monitoring and automatic session recovery.
-- Battery optimization guidelines in settings.
+* **Signaling** sees sealed blobs addressed to a hashed mailbox: sizes and timing, never content.
+* **STUN** sees your public address. **TURN** relays already-encrypted traffic and sees metadata.
+* **A store-and-forward relay** holds sealed messages for offline friends (off by default).
 
-## 8. Emergency Deletion (Phase 9)
-- Rapid kill-switch mechanism:
-  - Destroys active WebRTC peer connections and BLE links.
-  - Purges local Room SQLite database tables (`messages`, `outbox`, `contacts`, `groups`, `file_transfers`).
-  - Purges Android Keystore / local encrypted private key material.
+The app is **not serverless**: across the internet it depends on whichever signaling, STUN and (in
+strict networks) TURN you configure.
 
+## Not implemented
+
+Some building blocks exist in `packages/protocol` but nothing uses them yet: epoch group keys
+(`e2ee/groupCrypto.ts`), multi-hop Bluetooth mesh routing (`connectivity/mesh.ts`) and chunked file
+transfer (`connectivity/fileSharing.ts`). There are **no attachments** and no mesh relaying in the apps.

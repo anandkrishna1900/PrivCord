@@ -5,8 +5,8 @@ export interface AppSettings {
   accent: string;
   notificationsEnabled: boolean;
   notificationPreviews: boolean;
-  /** Local nickname for the other person (never sent anywhere). */
-  peerNickname: string;
+  /** The name friends see on your invite. */
+  displayName: string;
 }
 
 export const ACCENTS = [
@@ -24,7 +24,7 @@ const DEFAULTS: AppSettings = {
   accent: ACCENTS[0].value,
   notificationsEnabled: true,
   notificationPreviews: true,
-  peerNickname: '',
+  displayName: '',
 };
 
 export function parseSettings(raw: string | null): AppSettings {
@@ -48,10 +48,10 @@ export function parseSettings(raw: string | null): AppSettings {
         typeof parsed.notificationPreviews === 'boolean'
           ? parsed.notificationPreviews
           : DEFAULTS.notificationPreviews,
-      peerNickname:
-        typeof parsed.peerNickname === 'string'
-          ? parsed.peerNickname.trim().slice(0, 40)
-          : DEFAULTS.peerNickname,
+      displayName:
+        typeof parsed.displayName === 'string'
+          ? parsed.displayName.trim().slice(0, 40)
+          : DEFAULTS.displayName,
     };
   } catch {
     return { ...DEFAULTS };

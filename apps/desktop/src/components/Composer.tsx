@@ -1,23 +1,20 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ChangeEvent } from 'react';
-import { MAX_TEXT_LENGTH, countCodePoints, FileTransferManager, type FileMetadata } from '@duochat/protocol';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { MAX_TEXT_LENGTH, countCodePoints } from '@duochat/protocol';
 import { SendIcon } from './Icons';
 
 export function Composer({
   onSend,
-  onSendFile,
   disabled,
-  connected,
+  placeholder,
 }: {
   onSend: (text: string) => Promise<{ ok: true } | { ok: false; error: string }>;
-  onSendFile?: (file: File) => Promise<void>;
   disabled: boolean;
-  connected: boolean;
+  placeholder: string;
 }) {
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const sendingRef = useRef(false);
 
   const length = countCodePoints(text);
@@ -61,25 +58,6 @@ export function Composer({
     }
   }
 
-  async function handleFileSelected(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    try {
-      setSending(true);
-      if (onSendFile) {
-        await onSendFile(file);
-      } else {
-        // Fallback: send as metadata representation
-        await onSend(`[Attachment: ${file.name} (${(file.size / 1024).toFixed(1)} KB)]`);
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'File transfer failed');
-    } finally {
-      setSending(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  }
-
   return (
     <div className="composer-wrapper">
       {error ? (
@@ -88,25 +66,7 @@ export function Composer({
         </div>
       ) : null}
 
-      <input
-        type="file"
-        ref={fileInputRef}
-        style={{ display: 'none' }}
-        onChange={handleFileSelected}
-      />
-
       <div className={`composer ${overLimit ? 'over-limit' : ''}`}>
-        <button
-          type="button"
-          className="icon-button attach-button"
-          title="Attach encrypted file or image"
-          disabled={disabled || sending}
-          onClick={() => fileInputRef.current?.click()}
-          style={{ marginRight: '4px' }}
-        >
-          📎
-        </button>
-
         <textarea
           ref={textareaRef}
           value={text}
@@ -115,11 +75,7 @@ export function Composer({
             if (error) setError(null);
           }}
           onKeyDown={handleKeyDown}
-          placeholder={
-            connected
-              ? 'Write a message… (Enter to send, Shift+Enter for newline)'
-              : 'Write a message — it will be queued until connected…'
-          }
+          placeholder={placeholder}
           disabled={disabled}
           rows={1}
           aria-label="Message text"

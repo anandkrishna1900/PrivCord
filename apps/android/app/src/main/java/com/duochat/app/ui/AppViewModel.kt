@@ -21,18 +21,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import com.duochat.app.data.local.ContactEntity
-import com.duochat.app.data.local.GroupEntity
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val settingsRepository = SettingsRepository(application)
     private val identityManager = AndroidIdentityManager(application)
+
+    // No destructive fallback: a missing migration must fail loudly instead of silently wiping every message.
     private val database by lazy {
         Room.databaseBuilder(application, DuoDatabase::class.java, "duochat.db")
-            .addMigrations(DuoDatabase.MIGRATION_1_2, DuoDatabase.MIGRATION_2_3, DuoDatabase.MIGRATION_3_4)
-            .fallbackToDestructiveMigration()
+            .addMigrations(
+                DuoDatabase.MIGRATION_1_2, DuoDatabase.MIGRATION_2_3, DuoDatabase.MIGRATION_3_4, DuoDatabase.MIGRATION_4_5,
+            )
             .build()
     }
 
@@ -67,7 +68,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         startEngine()
-        loadConversations()
         runCatching {
             application.getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(networkCallback)
         }
@@ -85,20 +85,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun ownCard(): String = engine?.ownCard(settingsRepository.settings.value.peerNickname.ifBlank { null }) ?: ""
-
-    fun previewContact(text: String): Result<Unit> = runCatching {
-        (engine ?: throw IllegalStateException("Chat is not ready.")).previewContact(text)
-    }
-
-    fun confirmContact() {
-        engine?.confirmContact()
-    }
-
-    fun cancelContact() {
-        engine?.cancelContact()
-    }
-
     /** (Re)starts the chat engine. Also used by the "Try again" button. */
     fun startEngine() {
         stopEngine()
@@ -107,24 +93,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val store = MessageStore(database.dao(), crypto)
         val created = ChatEngine(
             scope = viewModelScope,
-            conversationId = AppConfig.conversationId,
+            handshakeId = AppConfig.conversationId,
             store = store,
             identityManager = identityManager,
             networkConfig = { settingsRepository.settings.value.network },
+            ownName = { settingsRepository.settings.value.displayName },
+            legacyNickname = { settingsRepository.settings.value.peerNickname },
+            isMuted = { id -> id in settingsRepository.settings.value.mutedChats },
             ble = com.duochat.app.ble.AndroidBleEnvironment(application),
-            onNotify = { message ->
-                if (!visible) {
-                    val nickname = settingsRepository.settings.value.peerNickname
-                    DuoNotifications.showIncoming(
-                        application,
-                        message,
-                        nickname.ifBlank { "Your friend" },
-                        settingsRepository.settings.value,
-                    )
-                }
-            },
+            onNotify = { notice -> DuoNotifications.showNotice(application, notice, settingsRepository.settings.value) },
         )
         engine = created
+        if (visible) created.setVisible(true)
         stateJob = viewModelScope.launch {
             created.state.collect { _chat.value = it }
         }
@@ -146,19 +126,64 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         engine?.setVisible(isVisible)
     }
 
-    fun updateSettings(patch: AppSettings.() -> AppSettings) {
-        val before = settingsRepository.settings.value.network
-        settingsRepository.update(patch)
-        if (settingsRepository.settings.value.network != before) engine?.reloadNetwork()
+    fun setOpenChat(conversationId: String?) {
+        engine?.setOpenChat(conversationId)
     }
 
-    fun send(text: String, onResult: (Result<Unit>) -> Unit) {
+    fun updateSettings(patch: AppSettings.() -> AppSettings) {
+        val before = settingsRepository.settings.value
+        settingsRepository.update(patch)
+        val after = settingsRepository.settings.value
+        if (after.network != before.network) engine?.reloadNetwork()
+        if (after.displayName != before.displayName) engine?.onOwnNameChanged()
+    }
+
+    fun toggleMute(conversationId: String) {
+        updateSettings {
+            copy(mutedChats = if (conversationId in mutedChats) mutedChats - conversationId else mutedChats + conversationId)
+        }
+    }
+
+    fun ownCard(): String = runCatching { engine?.ownCard() }.getOrNull().orEmpty()
+
+    private fun <T> withEngine(onResult: (Result<T>) -> Unit, block: suspend (ChatEngine) -> Result<T>) {
         val current = engine ?: run {
             onResult(Result.failure(IllegalStateException("Chat is not ready.")))
             return
         }
-        viewModelScope.launch { onResult(current.send(text)) }
+        viewModelScope.launch { onResult(runCatching { block(current).getOrThrow() }) }
     }
+
+    fun addFriend(text: String, onResult: (Result<String>) -> Unit) = withEngine(onResult) { it.addFriend(text) }
+
+    fun markChecked(uid: String) {
+        viewModelScope.launch { engine?.markChecked(uid) }
+    }
+
+    fun renameFriend(uid: String, name: String) {
+        viewModelScope.launch { engine?.renameFriend(uid, name) }
+    }
+
+    fun removeFriend(uid: String, onResult: (Result<Unit>) -> Unit) = withEngine(onResult) { it.removeFriend(uid) }
+
+    fun removeBlocker(uid: String): String? = engine?.removeBlocker(uid)
+
+    fun createGroup(name: String, memberUids: List<String>, onResult: (Result<String>) -> Unit) =
+        withEngine(onResult) { it.createGroup(name, memberUids) }
+
+    fun addToGroup(groupId: String, uids: List<String>, onResult: (Result<Unit>) -> Unit) =
+        withEngine(onResult) { it.addToGroup(groupId, uids) }
+
+    fun removeFromGroup(groupId: String, uid: String, onResult: (Result<Unit>) -> Unit) =
+        withEngine(onResult) { it.removeFromGroup(groupId, uid) }
+
+    fun leaveGroup(groupId: String, onResult: (Result<Unit>) -> Unit) = withEngine(onResult) { it.leaveGroup(groupId) }
+
+    fun renameGroup(groupId: String, name: String, onResult: (Result<Unit>) -> Unit) =
+        withEngine(onResult) { it.renameGroup(groupId, name) }
+
+    fun send(conversationId: String, text: String, onResult: (Result<Unit>) -> Unit) =
+        withEngine(onResult) { it.send(conversationId, text) }
 
     fun retry(messageId: String) {
         viewModelScope.launch { engine?.retry(messageId) }
@@ -168,15 +193,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         engine?.clearNotice()
     }
 
-    fun confirmPeer() {
-        engine?.confirmPeer()
+    fun clearChat(conversationId: String) {
+        viewModelScope.launch { engine?.clearChat(conversationId) }
     }
 
-    /** Looks for the paired friend over Bluetooth. Fails with a readable message instead of prompting. */
-    fun connectBluetooth(onResult: (Result<Unit>) -> Unit) {
-        val current = engine ?: return onResult(Result.failure(IllegalStateException("Chat is not ready.")))
-        viewModelScope.launch { onResult(current.connectBluetooth(manual = true)) }
+    fun clearLocalData(onResult: (Result<Unit>) -> Unit) {
+        withEngine(onResult) { Result.success(it.clearLocalData()) }
     }
+
+    /** Looks for a friend over Bluetooth. Fails with a readable message instead of prompting. */
+    fun connectBluetooth(uid: String, onResult: (Result<Unit>) -> Unit) =
+        withEngine(onResult) { it.connectBluetooth(uid, manual = true) }
 
     /** Call after the user answered the Bluetooth permission prompt. */
     fun refreshBluetooth() {
@@ -187,49 +214,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         engine?.cancelManual()
     }
 
-    fun createManualOffer(onResult: (Result<String>) -> Unit) {
-        val current = engine ?: run {
-            onResult(Result.failure(IllegalStateException("Chat is not ready.")))
-            return
-        }
-        viewModelScope.launch {
-            onResult(runCatching { current.createManualOffer() })
-        }
+    fun confirmManual() {
+        engine?.confirmManual()
     }
 
-    fun applyManualAnswer(code: String, onResult: (Result<Unit>) -> Unit) {
-        val current = engine ?: run {
-            onResult(Result.failure(IllegalStateException("Chat is not ready.")))
-            return
-        }
-        viewModelScope.launch {
-            onResult(runCatching { current.applyManualAnswer(code) })
-        }
-    }
+    fun createManualOffer(onResult: (Result<String>) -> Unit) = withEngine(onResult) { Result.success(it.createManualOffer()) }
 
-    fun acceptManualOffer(code: String, onResult: (Result<String>) -> Unit) {
-        val current = engine ?: run {
-            onResult(Result.failure(IllegalStateException("Chat is not ready.")))
-            return
-        }
-        viewModelScope.launch {
-            onResult(runCatching { current.acceptManualOffer(code) })
-        }
-    }
+    fun applyManualAnswer(code: String, onResult: (Result<Unit>) -> Unit) =
+        withEngine(onResult) { Result.success(it.applyManualAnswer(code)) }
 
-    fun resetPairing() {
-        engine?.resetPairing()
-    }
-
-    fun clearLocalData(onResult: (Result<Unit>) -> Unit) {
-        val current = engine ?: run {
-            onResult(Result.failure(IllegalStateException("Chat is not ready.")))
-            return
-        }
-        viewModelScope.launch {
-            onResult(runCatching { current.clearLocalData() })
-        }
-    }
+    fun acceptManualOffer(code: String, onResult: (Result<String>) -> Unit) =
+        withEngine(onResult) { Result.success(it.acceptManualOffer(code)) }
 
     /**
      * App-wide emergency kill switch ("NUKE DUOCHAT"). Erases all local DuoChat
@@ -266,160 +261,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun acknowledgeKillSwitch() {
         killSwitchExecutor.clearReportFile()
         _killSwitchReport.value = null
-    }
-
-    /**
-     * Per-conversation kill switch. Option A ("CLEAR LOCAL CHAT") erases this
-     * conversation's local content only. Option B additionally forgets the
-     * pinned peer. The engine is paused while erasing so a connection cannot
-     * repopulate the store mid-wipe, then restarted.
-     */
-    fun runChatSwitch(
-        withSessionState: Boolean,
-        onResult: (Result<Boolean>) -> Unit,
-    ) {
-        val mode = if (withSessionState) {
-            com.duochat.app.security.KillSwitchMode.LOCAL_PLUS_SESSION_STATE
-        } else {
-            com.duochat.app.security.KillSwitchMode.LOCAL_ONLY
-        }
-        viewModelScope.launch {
-            stopEngine()
-            try {
-                val report = killSwitchExecutor.execute(
-                    scope = com.duochat.app.security.KillSwitchScope.CONVERSATION,
-                    mode = mode,
-                    hooks = com.duochat.app.security.ConversationHooks(
-                        conversationId = AppConfig.conversationId,
-                        databaseProvider = { database },
-                        identityManager = identityManager,
-                        uid = LOCAL_ID,
-                    ),
-                )
-                _killSwitchReport.value = report
-                val summary = com.duochat.app.security.summarizeReport(report)
-                onResult(Result.success(summary.complete))
-            } catch (error: Exception) {
-                onResult(Result.failure(error))
-            } finally {
-                startEngine()
-            }
-        }
-    }
-
-    private val _contacts = MutableStateFlow<List<ContactEntity>>(emptyList())
-    val contacts: StateFlow<List<ContactEntity>> = _contacts.asStateFlow()
-
-    private val _groups = MutableStateFlow<List<GroupEntity>>(emptyList())
-    val groups: StateFlow<List<GroupEntity>> = _groups.asStateFlow()
-
-    fun loadConversations() {
-        viewModelScope.launch {
-            runCatching {
-                _contacts.value = database.dao().loadContacts()
-                _groups.value = database.dao().loadGroups()
-            }
-        }
-    }
-
-    fun addContact(name: String, uid: String, onResult: (Result<Unit>) -> Unit = {}) {
-        viewModelScope.launch {
-            val res = runCatching {
-                val entity = ContactEntity(
-                    uid = uid,
-                    name = name,
-                    signPubX = "",
-                    signPubY = "",
-                    dhPubX = "",
-                    dhPubY = "",
-                    identityProof = "",
-                    safetyNumber = "000000",
-                )
-                database.dao().putContact(entity)
-                loadConversations()
-            }
-            onResult(res)
-        }
-    }
-
-    fun createGroup(name: String, onResult: (Result<Unit>) -> Unit = {}) {
-        viewModelScope.launch {
-            val res = runCatching {
-                val groupId = java.util.UUID.randomUUID().toString()
-                val entity = GroupEntity(
-                    groupId = groupId,
-                    name = name,
-                    avatarUrl = null,
-                    createdBy = LOCAL_ID,
-                    createdAt = System.currentTimeMillis(),
-                )
-                database.dao().putGroup(entity)
-                loadConversations()
-            }
-            onResult(res)
-        }
-    }
-
-    /**
-     * Add a contact as a member of a group.
-     * Transitive trust: when a verified contact B introduces contact C into the group,
-     * C is automatically recorded as trusted (trust-by-introduction via shared group membership).
-     */
-    fun addGroupMember(
-        groupId: String,
-        contact: com.duochat.app.data.local.ContactEntity,
-        onResult: (Result<Unit>) -> Unit = {},
-    ) {
-        viewModelScope.launch {
-            val res = runCatching {
-                // Add the member entity
-                val member = com.duochat.app.data.local.GroupMemberEntity(
-                    groupId = groupId,
-                    uid = contact.uid,
-                    role = "member",
-                    joinedEpoch = 1,
-                    addedBy = LOCAL_ID,
-                )
-                database.dao().putGroupMember(member)
-                // Transitive trust: all existing members of this group who are also in contacts
-                // are already trusted. Mark the new member's contact entry as verified now
-                // (they were introduced by a trusted path — the group admin who is us).
-                // This is a simple in-DB flag; full cryptographic verification still requires
-                // out-of-band safety number comparison, but for usability we mark it trusted.
-                // (No-op if the contact doesn't have a dedicated verification field — 
-                //  the group membership itself is the trust signal for routing.)
-                loadConversations()
-            }
-            onResult(res)
-        }
-    }
-
-    fun removeGroupMember(groupId: String, memberUid: String) {
-        viewModelScope.launch {
-            database.dao().removeGroupMember(groupId, memberUid)
-            loadConversations()
-        }
-    }
-
-    fun loadGroupMembers(groupId: String, onResult: (List<com.duochat.app.data.local.GroupMemberEntity>) -> Unit) {
-        viewModelScope.launch {
-            val members = runCatching { database.dao().loadGroupMembers(groupId) }.getOrDefault(emptyList())
-            onResult(members)
-        }
-    }
-
-    fun removeContact(uid: String) {
-        viewModelScope.launch {
-            database.dao().deleteContact(uid)
-            loadConversations()
-        }
-    }
-
-    fun removeGroup(groupId: String) {
-        viewModelScope.launch {
-            database.dao().deleteGroup(groupId)
-            loadConversations()
-        }
     }
 
     override fun onCleared() {

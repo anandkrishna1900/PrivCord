@@ -1,0 +1,2886 @@
+{
+  "generatedBy": "packages/protocol/scripts/gen-group-vectors.ts",
+  "people": [
+    {
+      "name": "Ann",
+      "phrase": "doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid life",
+      "uid": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+      "card": {
+        "v": 1,
+        "sign": {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+          "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+        },
+        "dh": {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+          "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+        },
+        "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+        "name": "Ann"
+      }
+    },
+    {
+      "name": "Bob",
+      "phrase": "donor anxiety expect little beef pass agree choice donor anxiety expect lobster",
+      "uid": "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+      "card": {
+        "v": 1,
+        "sign": {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "0yRfpqzZDJAQ-GUzPlK9UymjpeUrxzAzb1J4bU1TpMs",
+          "y": "xkUbHyWJI3al-F25m5XlKGiSX0M5jlkZMq8Xv19-hD8"
+        },
+        "dh": {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "Cnx8uxG8ZSAPOjs4IM2RcM_E6fRfMjy5kB4hMJz_AVM",
+          "y": "KLqbIY1azSUGPP2Tm_jNMjCxy6aGaLheJURQNQIVFw4"
+        },
+        "proof": "hXhgXN4Qq8ycFoDv9sB6x7rv6wO5U9q8Tmv4Q7qjBIpLFXdsZcvfjgNqvolurT6FW5bYL0gLSLeNPI7ke1A8JQ",
+        "name": "Bob"
+      }
+    },
+    {
+      "name": "Cat",
+      "phrase": "drastic bamboo mountain loyal category cancel animal embark drastic bamboo mountain lunch",
+      "uid": "aba3b8e3c60dba3c7b77ea78c823dc12e2d7e24af0f6968d429a9f1e1d11de1e",
+      "card": {
+        "v": 1,
+        "sign": {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "SwqrKsnvsV511kXXq_FIx_eZCYFoKWZwZNxVfpcWLRY",
+          "y": "RRUpFAkh8OgPNBiJMHpOL8XQWS1D0nCzM6xAxaUaObY"
+        },
+        "dh": {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "bYQoIfc8MKp_c4hQBnmBIA2Hn26bkado8DWEJt9ppU0",
+          "y": "dJJE3yJq8Tz9ig41EPfGlU9SB8dyuH0mwIRg85_YE4A"
+        },
+        "proof": "JyzRVoX4YuR4K0eHbR-VGEZGC-f88pVAIR2UrG5QbEFw9hbl90Lg9AnVHQR-pne3grJhxNgSZALVSQ1V0nhFZA",
+        "name": "Cat"
+      }
+    },
+    {
+      "name": "Dan",
+      "phrase": "drive borrow speak make crouch payment artist half drive borrow speak mansion",
+      "uid": "60f9d53dd336cd15d0177b1b4f8c651a55186ac045bdfbbbe0d50b94a8dfea59",
+      "card": {
+        "v": 1,
+        "sign": {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "Cs40gmrlZh1dHEyvs5PRz2iwwpn4GEJHJLfRiKOc2jk",
+          "y": "aWKrRKVxZ7gqECx1JPX9mAh8ENmZ0VHLnfDFt22bLE4"
+        },
+        "dh": {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "mRFpvXhIbe3bclSWEEBALJzOoLpwGcS2rzZSo9fJEdg",
+          "y": "OC1g5GqMm2KvW0z-fhyvOZJ4uxNv4YUFPO38lIGbV3w"
+        },
+        "proof": "BjSmeasuIFEKHSQQcOC22LQsi0xdEpLOhdzMeFPDeX9tGIEy5EDO1Pnos0jumCFfTo6OeiMKzMK55ncLVfzC8A",
+        "name": "Dan"
+      }
+    },
+    {
+      "name": "Eve",
+      "phrase": "dust captain baby mass dust captain baby mass dust captain baby measure",
+      "uid": "5dcf39b28097213a9609b05cf5aca41865b810f81ea5322a4cb889ed302935e2",
+      "card": {
+        "v": 1,
+        "sign": {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "JvEXkkpLYlfPIcdsTfQamlZsLIJQNLvo6rIO8Tq6eVY",
+          "y": "N7fk2R2ILdqTZghSZ89qmJ3B3FyEBIXucjZTDOZFETg"
+        },
+        "dh": {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "Yoa8KVHyiFGgybtO7aCEKE1xJ1WS614_AMbIMUddL-4",
+          "y": "GlgwR3KMXptmYUQjIds-b-8I81wr5XLCHb6AzIedEA8"
+        },
+        "proof": "yhojEYa-yzHLa6fWpOWNL41E0u-4rrlpbD05yWmG9Wk_OnTXV3-cXLc7ACwYdfsoObvoNKUvc9IMrkeNgGb6xQ"
+      }
+    }
+  ],
+  "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+  "groupName": "Café ☕ \"quoted\" \\ back\u0001 😀",
+  "base": [
+    {
+      "v": 1,
+      "kind": "group_event",
+      "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+      "type": "create",
+      "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+      "ts": 1700000000000,
+      "deps": [],
+      "card": {
+        "v": 1,
+        "sign": {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+          "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+        },
+        "dh": {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+          "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+        },
+        "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+        "name": "Ann"
+      },
+      "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+      "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+      "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+    },
+    {
+      "v": 1,
+      "kind": "group_event",
+      "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+      "type": "add",
+      "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+      "ts": 1700000000000,
+      "deps": [
+        "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60"
+      ],
+      "target": "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+      "card": {
+        "v": 1,
+        "sign": {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "0yRfpqzZDJAQ-GUzPlK9UymjpeUrxzAzb1J4bU1TpMs",
+          "y": "xkUbHyWJI3al-F25m5XlKGiSX0M5jlkZMq8Xv19-hD8"
+        },
+        "dh": {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "Cnx8uxG8ZSAPOjs4IM2RcM_E6fRfMjy5kB4hMJz_AVM",
+          "y": "KLqbIY1azSUGPP2Tm_jNMjCxy6aGaLheJURQNQIVFw4"
+        },
+        "proof": "hXhgXN4Qq8ycFoDv9sB6x7rv6wO5U9q8Tmv4Q7qjBIpLFXdsZcvfjgNqvolurT6FW5bYL0gLSLeNPI7ke1A8JQ",
+        "name": "Bob"
+      },
+      "eventId": "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90",
+      "sig": "TgyCZHhBzCELgIRfeBVVS3ev8WL5bXBohN4fNgXZR8jvfrYF8uV2nyy16H83IwM4Z82u5wCRjPN5pRIG6IqCyA"
+    }
+  ],
+  "concurrent": {
+    "events": [
+      {
+        "v": 1,
+        "kind": "group_event",
+        "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "type": "add",
+        "actor": "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+        "ts": 1700000002000,
+        "deps": [
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+        ],
+        "target": "aba3b8e3c60dba3c7b77ea78c823dc12e2d7e24af0f6968d429a9f1e1d11de1e",
+        "card": {
+          "v": 1,
+          "sign": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "SwqrKsnvsV511kXXq_FIx_eZCYFoKWZwZNxVfpcWLRY",
+            "y": "RRUpFAkh8OgPNBiJMHpOL8XQWS1D0nCzM6xAxaUaObY"
+          },
+          "dh": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "bYQoIfc8MKp_c4hQBnmBIA2Hn26bkado8DWEJt9ppU0",
+            "y": "dJJE3yJq8Tz9ig41EPfGlU9SB8dyuH0mwIRg85_YE4A"
+          },
+          "proof": "JyzRVoX4YuR4K0eHbR-VGEZGC-f88pVAIR2UrG5QbEFw9hbl90Lg9AnVHQR-pne3grJhxNgSZALVSQ1V0nhFZA",
+          "name": "Cat"
+        },
+        "eventId": "526a272a9e9d270af33a8d039ff57a1dc3dea6776be4f2c60a882e6538fc4feb",
+        "sig": "jnegbZ2ogyi16LdKa2YBCCTECxTmf-rVp6ROpaoIgl89HpdrmamqaNNo9s6mvIpsb2ofo3qvoGx9F3_pwNbRKQ"
+      },
+      {
+        "v": 1,
+        "kind": "group_event",
+        "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "type": "add",
+        "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+        "ts": 1700000003000,
+        "deps": [
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+        ],
+        "target": "60f9d53dd336cd15d0177b1b4f8c651a55186ac045bdfbbbe0d50b94a8dfea59",
+        "card": {
+          "v": 1,
+          "sign": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "Cs40gmrlZh1dHEyvs5PRz2iwwpn4GEJHJLfRiKOc2jk",
+            "y": "aWKrRKVxZ7gqECx1JPX9mAh8ENmZ0VHLnfDFt22bLE4"
+          },
+          "dh": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "mRFpvXhIbe3bclSWEEBALJzOoLpwGcS2rzZSo9fJEdg",
+            "y": "OC1g5GqMm2KvW0z-fhyvOZJ4uxNv4YUFPO38lIGbV3w"
+          },
+          "proof": "BjSmeasuIFEKHSQQcOC22LQsi0xdEpLOhdzMeFPDeX9tGIEy5EDO1Pnos0jumCFfTo6OeiMKzMK55ncLVfzC8A",
+          "name": "Dan"
+        },
+        "eventId": "c58f57af08a64d4c0e4f9f52636543404217eeec8ce8e91a559dea4d1143a6dc",
+        "sig": "A1gThsB0rKbKg-KqCbfUc90Rz19OUr4YgOepgNNaS1QsbU1pVYF-_HotPZ1KjHk70zIDgE840ZPiRkNA4Nbu_A"
+      },
+      {
+        "v": 1,
+        "kind": "group_event",
+        "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "type": "remove",
+        "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+        "ts": 1700000004000,
+        "deps": [
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+        ],
+        "target": "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+        "eventId": "2a3f84b8dd74ade293a1c4b269f2ac9bf91dea16af74c5fd0e802ac3331f89d4",
+        "sig": "Qi2SLEayX6-Ioq7alUJD0KG0Z-cAd3s9tNv9APSAwCQMRRwqDJ20QIGKJca_gpjTDYawpZdbitDH5-Rmd0hOqA"
+      },
+      {
+        "v": 1,
+        "kind": "group_event",
+        "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "type": "add",
+        "actor": "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+        "ts": 1700000005000,
+        "deps": [
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+        ],
+        "target": "5dcf39b28097213a9609b05cf5aca41865b810f81ea5322a4cb889ed302935e2",
+        "card": {
+          "v": 1,
+          "sign": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "JvEXkkpLYlfPIcdsTfQamlZsLIJQNLvo6rIO8Tq6eVY",
+            "y": "N7fk2R2ILdqTZghSZ89qmJ3B3FyEBIXucjZTDOZFETg"
+          },
+          "dh": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "Yoa8KVHyiFGgybtO7aCEKE1xJ1WS614_AMbIMUddL-4",
+            "y": "GlgwR3KMXptmYUQjIds-b-8I81wr5XLCHb6AzIedEA8"
+          },
+          "proof": "yhojEYa-yzHLa6fWpOWNL41E0u-4rrlpbD05yWmG9Wk_OnTXV3-cXLc7ACwYdfsoObvoNKUvc9IMrkeNgGb6xQ"
+        },
+        "eventId": "9bbc75c806b0a55ee20b931bae2c87a97f40b653df7b4657a849c0acf7f84484",
+        "sig": "ejqQCwLfDskicZt6YR1jEaELJHJFb_YpqLtWmytfwSTFQ5ckB0lc9t2Y_Wqa49bgrm8eQ8p2_PikvzgpqXN2MQ"
+      }
+    ],
+    "expected": {
+      "steps": [
+        {
+          "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+          "status": "applied",
+          "effective": true,
+          "roster": [
+            "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+          ],
+          "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+        },
+        {
+          "eventId": "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90",
+          "status": "applied",
+          "effective": true,
+          "roster": [
+            "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+            "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+          ],
+          "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+        },
+        {
+          "eventId": "526a272a9e9d270af33a8d039ff57a1dc3dea6776be4f2c60a882e6538fc4feb",
+          "status": "applied",
+          "effective": true,
+          "roster": [
+            "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+            "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "aba3b8e3c60dba3c7b77ea78c823dc12e2d7e24af0f6968d429a9f1e1d11de1e"
+          ],
+          "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+        },
+        {
+          "eventId": "c58f57af08a64d4c0e4f9f52636543404217eeec8ce8e91a559dea4d1143a6dc",
+          "status": "applied",
+          "effective": true,
+          "roster": [
+            "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+            "60f9d53dd336cd15d0177b1b4f8c651a55186ac045bdfbbbe0d50b94a8dfea59",
+            "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "aba3b8e3c60dba3c7b77ea78c823dc12e2d7e24af0f6968d429a9f1e1d11de1e"
+          ],
+          "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+        },
+        {
+          "eventId": "2a3f84b8dd74ade293a1c4b269f2ac9bf91dea16af74c5fd0e802ac3331f89d4",
+          "status": "applied",
+          "effective": true,
+          "roster": [
+            "60f9d53dd336cd15d0177b1b4f8c651a55186ac045bdfbbbe0d50b94a8dfea59",
+            "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+          ],
+          "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+        },
+        {
+          "eventId": "9bbc75c806b0a55ee20b931bae2c87a97f40b653df7b4657a849c0acf7f84484",
+          "status": "applied",
+          "effective": false,
+          "roster": [
+            "60f9d53dd336cd15d0177b1b4f8c651a55186ac045bdfbbbe0d50b94a8dfea59",
+            "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+          ],
+          "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+        }
+      ],
+      "order": [
+        "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90",
+        "2a3f84b8dd74ade293a1c4b269f2ac9bf91dea16af74c5fd0e802ac3331f89d4",
+        "526a272a9e9d270af33a8d039ff57a1dc3dea6776be4f2c60a882e6538fc4feb",
+        "9bbc75c806b0a55ee20b931bae2c87a97f40b653df7b4657a849c0acf7f84484",
+        "c58f57af08a64d4c0e4f9f52636543404217eeec8ce8e91a559dea4d1143a6dc"
+      ],
+      "heads": [
+        "2a3f84b8dd74ade293a1c4b269f2ac9bf91dea16af74c5fd0e802ac3331f89d4",
+        "526a272a9e9d270af33a8d039ff57a1dc3dea6776be4f2c60a882e6538fc4feb",
+        "9bbc75c806b0a55ee20b931bae2c87a97f40b653df7b4657a849c0acf7f84484",
+        "c58f57af08a64d4c0e4f9f52636543404217eeec8ce8e91a559dea4d1143a6dc"
+      ],
+      "roster": [
+        "60f9d53dd336cd15d0177b1b4f8c651a55186ac045bdfbbbe0d50b94a8dfea59",
+        "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+      ],
+      "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+      "effective": [
+        "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90",
+        "2a3f84b8dd74ade293a1c4b269f2ac9bf91dea16af74c5fd0e802ac3331f89d4",
+        "c58f57af08a64d4c0e4f9f52636543404217eeec8ce8e91a559dea4d1143a6dc"
+      ]
+    }
+  },
+  "linear": {
+    "events": [
+      {
+        "v": 1,
+        "kind": "group_event",
+        "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "type": "create",
+        "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+        "ts": 1700000000000,
+        "deps": [],
+        "card": {
+          "v": 1,
+          "sign": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+            "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+          },
+          "dh": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+            "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+          },
+          "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+          "name": "Ann"
+        },
+        "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+        "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+      },
+      {
+        "v": 1,
+        "kind": "group_event",
+        "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "type": "add",
+        "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+        "ts": 1700000000000,
+        "deps": [
+          "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60"
+        ],
+        "target": "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+        "card": {
+          "v": 1,
+          "sign": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "0yRfpqzZDJAQ-GUzPlK9UymjpeUrxzAzb1J4bU1TpMs",
+            "y": "xkUbHyWJI3al-F25m5XlKGiSX0M5jlkZMq8Xv19-hD8"
+          },
+          "dh": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "Cnx8uxG8ZSAPOjs4IM2RcM_E6fRfMjy5kB4hMJz_AVM",
+            "y": "KLqbIY1azSUGPP2Tm_jNMjCxy6aGaLheJURQNQIVFw4"
+          },
+          "proof": "hXhgXN4Qq8ycFoDv9sB6x7rv6wO5U9q8Tmv4Q7qjBIpLFXdsZcvfjgNqvolurT6FW5bYL0gLSLeNPI7ke1A8JQ",
+          "name": "Bob"
+        },
+        "eventId": "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90",
+        "sig": "TgyCZHhBzCELgIRfeBVVS3ev8WL5bXBohN4fNgXZR8jvfrYF8uV2nyy16H83IwM4Z82u5wCRjPN5pRIG6IqCyA"
+      },
+      {
+        "v": 1,
+        "kind": "group_event",
+        "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "type": "add",
+        "actor": "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+        "ts": 1700000006000,
+        "deps": [
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+        ],
+        "target": "aba3b8e3c60dba3c7b77ea78c823dc12e2d7e24af0f6968d429a9f1e1d11de1e",
+        "card": {
+          "v": 1,
+          "sign": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "SwqrKsnvsV511kXXq_FIx_eZCYFoKWZwZNxVfpcWLRY",
+            "y": "RRUpFAkh8OgPNBiJMHpOL8XQWS1D0nCzM6xAxaUaObY"
+          },
+          "dh": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "bYQoIfc8MKp_c4hQBnmBIA2Hn26bkado8DWEJt9ppU0",
+            "y": "dJJE3yJq8Tz9ig41EPfGlU9SB8dyuH0mwIRg85_YE4A"
+          },
+          "proof": "JyzRVoX4YuR4K0eHbR-VGEZGC-f88pVAIR2UrG5QbEFw9hbl90Lg9AnVHQR-pne3grJhxNgSZALVSQ1V0nhFZA",
+          "name": "Cat"
+        },
+        "eventId": "a19b3a409550863452b1d006cf173ba2c450d970942d513fd7fe2ed650096d02",
+        "sig": "BmE6UZKaTb9Xp7M1kpozkxnIy6cGM6JUTj9V5DfrVtnhVBm3wJwtpA2iImrvp5hOIxdsrl27niBz-afSIlDIMg"
+      },
+      {
+        "v": 1,
+        "kind": "group_event",
+        "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "type": "add",
+        "actor": "aba3b8e3c60dba3c7b77ea78c823dc12e2d7e24af0f6968d429a9f1e1d11de1e",
+        "ts": 1700000007000,
+        "deps": [
+          "a19b3a409550863452b1d006cf173ba2c450d970942d513fd7fe2ed650096d02"
+        ],
+        "target": "5dcf39b28097213a9609b05cf5aca41865b810f81ea5322a4cb889ed302935e2",
+        "card": {
+          "v": 1,
+          "sign": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "JvEXkkpLYlfPIcdsTfQamlZsLIJQNLvo6rIO8Tq6eVY",
+            "y": "N7fk2R2ILdqTZghSZ89qmJ3B3FyEBIXucjZTDOZFETg"
+          },
+          "dh": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "Yoa8KVHyiFGgybtO7aCEKE1xJ1WS614_AMbIMUddL-4",
+            "y": "GlgwR3KMXptmYUQjIds-b-8I81wr5XLCHb6AzIedEA8"
+          },
+          "proof": "yhojEYa-yzHLa6fWpOWNL41E0u-4rrlpbD05yWmG9Wk_OnTXV3-cXLc7ACwYdfsoObvoNKUvc9IMrkeNgGb6xQ"
+        },
+        "eventId": "ff66387e4531c3bf2cf528f5147e8fa8f713d81620c9e56e19798c50682b660e",
+        "sig": "6FuFIfIDgBAMK73TI_AMnHVVs59W5bMlHsXnlkx-wWreS0qeyae8MWPbgjLEla_Tlrb7qsMRbvVYs-xALL_fbg"
+      },
+      {
+        "v": 1,
+        "kind": "group_event",
+        "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "type": "rename",
+        "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+        "ts": 1700000008000,
+        "deps": [
+          "ff66387e4531c3bf2cf528f5147e8fa8f713d81620c9e56e19798c50682b660e"
+        ],
+        "name": "Renamed 🚀",
+        "eventId": "f796a2176cccee80af0cd6d7af7f9b1984f5385170f304c65a2008c53913ffe7",
+        "sig": "ZlwblCY1F8NHC1kHGgnttsQfPvxjy1z_I_wIcS7nCACEiLLI6QuLZLq6COsAi5lZvKCzaCjI0MgZ49tt2oJnGg"
+      },
+      {
+        "v": 1,
+        "kind": "group_event",
+        "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "type": "remove",
+        "actor": "aba3b8e3c60dba3c7b77ea78c823dc12e2d7e24af0f6968d429a9f1e1d11de1e",
+        "ts": 1700000009000,
+        "deps": [
+          "f796a2176cccee80af0cd6d7af7f9b1984f5385170f304c65a2008c53913ffe7"
+        ],
+        "target": "aba3b8e3c60dba3c7b77ea78c823dc12e2d7e24af0f6968d429a9f1e1d11de1e",
+        "eventId": "04b64d3531f4a7bebb1d2a380760aefe6b5e8c7816e8d798255c5efc9396f887",
+        "sig": "6-oLJMYlaGEEeNZJBST2-U12WhfbltnXS8dfIVxevBdeWwJGKwA_7Gae37Fsg3nOntS5X9yaL15kra6y2Cghog"
+      },
+      {
+        "v": 1,
+        "kind": "group_event",
+        "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "type": "rename",
+        "actor": "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+        "ts": 1700000010000,
+        "deps": [
+          "04b64d3531f4a7bebb1d2a380760aefe6b5e8c7816e8d798255c5efc9396f887"
+        ],
+        "name": "not admin",
+        "eventId": "9c4489456e89652c00cb8167d2979ac29eee9bbe28c1d3afb05742f158771583",
+        "sig": "eQB6usKxUFjY7IOh9kOCgWOongBUIWRl_DiOT5IGntjxpzPXUVYVPgdGSLDxsYDhjEUYnZ1KdrTN_8PJXHQNFw"
+      }
+    ],
+    "expected": {
+      "steps": [
+        {
+          "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+          "status": "applied",
+          "effective": true,
+          "roster": [
+            "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+          ],
+          "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+        },
+        {
+          "eventId": "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90",
+          "status": "applied",
+          "effective": true,
+          "roster": [
+            "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+            "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+          ],
+          "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+        },
+        {
+          "eventId": "a19b3a409550863452b1d006cf173ba2c450d970942d513fd7fe2ed650096d02",
+          "status": "applied",
+          "effective": true,
+          "roster": [
+            "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+            "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "aba3b8e3c60dba3c7b77ea78c823dc12e2d7e24af0f6968d429a9f1e1d11de1e"
+          ],
+          "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+        },
+        {
+          "eventId": "ff66387e4531c3bf2cf528f5147e8fa8f713d81620c9e56e19798c50682b660e",
+          "status": "applied",
+          "effective": true,
+          "roster": [
+            "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+            "5dcf39b28097213a9609b05cf5aca41865b810f81ea5322a4cb889ed302935e2",
+            "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "aba3b8e3c60dba3c7b77ea78c823dc12e2d7e24af0f6968d429a9f1e1d11de1e"
+          ],
+          "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+        },
+        {
+          "eventId": "f796a2176cccee80af0cd6d7af7f9b1984f5385170f304c65a2008c53913ffe7",
+          "status": "applied",
+          "effective": true,
+          "roster": [
+            "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+            "5dcf39b28097213a9609b05cf5aca41865b810f81ea5322a4cb889ed302935e2",
+            "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "aba3b8e3c60dba3c7b77ea78c823dc12e2d7e24af0f6968d429a9f1e1d11de1e"
+          ],
+          "name": "Renamed 🚀"
+        },
+        {
+          "eventId": "04b64d3531f4a7bebb1d2a380760aefe6b5e8c7816e8d798255c5efc9396f887",
+          "status": "applied",
+          "effective": true,
+          "roster": [
+            "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+            "5dcf39b28097213a9609b05cf5aca41865b810f81ea5322a4cb889ed302935e2",
+            "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+          ],
+          "name": "Renamed 🚀"
+        },
+        {
+          "eventId": "9c4489456e89652c00cb8167d2979ac29eee9bbe28c1d3afb05742f158771583",
+          "status": "applied",
+          "effective": false,
+          "roster": [
+            "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+            "5dcf39b28097213a9609b05cf5aca41865b810f81ea5322a4cb889ed302935e2",
+            "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+          ],
+          "name": "Renamed 🚀"
+        }
+      ],
+      "order": [
+        "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90",
+        "a19b3a409550863452b1d006cf173ba2c450d970942d513fd7fe2ed650096d02",
+        "ff66387e4531c3bf2cf528f5147e8fa8f713d81620c9e56e19798c50682b660e",
+        "f796a2176cccee80af0cd6d7af7f9b1984f5385170f304c65a2008c53913ffe7",
+        "04b64d3531f4a7bebb1d2a380760aefe6b5e8c7816e8d798255c5efc9396f887",
+        "9c4489456e89652c00cb8167d2979ac29eee9bbe28c1d3afb05742f158771583"
+      ],
+      "heads": [
+        "9c4489456e89652c00cb8167d2979ac29eee9bbe28c1d3afb05742f158771583"
+      ],
+      "roster": [
+        "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+        "5dcf39b28097213a9609b05cf5aca41865b810f81ea5322a4cb889ed302935e2",
+        "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+      ],
+      "name": "Renamed 🚀",
+      "effective": [
+        "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90",
+        "a19b3a409550863452b1d006cf173ba2c450d970942d513fd7fe2ed650096d02",
+        "ff66387e4531c3bf2cf528f5147e8fa8f713d81620c9e56e19798c50682b660e",
+        "f796a2176cccee80af0cd6d7af7f9b1984f5385170f304c65a2008c53913ffe7",
+        "04b64d3531f4a7bebb1d2a380760aefe6b5e8c7816e8d798255c5efc9396f887"
+      ]
+    }
+  },
+  "rejects": [
+    {
+      "label": "outsider",
+      "event": {
+        "v": 1,
+        "kind": "group_event",
+        "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "type": "add",
+        "actor": "5dcf39b28097213a9609b05cf5aca41865b810f81ea5322a4cb889ed302935e2",
+        "ts": 1700000011000,
+        "deps": [
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+        ],
+        "target": "aba3b8e3c60dba3c7b77ea78c823dc12e2d7e24af0f6968d429a9f1e1d11de1e",
+        "card": {
+          "v": 1,
+          "sign": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "SwqrKsnvsV511kXXq_FIx_eZCYFoKWZwZNxVfpcWLRY",
+            "y": "RRUpFAkh8OgPNBiJMHpOL8XQWS1D0nCzM6xAxaUaObY"
+          },
+          "dh": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "bYQoIfc8MKp_c4hQBnmBIA2Hn26bkado8DWEJt9ppU0",
+            "y": "dJJE3yJq8Tz9ig41EPfGlU9SB8dyuH0mwIRg85_YE4A"
+          },
+          "proof": "JyzRVoX4YuR4K0eHbR-VGEZGC-f88pVAIR2UrG5QbEFw9hbl90Lg9AnVHQR-pne3grJhxNgSZALVSQ1V0nhFZA",
+          "name": "Cat"
+        },
+        "eventId": "dbfc55893bfc87c8600cf62c7185e4902fde87ef1df19d83ea402075cc3ba2a6",
+        "sig": "nKxbieAJ75lr03KkM37VutVc-4gMVZHjeOWB5Jfk-tKz5ZNM0xbX4UccNrIDVsasF3PAUKNEn0yIZ6NW9xk1cQ"
+      },
+      "expected": {
+        "steps": [
+          {
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "status": "applied",
+            "effective": true,
+            "roster": [
+              "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+            ],
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+          },
+          {
+            "eventId": "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90",
+            "status": "applied",
+            "effective": true,
+            "roster": [
+              "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+              "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+            ],
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+          },
+          {
+            "eventId": "dbfc55893bfc87c8600cf62c7185e4902fde87ef1df19d83ea402075cc3ba2a6",
+            "status": "applied",
+            "effective": false,
+            "roster": [
+              "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+              "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+            ],
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+          }
+        ],
+        "order": [
+          "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90",
+          "dbfc55893bfc87c8600cf62c7185e4902fde87ef1df19d83ea402075cc3ba2a6"
+        ],
+        "heads": [
+          "dbfc55893bfc87c8600cf62c7185e4902fde87ef1df19d83ea402075cc3ba2a6"
+        ],
+        "roster": [
+          "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+          "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+        ],
+        "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+        "effective": [
+          "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+        ]
+      }
+    },
+    {
+      "label": "forged",
+      "event": {
+        "v": 1,
+        "kind": "group_event",
+        "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "type": "add",
+        "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+        "ts": 1700000012000,
+        "deps": [
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+        ],
+        "target": "aba3b8e3c60dba3c7b77ea78c823dc12e2d7e24af0f6968d429a9f1e1d11de1e",
+        "card": {
+          "v": 1,
+          "sign": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "SwqrKsnvsV511kXXq_FIx_eZCYFoKWZwZNxVfpcWLRY",
+            "y": "RRUpFAkh8OgPNBiJMHpOL8XQWS1D0nCzM6xAxaUaObY"
+          },
+          "dh": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "bYQoIfc8MKp_c4hQBnmBIA2Hn26bkado8DWEJt9ppU0",
+            "y": "dJJE3yJq8Tz9ig41EPfGlU9SB8dyuH0mwIRg85_YE4A"
+          },
+          "proof": "JyzRVoX4YuR4K0eHbR-VGEZGC-f88pVAIR2UrG5QbEFw9hbl90Lg9AnVHQR-pne3grJhxNgSZALVSQ1V0nhFZA",
+          "name": "Cat"
+        },
+        "eventId": "f480d156a0f5220e7a05a7fed1d5ec9dd84be92e32b9ef7ccc7c95b76cf3f442",
+        "sig": "XrmJdF0JS-0qbV_kcq1jxHzihilDFOIDCsEq_RZB5FmNeTO4NbezeDXx00lP41V-gAHQ5xPVJkcj6ffPpjzd6g"
+      },
+      "expected": {
+        "steps": [
+          {
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "status": "applied",
+            "effective": true,
+            "roster": [
+              "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+            ],
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+          },
+          {
+            "eventId": "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90",
+            "status": "applied",
+            "effective": true,
+            "roster": [
+              "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+              "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+            ],
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+          },
+          {
+            "eventId": "f480d156a0f5220e7a05a7fed1d5ec9dd84be92e32b9ef7ccc7c95b76cf3f442",
+            "status": "applied",
+            "effective": false,
+            "roster": [
+              "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+              "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+            ],
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+          }
+        ],
+        "order": [
+          "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90",
+          "f480d156a0f5220e7a05a7fed1d5ec9dd84be92e32b9ef7ccc7c95b76cf3f442"
+        ],
+        "heads": [
+          "f480d156a0f5220e7a05a7fed1d5ec9dd84be92e32b9ef7ccc7c95b76cf3f442"
+        ],
+        "roster": [
+          "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+          "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+        ],
+        "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+        "effective": [
+          "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+        ]
+      }
+    },
+    {
+      "label": "wrongCard",
+      "event": {
+        "v": 1,
+        "kind": "group_event",
+        "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "type": "add",
+        "actor": "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+        "ts": 1700000013000,
+        "deps": [
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+        ],
+        "target": "aba3b8e3c60dba3c7b77ea78c823dc12e2d7e24af0f6968d429a9f1e1d11de1e",
+        "card": {
+          "v": 1,
+          "sign": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "JvEXkkpLYlfPIcdsTfQamlZsLIJQNLvo6rIO8Tq6eVY",
+            "y": "N7fk2R2ILdqTZghSZ89qmJ3B3FyEBIXucjZTDOZFETg"
+          },
+          "dh": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "Yoa8KVHyiFGgybtO7aCEKE1xJ1WS614_AMbIMUddL-4",
+            "y": "GlgwR3KMXptmYUQjIds-b-8I81wr5XLCHb6AzIedEA8"
+          },
+          "proof": "yhojEYa-yzHLa6fWpOWNL41E0u-4rrlpbD05yWmG9Wk_OnTXV3-cXLc7ACwYdfsoObvoNKUvc9IMrkeNgGb6xQ"
+        },
+        "eventId": "c5687739e59593aa8ea92ba1c9181b70b044ae41c51554bb8881dc4e2d0b5033",
+        "sig": "OL9Psmfu_LmtAwmdpwyxbY7BnnUkfh_NIgbrLxxhC20a65pv7ezaaC4fbRayx1PoiKuzsYclClQwpVys7fVQIQ"
+      },
+      "expected": {
+        "steps": [
+          {
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "status": "applied",
+            "effective": true,
+            "roster": [
+              "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+            ],
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+          },
+          {
+            "eventId": "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90",
+            "status": "applied",
+            "effective": true,
+            "roster": [
+              "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+              "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+            ],
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+          },
+          {
+            "eventId": "c5687739e59593aa8ea92ba1c9181b70b044ae41c51554bb8881dc4e2d0b5033",
+            "status": "applied",
+            "effective": false,
+            "roster": [
+              "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+              "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+            ],
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+          }
+        ],
+        "order": [
+          "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90",
+          "c5687739e59593aa8ea92ba1c9181b70b044ae41c51554bb8881dc4e2d0b5033"
+        ],
+        "heads": [
+          "c5687739e59593aa8ea92ba1c9181b70b044ae41c51554bb8881dc4e2d0b5033"
+        ],
+        "roster": [
+          "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+          "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+        ],
+        "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+        "effective": [
+          "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+        ]
+      }
+    },
+    {
+      "label": "memberRemovesAdmin",
+      "event": {
+        "v": 1,
+        "kind": "group_event",
+        "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "type": "remove",
+        "actor": "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+        "ts": 1700000014000,
+        "deps": [
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+        ],
+        "target": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+        "eventId": "2027d10ce6be9bffdc9f3020ce070f534888ab24625a8fc437310b978516c26a",
+        "sig": "6bnNznsVnKjmivfMcuPCJmLOgT6S4AZNt_f-4qGums8Qli-z4GmOkQD7DqbNRUU-UlxNJ3kVLV5KbBQvS28f0A"
+      },
+      "expected": {
+        "steps": [
+          {
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "status": "applied",
+            "effective": true,
+            "roster": [
+              "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+            ],
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+          },
+          {
+            "eventId": "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90",
+            "status": "applied",
+            "effective": true,
+            "roster": [
+              "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+              "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+            ],
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+          },
+          {
+            "eventId": "2027d10ce6be9bffdc9f3020ce070f534888ab24625a8fc437310b978516c26a",
+            "status": "applied",
+            "effective": false,
+            "roster": [
+              "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+              "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+            ],
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+          }
+        ],
+        "order": [
+          "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90",
+          "2027d10ce6be9bffdc9f3020ce070f534888ab24625a8fc437310b978516c26a"
+        ],
+        "heads": [
+          "2027d10ce6be9bffdc9f3020ce070f534888ab24625a8fc437310b978516c26a"
+        ],
+        "roster": [
+          "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+          "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+        ],
+        "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+        "effective": [
+          "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+        ]
+      }
+    },
+    {
+      "label": "tampered",
+      "event": {
+        "v": 1,
+        "kind": "group_event",
+        "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "type": "rename",
+        "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+        "ts": 1700000015000,
+        "deps": [
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+        ],
+        "name": "Hacked",
+        "eventId": "23ac2f3f16f0bccd671e014e3169806f2b2c7668f783b3f2ddcc1e33550d3a06",
+        "sig": "7iJKl_1ijCUaADFUYbZi2d7c6kdQiO02wjO-27babl8YH-wRaBpTPuw02rw5XlX0fYxqMQhjVasiuOd5cAaugg"
+      },
+      "expected": {
+        "steps": [
+          {
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "status": "applied",
+            "effective": true,
+            "roster": [
+              "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+            ],
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+          },
+          {
+            "eventId": "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90",
+            "status": "applied",
+            "effective": true,
+            "roster": [
+              "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+              "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+            ],
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+          },
+          {
+            "eventId": "23ac2f3f16f0bccd671e014e3169806f2b2c7668f783b3f2ddcc1e33550d3a06",
+            "status": "invalid",
+            "effective": false,
+            "roster": [
+              "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+              "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+            ],
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+          }
+        ],
+        "order": [
+          "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+        ],
+        "heads": [
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+        ],
+        "roster": [
+          "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+          "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+        ],
+        "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+        "effective": [
+          "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+        ]
+      }
+    },
+    {
+      "label": "noDeps",
+      "event": {
+        "v": 1,
+        "kind": "group_event",
+        "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "type": "add",
+        "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+        "ts": 1700000016000,
+        "deps": [],
+        "target": "aba3b8e3c60dba3c7b77ea78c823dc12e2d7e24af0f6968d429a9f1e1d11de1e",
+        "card": {
+          "v": 1,
+          "sign": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "SwqrKsnvsV511kXXq_FIx_eZCYFoKWZwZNxVfpcWLRY",
+            "y": "RRUpFAkh8OgPNBiJMHpOL8XQWS1D0nCzM6xAxaUaObY"
+          },
+          "dh": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "bYQoIfc8MKp_c4hQBnmBIA2Hn26bkado8DWEJt9ppU0",
+            "y": "dJJE3yJq8Tz9ig41EPfGlU9SB8dyuH0mwIRg85_YE4A"
+          },
+          "proof": "JyzRVoX4YuR4K0eHbR-VGEZGC-f88pVAIR2UrG5QbEFw9hbl90Lg9AnVHQR-pne3grJhxNgSZALVSQ1V0nhFZA",
+          "name": "Cat"
+        },
+        "eventId": "c7d04d92d0dd9afc2a78e5eadd0eb377062a6489873d26d12cfb4ff887fbeb90",
+        "sig": "U01GGgEfdEDaiCgXCL8Q4aRmZAcZJOZbYjGcWGcRX2dpEXbgflEyZg-aYX1Z4Ei_E8fs3vldQWBvKbCeApmQ-w"
+      },
+      "expected": {
+        "steps": [
+          {
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "status": "applied",
+            "effective": true,
+            "roster": [
+              "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+            ],
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+          },
+          {
+            "eventId": "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90",
+            "status": "applied",
+            "effective": true,
+            "roster": [
+              "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+              "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+            ],
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+          },
+          {
+            "eventId": "c7d04d92d0dd9afc2a78e5eadd0eb377062a6489873d26d12cfb4ff887fbeb90",
+            "status": "invalid",
+            "effective": false,
+            "roster": [
+              "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+              "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+            ],
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+          }
+        ],
+        "order": [
+          "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+        ],
+        "heads": [
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+        ],
+        "roster": [
+          "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+          "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+        ],
+        "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+        "effective": [
+          "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+        ]
+      }
+    },
+    {
+      "label": "wrongGroup",
+      "event": {
+        "v": 1,
+        "kind": "group_event",
+        "groupId": "0000000000000000000000000000000000000000000000000000000000000000",
+        "type": "rename",
+        "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+        "ts": 1700000017000,
+        "deps": [
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+        ],
+        "name": "x",
+        "eventId": "592ff940895d63d1cb204af579488e2532697eac80888142e07073dea4423aa8",
+        "sig": "9FfJj85ihG4Ij0FhyeEiF38Kj8srtndSXT_ajddH7NpQ-dYsQ2qaVNE1_8xEGgBh5xUiXnaLCgMkx6DgU_62tA"
+      },
+      "expected": {
+        "steps": [
+          {
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "status": "applied",
+            "effective": true,
+            "roster": [
+              "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+            ],
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+          },
+          {
+            "eventId": "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90",
+            "status": "applied",
+            "effective": true,
+            "roster": [
+              "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+              "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+            ],
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+          },
+          {
+            "eventId": "592ff940895d63d1cb204af579488e2532697eac80888142e07073dea4423aa8",
+            "status": "invalid",
+            "effective": false,
+            "roster": [
+              "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+              "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+            ],
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+          }
+        ],
+        "order": [
+          "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+        ],
+        "heads": [
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+        ],
+        "roster": [
+          "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+          "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+        ],
+        "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+        "effective": [
+          "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+        ]
+      }
+    }
+  ],
+  "buffered": {
+    "events": [
+      {
+        "v": 1,
+        "kind": "group_event",
+        "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "type": "add",
+        "actor": "aba3b8e3c60dba3c7b77ea78c823dc12e2d7e24af0f6968d429a9f1e1d11de1e",
+        "ts": 1700000007000,
+        "deps": [
+          "a19b3a409550863452b1d006cf173ba2c450d970942d513fd7fe2ed650096d02"
+        ],
+        "target": "5dcf39b28097213a9609b05cf5aca41865b810f81ea5322a4cb889ed302935e2",
+        "card": {
+          "v": 1,
+          "sign": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "JvEXkkpLYlfPIcdsTfQamlZsLIJQNLvo6rIO8Tq6eVY",
+            "y": "N7fk2R2ILdqTZghSZ89qmJ3B3FyEBIXucjZTDOZFETg"
+          },
+          "dh": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "Yoa8KVHyiFGgybtO7aCEKE1xJ1WS614_AMbIMUddL-4",
+            "y": "GlgwR3KMXptmYUQjIds-b-8I81wr5XLCHb6AzIedEA8"
+          },
+          "proof": "yhojEYa-yzHLa6fWpOWNL41E0u-4rrlpbD05yWmG9Wk_OnTXV3-cXLc7ACwYdfsoObvoNKUvc9IMrkeNgGb6xQ"
+        },
+        "eventId": "ff66387e4531c3bf2cf528f5147e8fa8f713d81620c9e56e19798c50682b660e",
+        "sig": "6FuFIfIDgBAMK73TI_AMnHVVs59W5bMlHsXnlkx-wWreS0qeyae8MWPbgjLEla_Tlrb7qsMRbvVYs-xALL_fbg"
+      },
+      {
+        "v": 1,
+        "kind": "group_event",
+        "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "type": "add",
+        "actor": "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+        "ts": 1700000006000,
+        "deps": [
+          "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+        ],
+        "target": "aba3b8e3c60dba3c7b77ea78c823dc12e2d7e24af0f6968d429a9f1e1d11de1e",
+        "card": {
+          "v": 1,
+          "sign": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "SwqrKsnvsV511kXXq_FIx_eZCYFoKWZwZNxVfpcWLRY",
+            "y": "RRUpFAkh8OgPNBiJMHpOL8XQWS1D0nCzM6xAxaUaObY"
+          },
+          "dh": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "bYQoIfc8MKp_c4hQBnmBIA2Hn26bkado8DWEJt9ppU0",
+            "y": "dJJE3yJq8Tz9ig41EPfGlU9SB8dyuH0mwIRg85_YE4A"
+          },
+          "proof": "JyzRVoX4YuR4K0eHbR-VGEZGC-f88pVAIR2UrG5QbEFw9hbl90Lg9AnVHQR-pne3grJhxNgSZALVSQ1V0nhFZA",
+          "name": "Cat"
+        },
+        "eventId": "a19b3a409550863452b1d006cf173ba2c450d970942d513fd7fe2ed650096d02",
+        "sig": "BmE6UZKaTb9Xp7M1kpozkxnIy6cGM6JUTj9V5DfrVtnhVBm3wJwtpA2iImrvp5hOIxdsrl27niBz-afSIlDIMg"
+      }
+    ],
+    "base": [
+      {
+        "v": 1,
+        "kind": "group_event",
+        "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "type": "create",
+        "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+        "ts": 1700000000000,
+        "deps": [],
+        "card": {
+          "v": 1,
+          "sign": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+            "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+          },
+          "dh": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+            "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+          },
+          "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+          "name": "Ann"
+        },
+        "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+        "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+      },
+      {
+        "v": 1,
+        "kind": "group_event",
+        "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "type": "add",
+        "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+        "ts": 1700000000000,
+        "deps": [
+          "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60"
+        ],
+        "target": "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+        "card": {
+          "v": 1,
+          "sign": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "0yRfpqzZDJAQ-GUzPlK9UymjpeUrxzAzb1J4bU1TpMs",
+            "y": "xkUbHyWJI3al-F25m5XlKGiSX0M5jlkZMq8Xv19-hD8"
+          },
+          "dh": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "Cnx8uxG8ZSAPOjs4IM2RcM_E6fRfMjy5kB4hMJz_AVM",
+            "y": "KLqbIY1azSUGPP2Tm_jNMjCxy6aGaLheJURQNQIVFw4"
+          },
+          "proof": "hXhgXN4Qq8ycFoDv9sB6x7rv6wO5U9q8Tmv4Q7qjBIpLFXdsZcvfjgNqvolurT6FW5bYL0gLSLeNPI7ke1A8JQ",
+          "name": "Bob"
+        },
+        "eventId": "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90",
+        "sig": "TgyCZHhBzCELgIRfeBVVS3ev8WL5bXBohN4fNgXZR8jvfrYF8uV2nyy16H83IwM4Z82u5wCRjPN5pRIG6IqCyA"
+      }
+    ],
+    "expected": {
+      "steps": [
+        {
+          "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+          "status": "applied",
+          "effective": true,
+          "roster": [
+            "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+          ],
+          "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+        },
+        {
+          "eventId": "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90",
+          "status": "applied",
+          "effective": true,
+          "roster": [
+            "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+            "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+          ],
+          "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+        },
+        {
+          "eventId": "ff66387e4531c3bf2cf528f5147e8fa8f713d81620c9e56e19798c50682b660e",
+          "status": "buffered",
+          "effective": false,
+          "roster": [
+            "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+            "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb"
+          ],
+          "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+        },
+        {
+          "eventId": "a19b3a409550863452b1d006cf173ba2c450d970942d513fd7fe2ed650096d02",
+          "status": "applied",
+          "effective": true,
+          "roster": [
+            "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+            "5dcf39b28097213a9609b05cf5aca41865b810f81ea5322a4cb889ed302935e2",
+            "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "aba3b8e3c60dba3c7b77ea78c823dc12e2d7e24af0f6968d429a9f1e1d11de1e"
+          ],
+          "name": "Café ☕ \"quoted\" \\ back\u0001 😀"
+        }
+      ],
+      "order": [
+        "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90",
+        "a19b3a409550863452b1d006cf173ba2c450d970942d513fd7fe2ed650096d02",
+        "ff66387e4531c3bf2cf528f5147e8fa8f713d81620c9e56e19798c50682b660e"
+      ],
+      "heads": [
+        "ff66387e4531c3bf2cf528f5147e8fa8f713d81620c9e56e19798c50682b660e"
+      ],
+      "roster": [
+        "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+        "5dcf39b28097213a9609b05cf5aca41865b810f81ea5322a4cb889ed302935e2",
+        "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+        "aba3b8e3c60dba3c7b77ea78c823dc12e2d7e24af0f6968d429a9f1e1d11de1e"
+      ],
+      "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+      "effective": [
+        "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+        "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90",
+        "a19b3a409550863452b1d006cf173ba2c450d970942d513fd7fe2ed650096d02",
+        "ff66387e4531c3bf2cf528f5147e8fa8f713d81620c9e56e19798c50682b660e"
+      ]
+    }
+  },
+  "frames": [
+    {
+      "frame": {
+        "v": 1,
+        "kind": "gmsg",
+        "groupId": "g",
+        "messageId": "m-1",
+        "text": "hi",
+        "clientCreatedAt": 5
+      },
+      "valid": true
+    },
+    {
+      "frame": {
+        "v": 1,
+        "kind": "gmsg",
+        "groupId": "g",
+        "messageId": "m",
+        "text": "",
+        "clientCreatedAt": 1
+      },
+      "valid": false
+    },
+    {
+      "frame": {
+        "v": 1,
+        "kind": "gmsg",
+        "groupId": "g",
+        "messageId": "m",
+        "text": "   ",
+        "clientCreatedAt": 1
+      },
+      "valid": false
+    },
+    {
+      "frame": {
+        "v": 1,
+        "kind": "gmsg",
+        "groupId": "g",
+        "messageId": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+        "text": "x",
+        "clientCreatedAt": 1
+      },
+      "valid": false
+    },
+    {
+      "frame": {
+        "v": 1,
+        "kind": "gmsg",
+        "groupId": "g",
+        "messageId": "m",
+        "text": "x",
+        "clientCreatedAt": 0
+      },
+      "valid": false
+    },
+    {
+      "frame": {
+        "v": 2,
+        "kind": "gmsg"
+      },
+      "valid": false
+    },
+    {
+      "frame": {
+        "v": 1,
+        "kind": "unknown"
+      },
+      "valid": false
+    },
+    {
+      "frame": {
+        "v": 1,
+        "kind": "group_push",
+        "event": {
+          "v": 1,
+          "kind": "group_event",
+          "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+          "type": "create",
+          "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+          "ts": 1700000000000,
+          "deps": [],
+          "card": {
+            "v": 1,
+            "sign": {
+              "kty": "EC",
+              "crv": "P-256",
+              "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+              "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+            },
+            "dh": {
+              "kty": "EC",
+              "crv": "P-256",
+              "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+              "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+            },
+            "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+            "name": "Ann"
+          },
+          "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+          "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+          "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+        }
+      },
+      "valid": true
+    },
+    {
+      "frame": {
+        "v": 1,
+        "kind": "group_push",
+        "event": {
+          "v": 1,
+          "kind": "group_event",
+          "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+          "type": "create",
+          "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+          "ts": 1700000000000,
+          "deps": [],
+          "card": {
+            "v": 1,
+            "sign": {
+              "kty": "EC",
+              "crv": "P-256",
+              "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+              "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+            },
+            "dh": {
+              "kty": "EC",
+              "crv": "P-256",
+              "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+              "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+            },
+            "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+            "name": "Ann"
+          },
+          "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+          "eventId": "zz",
+          "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+        }
+      },
+      "valid": false
+    },
+    {
+      "frame": {
+        "v": 1,
+        "kind": "group_events",
+        "events": [
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "add",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [
+              "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60"
+            ],
+            "target": "526c99196771595f1caf881a85644e8176c0d666920ed72a17e2ac5fff5518a3",
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "0yRfpqzZDJAQ-GUzPlK9UymjpeUrxzAzb1J4bU1TpMs",
+                "y": "xkUbHyWJI3al-F25m5XlKGiSX0M5jlkZMq8Xv19-hD8"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "Cnx8uxG8ZSAPOjs4IM2RcM_E6fRfMjy5kB4hMJz_AVM",
+                "y": "KLqbIY1azSUGPP2Tm_jNMjCxy6aGaLheJURQNQIVFw4"
+              },
+              "proof": "hXhgXN4Qq8ycFoDv9sB6x7rv6wO5U9q8Tmv4Q7qjBIpLFXdsZcvfjgNqvolurT6FW5bYL0gLSLeNPI7ke1A8JQ",
+              "name": "Bob"
+            },
+            "eventId": "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90",
+            "sig": "TgyCZHhBzCELgIRfeBVVS3ev8WL5bXBohN4fNgXZR8jvfrYF8uV2nyy16H83IwM4Z82u5wCRjPN5pRIG6IqCyA"
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "frame": {
+        "v": 1,
+        "kind": "group_events",
+        "events": [
+          {}
+        ]
+      },
+      "valid": false
+    },
+    {
+      "frame": {
+        "v": 1,
+        "kind": "group_events",
+        "events": [
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          },
+          {
+            "v": 1,
+            "kind": "group_event",
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "type": "create",
+            "actor": "984b9686a915a6f912b52faa071e8e33dfaeba8f0e7899900a38a3c25df664bb",
+            "ts": 1700000000000,
+            "deps": [],
+            "card": {
+              "v": 1,
+              "sign": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "7o7whxCeD-zqaBCl3PKfWkOspirbpQvFV3fWPHYEeu0",
+                "y": "7FXxnJYOIp1XjB0ORD0ykWoEk3jmV_12ze_bAQCe5tQ"
+              },
+              "dh": {
+                "kty": "EC",
+                "crv": "P-256",
+                "x": "e6tNRHsBgK9aG6hzKbgIJj9MYT2ZMZBD_qkxDmdbLW4",
+                "y": "JyLK2jM1RAO-u-lyeAPFmb338FCtU3OURH_S9jHID7E"
+              },
+              "proof": "ScvMP7ANTr_9C7x0dy94niVqBilIrk8PFmMNjAmE6vXRJiIu6FFryULRmSZ98AGoBVqn_1YcNB2vajRDNEwa2Q",
+              "name": "Ann"
+            },
+            "name": "Café ☕ \"quoted\" \\ back\u0001 😀",
+            "eventId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "sig": "wSlP-pVkUtezCPcDvPcvOwcenk_8l81DY8Kl94HorxaAT7m-GEThbp8InQ_RTEsuoscH7ieqxKDTK2WgLMLZNQ"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "frame": {
+        "v": 1,
+        "kind": "group_have",
+        "groups": [
+          {
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "ids": [
+              "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+              "7a3f420112331744c367daf379f8a2dc89aa5d2da08a75394ffd1ddfea29bd90"
+            ]
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "frame": {
+        "v": 1,
+        "kind": "group_have",
+        "groups": [
+          {
+            "groupId": "d29e75f756457cb5c7fd04ed4ff840f1c186462f4d947049cc74a75ca8035e60",
+            "ids": [
+              1
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "frame": {
+        "v": 1,
+        "kind": "relay_blob",
+        "hops": 3,
+        "blob": {
+          "v": 1,
+          "to": "a",
+          "from": "b",
+          "epk": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "x",
+            "y": "y"
+          },
+          "iv": "i",
+          "ct": "c",
+          "sig": "s"
+        }
+      },
+      "valid": false
+    },
+    {
+      "frame": {
+        "v": 1,
+        "kind": "relay_blob",
+        "hops": 1,
+        "blob": {
+          "v": 1,
+          "to": "a",
+          "from": "b",
+          "epk": {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "x",
+            "y": "y"
+          },
+          "iv": "i",
+          "ct": "c",
+          "sig": "s"
+        }
+      },
+      "valid": true
+    },
+    {
+      "frame": {
+        "v": 1,
+        "kind": "relay_blob",
+        "hops": 1,
+        "blob": {
+          "v": 1,
+          "to": "a"
+        }
+      },
+      "valid": false
+    }
+  ]
+}

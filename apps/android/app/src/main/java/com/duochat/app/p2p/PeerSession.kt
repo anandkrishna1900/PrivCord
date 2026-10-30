@@ -56,6 +56,9 @@ class PeerSession(
         fun onPeerMessage(message: ChatMessage)
         fun onAck(messageId: String, state: DeliveryState, at: Long)
         fun onRead(lastReadMessageId: String)
+
+        /** A group or relay frame (`gmsg`, `group_*`, `relay_blob`) from the authenticated, trusted peer. */
+        fun onFrame(frame: JSONObject) {}
     }
 
     private data class Hello(
@@ -64,6 +67,7 @@ class PeerSession(
         val nonce: String,
         val key: PublicJwk,
         val dh: PublicJwk,
+        val proof: String,
     )
 
     private data class Auth(
@@ -105,6 +109,13 @@ class PeerSession(
         get() = transport is SecureBleLink
 
     suspend fun connectionPath(): ConnectionPath? = transport?.connectionPath()
+
+    /** The peer's identity as it proved itself in the handshake (null before that). */
+    fun peerCard(): com.duochat.app.security.ContactCard? =
+        auth.hello?.let { com.duochat.app.security.ContactCard(it.key, it.dh, it.proof) }
+
+    /** Device id the peer announced (needed to pin it). */
+    fun peerDeviceId(): String? = auth.hello?.deviceId
 
     fun setExpectedPeerKey(key: PublicJwk?) {
         manualExpectedKey = key
@@ -314,6 +325,7 @@ class PeerSession(
             "ack" -> if (auth.authenticated) handleAck(frame)
             "read" -> if (auth.authenticated) handleRead(frame)
             "message" -> if (auth.authenticated) handlePeerMessage(frame)
+            "gmsg", "group_push", "group_events", "group_have", "relay_blob" -> if (isReady) listener.onFrame(frame)
         }
     }
 
@@ -363,7 +375,7 @@ class PeerSession(
             }
             auth.trust = PeerTrust.UNVERIFIED
         }
-        auth.hello = Hello(uid, deviceId, nonce, key, dh)
+        auth.hello = Hello(uid, deviceId, nonce, key, dh, proof)
         sendProofIfReady()
     }
 

@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "DuoChat",
+  "productName": "PrivCord",
   "version": "0.1.0",
   "identifier": "com.duochat.desktop",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "DuoChat",
+        "title": "PrivCord",
         "width": 1180,
         "height": 780,
         "minWidth": 880,
@@ -33,8 +33,8 @@
     "active": true,
     "targets": ["nsis"],
     "category": "SocialNetworking",
-    "shortDescription": "Private messaging for two people",
-    "longDescription": "DuoChat is a private two-person messenger. Friends pair once with a contact card and then talk directly over an encrypted WebRTC or Bluetooth channel. No accounts, no required backend.",
+    "shortDescription": "Private messaging for friends and groups",
+    "longDescription": "PrivCord is a private messenger for friends and groups. Add a friend with a QR code, then chat directly over an encrypted WebRTC or Bluetooth link. No accounts and no server that reads your messages.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

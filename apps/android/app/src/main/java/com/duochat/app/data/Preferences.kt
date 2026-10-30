@@ -12,8 +12,12 @@ data class AppSettings(
     val accent: String = ACCENTS.first().second,
     val notificationsEnabled: Boolean = true,
     val notificationPreviews: Boolean = true,
-    /** Local nickname for the other person (never sent anywhere). */
+    /** Local nickname the single paired friend had before multi-contact; used once to migrate it. */
     val peerNickname: String = "",
+    /** The name friends see on your invite and in groups. */
+    val displayName: String = "",
+    /** Conversation ids (contact uid / group id) whose notifications are muted. */
+    val mutedChats: Set<String> = emptySet(),
     val network: NetworkConfig = NetworkConfig(),
 )
 
@@ -41,6 +45,8 @@ class SettingsRepository(context: Context) {
             .putBoolean("notificationsEnabled", next.notificationsEnabled)
             .putBoolean("notificationPreviews", next.notificationPreviews)
             .putString("peerNickname", next.peerNickname)
+            .putString("displayName", next.displayName)
+            .putStringSet("mutedChats", next.mutedChats)
             .putString("network", next.network.toJson())
             .apply()
     }
@@ -54,6 +60,8 @@ class SettingsRepository(context: Context) {
             notificationsEnabled = prefs.getBoolean("notificationsEnabled", true),
             notificationPreviews = prefs.getBoolean("notificationPreviews", true),
             peerNickname = (prefs.getString("peerNickname", "") ?: "").trim().take(40),
+            displayName = (prefs.getString("displayName", "") ?: "").trim().take(40),
+            mutedChats = prefs.getStringSet("mutedChats", emptySet())?.toSet() ?: emptySet(),
             network = NetworkConfig.fromJson(
                 prefs.getString("network", null),
                 fallback = AppConfig.defaultNetworkConfig(),

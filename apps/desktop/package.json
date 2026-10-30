@@ -20,6 +20,7 @@
     "@tauri-apps/api": "^2.5.0",
     "@tauri-apps/plugin-notification": "^2.2.0",
     "@tauri-apps/plugin-sql": "^2.2.0",
+    "qrcode-generator": "^2.0.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
@@ -34,6 +35,6 @@
     "vitest": "4.1.12",
     "ws": "^8.22.0"
   },
-  "license": "Apache-2.0",
+  "license": "SEE LICENSE IN ../../LICENSE",
   "author": "anandkrishna1900 (https://github.com/anandkrishna1900)"
 }

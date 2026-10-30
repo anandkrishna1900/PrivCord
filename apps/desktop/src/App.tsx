@@ -6,7 +6,7 @@ import { ShieldIcon } from './components/Icons';
 
 export default function App() {
   const { settings, update } = useSettings();
-  const { state, engine, fatal, needsIdentity, reload } = useChatEngine(settings.peerNickname);
+  const { state, engine, fatal, needsIdentity, reload } = useChatEngine();
 
   if (needsIdentity) {
     return (
@@ -15,8 +15,8 @@ export default function App() {
           <div className="brand-lock large">
             <ShieldIcon size={26} />
           </div>
-          <h1>DuoChat</h1>
-          <p className="muted">Create your identity to begin.</p>
+          <h1>PrivCord</h1>
+          <p className="muted">Create your private identity to begin.</p>
         </div>
         <RecoveryDialog open required mode="backup" onClose={() => undefined} onIdentityReady={reload} />
       </main>

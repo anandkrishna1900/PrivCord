@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ChatMessage, DeliveryState } from '@duochat/protocol';
+import type { DeliveryState } from '@duochat/protocol';
+import type { UiMessage } from '../lib/engine';
 import { formatDay, formatTime } from '../lib/format';
 import { copyText } from '../lib/clipboard';
 import { Avatar } from './Avatar';
@@ -9,23 +10,25 @@ import {
   CheckIcon,
   ClockIcon,
   CopyIcon,
-  ShieldIcon,
 } from './Icons';
 
 function DeliveryIndicator({
   state,
   onRetry,
+  detail,
 }: {
   state: DeliveryState;
   onRetry: () => void;
+  detail?: string;
 }) {
   const titles: Record<DeliveryState, string> = {
-    QUEUED: 'Queued locally',
-    SENT: 'Accepted by transport',
-    DELIVERED: 'Delivered to the other device',
-    READ: 'Read by your friend',
-    FAILED: 'Delivery failed — click to retry',
+    QUEUED: 'Waiting to send',
+    SENT: 'Sent',
+    DELIVERED: 'Delivered',
+    READ: 'Read',
+    FAILED: "Couldn't send. Click to try again",
   };
+  if (detail) titles[state] = `${titles[state]} · ${detail}`;
   if (state === 'FAILED') {
     return (
       <button
@@ -55,19 +58,17 @@ function DeliveryIndicator({
 }
 
 export function MessageList({
+  convId,
   messages,
-  selfUid,
-  peerName,
+  isGroup,
+  empty,
   onRetry,
-  peerDirect,
-  paired,
 }: {
-  messages: ChatMessage[];
-  selfUid: string;
-  peerName: string;
+  convId: string;
+  messages: UiMessage[];
+  isGroup: boolean;
+  empty: string;
   onRetry: (messageId: string) => void;
-  peerDirect: boolean;
-  paired: boolean;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
@@ -82,16 +83,21 @@ export function MessageList({
   }
 
   useEffect(() => {
+    didInitialScroll.current = false;
+    lastIdRef.current = undefined;
+  }, [convId]);
+
+  useEffect(() => {
     const element = scrollRef.current;
     if (!element) return;
     const last = messages[messages.length - 1];
-    const sentNew = last?.senderId === selfUid && last.messageId !== lastIdRef.current;
+    const sentNew = last?.own && last.messageId !== lastIdRef.current;
     lastIdRef.current = last?.messageId;
     if (!didInitialScroll.current || atBottomRef.current || sentNew) {
       element.scrollTop = element.scrollHeight;
       didInitialScroll.current = true;
     }
-  }, [messages, selfUid]);
+  }, [messages, convId]);
 
   function onScroll() {
     const element = scrollRef.current;
@@ -103,22 +109,8 @@ export function MessageList({
   if (messages.length === 0) {
     return (
       <div className="message-scroll empty" ref={scrollRef}>
-        <div className="empty-state">
-          <div className="empty-emblem">
-            <ShieldIcon size={30} />
-          </div>
-          <h2>Your private conversation starts here</h2>
-          <p>
-            Messages are stored only on this device and sent straight to your
-            friend over an encrypted direct connection. No account, no server.
-          </p>
-          <span className="empty-hint">
-            {peerDirect
-              ? 'Connected directly.'
-              : paired
-                ? 'Not connected. Messages you write are queued and sent when you reconnect.'
-                : 'Use the person button above to add your friend.'}
-          </span>
+        <div className="empty-state small">
+          <p>{empty}</p>
         </div>
       </div>
     );
@@ -135,7 +127,7 @@ export function MessageList({
           const day = formatDay(message.clientCreatedAt);
           const showDay = day !== lastDay;
           if (showDay) lastDay = day;
-          const own = message.senderId === selfUid;
+          const own = message.own;
           const grouped =
             !showDay &&
             lastSender === message.senderId &&
@@ -143,7 +135,7 @@ export function MessageList({
           lastSender = message.senderId;
           lastTimestamp = message.clientCreatedAt;
           const showAvatar =
-            !own && (!grouped || index === messages.length - 1);
+            !own && !grouped;
           return (
             <div key={message.messageId}>
               {showDay ? (
@@ -156,15 +148,18 @@ export function MessageList({
                   grouped ? 'grouped' : ''
                 }`}
               >
-                {!own ? (
+                {!own && isGroup ? (
                   <span className="message-avatar-slot">
-                    {showAvatar ? <Avatar name={peerName} size={28} /> : null}
+                    {showAvatar ? <Avatar name={message.senderName} size={28} /> : null}
                   </span>
                 ) : null}
                 <div
                   className={`bubble ${own ? 'own' : 'theirs'}`}
                   title={new Date(message.clientCreatedAt).toISOString()}
                 >
+                  {!own && isGroup && !grouped ? (
+                    <span className="bubble-sender">{message.senderName}</span>
+                  ) : null}
                   <p className="bubble-text">{message.text}</p>
                   <span className="bubble-meta">
                     <button
@@ -179,7 +174,8 @@ export function MessageList({
                     <span className="bubble-time">{formatTime(message.clientCreatedAt)}</span>
                     {own ? (
                       <DeliveryIndicator
-                        state={message.deliveryState}
+                        state={message.tick}
+                        detail={isGroup && message.total > 1 ? `${message.delivered} of ${message.total}` : undefined}
                         onRetry={() => onRetry(message.messageId)}
                       />
                     ) : null}

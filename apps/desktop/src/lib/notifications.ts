@@ -3,7 +3,6 @@ import {
   requestPermission,
   sendNotification,
 } from '@tauri-apps/plugin-notification';
-import type { ChatMessage } from '@duochat/protocol';
 import { isTauri } from '../config';
 import { loadSettings } from './settings';
 
@@ -24,16 +23,15 @@ export async function ensureNotificationPermission(): Promise<boolean> {
 }
 
 export async function notifyIncoming(
-  message: ChatMessage,
-  senderName: string,
+  message: { text: string; messageId: string },
+  title: string,
 ): Promise<void> {
   const settings = loadSettings();
   if (!settings.notificationsEnabled) return;
   if (document.visibilityState === 'visible' && document.hasFocus()) return;
   const granted = await ensureNotificationPermission();
   if (!granted) return;
-  const title = `New message from ${senderName || 'your friend'}`;
-  const body = settings.notificationPreviews ? preview(message.text) : 'Open DuoChat to read it.';
+    const body = settings.notificationPreviews ? preview(message.text) : 'Open PrivCord to read it.';
   try {
     if (isTauri()) {
       sendNotification({ title, body });

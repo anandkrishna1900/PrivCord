@@ -10,7 +10,7 @@ describe('parseSettings', () => {
           accent: '#0d9488',
           notificationsEnabled: false,
           notificationPreviews: false,
-          peerNickname: '  Sam  ',
+          displayName: '  Sam  ',
         }),
       ),
     ).toMatchObject({
@@ -18,12 +18,12 @@ describe('parseSettings', () => {
       accent: '#0d9488',
       notificationsEnabled: false,
       notificationPreviews: false,
-      peerNickname: 'Sam',
+      displayName: 'Sam',
     });
   });
 
   it('falls back to defaults for missing or malformed storage', () => {
-    expect(parseSettings(JSON.stringify({ theme: 'light' })).peerNickname).toBe('');
+    expect(parseSettings(JSON.stringify({ theme: 'light' })).displayName).toBe('');
     expect(parseSettings('{not json').theme).toBe('system');
     expect(parseSettings(null).accent).toBe('#6366f1');
   });
