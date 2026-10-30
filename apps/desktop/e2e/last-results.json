@@ -1,0 +1,23 @@
+[
+  {
+    "id": 2,
+    "name": "cards + safety number, AUTOMATIC connection via relay (no codes), messages both ways",
+    "status": "PASS",
+    "notes": [
+      "safety number 08358 31779 21208 98192 28870 99028",
+      "connected automatically, zero codes pasted",
+      "A ticks: [\"Read by your friend\"]"
+    ],
+    "secs": 15
+  },
+  {
+    "id": 3,
+    "name": "reload both: automatic reconnect, queued offline message flushes",
+    "status": "PASS",
+    "notes": [
+      "reconnected automatically after 12s",
+      "queued message delivered after reconnect"
+    ],
+    "secs": 12
+  }
+]
