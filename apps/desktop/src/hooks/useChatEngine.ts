@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChatEngine, type ChatState } from '../lib/engine';
 import { LOCAL_ID, loadIdentity } from '../lib/identity';
 import { LocalStore } from '../lib/localDb';
@@ -16,14 +16,12 @@ export interface UseChatEngine {
   reload: () => void;
 }
 
-export function useChatEngine(peerName: string): UseChatEngine {
+export function useChatEngine(): UseChatEngine {
   const [state, setState] = useState<ChatState | null>(null);
   const [engine, setEngine] = useState<ChatEngine | null>(null);
   const [fatal, setFatal] = useState<string | null>(null);
   const [needsIdentity, setNeedsIdentity] = useState(false);
   const [version, setVersion] = useState(0);
-  const nameRef = useRef(peerName);
-  nameRef.current = peerName;
 
   useEffect(() => {
     let cancelled = false;
@@ -39,18 +37,16 @@ export function useChatEngine(peerName: string): UseChatEngine {
       if (!identity) return;
       const chatEngine = new ChatEngine({
         identity,
-        conversationId: config.conversationId,
+        context: config.conversationId,
         store,
-        onNotify: (message) => void notifyIncoming(message, nameRef.current),
+        onNotify: (message, title) => void notifyIncoming(message, title),
       });
       created = chatEngine;
       setEngine(chatEngine);
       unsubscribe = chatEngine.subscribe(setState);
       await chatEngine.start();
     })().catch((error) => {
-      if (!cancelled) {
-        setFatal(error instanceof Error ? error.message : String(error));
-      }
+      if (!cancelled) setFatal(error instanceof Error ? error.message : String(error));
     });
 
     return () => {
