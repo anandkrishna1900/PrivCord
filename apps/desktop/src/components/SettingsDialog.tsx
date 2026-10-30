@@ -93,6 +93,7 @@ export function SettingsDialog({
   onSignOut,
   onOpenManual,
   onOpenNuke,
+  onOpenRecovery,
 }: {
   open: boolean;
   onClose: () => void;
@@ -105,6 +106,7 @@ export function SettingsDialog({
   onSignOut: () => Promise<void>;
   onOpenManual: () => void;
   onOpenNuke: () => void;
+  onOpenRecovery?: (mode: 'backup' | 'restore') => void;
 }) {
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const [name, setName] = useState('');
@@ -590,6 +592,39 @@ export function SettingsDialog({
                   backups.
                 </p>
               </header>
+
+              <div className="card-box" style={{ padding: '16px', border: '1px solid var(--border-subtle)', borderRadius: '12px', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                  <KeyIcon size={18} />
+                  <strong>12-Word Recovery Phrase</strong>
+                </div>
+                <p className="muted small" style={{ marginBottom: '12px' }}>
+                  Your cryptographic identity is tied to a 12-word recovery phrase. If you haven't backed it up, or need to restore an existing identity, manage it here.
+                </p>
+                <div className="button-row">
+                  <button
+                    type="button"
+                    className="button secondary small"
+                    onClick={() => {
+                      onClose();
+                      onOpenRecovery?.('backup');
+                    }}
+                  >
+                    Back up recovery phrase
+                  </button>
+                  <button
+                    type="button"
+                    className="button ghost small"
+                    onClick={() => {
+                      onClose();
+                      onOpenRecovery?.('restore');
+                    }}
+                  >
+                    Restore identity
+                  </button>
+                </div>
+              </div>
+
               <div className="emergency-block">
                 <div>
                   <strong>NUKE DUOCHAT — app-wide emergency erase</strong>

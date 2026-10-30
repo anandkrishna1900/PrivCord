@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Key
@@ -121,9 +122,15 @@ fun ChatScreen(
     onCreateManualOffer: ((Result<String>) -> Unit) -> Unit,
     onApplyManualAnswer: (String, (Result<Unit>) -> Unit) -> Unit,
     onAcceptManualOffer: ((String, (Result<String>) -> Unit) -> Unit),
+    onRunNuke: () -> Unit = {},
+    onRunChatSwitch: (Boolean, (Result<Boolean>) -> Unit) -> Unit = { _, _ -> },
+    killSwitchReport: com.duochat.app.security.KillSwitchReport? = null,
+    onAcknowledgeKillSwitch: () -> Unit = {},
 ) {
     var settingsOpen by remember { mutableStateOf(false) }
     var manualOpen by remember { mutableStateOf(false) }
+    var nukeOpen by remember { mutableStateOf(false) }
+    var clearChatOpen by remember { mutableStateOf(false) }
 
     val notificationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -187,6 +194,9 @@ fun ChatScreen(
                     }
                     IconButton(onClick = { settingsOpen = true }) {
                         Icon(Icons.Filled.Settings, contentDescription = "Settings")
+                    }
+                    IconButton(onClick = { clearChatOpen = true }) {
+                        Icon(Icons.Filled.DeleteForever, contentDescription = "Clear Everything")
                     }
                 },
             )
@@ -276,6 +286,10 @@ fun ChatScreen(
                 settingsOpen = false
                 manualOpen = true
             },
+            onOpenNuke = {
+                settingsOpen = false
+                nukeOpen = true
+            },
             onSignOut = {
                 settingsOpen = false
                 onSignOut()
@@ -294,6 +308,34 @@ fun ChatScreen(
             onCreateOffer = onCreateManualOffer,
             onApplyAnswer = onApplyManualAnswer,
             onAcceptOffer = onAcceptManualOffer,
+        )
+    }
+
+    if (nukeOpen) {
+        NukeDialog(
+            onDismiss = { nukeOpen = false },
+            onRun = { onRunNuke() },
+            report = killSwitchReport,
+            onDone = {
+                nukeOpen = false
+                onAcknowledgeKillSwitch()
+            },
+        )
+    }
+
+    if (clearChatOpen) {
+        ClearChatDialog(
+            onDismiss = { clearChatOpen = false },
+            onRun = { mode ->
+                onRunChatSwitch(mode == DeleteChatMode.CLEAR_AND_SESSION) {
+                    // completion handler
+                }
+            },
+            report = killSwitchReport,
+            onDone = {
+                clearChatOpen = false
+                onAcknowledgeKillSwitch()
+            },
         )
     }
 }

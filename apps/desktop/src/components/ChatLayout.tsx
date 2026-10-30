@@ -10,6 +10,7 @@ import { MessageList } from './MessageList';
 import { SettingsDialog, type SettingsSection } from './SettingsDialog';
 import { ManualConnectDialog } from './ManualConnectDialog';
 import { ClearChatDialog, NukeDialog } from './KillSwitchDialogs';
+import { RecoveryDialog } from './RecoveryDialogs';
 import {
   AlertIcon,
   CheckIcon,
@@ -46,6 +47,8 @@ export function ChatLayout({
   const [manualOpen, setManualOpen] = useState(false);
   const [nukeOpen, setNukeOpen] = useState(false);
   const [clearChatOpen, setClearChatOpen] = useState(false);
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [recoveryMode, setRecoveryMode] = useState<'backup' | 'restore'>('backup');
   const [dismissed, setDismissed] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -379,6 +382,10 @@ export function ChatLayout({
         onSignOut={onSignOut}
         onOpenManual={openManual}
         onOpenNuke={() => setNukeOpen(true)}
+        onOpenRecovery={(mode) => {
+          setRecoveryMode(mode);
+          setRecoveryOpen(true);
+        }}
       />
 
       <ManualConnectDialog
@@ -407,6 +414,13 @@ export function ChatLayout({
         engine={engine}
         uid={user.uid}
         peerUid={state?.peerUid ?? ''}
+      />
+
+      <RecoveryDialog
+        open={recoveryOpen}
+        onClose={() => setRecoveryOpen(false)}
+        uid={user.uid}
+        mode={recoveryMode}
       />
     </div>
   );

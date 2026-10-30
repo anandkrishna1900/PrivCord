@@ -54,6 +54,7 @@ private fun RootScreen(viewModel: AppViewModel) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val authError by viewModel.authError.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
+    val killSwitchReport by viewModel.killSwitchReport.collectAsStateWithLifecycle()
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -121,6 +122,10 @@ private fun RootScreen(viewModel: AppViewModel) {
                     onCreateManualOffer = viewModel::createManualOffer,
                     onApplyManualAnswer = viewModel::applyManualAnswer,
                     onAcceptManualOffer = viewModel::acceptManualOffer,
+                    onRunNuke = viewModel::runNuke,
+                    onRunChatSwitch = viewModel::runChatSwitch,
+                    killSwitchReport = killSwitchReport,
+                    onAcknowledgeKillSwitch = viewModel::acknowledgeKillSwitch,
                 )
             }
         }
