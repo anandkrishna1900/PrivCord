@@ -1,7 +1,11 @@
 import {
   createPairingRecord,
+  deriveIdentityFromPhrase,
+  encodeContactCard,
   isPairingRecord,
   signatureToBase64,
+  uidFromDh,
+  verifyIdentityProof,
   type ChatMessage,
   type PairingRecord,
 } from '@duochat/protocol';
@@ -11,10 +15,17 @@ import { secretGet, secretSet } from './secureStore';
 export const LOCAL_ID = 'local';
 
 export interface DeviceIdentity {
+  /** Fingerprint of the ECDH identity key; identical on every device restored from the same phrase. */
   uid: string;
   deviceId: string;
+  /** ECDSA signing key: signs challenges and sealed blobs. */
   privateJwk: JsonWebKey;
   publicJwk: JsonWebKey;
+  /** ECDH identity key: receives sealed blobs. */
+  dhPrivateJwk: JsonWebKey;
+  dhPublicJwk: JsonWebKey;
+  /** Self-signature binding the two public keys. */
+  identityProof: string;
 }
 
 const DEVICE_KEY = 'duochat.device-id';
@@ -28,47 +39,70 @@ export function localDeviceId(): string {
   return id;
 }
 
-/** Stable account id: a SHA-256 fingerprint of the public key. Nothing to register or sign in to. */
-export async function uidFromPublicJwk(jwk: JsonWebKey): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    'SHA-256',
-    new TextEncoder().encode(`${jwk.x ?? ''}.${jwk.y ?? ''}`),
-  );
-  const hex = [...new Uint8Array(digest)]
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
-  return `u${hex.slice(0, 32)}`;
+const SECRET_SIGN = `ec-private-${LOCAL_ID}`;
+const SECRET_DH = `ec-dh-private-${LOCAL_ID}`;
+const SECRET_PROOF = `ec-proof-${LOCAL_ID}`;
+
+function slimPublic(jwk: JsonWebKey): JsonWebKey {
+  return { kty: 'EC', crv: 'P-256', x: jwk.x, y: jwk.y };
 }
 
-export async function loadOrCreateIdentity(): Promise<DeviceIdentity> {
-  const deviceId = localDeviceId();
-  const secretKey = `ec-private-${LOCAL_ID}`;
-  let privateJwk: JsonWebKey | null = null;
-  const stored = await secretGet(secretKey);
-  if (stored) {
-    try {
-      privateJwk = JSON.parse(stored) as JsonWebKey;
-    } catch {
-      privateJwk = null;
-    }
+/**
+ * Create (or replace) the identity from a 12-word phrase. The phrase itself is never stored;
+ * only the derived private keys go into the OS secure store.
+ */
+export async function createIdentityFromPhrase(phrase: string, passphrase = ''): Promise<string> {
+  const derived = await deriveIdentityFromPhrase(phrase.trim().toLowerCase(), passphrase);
+  await secretSet(SECRET_SIGN, JSON.stringify(derived.identity.signKey.privJwk));
+  await secretSet(SECRET_DH, JSON.stringify(derived.identity.dhKey.privJwk));
+  await secretSet(SECRET_PROOF, derived.identity.identityProof);
+  return derived.identityFingerprint;
+}
+
+async function readJwk(key: string): Promise<JsonWebKey | null> {
+  const raw = await secretGet(key);
+  if (!raw) return null;
+  try {
+    const jwk = JSON.parse(raw) as JsonWebKey;
+    return jwk.kty === 'EC' && jwk.d && jwk.x && jwk.y ? jwk : null;
+  } catch {
+    return null;
   }
-  if (!privateJwk || privateJwk.kty !== 'EC' || !privateJwk.d) {
-    const pair = await crypto.subtle.generateKey(
-      { name: 'ECDSA', namedCurve: 'P-256' },
-      true,
-      ['sign', 'verify'],
-    );
-    const exported = await crypto.subtle.exportKey('jwk', pair.privateKey);
-    privateJwk = exported;
-    await secretSet(secretKey, JSON.stringify(exported));
-  }
-  const publicJwk: JsonWebKey = {
-    kty: 'EC',
-    crv: 'P-256',
-    x: privateJwk.x,
-    y: privateJwk.y,
+}
+
+/** The stored identity, or null on first run (the app then forces the 12-word phrase flow). */
+export async function loadIdentity(): Promise<DeviceIdentity | null> {
+  const [signPriv, dhPriv, identityProof] = await Promise.all([
+    readJwk(SECRET_SIGN),
+    readJwk(SECRET_DH),
+    secretGet(SECRET_PROOF),
+  ]);
+  if (!signPriv || !dhPriv || !identityProof) return null;
+  const dhPublicJwk = slimPublic(dhPriv);
+  return {
+    uid: await uidFromDh(dhPublicJwk),
+    deviceId: localDeviceId(),
+    privateJwk: signPriv,
+    publicJwk: slimPublic(signPriv),
+    dhPrivateJwk: dhPriv,
+    dhPublicJwk,
+    identityProof,
   };
-  return { uid: await uidFromPublicJwk(publicJwk), deviceId, privateJwk, publicJwk };
+}
+
+export function contactCardOf(identity: DeviceIdentity, name?: string): string {
+  return encodeContactCard({
+    v: 1,
+    sign: identity.publicJwk,
+    dh: identity.dhPublicJwk,
+    proof: identity.identityProof,
+    ...(name ? { name } : {}),
+  });
+}
+
+/** An id is only valid if it is the fingerprint of the key it comes with. */
+export async function uidMatchesKeys(uid: string, dh: JsonWebKey, sign: JsonWebKey, proof: string): Promise<boolean> {
+  return (await uidFromDh(dh)) === uid && (await verifyIdentityProof(sign, dh, proof));
 }
 
 export async function signChallenge(
@@ -111,6 +145,7 @@ export function savePairing(input: {
   peerUid: string;
   peerDeviceId: string;
   publicKeyJwk: JsonWebKey;
+  dhJwk?: JsonWebKey;
   safetyNumber: string;
 }): PairingRecord {
   const previous = loadPairing();

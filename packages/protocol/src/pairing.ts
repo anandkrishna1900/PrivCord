@@ -10,6 +10,8 @@ export interface PairingRecord {
   peerUid: string;
   peerDeviceId: string;
   publicKeyJwk: JsonWebKey;
+  /** Contact's ECDH identity key; needed to seal blobs to them. */
+  dhJwk?: JsonWebKey;
   safetyNumber: string;
   pairedAt: number;
   lastConnectedAt: number;
@@ -50,6 +52,7 @@ export function isPairingRecord(
   if (expectedPeerUid !== undefined && value.peerUid !== expectedPeerUid) return false;
   if (typeof value.peerDeviceId !== 'string' || value.peerDeviceId.length === 0) return false;
   if (!isValidPublicJwk(value.publicKeyJwk)) return false;
+  if (value.dhJwk !== undefined && !isValidPublicJwk(value.dhJwk)) return false;
   if (typeof value.safetyNumber !== 'string' || value.safetyNumber.length === 0) return false;
   if (typeof value.pairedAt !== 'number' || !Number.isFinite(value.pairedAt)) return false;
   if (
@@ -96,6 +99,7 @@ export function createPairingRecord(input: {
   peerUid: string;
   peerDeviceId: string;
   publicKeyJwk: JsonWebKey;
+  dhJwk?: JsonWebKey;
   safetyNumber: string;
   previous?: PairingRecord | null;
   now?: number;
@@ -110,6 +114,7 @@ export function createPairingRecord(input: {
     peerUid: input.peerUid,
     peerDeviceId: input.peerDeviceId,
     publicKeyJwk: input.publicKeyJwk,
+    ...(input.dhJwk ? { dhJwk: input.dhJwk } : {}),
     safetyNumber: input.safetyNumber,
     pairedAt: samePeer ? input.previous!.pairedAt : now,
     lastConnectedAt: now,

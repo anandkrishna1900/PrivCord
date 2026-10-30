@@ -1,6 +1,20 @@
 import {
   AUTH_TIMEOUT_MS,
   authChallenge,
+  classifyPath,
+  decodeContactCard,
+  mailboxFor,
+  open as openBlob,
+  reconnectDelayMs,
+  seal,
+  selectedPairFromStats,
+  validateClientMessageId,
+  validateIncomingText,
+  isRecord,
+  type ConnectionPath,
+  type Contact,
+  type NetworkConfig,
+  type SealedBlob,
   compareMessages,
   createManualSignal,
   createOutgoingMessage,
@@ -23,15 +37,17 @@ import {
   type PairingRecord,
   type PeerControlFrame,
 } from '@duochat/protocol';
-import { iceServers } from '../config';
 import {
   loadPairing,
   purgePeerKeyCaches,
   savePairing,
   signChallenge,
-  uidFromPublicJwk,
+  uidMatchesKeys,
   type DeviceIdentity,
 } from './identity';
+import { loadNetworkConfig, rtcConfigFor } from './network';
+import { SignalingHub, transportsFor } from './signaling/hub';
+import type { SignalingStatus, SignalingTransport } from './signaling/types';
 import { LocalStore, type OutboxRow } from './localDb';
 import { needsDelivery } from './outbox';
 import { PeerTransport } from './p2p';
@@ -58,6 +74,11 @@ export interface ChatState {
   notice: string | null;
   /** True once a peer key is pinned on this device. */
   paired: boolean;
+  /** Measured from the live connection: direct or relayed. Null when not connected. */
+  path: ConnectionPath | null;
+  signaling: SignalingStatus;
+  /** A friend's card that was pasted but not yet confirmed by the user. */
+  pendingContact: { uid: string; safetyNumber: string; name?: string } | null;
 }
 
 export interface EngineDeps {
@@ -110,6 +131,15 @@ export class ChatEngine {
   private visible = false;
   private manualExpectedKey: JsonWebKey | null = null;
   private stopped = false;
+  private network: NetworkConfig = loadNetworkConfig();
+  private hub: SignalingHub | null = null;
+  private pendingCard: Contact | null = null;
+  private lastOfferAt = 0;
+  private offerAttempt = 0;
+  private relayed = new Set<string>();
+  private lastPathAt = 0;
+  private manualActive = false;
+  private offerTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private readonly deps: EngineDeps) {
     this.identity = deps.identity;
@@ -129,6 +159,9 @@ export class ChatEngine {
       error: null,
       notice: null,
       paired: false,
+      path: null,
+      signaling: 'idle',
+      pendingContact: null,
     };
   }
 
@@ -187,7 +220,8 @@ export class ChatEngine {
           : null,
       });
       this.updateConnection();
-      this.tickTimer = window.setInterval(() => this.tick(), TICK_MS);
+      this.startSignaling();
+      this.tickTimer = window.setInterval(() => void this.tick(), TICK_MS);
     } catch (error) {
       if (!this.stopped) this.setState({ phase: 'error', error: errorMessage(error) });
     }
@@ -197,14 +231,22 @@ export class ChatEngine {
     this.stopped = true;
     window.clearInterval(this.tickTimer);
     window.clearTimeout(this.auth.timer);
+    this.hub?.stop();
+    this.hub = null;
     this.peer?.close();
     this.peer = null;
     this.setState({ phase: 'stopped' });
   }
 
-  private tick(): void {
-    if (this.stopped || !this.p2pReady()) return;
-    this.flushUndelivered();
+  private async tick(): Promise<void> {
+    if (this.stopped) return;
+    this.setState({ signaling: this.hub?.status() ?? 'idle' });
+    if (this.p2pReady()) {
+      this.flushUndelivered();
+      if (Date.now() - this.lastPathAt > 15_000) void this.refreshPath();
+      return;
+    }
+    await this.maybeOffer();
   }
 
   private sortedMessages(): ChatMessage[] {
@@ -264,6 +306,7 @@ export class ChatEngine {
       await this.deps.store.enqueueOutbox(row);
       this.emitMessages();
       void this.deliver(message.messageId);
+      void this.relayPending();
       return { ok: true };
     } catch (error) {
       return { ok: false, error: errorMessage(error) };
@@ -365,7 +408,7 @@ export class ChatEngine {
     this.auth = freshAuth();
     this.frameQueue = [];
     this.p2pSent.clear();
-    const transport = new PeerTransport(iceServers(), {
+    const transport = new PeerTransport(rtcConfigFor(this.network), {
       onOpen: () => this.handlePeerOpen(),
       onClose: () => this.handlePeerClose(),
       onFrame: (data) => this.handlePeerFrame(data),
@@ -404,6 +447,8 @@ export class ChatEngine {
       uid: this.identity.uid,
       deviceId: this.identity.deviceId,
       publicKeyJwk: this.identity.publicJwk,
+      dhJwk: this.identity.dhPublicJwk,
+      identityProof: this.identity.identityProof,
       nonce: this.auth.myNonce,
     });
   }
@@ -416,6 +461,7 @@ export class ChatEngine {
     this.p2pSent.clear();
     this.lastReadWritten = null;
     this.setState({
+      path: null,
       p2pState: wasConnected ? 'failed' : 'idle',
       p2pConnected: false,
       peerTrust: 'none',
@@ -466,8 +512,9 @@ export class ChatEngine {
           this.failPeer('Refused a connection that claimed our own device identity.');
           return;
         }
-        // The account id is a fingerprint of the key, so a peer cannot claim someone else's id.
-        if ((await uidFromPublicJwk(frame.publicKeyJwk)) !== frame.uid) {
+        // The account id is a fingerprint of the identity key and the keys are bound by a signature,
+        // so a peer cannot claim someone else's id.
+        if (!(await uidMatchesKeys(frame.uid, frame.dhJwk, frame.publicKeyJwk, frame.identityProof))) {
           this.failPeer('Peer identity does not match its key.');
           return;
         }
@@ -598,6 +645,7 @@ export class ChatEngine {
       return;
     }
     this.auth.authenticated = true;
+    this.manualActive = false;
     window.clearTimeout(this.auth.timer);
     const safetyNumber = await deriveSafetyNumber(
       this.identity.publicJwk,
@@ -610,6 +658,7 @@ export class ChatEngine {
         peerUid: hello.uid,
         peerDeviceId: hello.deviceId,
         publicKeyJwk: hello.publicKeyJwk,
+        dhJwk: hello.dhJwk,
         safetyNumber,
       });
     }
@@ -626,11 +675,14 @@ export class ChatEngine {
     });
     if (trust === 'verified') this.onChannelReady();
     this.updateConnection();
+    void this.refreshPath();
+    this.startSignaling();
   }
 
   private onChannelReady(): void {
     this.p2pSent.clear();
     this.lastReadWritten = null;
+    this.offerAttempt = 0;
     this.flushUndelivered();
     if (this.visible) void this.markRead();
   }
@@ -640,13 +692,18 @@ export class ChatEngine {
     // Until the safety number is confirmed the peer is not trusted: drop its
     // messages. It resends anything unacknowledged once the channel is verified.
     if (!this.p2pReady()) return;
+    await this.ingest(message, (ack) => this.peer?.sendJson(ack));
+  }
+
+  /** Store a message from the paired peer, acknowledge it, notify. Shared by the direct and relay paths. */
+  private async ingest(message: ChatMessage, sendAck: (ack: unknown) => void): Promise<void> {
     const existing = this.messages.get(message.messageId);
     const merged = existing ? mergeMessages([existing], [message])[0] : message;
     if (!merged) return;
     this.messages.set(merged.messageId, merged);
     await this.deps.store.putMessage(merged);
     this.emitMessages();
-    this.peer?.sendJson({
+    sendAck({
       v: 1,
       kind: 'ack',
       messageId: merged.messageId,
@@ -666,6 +723,7 @@ export class ChatEngine {
       peerUid: hello.uid,
       peerDeviceId: hello.deviceId,
       publicKeyJwk: hello.publicKeyJwk,
+      dhJwk: hello.dhJwk,
       safetyNumber: this.state.safetyNumber,
     });
     this.setState({
@@ -680,6 +738,7 @@ export class ChatEngine {
   }
 
   private failPeer(reason: string): void {
+    this.manualActive = false;
     window.clearTimeout(this.auth.timer);
     this.peer?.close();
     this.peer = null;
@@ -687,6 +746,7 @@ export class ChatEngine {
     this.frameQueue = [];
     this.p2pSent.clear();
     this.setState({
+      path: null,
       p2pState: 'failed',
       p2pConnected: false,
       peerTrust: 'none',
@@ -704,7 +764,7 @@ export class ChatEngine {
     if (signal.fromUid === this.identity.uid) {
       throw new Error('This code was created on this device.');
     }
-    if ((await uidFromPublicJwk(signal.publicKeyJwk)) !== signal.fromUid) {
+    if (!(await uidMatchesKeys(signal.fromUid, signal.dhJwk, signal.publicKeyJwk, signal.identityProof))) {
       throw new Error('This connection code is corrupted: its identity does not match its key.');
     }
     const pinned = this.pairing;
@@ -719,6 +779,7 @@ export class ChatEngine {
   }
 
   async createManualOffer(): Promise<string> {
+    this.manualActive = true;
     this.manualExpectedKey = null;
     this.setState({ notice: null });
     const transport = this.newPeer();
@@ -731,6 +792,8 @@ export class ChatEngine {
           fromUid: this.identity.uid,
           fromDeviceId: this.identity.deviceId,
           publicKeyJwk: this.identity.publicJwk,
+          dhJwk: this.identity.dhPublicJwk,
+          identityProof: this.identity.identityProof,
           sdp,
           nonce: randomNonce(),
         }),
@@ -764,6 +827,7 @@ export class ChatEngine {
       throw new Error('This code is an answer. Paste the offer from the other user instead.');
     }
     await this.checkSignalIdentity(decoded.value);
+    this.manualActive = true;
     this.manualExpectedKey = decoded.value.publicKeyJwk;
     this.setState({ notice: null });
     const transport = this.newPeer();
@@ -776,6 +840,8 @@ export class ChatEngine {
           fromUid: this.identity.uid,
           fromDeviceId: this.identity.deviceId,
           publicKeyJwk: this.identity.publicJwk,
+          dhJwk: this.identity.dhPublicJwk,
+          identityProof: this.identity.identityProof,
           sdp,
           nonce: randomNonce(),
         }),
@@ -790,6 +856,7 @@ export class ChatEngine {
   }
 
   cancelManual(): void {
+    this.manualActive = false;
     this.manualExpectedKey = null;
     this.peer?.close();
     this.peer = null;
@@ -802,6 +869,275 @@ export class ChatEngine {
       safetyNumber: null,
     });
     this.updateConnection();
+  }
+
+
+  /* ------------------------------------------------------------------ */
+  /* Contacts: exchange public cards, compare the safety number, pin     */
+  /* ------------------------------------------------------------------ */
+
+  /** Validate a pasted contact card and show its safety number. Nothing is saved yet. */
+  async previewContact(text: string): Promise<void> {
+    const contact = await decodeContactCard(text);
+    if (!contact) throw new Error('This is not a valid DuoChat contact card.');
+    if (contact.uid === this.identity.uid) throw new Error('This is your own contact card.');
+    if (this.pairing && this.pairing.peerUid !== contact.uid) {
+      throw new Error('You are already paired with someone else. Reset pairing in Settings first.');
+    }
+    const safetyNumber = await deriveSafetyNumber(this.identity.publicJwk, contact.card.sign);
+    this.pendingCard = contact;
+    this.setState({ pendingContact: { uid: contact.uid, safetyNumber, name: contact.card.name } });
+  }
+
+  /** The user compared the safety number over a separate channel: pin the contact. */
+  confirmContact(): void {
+    const contact = this.pendingCard;
+    const pending = this.state.pendingContact;
+    if (!contact || !pending) return;
+    this.pairing = savePairing({
+      peerUid: contact.uid,
+      peerDeviceId: 'card',
+      publicKeyJwk: contact.card.sign,
+      dhJwk: contact.card.dh,
+      safetyNumber: pending.safetyNumber,
+    });
+    this.pendingCard = null;
+    this.offerAttempt = 0;
+    this.lastOfferAt = 0;
+    this.setState({
+      paired: true,
+      peerUid: contact.uid,
+      pendingContact: null,
+      notice: this.hub || this.network.signaling.length > 0
+        ? 'Friend saved. Connecting automatically whenever you are both online.'
+        : 'Friend saved. No signaling is configured, so connect with a code (Settings > Network).',
+    });
+    this.startSignaling(true);
+  }
+
+  cancelContact(): void {
+    this.pendingCard = null;
+    this.setState({ pendingContact: null });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Signaling: find the paired friend again without typing codes        */
+  /* ------------------------------------------------------------------ */
+
+  /** Apply changed STUN/TURN/signaling settings. */
+  reloadNetwork(): void {
+    this.network = loadNetworkConfig();
+    this.startSignaling(true);
+    this.setState({ notice: 'Network settings applied. They take effect on the next connection.' });
+  }
+
+  private startSignaling(force = false): void {
+    if (this.stopped) return;
+    if (this.hub && !force) return;
+    this.hub?.stop();
+    this.hub = null;
+    const pinned = this.pairing;
+    if (!pinned?.dhJwk || this.network.signaling.length === 0) {
+      this.setState({ signaling: 'idle' });
+      return;
+    }
+    const hub = new SignalingHub(transportsFor(this.network));
+    this.hub = hub;
+    void mailboxFor(this.identity.uid).then((mailbox) => {
+      if (this.hub !== hub || this.stopped) return;
+      hub.start(mailbox, (blob, id, via) => void this.handleBlob(blob, id, via));
+      // Tell the paired friend we are online so they can offer straight away.
+      this.offerAttempt = 0;
+      this.lastOfferAt = 0;
+    });
+    this.setState({ signaling: hub.status() });
+  }
+
+  private async sealToPeer(payload: unknown): Promise<{ blob: SealedBlob; mailbox: string } | null> {
+    const pinned = this.pairing;
+    if (!pinned?.dhJwk) return null;
+    const blob = await seal({
+      payload,
+      fromUid: this.identity.uid,
+      toUid: pinned.peerUid,
+      toDh: pinned.dhJwk,
+      signPriv: this.identity.privateJwk,
+    });
+    return { blob, mailbox: await mailboxFor(pinned.peerUid) };
+  }
+
+  private async putToPeer(payload: unknown, kind: 'sig' | 'msg', ttlSec: number): Promise<void> {
+    const sealed = await this.sealToPeer(payload);
+    if (!sealed || !this.hub) throw new Error('No signaling is available.');
+    await this.hub.put(sealed.mailbox, sealed.blob, { kind, ttlSec });
+  }
+
+  private async handleBlob(blob: SealedBlob, id: string, via: SignalingTransport): Promise<void> {
+    const pinned = this.pairing;
+    if (!pinned) return;
+    const payload = await openBlob({
+      blob,
+      ownUid: this.identity.uid,
+      ownDhPriv: this.identity.dhPrivateJwk,
+      senderSign: pinned.publicKeyJwk,
+      senderUid: pinned.peerUid,
+    });
+    if (!isRecord(payload)) return;
+    try {
+      switch (payload.t) {
+        case 'ready': {
+          if (this.isInitiator()) this.lastOfferAt = 0;
+          return;
+        }
+        case 'offer': {
+          if (this.isInitiator() || this.manualActive || this.p2pReady()) return;
+          if (typeof payload.sdp !== 'string') return;
+          const transport = this.newPeer();
+          const answer = await transport.acceptOffer(payload.sdp);
+          await this.putToPeer({ t: 'answer', sdp: answer }, 'sig', 120);
+          this.armOfferTimeout(transport);
+          return;
+        }
+        case 'answer': {
+          if (!this.isInitiator() || !this.peer || this.p2pReady() || typeof payload.sdp !== 'string') return;
+          await this.peer.applyAnswer(payload.sdp);
+          return;
+        }
+        case 'msg': {
+          if (
+            !validateClientMessageId(payload.id) ||
+            !validateIncomingText(payload.text) ||
+            typeof payload.at !== 'number' ||
+            !Number.isFinite(payload.at)
+          ) {
+            return;
+          }
+          const message: ChatMessage = {
+            messageId: payload.id,
+            clientMessageId: payload.id,
+            senderId: pinned.peerUid,
+            text: payload.text,
+            clientCreatedAt: payload.at,
+            type: 'text',
+            transport: 'relay',
+            deliveryState: 'DELIVERED',
+            readAt: null,
+          };
+          await this.ingest(message, () => {
+            void this.putToPeer({ t: 'ack', id: payload.id }, 'msg', 7 * 24 * 3600).catch(() => undefined);
+          });
+          this.hub?.remove(via, await mailboxFor(this.identity.uid), id);
+          return;
+        }
+        case 'ack': {
+          const message = typeof payload.id === 'string' ? this.messages.get(payload.id) : undefined;
+          if (!message || message.senderId !== this.identity.uid) return;
+          const updated: ChatMessage = {
+            ...message,
+            deliveryState: message.deliveryState === 'READ' ? 'READ' : 'DELIVERED',
+          };
+          this.messages.set(updated.messageId, updated);
+          await this.deps.store.updateMessage(updated.messageId, { deliveryState: updated.deliveryState });
+          await this.dropOutbox(updated.messageId);
+          this.emitMessages();
+          this.updateConnection();
+          this.hub?.remove(via, await mailboxFor(this.identity.uid), id);
+          return;
+        }
+        default:
+          return;
+      }
+    } catch (error) {
+      this.setState({ notice: `Signaling failed: ${errorMessage(error)}` });
+    }
+  }
+
+  private armOfferTimeout(transport: PeerTransport): void {
+    clearTimeout(this.offerTimer);
+    this.offerTimer = setTimeout(() => {
+      if (this.peer === transport && !this.auth.authenticated && !this.manualActive) {
+        transport.close();
+        this.peer = null;
+        this.setState({ p2pState: 'failed', notice: 'Could not reach your friend. Retrying…' });
+        this.updateConnection();
+      }
+    }, 40_000);
+  }
+
+  private isInitiator(): boolean {
+    return this.pairing !== null && this.identity.uid < this.pairing.peerUid;
+  }
+
+  /** Reconnect to a paired friend automatically, backing off between attempts. */
+  private async maybeOffer(): Promise<void> {
+    const pinned = this.pairing;
+    if (!pinned?.dhJwk || !this.hub || this.hub.status() !== 'online' || this.manualActive) {
+      void this.relayPending();
+      return;
+    }
+    void this.relayPending();
+    const now = Date.now();
+    if (this.state.p2pState === 'connecting') return;
+    if (now - this.lastOfferAt < reconnectDelayMs(this.offerAttempt)) return;
+    this.lastOfferAt = now;
+    this.offerAttempt += 1;
+    try {
+      if (!this.isInitiator()) {
+        await this.putToPeer({ t: 'ready' }, 'sig', 120);
+        return;
+      }
+      const transport = this.newPeer();
+      const sdp = await transport.createOffer();
+      await this.putToPeer({ t: 'offer', sdp }, 'sig', 120);
+      this.armOfferTimeout(transport);
+    } catch (error) {
+      this.peer?.close();
+      this.peer = null;
+      this.setState({ p2pState: 'idle', notice: `Could not reach signaling: ${errorMessage(error)}` });
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Optional store-and-forward (off by default)                         */
+  /* ------------------------------------------------------------------ */
+
+  private async relayPending(): Promise<void> {
+    if (!this.network.storeForward || !this.hub || !this.pairing?.dhJwk || this.p2pReady()) return;
+    if (this.hub.status() !== 'online') return;
+    for (const message of this.sortedMessages()) {
+      if (message.senderId !== this.identity.uid || !needsDelivery(message.deliveryState)) continue;
+      if (this.relayed.has(message.messageId)) continue;
+      this.relayed.add(message.messageId);
+      try {
+        await this.putToPeer(
+          { t: 'msg', id: message.messageId, text: message.text, at: message.clientCreatedAt },
+          'msg',
+          7 * 24 * 3600,
+        );
+        const updated: ChatMessage = { ...message, transport: 'relay', deliveryState: 'SENT' };
+        this.messages.set(message.messageId, updated);
+        await this.deps.store.updateMessage(message.messageId, { transport: 'relay', deliveryState: 'SENT' });
+        this.emitMessages();
+      } catch {
+        this.relayed.delete(message.messageId);
+      }
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* What path is the connection really using?                           */
+  /* ------------------------------------------------------------------ */
+
+  private async refreshPath(): Promise<void> {
+    this.lastPathAt = Date.now();
+    const stats = await this.peer?.getStats();
+    if (!stats || !this.p2pReady()) return;
+    const pair = selectedPairFromStats(stats);
+    this.setState({ path: pair ? classifyPath(pair.local, pair.remote) : classifyPath('unknown', 'unknown') });
+  }
+
+  get identityDetails(): DeviceIdentity {
+    return this.identity;
   }
 
   clearNotice(): void {
@@ -847,7 +1183,12 @@ export class ChatEngine {
     this.lastReadWritten = null;
     this.manualExpectedKey = null;
     this.pairing = null;
+    this.hub?.stop();
+    this.hub = null;
     this.setState({
+      path: null,
+      signaling: 'idle',
+      pendingContact: null,
       paired: false,
       peerUid: null,
       p2pState: 'idle',

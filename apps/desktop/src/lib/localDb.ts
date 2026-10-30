@@ -59,7 +59,7 @@ function rowToMessage(row: MessageRow): Omit<ChatMessage, 'text'> & {
     senderId: row.sender_id,
     clientCreatedAt: row.client_created_at,
     type: 'text',
-    transport: 'p2p',
+    transport: row.transport === 'relay' ? 'relay' : 'p2p',
     deliveryState: row.delivery_state as DeliveryState,
     readAt: row.read_at,
     textCipher: row.text_cipher,
@@ -242,7 +242,7 @@ export class LocalStore {
     messageId: string,
     patch: {
       deliveryState?: DeliveryState;
-      transport?: 'p2p';
+      transport?: 'p2p' | 'relay';
       readAt?: number | null;
     },
   ): Promise<void> {

@@ -5,7 +5,8 @@ import {
 } from './constants';
 
 export type DeliveryState = 'QUEUED' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED';
-export type TransportKind = 'p2p';
+/** `p2p`: direct data channel. `relay`: sealed blob held by a store-and-forward relay. */
+export type TransportKind = 'p2p' | 'relay';
 export type MessageType = 'text';
 
 export interface ChatMessage {

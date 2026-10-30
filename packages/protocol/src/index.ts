@@ -9,3 +9,7 @@ export * from './pairing';
 export * from './e2ee';
 export * from './recovery';
 export * from './killswitch';
+export * from './connectivity/seal';
+export * from './connectivity/contactCard';
+export * from './connectivity/networkConfig';
+export * from './connectivity/connectionPath';

@@ -10,6 +10,7 @@ import { SettingsDialog, type SettingsSection } from './SettingsDialog';
 import { ManualConnectDialog } from './ManualConnectDialog';
 import { ClearChatDialog, NukeDialog } from './KillSwitchDialogs';
 import { RecoveryDialog } from './RecoveryDialogs';
+import { ContactDialog } from './ContactDialog';
 import {
   AlertIcon,
   CheckIcon,
@@ -21,6 +22,7 @@ import {
   RefreshIcon,
   SettingsIcon,
   ShieldIcon,
+  UserIcon,
   XIcon,
 } from './Icons';
 
@@ -43,7 +45,8 @@ export function ChatLayout({
   const [nukeOpen, setNukeOpen] = useState(false);
   const [clearChatOpen, setClearChatOpen] = useState(false);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
-  const [recoveryMode, setRecoveryMode] = useState<'backup' | 'restore'>('backup');
+  const [recoveryMode, setRecoveryMode] = useState<'backup' | 'restore'>('restore');
+  const [contactOpen, setContactOpen] = useState(false);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -234,6 +237,15 @@ export function ChatLayout({
             <button
               type="button"
               className="icon-button"
+              onClick={() => setContactOpen(true)}
+              title={state.paired ? 'Friend' : 'Add your friend'}
+              aria-label="Add your friend"
+            >
+              <UserIcon size={18} />
+            </button>
+            <button
+              type="button"
+              className="icon-button"
               onClick={openManual}
               title="Manual direct connection"
               aria-label="Manual direct connection"
@@ -382,8 +394,15 @@ export function ChatLayout({
       <RecoveryDialog
         open={recoveryOpen}
         onClose={() => setRecoveryOpen(false)}
-        uid={LOCAL_ID}
         mode={recoveryMode}
+        onIdentityReady={() => window.location.reload()}
+      />
+
+      <ContactDialog
+        open={contactOpen}
+        onClose={() => setContactOpen(false)}
+        engine={engine}
+        state={state}
       />
     </div>
   );

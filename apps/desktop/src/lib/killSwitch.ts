@@ -74,7 +74,12 @@ export const KILL_SWITCH_REPORT_KEY = 'duochat.killswitch.report.v1';
 /* App-wide ("NUKE DUOCHAT") executor                                  */
 /* ------------------------------------------------------------------ */
 
-const SECRET_KEYS = (uid: string) => [`ec-private-${uid}`, `aes-key-${uid}`];
+const SECRET_KEYS = (uid: string) => [
+  `ec-private-${uid}`,
+  `ec-dh-private-${uid}`,
+  `ec-proof-${uid}`,
+  `aes-key-${uid}`,
+];
 
 function purgeWebStorage(storage: WebStorageLike): number {
   return removeStorageKeys(storage, (key) => key.startsWith('duochat.'));

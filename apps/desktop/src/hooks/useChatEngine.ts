@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChatEngine, type ChatState } from '../lib/engine';
-import { LOCAL_ID, loadOrCreateIdentity } from '../lib/identity';
+import { LOCAL_ID, loadIdentity } from '../lib/identity';
 import { LocalStore } from '../lib/localDb';
 import { createTextCipher } from '../lib/encryption';
 import { notifyIncoming } from '../lib/notifications';
@@ -10,12 +10,18 @@ export interface UseChatEngine {
   state: ChatState | null;
   engine: ChatEngine | null;
   fatal: string | null;
+  /** First run: no identity yet, so the 12-word phrase flow must run first. */
+  needsIdentity: boolean;
+  /** Call after an identity was created or restored. */
+  reload: () => void;
 }
 
 export function useChatEngine(peerName: string): UseChatEngine {
   const [state, setState] = useState<ChatState | null>(null);
   const [engine, setEngine] = useState<ChatEngine | null>(null);
   const [fatal, setFatal] = useState<string | null>(null);
+  const [needsIdentity, setNeedsIdentity] = useState(false);
+  const [version, setVersion] = useState(0);
   const nameRef = useRef(peerName);
   nameRef.current = peerName;
 
@@ -27,8 +33,10 @@ export function useChatEngine(peerName: string): UseChatEngine {
     void (async () => {
       const store = new LocalStore();
       store.setCipher(await createTextCipher(LOCAL_ID));
-      const identity = await loadOrCreateIdentity();
+      const identity = await loadIdentity();
       if (cancelled) return;
+      setNeedsIdentity(identity === null);
+      if (!identity) return;
       const chatEngine = new ChatEngine({
         identity,
         conversationId: config.conversationId,
@@ -52,7 +60,7 @@ export function useChatEngine(peerName: string): UseChatEngine {
       setEngine(null);
       setState(null);
     };
-  }, []);
+  }, [version]);
 
-  return { state, engine, fatal };
+  return { state, engine, fatal, needsIdentity, reload: () => setVersion((v) => v + 1) };
 }

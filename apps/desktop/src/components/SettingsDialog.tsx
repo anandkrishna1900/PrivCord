@@ -7,7 +7,9 @@ import { copyText } from '../lib/clipboard';
 import { ensureNotificationPermission } from '../lib/notifications';
 import { truncateMiddle } from '../lib/format';
 import { config } from '../config';
+import { loadNetworkConfig } from '../lib/network';
 import { Modal } from './Modal';
+import { NetworkSettings } from './NetworkSettings';
 import { Avatar } from './Avatar';
 import {
   AlertIcon,
@@ -32,6 +34,7 @@ export type SettingsSection =
   | 'appearance'
   | 'notifications'
   | 'connection'
+  | 'network'
   | 'data'
   | 'security'
   | 'about';
@@ -41,6 +44,7 @@ const SECTIONS: Array<{ id: SettingsSection; label: string; icon: ReactNode }> =
   { id: 'appearance', label: 'Appearance', icon: <PaletteIcon size={16} /> },
   { id: 'notifications', label: 'Notifications', icon: <BellIcon size={16} /> },
   { id: 'connection', label: 'Connection', icon: <LinkIcon size={16} /> },
+  { id: 'network', label: 'Network', icon: <RefreshIcon size={16} /> },
   { id: 'data', label: 'Privacy & data', icon: <LockIcon size={16} /> },
   { id: 'security', label: 'Security', icon: <ShieldIcon size={16} /> },
   { id: 'about', label: 'About', icon: <InfoIcon size={16} /> },
@@ -146,8 +150,9 @@ export function SettingsDialog({
       safetyNumber: state.safetyNumber,
       queuedMessages: state.queuedCount,
       storageBackend: state.storageBackend,
-      stun: config.stunUrls,
-      turnConfigured: Boolean(config.turn),
+      path: state.path,
+      signaling: state.signaling,
+      network: loadNetworkConfig(),
     };
     setCopied(await copyText(JSON.stringify(diagnostics, null, 2)));
     window.setTimeout(() => setCopied(false), 1800);
@@ -390,14 +395,28 @@ export function SettingsDialog({
                   <dd>{state?.storageBackend === 'sqlite' ? 'SQLite (encrypted payloads)' : 'Browser dev store'}</dd>
                 </div>
                 <div>
-                  <dt>STUN</dt>
-                  <dd>{config.stunUrls.length === 0 ? 'Disabled (same network only)' : `${config.stunUrls.length} server${config.stunUrls.length === 1 ? '' : 's'}`}</dd>
+                  <dt>Path</dt>
+                  <dd>{state?.path ? state.path.label : state?.p2pConnected ? 'Measuring…' : '—'}</dd>
                 </div>
                 <div>
-                  <dt>TURN relay</dt>
-                  <dd>{config.turn ? 'Configured' : 'Disabled'}</dd>
+                  <dt>Signaling</dt>
+                  <dd>{state?.signaling ?? 'idle'}</dd>
+                </div>
+                <div>
+                  <dt>STUN / TURN</dt>
+                  <dd>
+                    {loadNetworkConfig().stun.length} STUN · {loadNetworkConfig().turn.length} TURN
+                  </dd>
                 </div>
               </dl>
+              {state?.path ? (
+                <div className={`callout ${state.path.kind === 'relayed' ? 'warning' : 'subtle'}`}>
+                  <InfoIcon size={17} />
+                  <p>
+                    <strong>{state.path.label}.</strong> {state.path.detail}
+                  </p>
+                </div>
+              ) : null}
               {state?.safetyNumber ? (
                 <div className="safety-block">
                   <span className="setting-label">
@@ -413,7 +432,7 @@ export function SettingsDialog({
               <div className="button-row wrap">
                 <button type="button" className="button secondary" onClick={onOpenManual}>
                   <KeyIcon size={15} />
-                  {state?.paired ? 'Reconnect with a code' : 'Pair with a code'}
+                  {state?.paired ? 'Connect with a code' : 'Pair with a code'}
                 </button>
                 <button type="button" className="button ghost" onClick={() => void copyDiagnostics()}>
                   {copied ? <CheckIcon size={15} /> : <CopyIcon size={15} />}
@@ -423,13 +442,17 @@ export function SettingsDialog({
               <div className="callout subtle">
                 <InfoIcon size={17} />
                 <p>
-                  There is no server to introduce your devices. To connect, one of you
-                  creates a code, the other pastes it and sends back a reply code.
-                  Once connected, messages go straight between your devices.
+                  Paired friends reconnect automatically through the signaling service
+                  you configure under Network. Without one, use a connection code: one of
+                  you creates it, the other pastes it and sends a reply. Either way, messages
+                  then go directly between your devices (or through your TURN server, if
+                  that is the only path, and the path above tells you which).
                 </p>
               </div>
             </section>
           ) : null}
+
+          {section === 'network' ? <NetworkSettings engine={engine} state={state} /> : null}
 
           {section === 'data' ? (
             <section className="settings-section">
@@ -515,10 +538,12 @@ export function SettingsDialog({
               <div className="card-box" style={{ padding: '16px', border: '1px solid var(--border-subtle)', borderRadius: '12px', marginBottom: '16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                   <KeyIcon size={18} />
-                  <strong>12-Word Recovery Phrase</strong>
+                  <strong>Your 12-word recovery phrase</strong>
                 </div>
                 <p className="muted small" style={{ marginBottom: '12px' }}>
-                  Your cryptographic identity is tied to a 12-word recovery phrase. If you haven't backed it up, or need to restore an existing identity, manage it here.
+                  Your identity is derived from your 12-word phrase. DuoChat never stores it, so it cannot
+                  be shown again: keep your written copy safe. On a new device or after a wipe, enter it
+                  here to get the same identity and keep your paired friend.
                 </p>
                 <div className="button-row">
                   <button
@@ -526,20 +551,10 @@ export function SettingsDialog({
                     className="button secondary small"
                     onClick={() => {
                       onClose();
-                      onOpenRecovery?.('backup');
-                    }}
-                  >
-                    Back up recovery phrase
-                  </button>
-                  <button
-                    type="button"
-                    className="button ghost small"
-                    onClick={() => {
-                      onClose();
                       onOpenRecovery?.('restore');
                     }}
                   >
-                    Restore identity
+                    Restore identity from phrase
                   </button>
                 </div>
               </div>

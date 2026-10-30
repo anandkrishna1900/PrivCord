@@ -117,7 +117,7 @@ export function MessageList({
               ? 'Connected directly.'
               : paired
                 ? 'Not connected. Messages you write are queued and sent when you reconnect.'
-                : 'Use the key button above to pair with your friend.'}
+                : 'Use the person button above to add your friend.'}
           </span>
         </div>
       </div>
