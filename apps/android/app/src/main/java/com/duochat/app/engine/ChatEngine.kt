@@ -337,6 +337,50 @@ class ChatEngine(
         }
     }
 
+    /**
+     * Per-conversation kill switch (Option A "CLEAR LOCAL CHAT"): erase this
+     * chat's local content only. Global identity keys and application
+     * settings are untouched.
+     */
+    suspend fun clearLocalChat() {
+        store.clearConversation()
+        messages.clear()
+        outbox.clear()
+        knownIds.clear()
+        p2pSent.clear()
+        lastReadWritten = null
+        emitMessages()
+        _state.update {
+            it.copy(notice = "This chat was cleared locally.")
+        }
+    }
+
+    /**
+     * Per-conversation kill switch (Option B extra "DELETE CHAT AND LOCAL
+     * SESSION STATE"): closes the authenticated direct channel and forgets
+     * the locally cached trust binding, so a new identity handshake is
+     * required before sending again.
+     */
+    suspend fun eraseLocalChatSession(identityManager: AndroidIdentityManager) {
+        peer?.close()
+        peer = null
+        manualMode = false
+        p2pSent.clear()
+        lastReadWritten = null
+        identityManager.erasePeerKey(uid)
+        _state.update {
+            it.copy(
+                manualMode = false,
+                p2pConnected = false,
+                p2pState = P2PState.IDLE,
+                peerTrust = PeerTrust.NONE,
+                safetyNumber = null,
+                peerKeySource = null,
+                notice = "Local chat erased. Sending again requires a new identity handshake.",
+            )
+        }
+    }
+
     suspend fun createManualOffer(): String {
         val currentIdentity = identity
             ?: throw IllegalStateException("Identity is not ready.")

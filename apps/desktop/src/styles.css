@@ -1997,3 +1997,99 @@ textarea:focus {
     scroll-behavior: auto !important;
   }
 }
+
+/* ---- Emergency actions (kill switch) ---- */
+
+.erase-steps {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.erase-steps.preview .erase-step {
+  background: var(--surface-2, rgba(127, 127, 127, 0.06));
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.erase-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.erase-step > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.erase-step strong {
+  font-size: 14px;
+}
+
+.erase-step p {
+  margin: 2px 0 0;
+}
+
+.erase-step-icon {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+
+.erase-step.erased .erase-step-icon {
+  background: rgba(46, 160, 67, 0.18);
+  color: #2ea043;
+}
+
+.erase-step.skipped .erase-step-icon {
+  background: rgba(127, 127, 127, 0.18);
+  color: var(--muted, #8a8d93);
+}
+
+.erase-step.failed .erase-step-icon {
+  background: rgba(229, 72, 77, 0.18);
+  color: #e5484d;
+}
+
+.erase-step.pending .erase-step-icon {
+  background: rgba(127, 127, 127, 0.12);
+  color: var(--muted, #8a8d93);
+}
+
+.check-row,
+.option-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 12px 0;
+  cursor: pointer;
+}
+
+.check-row input,
+.option-row input {
+  margin-top: 3px;
+}
+
+.option-row > div {
+  flex: 1;
+}
+
+.emergency-block {
+  border: 1px solid rgba(229, 72, 77, 0.35);
+  border-radius: 10px;
+  padding: 14px;
+  margin-top: 14px;
+}
+
+.emergency-block strong {
+  color: #e5484d;
+}

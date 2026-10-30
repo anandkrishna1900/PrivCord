@@ -8,6 +8,7 @@ import com.duochat.app.security.LocalCrypto
 class MessageStore(
     private val dao: DuoDao,
     private val crypto: LocalCrypto,
+    private val conversationId: String = MessageEntity.LEGACY_CONVERSATION_ID,
 ) {
     suspend fun loadMessages(limit: Int = 2000): List<ChatMessage> {
         val rows = dao.loadMessages(limit).reversed()
@@ -46,6 +47,7 @@ class MessageStore(
                 deliveryState = message.deliveryState.name,
                 syncedToCloud = message.syncedToCloud,
                 readAt = message.readAt,
+                conversationId = conversationId,
             ),
         )
     }
@@ -95,6 +97,7 @@ class MessageStore(
                 lastAttemptAt = row.lastAttemptAt,
                 deliveryState = row.deliveryState.name,
                 lastError = row.lastError,
+                conversationId = conversationId,
             ),
         )
     }
@@ -128,5 +131,11 @@ class MessageStore(
     suspend fun clearAll() {
         dao.clearMessages()
         dao.clearOutbox()
+    }
+
+    /** Per-conversation kill switch (Option A local content erase). */
+    suspend fun clearConversation() {
+        dao.clearMessagesFor(conversationId)
+        dao.clearOutboxFor(conversationId)
     }
 }

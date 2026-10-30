@@ -15,5 +15,8 @@
   "devDependencies": {
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "@scure/bip39": "^2.4.0"
   }
 }

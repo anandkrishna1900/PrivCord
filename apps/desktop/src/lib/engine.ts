@@ -189,6 +189,11 @@ export class ChatEngine {
     return this.state;
   }
 
+  /** Direct access to the local store (used by the kill switch executor). */
+  get localStore(): LocalStore {
+    return this.deps.store;
+  }
+
   subscribe(listener: (state: ChatState) => void): () => void {
     this.listeners.add(listener);
     listener(this.state);
@@ -1376,6 +1381,60 @@ export class ChatEngine {
     this.p2pSent.clear();
     this.emitMessages();
     this.setState({ notice: 'Local messages, queue, and cached metadata were cleared.' });
+  }
+
+  /**
+   * Per-conversation kill switch (Option A "CLEAR LOCAL CHAT"): erase every
+   * local message, draft queue row, and delivery record for this conversation.
+   * The peer subscription is detached during the wipe so cloud sync cannot
+   * repopulate the store mid-erase, then re-attached for future traffic.
+   */
+  async clearLocalChat(): Promise<void> {
+    const unsubs = this.unsubs;
+    this.unsubs = [];
+    for (const unsubscribe of unsubs) unsubscribe();
+    this.messages.clear();
+    this.outbox.clear();
+    this.knownIds.clear();
+    this.lastReadWritten = null;
+    this.p2pSent.clear();
+    try {
+      await this.deps.store.clearMessages();
+    } finally {
+      if (!this.stopped) {
+        this.startSubscriptions();
+        this.emitMessages();
+        this.updateConnection();
+      }
+    }
+    this.emitMessages();
+  }
+
+  /**
+   * Per-conversation kill switch (Option B "DELETE CHAT AND LOCAL SESSION
+   * STATE", used together with clearLocalChat): forget the peer trust cache
+   * binding and tear down the authenticated direct channel, so any future
+   * conversation requires a fresh identity handshake.
+   */
+  eraseLocalChatSession(): Promise<void> | void {
+    this.peer?.close();
+    this.peer = null;
+    this.auth = freshAuth('auto');
+    this.frameQueue = [];
+    this.p2pSent.clear();
+    this.lastReadWritten = null;
+    this.manualMode = false;
+    this.manualExpectedKey = null;
+    this.setState({
+      manualMode: false,
+      p2pState: 'idle',
+      p2pConnected: false,
+      peerTrust: 'none',
+      safetyNumber: null,
+      peerKeySource: null,
+      notice: 'Local chat erased. Sending again requires a new identity handshake.',
+    });
+    this.updateConnection();
   }
 }
 

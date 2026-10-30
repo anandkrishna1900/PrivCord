@@ -10,6 +10,7 @@ import { config } from '../config';
 import { Modal } from './Modal';
 import { Avatar } from './Avatar';
 import {
+  AlertIcon,
   BellIcon,
   CheckIcon,
   CopyIcon,
@@ -33,6 +34,7 @@ export type SettingsSection =
   | 'notifications'
   | 'connection'
   | 'data'
+  | 'security'
   | 'about';
 
 const SECTIONS: Array<{ id: SettingsSection; label: string; icon: ReactNode }> = [
@@ -41,6 +43,7 @@ const SECTIONS: Array<{ id: SettingsSection; label: string; icon: ReactNode }> =
   { id: 'notifications', label: 'Notifications', icon: <BellIcon size={16} /> },
   { id: 'connection', label: 'Connection', icon: <LinkIcon size={16} /> },
   { id: 'data', label: 'Privacy & data', icon: <LockIcon size={16} /> },
+  { id: 'security', label: 'Security', icon: <ShieldIcon size={16} /> },
   { id: 'about', label: 'About', icon: <InfoIcon size={16} /> },
 ];
 
@@ -89,6 +92,7 @@ export function SettingsDialog({
   updateSettings,
   onSignOut,
   onOpenManual,
+  onOpenNuke,
 }: {
   open: boolean;
   onClose: () => void;
@@ -100,6 +104,7 @@ export function SettingsDialog({
   updateSettings: (patch: Partial<AppSettings>) => void;
   onSignOut: () => Promise<void>;
   onOpenManual: () => void;
+  onOpenNuke: () => void;
 }) {
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const [name, setName] = useState('');
@@ -571,6 +576,53 @@ export function SettingsDialog({
                     Clear local cache
                   </button>
                 )}
+              </div>
+            </section>
+          ) : null}
+
+          {section === 'security' ? (
+            <section className="settings-section">
+              <header>
+                <h3>Security &amp; Emergency Actions</h3>
+                <p className="muted">
+                  Emergency deletion for this device. Deletion never touches the
+                  other person's device, screenshots, exports, or external
+                  backups.
+                </p>
+              </header>
+              <div className="emergency-block">
+                <div>
+                  <strong>NUKE DUOCHAT — app-wide emergency erase</strong>
+                  <p className="muted small">
+                    Permanently deletes this device's conversations, contacts,
+                    cached media, keys, session state, and app settings, then
+                    returns DuoChat to its initial identity setup. Requires two
+                    deliberate confirmation steps.
+                  </p>
+                </div>
+                <div className="button-row">
+                  <button
+                    type="button"
+                    className="button danger"
+                    onClick={() => {
+                      onClose();
+                      onOpenNuke();
+                    }}
+                  >
+                    <AlertIcon size={15} />
+                    NUKE DUOCHAT
+                  </button>
+                </div>
+              </div>
+              <div className="callout subtle">
+                <ShieldIcon size={17} />
+                <p>
+                  Per-conversation emergency deletion lives in the conversation
+                  security menu (shield button in the chat header) under
+                  <strong> Security → Clear Everything</strong>, with separate
+                  &ldquo;CLEAR LOCAL CHAT&rdquo; and &ldquo;DELETE CHAT AND LOCAL
+                  SESSION STATE&rdquo; options.
+                </p>
               </div>
             </section>
           ) : null}

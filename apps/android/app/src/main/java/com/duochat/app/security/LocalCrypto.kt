@@ -42,6 +42,18 @@ class LocalCrypto(context: Context, uid: String) {
         return PREFIX + iv + "." + body
     }
 
+    /**
+     * Kill switch helper: delete the AES local-encryption key from the
+     * Android Keystore. Any ciphertext previously sealed with it becomes
+     * permanently undecryptable (crypto-erasure).
+     */
+    fun deleteKey() {
+        val keystore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        if (keystore.containsAlias(alias)) {
+            keystore.deleteEntry(alias)
+        }
+    }
+
     fun decrypt(payload: String): String {
         if (!payload.startsWith(PREFIX)) return payload
         val parts = payload.removePrefix(PREFIX).split('.')

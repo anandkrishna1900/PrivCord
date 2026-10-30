@@ -8,6 +8,8 @@ import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Entity(tableName = "messages")
 data class MessageEntity(
@@ -21,7 +23,17 @@ data class MessageEntity(
     val deliveryState: String,
     val syncedToCloud: Boolean,
     val readAt: Long?,
-)
+    /**
+     * Scope column (database v2). Historic rows are backfilled to the legacy
+     * single-conversation id "duo" so the per-conversation kill switch can
+     * address exactly one chat without destructive migration.
+     */
+    val conversationId: String = LEGACY_CONVERSATION_ID,
+) {
+    companion object {
+        const val LEGACY_CONVERSATION_ID = "duo"
+    }
+}
 
 @Entity(tableName = "outbox")
 data class OutboxEntity(
@@ -33,7 +45,13 @@ data class OutboxEntity(
     val lastAttemptAt: Long?,
     val deliveryState: String,
     val lastError: String?,
-)
+    /** Same scope column as messages (database v2, backfilled to "duo"). */
+    val conversationId: String = LEGACY_CONVERSATION_ID,
+) {
+    companion object {
+        const val LEGACY_CONVERSATION_ID = "duo"
+    }
+}
 
 @Dao
 interface DuoDao {
@@ -91,13 +109,37 @@ interface DuoDao {
 
     @Query("DELETE FROM outbox")
     suspend fun clearOutbox()
+
+    @Query("DELETE FROM messages WHERE conversationId = :conversationId")
+    suspend fun clearMessagesFor(conversationId: String)
+
+    @Query("DELETE FROM outbox WHERE conversationId = :conversationId")
+    suspend fun clearOutboxFor(conversationId: String)
 }
 
 @Database(
     entities = [MessageEntity::class, OutboxEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class DuoDatabase : RoomDatabase() {
     abstract fun dao(): DuoDao
+
+    companion object {
+        /**
+         * Non-destructive migration v1 → v2: adds the per-conversation scope
+         * columns and backfills every existing row to the legacy conversation
+         * id, so existing histories continue to work untouched.
+         */
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE messages ADD COLUMN conversationId TEXT NOT NULL DEFAULT 'duo'",
+                )
+                db.execSQL(
+                    "ALTER TABLE outbox ADD COLUMN conversationId TEXT NOT NULL DEFAULT 'duo'",
+                )
+            }
+        }
+    }
 }

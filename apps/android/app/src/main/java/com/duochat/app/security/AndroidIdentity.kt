@@ -96,6 +96,19 @@ class AndroidIdentityManager(context: Context) {
         return SignatureCodec.base64UrlEncode(raw)
     }
 
+    /**
+     * Kill switch helper: delete the hardware-backed identity signing key for
+     * a uid from the Android Keystore. This is cryptographic erasure — the
+     * private key becomes unrecoverable even to the app itself.
+     */
+    fun deleteIdentityKey(uid: String) {
+        val alias = aliasFor(uid)
+        val keystore = keyStore()
+        if (keystore.containsAlias(alias)) {
+            keystore.deleteEntry(alias)
+        }
+    }
+
     fun verify(publicJwk: PublicJwk, challenge: String, signatureBase64: String): Boolean {
         return try {
             val publicKey = publicKeyFrom(publicJwk)
@@ -117,6 +130,19 @@ class AndroidIdentityManager(context: Context) {
 
     fun cachedPeerKey(uid: String, deviceId: String): PublicJwk? =
         PublicJwk.fromFingerprint(prefs.getString("peer.$uid.$deviceId", null) ?: "")
+
+    /**
+     * Kill switch helper: remove every locally cached peer trust record for
+     * one contact (or all contacts when uid is null). Returns the number of
+     * removed pref entries.
+     */
+    fun erasePeerKey(uid: String?): Int {
+        val doomed = prefs.all.keys.filter { key ->
+            if (uid == null) key.startsWith("peer.") else key.startsWith("peer.$uid.")
+        }
+        for (key in doomed) prefs.edit().remove(key).apply()
+        return doomed.size
+    }
 
     fun publicKeysEqual(first: PublicJwk?, second: PublicJwk?): Boolean =
         first != null && second != null && first.x == second.x && first.y == second.y

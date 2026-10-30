@@ -118,3 +118,22 @@ export async function resolvePeerDeviceKey(
 export function isOwnMessage(message: ChatMessage, uid: string): boolean {
   return message.senderId === uid;
 }
+
+/**
+ * Kill switch helper: drop locally cached peer device keys (trust records).
+ * With an optional peer uid only that contact's entries are purged; without
+ * one, every cached peer key is erased. Returns the number of removed entries.
+ */
+export function purgePeerKeyCaches(peerUid?: string): number {
+  if (typeof localStorage === 'undefined') return 0;
+  const doomed: string[] = [];
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    if (!key) continue;
+    if (!key.startsWith(peerKeyCachePrefix)) continue;
+    if (peerUid && !key.startsWith(`${peerKeyCachePrefix}${peerUid}.`)) continue;
+    doomed.push(key);
+  }
+  for (const key of doomed) localStorage.removeItem(key);
+  return doomed.length;
+}

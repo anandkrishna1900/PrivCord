@@ -9,6 +9,7 @@ import { Composer } from './Composer';
 import { MessageList } from './MessageList';
 import { SettingsDialog, type SettingsSection } from './SettingsDialog';
 import { ManualConnectDialog } from './ManualConnectDialog';
+import { ClearChatDialog, NukeDialog } from './KillSwitchDialogs';
 import {
   AlertIcon,
   CheckIcon,
@@ -43,6 +44,8 @@ export function ChatLayout({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('profile');
   const [manualOpen, setManualOpen] = useState(false);
+  const [nukeOpen, setNukeOpen] = useState(false);
+  const [clearChatOpen, setClearChatOpen] = useState(false);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -272,6 +275,15 @@ export function ChatLayout({
             >
               <SettingsIcon size={18} />
             </button>
+            <button
+              type="button"
+              className="icon-button"
+              onClick={() => setClearChatOpen(true)}
+              title="Conversation security — Clear Everything"
+              aria-label="Conversation security"
+            >
+              <LockIcon size={18} />
+            </button>
           </div>
         </header>
 
@@ -366,6 +378,7 @@ export function ChatLayout({
         updateSettings={updateSettings}
         onSignOut={onSignOut}
         onOpenManual={openManual}
+        onOpenNuke={() => setNukeOpen(true)}
       />
 
       <ManualConnectDialog
@@ -373,6 +386,27 @@ export function ChatLayout({
         onClose={() => setManualOpen(false)}
         engine={engine}
         state={state}
+      />
+
+      <NukeDialog
+        open={nukeOpen}
+        onClose={() => setNukeOpen(false)}
+        engine={engine}
+        uid={user.uid}
+        peerUid={state?.peerUid ?? ''}
+        onFinished={async () => {
+          // Wipe finished: drop the session so the app lands on the very
+          // first identity screen.
+          await onSignOut();
+        }}
+      />
+
+      <ClearChatDialog
+        open={clearChatOpen}
+        onClose={() => setClearChatOpen(false)}
+        engine={engine}
+        uid={user.uid}
+        peerUid={state?.peerUid ?? ''}
       />
     </div>
   );

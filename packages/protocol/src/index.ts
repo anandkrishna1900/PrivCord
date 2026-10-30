@@ -6,3 +6,6 @@ export * from './signaling';
 export * from './peerAuth';
 export * from './safetyNumber';
 export * from './pairing';
+export * from './e2ee';
+export * from './recovery';
+export * from './killswitch';

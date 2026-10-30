@@ -50,8 +50,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val settingsRepository = SettingsRepository(application)
     private val identityManager = AndroidIdentityManager(application)
     private val database by lazy {
-        Room.databaseBuilder(application, DuoDatabase::class.java, "duochat.db").build()
+        Room.databaseBuilder(application, DuoDatabase::class.java, "duochat.db")
+            .addMigrations(DuoDatabase.MIGRATION_1_2)
+            .build()
     }
+
+    private val killSwitchExecutor by lazy {
+        com.duochat.app.security.KillSwitchExecutor(
+            application,
+            AppConfig.conversationId,
+        ) { database }
+    }
+
+    private val _killSwitchReport =
+        MutableStateFlow<com.duochat.app.security.KillSwitchReport?>(null)
+    val killSwitchReport: StateFlow<com.duochat.app.security.KillSwitchReport?> =
+        _killSwitchReport.asStateFlow()
 
     val settings: StateFlow<AppSettings> = settingsRepository.settings
 

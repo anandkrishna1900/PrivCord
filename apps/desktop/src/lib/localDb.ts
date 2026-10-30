@@ -448,4 +448,36 @@ export class LocalStore {
     }
     this.writeBrowser(emptyBrowserState());
   }
+
+  /**
+   * Per-conversation clear (kill switch Option A): remove every message and
+   * queued delivery, keep other local state. Component metadata survives so
+   * a new conversation continues to function.
+   */
+  async clearMessages(): Promise<void> {
+    if (this.sql) {
+      await this.sql.execute(`DELETE FROM messages`);
+      await this.sql.execute(`DELETE FROM outbox`);
+      return;
+    }
+    const state = this.readBrowser();
+    state.messages = [];
+    state.outbox = [];
+    this.writeBrowser(state);
+  }
+
+  /**
+   * Kill switch schema erase: also drop the table structure so the local
+   * database retains nothing app-specific. The next app start recreates the
+   * schema. In browser development mode the whole store is replaced.
+   */
+  async destroySchema(): Promise<void> {
+    if (this.sql) {
+      await this.sql.execute(`DROP TABLE IF EXISTS messages`);
+      await this.sql.execute(`DROP TABLE IF EXISTS outbox`);
+      await this.sql.execute(`DROP TABLE IF EXISTS meta`);
+      return;
+    }
+    this.writeBrowser(emptyBrowserState());
+  }
 }
