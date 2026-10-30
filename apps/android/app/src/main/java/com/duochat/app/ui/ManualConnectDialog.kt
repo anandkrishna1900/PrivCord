@@ -52,10 +52,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.duochat.app.data.ChatState
 import com.duochat.app.data.PeerTrust
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.EncodeHintType
-import com.google.zxing.qrcode.QRCodeWriter
-import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 
@@ -522,27 +518,3 @@ private fun CodeBlock(code: String, onCopy: () -> Unit) {
     }
 }
 
-private fun qrBitmap(text: String, size: Int = 900): Bitmap? = try {
-    val hints = mapOf(
-        EncodeHintType.MARGIN to 1,
-        EncodeHintType.CHARACTER_SET to "UTF-8",
-        EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.L,
-    )
-    val matrix = QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, size, size, hints)
-    val pixels = IntArray(size * size)
-    for (y in 0 until size) {
-        val row = y * size
-        for (x in 0 until size) {
-            pixels[row + x] = if (matrix[x, y]) {
-                android.graphics.Color.BLACK
-            } else {
-                android.graphics.Color.WHITE
-            }
-        }
-    }
-    Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888).apply {
-        setPixels(pixels, 0, size, 0, 0, size, size)
-    }
-} catch (_: Exception) {
-    null
-}
