@@ -52,7 +52,7 @@ data class NetworkConfig(
         .put("storeForward", storeForward)
         .put("forceRelay", forceRelay)
         .put("bluetooth", bluetooth)
-        .put("transportMode", transportMode.name)
+        apply { if (transportMode != TransportMode.AUTOMATIC) put("transportMode", transportMode.name) }
         .toString()
 
     companion object {
