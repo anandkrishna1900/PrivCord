@@ -1,11 +1,12 @@
 # Bluetooth LE transport (v1)
 
-> **Status: UNTESTED ON HARDWARE.** The framing and tag code is unit-tested
-> (TypeScript and Kotlin against shared vectors). Nothing that touches a real
-> Bluetooth radio has been run. The Android GATT code has not even been compiled
-> yet (no Android SDK was available when it was written). Treat every behavior
-> below as a design until you have run the test checklist in section 9 on real
-> devices.
+> **Status: WIRED AND TESTED WITHOUT A RADIO; NEVER RUN ON REAL HARDWARE.**
+> Framing, tags and the link encryption are unit-tested in TypeScript and Kotlin against shared vectors
+> (including byte-for-byte interop of `SecureChannel` in both directions). On both desktop and Android
+> the Bluetooth link is wired into the chat engine and tested against an in-memory or simulated
+> radio. The GATT code (`ble/BleTransport.kt`, `src-tauri/src/ble.rs`) compiles but has never talked
+> to a real Bluetooth stack. Treat range, throughput, pairing prompts, background behaviour and
+> privacy claims as design until you have run the checklist in section 12 on real devices.
 
 Purpose: let two **already paired** devices exchange DuoChat's normal JSON
 frames with no internet at all, within Bluetooth range. It is a second
@@ -162,9 +163,10 @@ must be in direct radio range.
 
 ## 8. Link encryption and known gaps
 
-**Link encryption (desktop: implemented and simulated-radio tested; Android: not yet).**
+**Link encryption (desktop and Android: implemented, byte-compatible, tested without a radio).**
 BLE itself is not relied on for secrecy. Every frame after the first is wrapped by
-`SecureChannel` (`packages/protocol/src/connectivity/secureChannel.ts`):
+`SecureChannel` (`packages/protocol/src/connectivity/secureChannel.ts`, Kotlin port
+`apps/android/.../security/SecureChannel.kt`):
 
 1. Each side sends `sc_hello` = a fresh ephemeral ECDH P-256 key + random nonce, signed with
    its identity signing key over `(own uid | peer uid | ephemeral key | nonce)`.
@@ -178,22 +180,33 @@ BLE itself is not relied on for secrecy. Every frame after the first is wrapped 
 5. The normal `hello`/`auth_proof`/`auth_ok` handshake then runs *inside* the encrypted
    channel, so identity details are never visible over the air.
 
-Tested: 5 protocol unit tests (round trip, tamper, replay, impostor, forward secrecy) and a
-desktop end-to-end scenario with a *simulated* radio that records every chunk and asserts the
-message text and handshake never appear in it, and that a flipped bit drops the link.
+Tested:
+
+* TypeScript: 5 unit tests (round trip, tamper, replay, impostor, forward secrecy).
+* Kotlin: 13 `SecureChannelTest` tests, including **both directions of interop with TypeScript**
+  using fixed ephemeral keys: Kotlin decrypts TypeScript frames and produces the *identical*
+  ciphertext (AES-GCM is deterministic), and TypeScript accepts the Kotlin hello and decrypts the
+  Kotlin frames (`packages/protocol/test/androidInterop.test.ts`).
+* Kotlin `SecureBleLinkTest` (10 tests, in-memory radio): the link opens only after the pinned
+  contact's hello verified; a hello that arrives before the link is open is buffered, not dropped;
+  20 frames stay in order; an impostor never opens the link; a flipped bit or a replayed frame
+  drops the link; our own close is silent but a lost link is reported once.
+* Desktop end-to-end with a *simulated* radio that records every chunk and asserts the message
+  text and handshake never appear in it, and that a flipped bit drops the link.
 
 **Still open**
 
-* Android has no `SecureChannel` port yet, so Android Bluetooth must not be enabled until it
-  has one (it would be unencrypted).
 * Nothing here has run on a real Bluetooth radio. Timing, MTU, pairing prompts, background
   scanning limits, and range are unmeasured.
+* Android Bluetooth runs only while the app process is alive (no foreground service) and is
+  paused by Android's own background limits.
 * No store-and-forward and no multi-hop mesh (unlike Bitchat). Two devices, one link.
 * No BLE-based first contact: contact cards must be exchanged beforehand.
 * Windows needs a Bluetooth 4.0+ adapter; behaviour of btleplug's WinRT backend with
   manufacturer-data matching has not been verified.
 * The Windows desktop is central-only, so two desktops cannot connect to each other over
   Bluetooth; a phone must be the other side.
+* On Android 11 and older, scanning needs Location services switched on.
 
 ## 9. Permissions
 
@@ -207,25 +220,31 @@ message text and handshake never appear in it, and that a flipped bit drops the 
 `uses-feature android.hardware.bluetooth_le` is `required=false`: the app still
 installs on phones without BLE.
 
-## 10. Android hookup (not wired; the other Android agent owns ChatEngine)
+## 10. Android integration (wired)
 
-```kotlin
-// 1. After the user grants BLUETOOTH_SCAN/ADVERTISE/CONNECT (API 31+) or location (<=30):
-val ble = BleTransport(
-    context = appContext,
-    secretProvider = { contactEcdhSecret32 },          // ECDH(ownDhPriv, peerDhPub), 32 bytes
-    initiateAsCentral = ownUid < peerUid,
-    handlers = object : BleTransport.Handlers {
-        override fun onOpen() = session.onTransportOpen()          // starts hello handshake
-        override fun onClose() = session.onTransportClosed()
-        override fun onFrame(data: String) = session.onFrame(data)  // same as WebRtcTransport
-        override fun onError(message: String) = session.onError(message)
-    },
-)
-ble.start()                       // advertises (+ scans if initiateAsCentral)
-// 2. Send with ble.sendJson(frame); check ble.isOpen; stop with ble.close().
-// 3. Prefer WebRTC when it is open; fall back to BLE otherwise (keep both transports alive).
-```
+| Piece | File |
+|---|---|
+| Radio (GATT central + peripheral, advertising the rotating tag) | `ble/BleTransport.kt` (implements `RawLink`) |
+| Authenticated encryption on top, one object per attempt | `ble/SecureBleLink.kt` (implements `LinkTransport`) |
+| Permissions and the pure backoff/status helpers | `ble/BlePermissions.kt`, `ble/BleEnvironment.kt` |
+| Link switching inside the session (WebRTC or Bluetooth, same handshake) | `p2p/PeerSession.kt` (`newBluetoothLink`) |
+| Engine: automatic attempts, manual attempt, status | `engine/ChatEngine.kt` (`connectBluetooth`, `maybeBluetooth`, `refreshBluetooth`) |
+| UI: status row, rationale, permission request, "Connect over Bluetooth" | `ui/SettingsDialog.kt` (`BluetoothBlock`) |
+
+Behaviour:
+
+* A Bluetooth attempt only starts for a **pinned** contact (it needs their ECDH key), with the
+  *Bluetooth* switch in Settings > Network on, and with permission and the adapter already available. The
+  app never prompts by itself: the prompt appears only from the button in Settings after an
+  explanation, and a denial shows how to allow it in Android's app settings.
+* Automatic attempts back off 15 s, 30 s, 60 s, then every 120 s (`bleReconnectDelayMs`); each
+  search lasts 20 s. While a search or a WebRTC offer is in progress the other is skipped.
+* Two phones: the phone with the lower uid also scans and connects; the other one is found. A desktop is
+  always the scanner. Every phone always advertises.
+* Once open, the path shown is *Bluetooth, no internet*. Liveness (ping/pong, 14 s) and the delivery queue
+  are the same as for WebRTC.
+* Turning the Bluetooth switch off ends a Bluetooth link; an adapter that is off, missing, or without
+  permission produces a readable status and never a crash.
 
 ## 11. Desktop hookup
 
@@ -243,19 +262,40 @@ Rust side (`apps/desktop/src-tauri/src/ble.rs`, commands in `lib.rs`):
 on `duochat://ble` (`open` / `chunk` / `close` / `error`). `btleplug` is pinned to
 `=0.13.5`.
 
-## 12. Test checklist (all UNTESTED; run on real hardware)
+## 12. On-device test checklist (nobody has run this yet)
 
-1. Two Android phones (API 31+), internet off, paired earlier: both reach
-   `onOpen`; hello handshake completes; a message each way arrives.
-2. Android phone (peripheral) + Windows desktop (central), internet off.
-3. A 20 KiB and a 64 KiB frame round-trip intact; MTU actually negotiated (log it).
-4. Walk out of range and back: link closes, then reconnects without user action.
-5. A third phone with a different contact never connects and never sees a
-   DuoChat-identifiable advertisement (inspect with a generic BLE scanner app).
-6. Tag rotation: leave the link down across an epoch boundary; reconnect works.
-7. Android 8-11 device: scanning works with location on, fails with a clear error
-   with location off.
-8. Bluetooth turned off mid-session: clean close and a readable error.
+Setup for every test: both devices have DuoChat, were **paired earlier** (contact card + safety number),
+and *Settings > Network > Bluetooth* is on. For the "no internet" cases switch on airplane mode and then
+turn Bluetooth back on, and make sure no WebRTC connection existed before.
+
+**A. Phone to phone (two Android phones, API 31+).**
+1. Open DuoChat on both. In Settings > Connection the *Bluetooth* row should say *Needs permission*; tap
+   *Allow Bluetooth*, read the explanation, accept. The row becomes *Ready*.
+2. Within about two minutes (or immediately via *Connect over Bluetooth*) the row shows *Searching nearby...*,
+   then *Connected*, and *Route* says **Bluetooth, no internet**. Look for: no crash, no permission loop.
+3. Send a message each way. It should arrive, with delivery ticks.
+4. Send a long message (about 4000 characters). It should arrive intact.
+5. Walk out of range for a minute, come back: the link drops (within about 15 s) and reconnects on its own,
+   unsent messages arrive.
+6. Turn Bluetooth off on one phone: a clean drop, row shows *Turned off*, no crash. Turn it on: reconnects.
+7. Deny the permission on purpose: row stays *Permission needed* with the "Open app settings" button.
+
+**B. Phone to Windows desktop.**
+1. Phone: as above. Desktop (Tauri build, *not* the browser): Settings > Connection shows *Connect over Bluetooth*.
+2. Click it. Expect *Connected* on both and *Bluetooth, no internet* on both.
+3. Messages both ways; repeat the out-of-range test.
+4. Remember the desktop is central only, so a desktop-to-desktop attempt cannot work.
+
+**C. Safety checks.**
+1. A third phone with DuoChat paired to nobody must never connect to either phone.
+2. With a generic BLE scanner app, the advertisement should be unnamed manufacturer data (company id 0xFFFF,
+   8 bytes) that changes about every 15 minutes, with no DuoChat service UUID.
+3. If you have a BLE sniffer: no message text and no `publicKeyJwk` visible in the chunks.
+
+**D. Android 11 or older (optional).** Scanning works with Location on; with Location off a clear message appears.
+
+Record for each: device model, Android version, what the row said, time to connect. Please report failures
+exactly as they appear; this is the first time the code meets a radio.
 
 ## 13. What was and was not verified
 
@@ -266,5 +306,8 @@ on `duochat://ble` (`open` / `chunk` / `close` / `error`). `btleplug` is pinned 
 | `BleTransport` (TS) with a fake bridge | Unit-tested |
 | `ble.rs` | Type-checks for `x86_64-pc-windows-msvc`; no unit tests run on Linux (btleplug needs libdbus); **never run against a radio** |
 | Tauri command wiring | Type-checked in isolation only; the full Tauri crate could not be built in the authoring sandbox |
-| `BleTransport.kt` (GATT) | **Not compiled, not run** |
+| `BleTransport.kt` (GATT) | Compiles into the debug APK; **never run against a Bluetooth stack** |
+| `SecureChannel` (TS and Kotlin) | Unit-tested, byte-for-byte interop in both directions |
+| `SecureBleLink.kt` (Kotlin) | 10 JVM tests with an in-memory radio (handshake, ordering, impostor, tamper, replay, close semantics) |
+| Android engine/UI wiring (`ChatEngine`, `PeerSession`, `SettingsDialog`) | Compiles; status decisions and backoff are unit-tested; **the engine and UI cannot run on the JVM, so their Bluetooth paths are untested** |
 | Range, throughput, privacy claims | **Not measured** |

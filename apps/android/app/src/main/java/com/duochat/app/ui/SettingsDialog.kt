@@ -693,6 +693,8 @@ fun SettingsDialog(
                 Spacer(Modifier.height(6.dp))
                 DetailRow("Version", AppConfig.APP_VERSION)
                 DetailRow("Platform", "Android · Kotlin/Compose")
+                DetailRow("Created by", "anandkrishna1900")
+                DetailRow("License", "Apache-2.0")
                 DetailRow("Conversation", state.conversationId, monospace = true)
                 Spacer(Modifier.height(12.dp))
                 Text(
