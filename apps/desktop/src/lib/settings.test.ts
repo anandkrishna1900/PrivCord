@@ -1,20 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeMessageMode, parseSettings } from './settings';
-
-describe('normalizeMessageMode', () => {
-  it('loads the persisted direct mode', () => {
-    expect(normalizeMessageMode('direct')).toBe('direct');
-  });
-
-  it('defaults missing or invalid values to cloud', () => {
-    expect(normalizeMessageMode(undefined)).toBe('cloud');
-    expect(normalizeMessageMode(null)).toBe('cloud');
-    expect(normalizeMessageMode('unexpected')).toBe('cloud');
-  });
-});
+import { parseSettings } from './settings';
 
 describe('parseSettings', () => {
-  it('restores a persisted direct mode', () => {
+  it('restores persisted values', () => {
     expect(
       parseSettings(
         JSON.stringify({
@@ -22,7 +10,7 @@ describe('parseSettings', () => {
           accent: '#0d9488',
           notificationsEnabled: false,
           notificationPreviews: false,
-          messageMode: 'direct',
+          peerNickname: '  Sam  ',
         }),
       ),
     ).toMatchObject({
@@ -30,13 +18,17 @@ describe('parseSettings', () => {
       accent: '#0d9488',
       notificationsEnabled: false,
       notificationPreviews: false,
-      messageMode: 'direct',
+      peerNickname: 'Sam',
     });
   });
 
-  it('defaults missing mode and malformed storage to cloud', () => {
-    expect(parseSettings(JSON.stringify({ theme: 'light' })).messageMode).toBe('cloud');
-    expect(parseSettings('{not json').messageMode).toBe('cloud');
-    expect(parseSettings(null).messageMode).toBe('cloud');
+  it('falls back to defaults for missing or malformed storage', () => {
+    expect(parseSettings(JSON.stringify({ theme: 'light' })).peerNickname).toBe('');
+    expect(parseSettings('{not json').theme).toBe('system');
+    expect(parseSettings(null).accent).toBe('#6366f1');
+  });
+
+  it('rejects an invalid accent color', () => {
+    expect(parseSettings(JSON.stringify({ accent: 'red' })).accent).toBe('#6366f1');
   });
 });

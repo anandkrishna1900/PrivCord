@@ -14,7 +14,7 @@ export class PeerTransport {
   private closedByUs = false;
 
   constructor(
-    private readonly iceServers: RTCIceServer[],
+    private readonly rtcConfig: RTCConfiguration,
     private readonly handlers: PeerTransportHandlers,
   ) {}
 
@@ -58,6 +58,11 @@ export class PeerTransport {
     await this.pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
   }
 
+  /** Raw stats of the live connection, used to report whether it is direct or relayed. */
+  async getStats(): Promise<RTCStatsReport | null> {
+    return this.pc ? this.pc.getStats() : null;
+  }
+
   sendJson(value: unknown): boolean {
     if (!this.channel || this.channel.readyState !== 'open') return false;
     try {
@@ -96,7 +101,7 @@ export class PeerTransport {
   }
 
   private createPeerConnection(): RTCPeerConnection {
-    const pc = new RTCPeerConnection({ iceServers: this.iceServers });
+    const pc = new RTCPeerConnection(this.rtcConfig);
     this.pc = pc;
     pc.onconnectionstatechange = () => {
       this.handlers.onStateChange(pc.connectionState);

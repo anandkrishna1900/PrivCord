@@ -57,7 +57,7 @@ export interface DesktopKillSwitchDeps extends KillSwitchTargets {
   deleteSecret(key: string): Promise<void>;
   /** webview key/value storage, localStorage in this app. */
   webStorage: WebStorageLike;
-  /** Close direct channels, signaling, timers. */
+  /** Close direct channels and timers. */
   stopNetworking(): void;
   /** Option A content erase for the conversation (engine + store). */
   clearChatContent(): Promise<void>;
@@ -74,7 +74,12 @@ export const KILL_SWITCH_REPORT_KEY = 'duochat.killswitch.report.v1';
 /* App-wide ("NUKE DUOCHAT") executor                                  */
 /* ------------------------------------------------------------------ */
 
-const SECRET_KEYS = (uid: string) => [`ec-private-${uid}`, `aes-key-${uid}`];
+const SECRET_KEYS = (uid: string) => [
+  `ec-private-${uid}`,
+  `ec-dh-private-${uid}`,
+  `ec-proof-${uid}`,
+  `aes-key-${uid}`,
+];
 
 function purgeWebStorage(storage: WebStorageLike): number {
   return removeStorageKeys(storage, (key) => key.startsWith('duochat.'));
@@ -105,7 +110,7 @@ export function createAppKillSwitchExecutor(
           ctx.stopNetworking();
           return {
             status: 'erased',
-            details: 'Direct channels closed, signaling stopped, sync timers cancelled. (No Bluetooth transport exists on the desktop app.)',
+            details: 'Direct channels closed and timers cancelled. (No Bluetooth transport exists on the desktop app.)',
           };
         }
         case 'services.stop': {
@@ -131,7 +136,7 @@ export function createAppKillSwitchExecutor(
           );
           return {
             status: 'erased',
-            details: 'Local trust records deleted. Profiles live in the cloud account and are outside local deletion.',
+            details: 'Local trust records (the pinned peer key) deleted.',
           };
         }
         case 'attachments.erase': {

@@ -1,13 +1,15 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { presentConnection } from '@duochat/protocol';
 import type { ChatEngine, ChatState } from '../lib/engine';
-import type { AppSettings, MessageMode, ThemeMode } from '../lib/settings';
+import type { AppSettings, ThemeMode } from '../lib/settings';
 import { ACCENTS } from '../lib/settings';
 import { copyText } from '../lib/clipboard';
 import { ensureNotificationPermission } from '../lib/notifications';
-import { formatLastSeen, truncateMiddle } from '../lib/format';
+import { truncateMiddle } from '../lib/format';
 import { config } from '../config';
+import { loadNetworkConfig } from '../lib/network';
 import { Modal } from './Modal';
+import { NetworkSettings } from './NetworkSettings';
 import { Avatar } from './Avatar';
 import {
   AlertIcon,
@@ -19,7 +21,6 @@ import {
   LinkIcon,
   LoaderIcon,
   LockIcon,
-  LogOutIcon,
   PaletteIcon,
   RefreshIcon,
   SettingsIcon,
@@ -33,6 +34,7 @@ export type SettingsSection =
   | 'appearance'
   | 'notifications'
   | 'connection'
+  | 'network'
   | 'data'
   | 'security'
   | 'about';
@@ -42,6 +44,7 @@ const SECTIONS: Array<{ id: SettingsSection; label: string; icon: ReactNode }> =
   { id: 'appearance', label: 'Appearance', icon: <PaletteIcon size={16} /> },
   { id: 'notifications', label: 'Notifications', icon: <BellIcon size={16} /> },
   { id: 'connection', label: 'Connection', icon: <LinkIcon size={16} /> },
+  { id: 'network', label: 'Network', icon: <RefreshIcon size={16} /> },
   { id: 'data', label: 'Privacy & data', icon: <LockIcon size={16} /> },
   { id: 'security', label: 'Security', icon: <ShieldIcon size={16} /> },
   { id: 'about', label: 'About', icon: <InfoIcon size={16} /> },
@@ -87,10 +90,8 @@ export function SettingsDialog({
   initialSection,
   engine,
   state,
-  email,
   settings,
   updateSettings,
-  onSignOut,
   onOpenManual,
   onOpenNuke,
   onOpenRecovery,
@@ -100,20 +101,17 @@ export function SettingsDialog({
   initialSection: SettingsSection;
   engine: ChatEngine | null;
   state: ChatState | null;
-  email: string;
   settings: AppSettings;
   updateSettings: (patch: Partial<AppSettings>) => void;
-  onSignOut: () => Promise<void>;
   onOpenManual: () => void;
   onOpenNuke: () => void;
   onOpenRecovery?: (mode: 'backup' | 'restore') => void;
 }) {
   const [section, setSection] = useState<SettingsSection>(initialSection);
-  const [name, setName] = useState('');
-  const [savingName, setSavingName] = useState(false);
+  const [nickname, setNickname] = useState(settings.peerNickname);
   const [nameStatus, setNameStatus] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [confirmCloudUpload, setConfirmCloudUpload] = useState(false);
+  const [resetConfirm, setResetConfirm] = useState(false);
   const [clearConfirm, setClearConfirm] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [permission, setPermission] = useState<string>('');
@@ -121,28 +119,20 @@ export function SettingsDialog({
   useEffect(() => {
     if (!open) return;
     setSection(initialSection);
-    setName(state?.selfProfile?.displayName ?? '');
+    setNickname(settings.peerNickname);
     setNameStatus(null);
-    setConfirmCloudUpload(false);
+    setResetConfirm(false);
     setClearConfirm(false);
     setCopied(false);
     setPermission(
       typeof Notification !== 'undefined' ? Notification.permission : 'unavailable',
     );
-  }, [open, initialSection, state?.selfProfile?.displayName]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialSection]);
 
-  async function saveName() {
-    if (!engine) return;
-    setSavingName(true);
-    setNameStatus(null);
-    try {
-      await engine.changeDisplayName(name);
-      setNameStatus('Display name saved.');
-    } catch (caught) {
-      setNameStatus(caught instanceof Error ? caught.message : 'Could not save the name.');
-    } finally {
-      setSavingName(false);
-    }
+  function saveNickname() {
+    updateSettings({ peerNickname: nickname.trim() });
+    setNameStatus('Saved on this device.');
   }
 
   async function copyDiagnostics() {
@@ -153,20 +143,16 @@ export function SettingsDialog({
       conversationId: state.conversationId,
       connectionMode: state.connectionMode,
       presentation: presentConnection(state.connectionMode, state.queuedCount),
-      cloudConnected: state.cloudConnected,
       p2pState: state.p2pState,
       p2pConnected: state.p2pConnected,
       peerTrust: state.peerTrust,
-      peerKeySource: state.peerKeySource,
+      paired: state.paired,
       safetyNumber: state.safetyNumber,
       queuedMessages: state.queuedCount,
       storageBackend: state.storageBackend,
-      lastSyncAt: state.lastSyncAt ? new Date(state.lastSyncAt).toISOString() : null,
-      stun: config.stunUrls,
-      turnConfigured: Boolean(config.turn),
-      peerLastSeen: state.peerProfile?.lastSeenAt
-        ? new Date(state.peerProfile.lastSeenAt).toISOString()
-        : null,
+      path: state.path,
+      signaling: state.signaling,
+      network: loadNetworkConfig(),
     };
     setCopied(await copyText(JSON.stringify(diagnostics, null, 2)));
     window.setTimeout(() => setCopied(false), 1800);
@@ -176,20 +162,6 @@ export function SettingsDialog({
     const granted = await ensureNotificationPermission();
     setPermission(granted ? 'granted' : 'denied');
     updateSettings({ notificationsEnabled: granted });
-  }
-
-  function chooseMessageMode(mode: MessageMode) {
-    if (mode === settings.messageMode) return;
-    if (
-      mode === 'cloud' &&
-      settings.messageMode === 'direct' &&
-      (state?.queuedCount ?? 0) > 0
-    ) {
-      setConfirmCloudUpload(true);
-      return;
-    }
-    setConfirmCloudUpload(false);
-    updateSettings({ messageMode: mode });
   }
 
   const mode = state?.connectionMode ?? 'OFFLINE_QUEUED';
@@ -216,51 +188,85 @@ export function SettingsDialog({
           {section === 'profile' ? (
             <section className="settings-section">
               <header>
-                <h3>Your profile</h3>
+                <h3>You &amp; your friend</h3>
                 <p className="muted">
-                  Visible only to the other approved member of this conversation.
+                  There are no accounts. Your identity is a key that lives on this
+                  device; your friend is the device you paired with.
                 </p>
               </header>
               <div className="profile-row">
-                <Avatar name={name || state?.selfProfile?.displayName || 'You'} size={58} />
+                <Avatar name={nickname || 'Friend'} size={58} />
                 <div>
-                  <strong>{name || 'Your name'}</strong>
+                  <strong>{nickname || 'Your friend'}</strong>
                   <p className="muted small">
-                    {email} · {state?.selfProfile?.lastSeenAt ? formatLastSeen(state.selfProfile.lastSeenAt) : 'Presence unavailable'}
+                    {state?.paired ? 'Paired' : 'Not paired yet'} ·{' '}
+                    {state?.p2pConnected ? 'connected now' : 'not connected'}
                   </p>
                 </div>
               </div>
               <label className="field">
-                <span>Display name</span>
+                <span>Nickname for your friend</span>
                 <input
-                  value={name}
+                  value={nickname}
                   maxLength={40}
-                  onChange={(event) => setName(event.target.value)}
-                  placeholder="Display name"
+                  onChange={(event) => setNickname(event.target.value)}
+                  placeholder="Your friend"
                 />
               </label>
               <div className="button-row">
                 <button
                   type="button"
                   className="button primary"
-                  disabled={savingName || name.trim().length === 0}
-                  onClick={() => void saveName()}
+                  disabled={nickname.trim() === settings.peerNickname}
+                  onClick={saveNickname}
                 >
-                  {savingName ? <LoaderIcon size={15} className="spin" /> : <CheckIcon size={15} />}
-                  Save display name
+                  <CheckIcon size={15} />
+                  Save nickname
                 </button>
               </div>
               {nameStatus ? <p className="status-text">{nameStatus}</p> : null}
               <dl className="detail-grid">
                 <div>
-                  <dt>Your user ID</dt>
+                  <dt>Your ID</dt>
                   <dd className="mono selectable">{state?.uid ?? '—'}</dd>
                 </div>
                 <div>
-                  <dt>Conversation</dt>
-                  <dd className="mono">{state?.conversationId ?? config.conversationId}</dd>
+                  <dt>Friend&apos;s ID</dt>
+                  <dd className="mono selectable">{state?.peerUid ?? '—'}</dd>
                 </div>
               </dl>
+              {state?.paired ? (
+                <div className="danger-zone">
+                  <div>
+                    <strong>Reset pairing</strong>
+                    <p className="muted small">
+                      Forgets your friend&apos;s key so a different device can be paired.
+                      Messages are kept.
+                    </p>
+                  </div>
+                  {resetConfirm ? (
+                    <div className="button-row">
+                      <button
+                        type="button"
+                        className="button danger"
+                        onClick={() => {
+                          engine?.resetPairing();
+                          setResetConfirm(false);
+                        }}
+                      >
+                        Yes, reset pairing
+                      </button>
+                      <button type="button" className="button ghost" onClick={() => setResetConfirm(false)}>
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button type="button" className="button danger ghost" onClick={() => setResetConfirm(true)}>
+                      Reset pairing
+                    </button>
+                  )}
+                </div>
+              ) : null}
             </section>
           ) : null}
 
@@ -317,8 +323,8 @@ export function SettingsDialog({
               <header>
                 <h3>Notifications</h3>
                 <p className="muted">
-                  Desktop notifications are shown while DuoChat is running or in
-                  the background. Android delivery uses Firebase Cloud Messaging.
+                  Desktop notifications are shown while DuoChat is running and
+                  connected to your friend.
                 </p>
               </header>
               <Toggle
@@ -346,9 +352,8 @@ export function SettingsDialog({
               <div className="callout subtle">
                 <InfoIcon size={17} />
                 <p>
-                  Push notifications are best-effort and cannot be guaranteed
-                  during a complete cloud outage. Direct messaging does not
-                  depend on them while both apps are open.
+                  With no server there is no push service: you are notified
+                  only while the app is open and a direct connection is active.
                 </p>
               </div>
             </section>
@@ -358,67 +363,8 @@ export function SettingsDialog({
             <section className="settings-section">
               <header>
                 <h3>Connection & diagnostics</h3>
-                <p className="muted">
-                  {settings.messageMode === 'direct'
-                    ? 'Direct message route selected. Cloud is used only for signaling and profile metadata.'
-                    : presentation.detail}
-                </p>
+                <p className="muted">{presentation.detail}</p>
               </header>
-              <div className="setting-block">
-                <span className="setting-label">Message route</span>
-                <div className="segmented" role="group" aria-label="Message route">
-                  {(['cloud', 'direct'] as MessageMode[]).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      className={settings.messageMode === mode ? 'active' : ''}
-                      onClick={() => chooseMessageMode(mode)}
-                      aria-pressed={settings.messageMode === mode}
-                    >
-                      {mode === 'cloud' ? 'Cloud' : 'Direct'}
-                    </button>
-                  ))}
-                </div>
-                <p className="muted small">
-                  {settings.messageMode === 'direct'
-                    ? 'Messages use only the authenticated peer channel. No message text is uploaded to the cloud.'
-                    : 'Messages use the normal cloud sync path alongside the direct channel.'}
-                </p>
-              </div>
-              {confirmCloudUpload ? (
-                <div className="callout warning" role="alert">
-                  <InfoIcon size={17} />
-                  <div>
-                    <strong>
-                      Upload {state?.queuedCount ?? 0} queued message
-                      {(state?.queuedCount ?? 0) === 1 ? '?' : 's?'}
-                    </strong>
-                    <p>
-                      Switching to Cloud mode uploads messages that are still waiting
-                      to be delivered. Cancel to keep them local in Direct mode.
-                    </p>
-                    <div className="button-row">
-                      <button
-                        type="button"
-                        className="button primary small"
-                        onClick={() => {
-                          setConfirmCloudUpload(false);
-                          updateSettings({ messageMode: 'cloud' });
-                        }}
-                      >
-                        Switch &amp; upload
-                      </button>
-                      <button
-                        type="button"
-                        className="button ghost small"
-                        onClick={() => setConfirmCloudUpload(false)}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
               <div className={`connection-summary tone-${presentation.tone}`}>
                 <span className="connection-dot" />
                 <strong>{presentation.label}</strong>
@@ -428,10 +374,6 @@ export function SettingsDialog({
                 </span>
               </div>
               <dl className="detail-grid">
-                <div>
-                  <dt>Cloud sync</dt>
-                  <dd>{state?.cloudConnected ? 'Connected' : 'Unavailable'}</dd>
-                </div>
                 <div>
                   <dt>Direct channel</dt>
                   <dd>
@@ -449,26 +391,32 @@ export function SettingsDialog({
                   <dd>{state?.peerTrust ?? 'none'}</dd>
                 </div>
                 <div>
-                  <dt>Peer key source</dt>
-                  <dd>{state?.peerKeySource ?? '—'}</dd>
-                </div>
-                <div>
                   <dt>Local storage</dt>
                   <dd>{state?.storageBackend === 'sqlite' ? 'SQLite (encrypted payloads)' : 'Browser dev store'}</dd>
                 </div>
                 <div>
-                  <dt>Last cloud sync</dt>
-                  <dd>{state?.lastSyncAt ? formatLastSeen(state.lastSyncAt) : '—'}</dd>
+                  <dt>Path</dt>
+                  <dd>{state?.path ? state.path.label : state?.p2pConnected ? 'Measuring…' : '—'}</dd>
                 </div>
                 <div>
-                  <dt>STUN</dt>
-                  <dd>{config.stunUrls.length} server{config.stunUrls.length === 1 ? '' : 's'}</dd>
+                  <dt>Signaling</dt>
+                  <dd>{state?.signaling ?? 'idle'}</dd>
                 </div>
                 <div>
-                  <dt>TURN relay</dt>
-                  <dd>{config.turn ? 'Configured' : 'Disabled'}</dd>
+                  <dt>STUN / TURN</dt>
+                  <dd>
+                    {loadNetworkConfig().stun.length} STUN · {loadNetworkConfig().turn.length} TURN
+                  </dd>
                 </div>
               </dl>
+              {state?.path ? (
+                <div className={`callout ${state.path.kind === 'relayed' ? 'warning' : 'subtle'}`}>
+                  <InfoIcon size={17} />
+                  <p>
+                    <strong>{state.path.label}.</strong> {state.path.detail}
+                  </p>
+                </div>
+              ) : null}
               {state?.safetyNumber ? (
                 <div className="safety-block">
                   <span className="setting-label">
@@ -477,22 +425,14 @@ export function SettingsDialog({
                   <code className="safety-number selectable">{state.safetyNumber}</code>
                   <p className="muted small">
                     Compare this with your friend over a separate channel before
-                    trusting a direct connection that is not cloud-verified.
+                    trusting a new device.
                   </p>
                 </div>
               ) : null}
               <div className="button-row wrap">
-                <button
-                  type="button"
-                  className="button secondary"
-                  onClick={() => engine?.requestDirectConnection()}
-                >
-                  <RefreshIcon size={15} />
-                  Reconnect now
-                </button>
                 <button type="button" className="button secondary" onClick={onOpenManual}>
                   <KeyIcon size={15} />
-                  Manual connection
+                  {state?.paired ? 'Connect with a code' : 'Pair with a code'}
                 </button>
                 <button type="button" className="button ghost" onClick={() => void copyDiagnostics()}>
                   {copied ? <CheckIcon size={15} /> : <CopyIcon size={15} />}
@@ -502,14 +442,17 @@ export function SettingsDialog({
               <div className="callout subtle">
                 <InfoIcon size={17} />
                 <p>
-                  Automatic signaling uses the cloud. An already-established
-                  direct channel keeps working when the cloud fails. With no
-                  cloud and no direct path, use manual setup or wait for a network
-                  path to return.
+                  Paired friends reconnect automatically through the signaling service
+                  you configure under Network. Without one, use a connection code: one of
+                  you creates it, the other pastes it and sends a reply. Either way, messages
+                  then go directly between your devices (or through your TURN server, if
+                  that is the only path, and the path above tells you which).
                 </p>
               </div>
             </section>
           ) : null}
+
+          {section === 'network' ? <NetworkSettings engine={engine} state={state} /> : null}
 
           {section === 'data' ? (
             <section className="settings-section">
@@ -523,10 +466,9 @@ export function SettingsDialog({
               <div className="callout">
                 <LockIcon size={17} />
                 <p>
-                  Cloud messages are protected by TLS and Firestore rules, but
-                  they are not end-to-end encrypted. Someone with authorized
-                  project access could read stored messages. DuoChat does not
-                  claim E2EE.
+                  Messages never leave your two devices. They travel over an
+                  encrypted direct connection and are stored encrypted on each
+                  device. There is no server that could read or keep them.
                 </p>
               </div>
               <dl className="detail-grid">
@@ -547,8 +489,8 @@ export function SettingsDialog({
                 <div>
                   <strong>Clear local cache</strong>
                   <p className="muted small">
-                    Deletes local messages, metadata, and queued unsent messages.
-                    Cloud history is not deleted and can be restored on next sync.
+                    Deletes local messages and queued unsent messages. This cannot
+                    be undone: no copy exists anywhere else.
                   </p>
                 </div>
                 {clearConfirm ? (
@@ -596,10 +538,12 @@ export function SettingsDialog({
               <div className="card-box" style={{ padding: '16px', border: '1px solid var(--border-subtle)', borderRadius: '12px', marginBottom: '16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                   <KeyIcon size={18} />
-                  <strong>12-Word Recovery Phrase</strong>
+                  <strong>Your 12-word recovery phrase</strong>
                 </div>
                 <p className="muted small" style={{ marginBottom: '12px' }}>
-                  Your cryptographic identity is tied to a 12-word recovery phrase. If you haven't backed it up, or need to restore an existing identity, manage it here.
+                  Your identity is derived from your 12-word phrase. DuoChat never stores it, so it cannot
+                  be shown again: keep your written copy safe. On a new device or after a wipe, enter it
+                  here to get the same identity and keep your paired friend.
                 </p>
                 <div className="button-row">
                   <button
@@ -607,20 +551,10 @@ export function SettingsDialog({
                     className="button secondary small"
                     onClick={() => {
                       onClose();
-                      onOpenRecovery?.('backup');
-                    }}
-                  >
-                    Back up recovery phrase
-                  </button>
-                  <button
-                    type="button"
-                    className="button ghost small"
-                    onClick={() => {
-                      onClose();
                       onOpenRecovery?.('restore');
                     }}
                   >
-                    Restore identity
+                    Restore identity from phrase
                   </button>
                 </div>
               </div>
@@ -682,24 +616,12 @@ export function SettingsDialog({
                   <dt>Conversation</dt>
                   <dd className="mono">{state?.conversationId}</dd>
                 </div>
-                <div>
-                  <dt>Firebase project</dt>
-                  <dd className="mono">{config.firebase.projectId || '—'}</dd>
-                </div>
-                <div>
-                  <dt>Emulator mode</dt>
-                  <dd>{config.emulatorHost || 'Off'}</dd>
-                </div>
               </dl>
               <p className="muted small">
-                Cloud access is enforced by Firestore rules and a two-member
-                allowlist. Peer connections use challenge-response identity proof
-                plus manual safety-number verification when signaling is offline.
+                Peer connections use a challenge-response identity proof and a
+                safety number you compare with your friend. No accounts, no
+                servers, no analytics.
               </p>
-              <button type="button" className="button secondary" onClick={() => void onSignOut()}>
-                <LogOutIcon size={15} />
-                Sign out
-              </button>
             </section>
           ) : null}
         </div>

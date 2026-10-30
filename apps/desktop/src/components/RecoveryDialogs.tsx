@@ -2,10 +2,9 @@ import { useEffect, useState } from 'react';
 import {
   generateRecoveryPhrase,
   validateRecoveryPhrase,
-  deriveIdentityFromPhrase,
   REQUIRED_WORDS,
 } from '@duochat/protocol';
-import { secretSet, secretGet } from '../lib/secureStore';
+import { createIdentityFromPhrase } from '../lib/identity';
 import { Modal } from './Modal';
 import {
   AlertIcon,
@@ -21,17 +20,19 @@ import { copyText } from '../lib/clipboard';
 export interface RecoveryDialogProps {
   open: boolean;
   onClose: () => void;
-  uid: string;
   mode?: 'backup' | 'restore';
-  onRestored?: (fingerprint: string) => void;
+  /** First run: the dialog cannot be dismissed until an identity exists. */
+  required?: boolean;
+  /** Called once a new or restored identity has been saved. */
+  onIdentityReady?: () => void;
 }
 
 export function RecoveryDialog({
   open,
   onClose,
-  uid,
   mode = 'backup',
-  onRestored,
+  required = false,
+  onIdentityReady,
 }: RecoveryDialogProps) {
   const [currentMode, setCurrentMode] = useState<'backup' | 'restore'>(mode);
   
@@ -93,10 +94,7 @@ export function RecoveryDialog({
 
     try {
       // Derive and save identity securely
-      const derived = await deriveIdentityFromPhrase(phrase, passphrase);
-      const secretKey = `ec-private-${uid}`;
-      await secretSet(secretKey, JSON.stringify(derived.identity.signKey.privJwk));
-      localStorage.setItem(`duochat.identity.fingerprint.${uid}`, derived.identityFingerprint);
+      await createIdentityFromPhrase(phrase, passphrase);
       setStep('confirmed');
     } catch (err) {
       setVerifyError(err instanceof Error ? err.message : 'Failed to derive identity from phrase.');
@@ -113,12 +111,9 @@ export function RecoveryDialog({
 
     setRestoring(true);
     try {
-      const derived = await deriveIdentityFromPhrase(restorePhrase.trim().toLowerCase(), restorePassphrase);
-      const secretKey = `ec-private-${uid}`;
-      await secretSet(secretKey, JSON.stringify(derived.identity.signKey.privJwk));
-      localStorage.setItem(`duochat.identity.fingerprint.${uid}`, derived.identityFingerprint);
-      setRestoreSuccess(`Identity restored successfully! Fingerprint: ${derived.identityFingerprint.slice(0, 16)}…`);
-      onRestored?.(derived.identityFingerprint);
+      const fingerprint = await createIdentityFromPhrase(restorePhrase, restorePassphrase);
+      setRestoreSuccess(`Identity restored. Fingerprint: ${fingerprint.slice(0, 16)}…`);
+      window.setTimeout(() => onIdentityReady?.(), 900);
     } catch (err) {
       setRestoreError(err instanceof Error ? err.message : 'Identity derivation failed. Verify your recovery words.');
     } finally {
@@ -130,7 +125,7 @@ export function RecoveryDialog({
     <Modal
       open={open}
       onClose={onClose}
-      title={currentMode === 'backup' ? '12-Word Recovery Phrase' : 'Restore Identity'}
+      title={currentMode === 'backup' ? 'Your 12-word recovery phrase' : 'Restore your identity'}
       eyebrow="Cryptographic Identity"
       wide
     >
@@ -142,7 +137,7 @@ export function RecoveryDialog({
                 <div className="callout warning">
                   <AlertIcon size={18} />
                   <div>
-                    <strong>Mandatory Identity Backup</strong>
+                    <strong>This phrase IS your identity</strong>
                     <p>
                       DuoChat uses a 12-word cryptographic recovery phrase. If you lose access to this device or use the Emergency Kill Switch, this phrase is the <strong>only way</strong> to restore your cryptographic identity and paired contacts.
                     </p>
@@ -295,16 +290,19 @@ export function RecoveryDialog({
                 <div style={{ display: 'inline-flex', padding: '16px', borderRadius: '50%', background: 'var(--color-success-bg, #059669)', color: '#fff', marginBottom: '16px' }}>
                   <CheckIcon size={36} />
                 </div>
-                <h3>Identity Backup Complete</h3>
+                <h3>Identity created</h3>
                 <p className="muted" style={{ maxWidth: '420px', margin: '0 auto 20px auto' }}>
                   Your cryptographic identity has been securely created and backed up. Remember: DuoChat never stores your recovery phrase in plaintext or on any server.
                 </p>
                 <button
                   type="button"
                   className="button primary"
-                  onClick={onClose}
+                  onClick={() => {
+                    onIdentityReady?.();
+                    onClose();
+                  }}
                 >
-                  Done
+                  {required ? 'Start DuoChat' : 'Done'}
                 </button>
               </div>
             )}
@@ -373,7 +371,7 @@ export function RecoveryDialog({
                 className="button ghost"
                 onClick={() => setCurrentMode('backup')}
               >
-                Back to Backup
+                Create a new phrase instead
               </button>
               <button
                 type="button"

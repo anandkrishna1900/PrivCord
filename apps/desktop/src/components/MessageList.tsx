@@ -9,7 +9,6 @@ import {
   CheckIcon,
   ClockIcon,
   CopyIcon,
-  LoaderIcon,
   ShieldIcon,
 } from './Icons';
 
@@ -59,22 +58,16 @@ export function MessageList({
   messages,
   selfUid,
   peerName,
-  hasOlder,
-  loadingOlder,
-  onLoadOlder,
   onRetry,
   peerDirect,
-  directMode,
+  paired,
 }: {
   messages: ChatMessage[];
   selfUid: string;
   peerName: string;
-  hasOlder: boolean;
-  loadingOlder: boolean;
-  onLoadOlder: () => void;
   onRetry: (messageId: string) => void;
   peerDirect: boolean;
-  directMode: boolean;
+  paired: boolean;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
@@ -116,14 +109,15 @@ export function MessageList({
           </div>
           <h2>Your private conversation starts here</h2>
           <p>
-            {directMode
-              ? 'Only the two approved accounts can read this thread. Messages are stored locally and sent only over an authenticated direct connection.'
-              : 'Only the two approved accounts can read this thread. Messages are stored locally and synchronized through the cloud when it is available.'}
+            Messages are stored only on this device and sent straight to your
+            friend over an encrypted direct connection. No account, no server.
           </p>
           <span className="empty-hint">
             {peerDirect
-              ? 'A direct peer channel is connected.'
-              : 'Send a message — it will queue safely if the network is down.'}
+              ? 'Connected directly.'
+              : paired
+                ? 'Not connected. Messages you write are queued and sent when you reconnect.'
+                : 'Use the person button above to add your friend.'}
           </span>
         </div>
       </div>
@@ -136,20 +130,6 @@ export function MessageList({
 
   return (
     <div className="message-scroll" ref={scrollRef} onScroll={onScroll}>
-      {hasOlder ? (
-        <div className="older-row">
-          <button
-            type="button"
-            className="button ghost small"
-            onClick={onLoadOlder}
-            disabled={loadingOlder}
-          >
-            {loadingOlder ? <LoaderIcon size={14} className="spin" /> : null}
-            {loadingOlder ? 'Loading…' : 'Load earlier messages'}
-          </button>
-        </div>
-      ) : null}
-
       <div className="message-inner">
         {messages.map((message, index) => {
           const day = formatDay(message.clientCreatedAt);

@@ -6,7 +6,7 @@ export const MAX_TEXT_LENGTH = 4000;
 /** Maximum size of a retry/deduplication identifier. */
 export const MAX_CLIENT_MESSAGE_ID_LENGTH = 64;
 
-/** Firestore rejects larger strings; this is a byte-level safety net for multi-byte text. */
+/** Byte-level safety net for multi-byte text. */
 export const MAX_TEXT_BYTES = 16000;
 
 export const MAX_MANUAL_SIGNAL_BYTES = 64 * 1024;

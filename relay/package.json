@@ -1,0 +1,16 @@
+{
+  "name": "duochat-relay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Self-hosted DuoChat signaling mailbox and optional store-and-forward relay (opaque sealed blobs only)",
+  "type": "module",
+  "main": "server.js",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test test/relay.test.js"
+  },
+  "dependencies": {
+    "ws": "8.22.0"
+  }
+}

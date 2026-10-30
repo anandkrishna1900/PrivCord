@@ -1,7 +1,5 @@
 export const CONNECTION_MODES = [
-  'CLOUD_CONNECTED',
   'P2P_CONNECTED',
-  'CLOUD_AND_P2P_CONNECTED',
   'CONNECTING',
   'RECONNECTING',
   'OFFLINE_QUEUED',
@@ -11,7 +9,6 @@ export const CONNECTION_MODES = [
 export type ConnectionMode = (typeof CONNECTION_MODES)[number];
 
 export interface ConnectionInputs {
-  cloudConnected: boolean;
   p2pConnected: boolean;
   connecting?: boolean;
   reconnecting?: boolean;
@@ -20,12 +17,6 @@ export interface ConnectionInputs {
 }
 
 export function deriveConnectionMode(input: ConnectionInputs): ConnectionMode {
-  if (input.cloudConnected && input.p2pConnected) {
-    return 'CLOUD_AND_P2P_CONNECTED';
-  }
-  if (input.cloudConnected) {
-    return input.p2pConnected ? 'CLOUD_AND_P2P_CONNECTED' : 'CLOUD_CONNECTED';
-  }
   if (input.p2pConnected) return 'P2P_CONNECTED';
   if (input.connecting) return 'CONNECTING';
   if (input.reconnecting) return 'RECONNECTING';
@@ -37,7 +28,6 @@ export interface ConnectionPresentation {
   label: string;
   detail: string;
   tone: 'online' | 'direct' | 'busy' | 'offline' | 'error';
-  cloud: boolean;
   p2p: boolean;
 }
 
@@ -46,64 +36,41 @@ export function presentConnection(
   queuedMessages = 0,
 ): ConnectionPresentation {
   switch (mode) {
-    case 'CLOUD_AND_P2P_CONNECTED':
-      return {
-        label: 'Cloud + direct',
-        detail: 'Cloud sync and a direct peer channel are both active.',
-        tone: 'online',
-        cloud: true,
-        p2p: true,
-      };
-    case 'CLOUD_CONNECTED':
-      return {
-        label: 'Cloud',
-        detail: 'Messages sync through the cloud. A direct channel is being negotiated.',
-        tone: 'online',
-        cloud: true,
-        p2p: false,
-      };
     case 'P2P_CONNECTED':
       return {
-        label: 'Direct only',
-        detail:
-          'Cloud sync is unavailable. Messages travel directly and will sync when the cloud returns.',
+        label: 'Direct',
+        detail: 'Connected straight to the other device. Messages never touch a server.',
         tone: 'direct',
-        cloud: false,
         p2p: true,
       };
     case 'CONNECTING':
       return {
         label: 'Connecting',
-        detail: 'Establishing a connection to the other device.',
+        detail: 'Establishing a direct connection to the other device.',
         tone: 'busy',
-        cloud: false,
         p2p: false,
       };
     case 'RECONNECTING':
       return {
         label: 'Reconnecting',
-        detail: 'Connection lost. Retrying automatically.',
+        detail: 'Connection lost. Exchange a new connection code to reconnect.',
         tone: 'busy',
-        cloud: false,
         p2p: false,
       };
     case 'CONNECTION_FAILED':
       return {
         label: 'Connection failed',
-        detail:
-          'No path is available. Messages stay queued until a connection returns.',
+        detail: 'The direct connection could not be established. Messages stay queued on this device.',
         tone: 'error',
-        cloud: false,
         p2p: false,
       };
     case 'OFFLINE_QUEUED':
     default:
       return {
-        label: queuedMessages > 0 ? `Offline · ${queuedMessages} queued` : 'Offline',
+        label: queuedMessages > 0 ? `Not connected · ${queuedMessages} queued` : 'Not connected',
         detail:
-          'No connection. Messages are saved locally and will be sent automatically.',
+          'No direct connection. Messages are saved locally and sent once you connect.',
         tone: 'offline',
-        cloud: false,
         p2p: false,
       };
   }

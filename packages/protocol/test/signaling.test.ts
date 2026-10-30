@@ -28,6 +28,8 @@ function offer() {
     fromUid: 'a',
     fromDeviceId: 'device-a',
     publicKeyJwk: keyA,
+    dhJwk: keyB,
+    identityProof: 'p'.repeat(64),
     sdp: 'v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=-\r\n',
     nonce: '0123456789abcdef0123456789abcdef',
     createdAt: 123,

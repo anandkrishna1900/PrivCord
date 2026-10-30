@@ -5,7 +5,8 @@ import {
 } from './constants';
 
 export type DeliveryState = 'QUEUED' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED';
-export type TransportKind = 'cloud' | 'p2p';
+/** `p2p`: direct data channel. `relay`: sealed blob held by a store-and-forward relay. */
+export type TransportKind = 'p2p' | 'relay';
 export type MessageType = 'text';
 
 export interface ChatMessage {
@@ -15,26 +16,11 @@ export interface ChatMessage {
   text: string;
   /** Sender's clock at composition time. Ordering key (with messageId as tie-breaker). */
   clientCreatedAt: number;
-  /** Present only once the message exists in Firestore. */
-  serverCreatedAt?: number | null;
   type: MessageType;
   transport: TransportKind;
   deliveryState: DeliveryState;
-  /** True once the message has been persisted to the cloud (or received from it). */
-  syncedToCloud: boolean;
   /** Local-only read timestamp for incoming messages. */
   readAt?: number | null;
-}
-
-export interface CloudMessagePayload {
-  messageId: string;
-  senderId: string;
-  text: string;
-  clientCreatedAt: number;
-  type: MessageType;
-  clientMessageId: string;
-  transport: TransportKind;
-  createdAt?: unknown;
 }
 
 export type ValidationResult<T> =
@@ -111,7 +97,6 @@ export function createOutgoingMessage(input: {
   senderId: string;
   text: string;
   now?: number;
-  transport?: TransportKind;
   messageId?: string;
 }): ChatMessage {
   const validation = validateOutgoingText(input.text);
@@ -127,11 +112,9 @@ export function createOutgoingMessage(input: {
     senderId: input.senderId,
     text: validation.value,
     clientCreatedAt: input.now ?? Date.now(),
-    serverCreatedAt: null,
     type: 'text',
-    transport: input.transport ?? 'cloud',
+    transport: 'p2p',
     deliveryState: 'QUEUED',
-    syncedToCloud: false,
     readAt: null,
   };
 }
@@ -152,73 +135,6 @@ export function highestDeliveryState(
   if (a === 'FAILED') return b;
   if (b === 'FAILED') return a;
   return DELIVERY_RANK[a] >= DELIVERY_RANK[b] ? a : b;
-}
-
-/** Convert a Cloud Firestore message document into the local model. */
-export function fromCloudMessage(
-  id: string,
-  data: Record<string, unknown>,
-): ValidationResult<ChatMessage> {
-  const senderId = data.senderId;
-  const text = data.text;
-  if (typeof senderId !== 'string' || senderId.length === 0) {
-    return { ok: false, error: 'Cloud message has no sender.' };
-  }
-  if (!validateIncomingText(text)) {
-    return { ok: false, error: 'Cloud message has invalid text.' };
-  }
-  const messageId = typeof data.messageId === 'string' ? data.messageId : id;
-  if (messageId !== id) {
-    return { ok: false, error: 'Cloud message id mismatch.' };
-  }
-  if (!validateClientMessageId(data.clientMessageId)) {
-    return { ok: false, error: 'Cloud message has invalid clientMessageId.' };
-  }
-  if (
-    data.type !== 'text' ||
-    (data.transport !== 'cloud' && data.transport !== 'p2p')
-  ) {
-    return { ok: false, error: 'Unsupported cloud message type.' };
-  }
-  const clientCreatedAt = Number(data.clientCreatedAt);
-  if (!Number.isFinite(clientCreatedAt) || clientCreatedAt <= 0) {
-    return { ok: false, error: 'Cloud message has invalid timestamp.' };
-  }
-  const serverCreatedAt =
-    typeof (data.createdAt as { toMillis?: unknown } | undefined)?.toMillis ===
-    'function'
-      ? (data.createdAt as { toMillis: () => number }).toMillis()
-      : null;
-  return {
-    ok: true,
-    value: {
-      messageId,
-      clientMessageId: data.clientMessageId,
-      senderId,
-      text: text as string,
-      clientCreatedAt,
-      serverCreatedAt,
-      type: 'text',
-      transport: data.transport,
-      deliveryState: 'DELIVERED',
-      syncedToCloud: true,
-      readAt: null,
-    },
-  };
-}
-
-export function toCloudMessagePayload(
-  message: ChatMessage,
-): CloudMessagePayload {
-  return {
-    messageId: message.messageId,
-    senderId: message.senderId,
-    text: message.text,
-    clientCreatedAt: message.clientCreatedAt,
-    type: 'text',
-    clientMessageId: message.clientMessageId,
-    transport: message.transport,
-  };
 }
 
 /** Wire frame sent over a WebRTC data channel. */
@@ -267,11 +183,9 @@ export function parsePeerMessageFrame(value: unknown): ChatMessage | null {
     senderId,
     text: value.text,
     clientCreatedAt,
-    serverCreatedAt: null,
     type: 'text',
     transport: 'p2p',
     deliveryState: 'DELIVERED',
-    syncedToCloud: false,
     readAt: null,
   };
 }

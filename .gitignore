@@ -24,16 +24,11 @@ apps/desktop/.env.*
 !apps/desktop/.env.example
 apps/android/google-services.json
 apps/android/app/google-services.json
-firebase/rules-tests/.env
 serviceAccount*.json
 *service-account*.json
-.firebaserc.local
 
 # Local data / logs
 *.log
-.firebase/
-firebase-debug.log
-firestore-debug.log
 ui-debug.log
 apps/desktop/src-tauri/gen/
 .DS_Store

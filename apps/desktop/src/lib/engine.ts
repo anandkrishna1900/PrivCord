@@ -1,6 +1,20 @@
 import {
   AUTH_TIMEOUT_MS,
   authChallenge,
+  classifyPath,
+  decodeContactCard,
+  mailboxFor,
+  open as openBlob,
+  reconnectDelayMs,
+  seal,
+  selectedPairFromStats,
+  validateClientMessageId,
+  validateIncomingText,
+  isRecord,
+  type ConnectionPath,
+  type Contact,
+  type NetworkConfig,
+  type SealedBlob,
   compareMessages,
   createManualSignal,
   createOutgoingMessage,
@@ -19,40 +33,24 @@ import {
   type ChatMessage,
   type ConnectionMode,
   type DeliveryState,
+  type ManualSignal,
+  type PairingRecord,
   type PeerControlFrame,
 } from '@duochat/protocol';
-import type { QueryDocumentSnapshot, DocumentData, Unsubscribe } from 'firebase/firestore';
-import { config, iceServers } from '../config';
 import {
-  checkCloud,
-  deleteSignals,
-  ensureOwnProfile,
-  fetchOlderMessages,
-  loadProfile,
-  registerDevice,
-  sendSignal,
-  subscribeLatestMessages,
-  subscribePeerReadState,
-  subscribeProfile,
-  subscribeSignals,
-  touchLastSeen,
-  updateDisplayName,
-  writeMessage,
-  writeReadState,
-  type IncomingSignal,
-  type UserProfile,
-} from './cloud';
-import {
-  cachePeerDeviceKey,
-  loadOrCreateIdentity,
-  resolvePeerDeviceKey,
+  loadPairing,
+  purgePeerKeyCaches,
+  savePairing,
   signChallenge,
+  uidMatchesKeys,
   type DeviceIdentity,
 } from './identity';
+import { loadNetworkConfig, rtcConfigFor } from './network';
+import { SignalingHub, transportsFor } from './signaling/hub';
+import type { SignalingStatus, SignalingTransport } from './signaling/types';
 import { LocalStore, type OutboxRow } from './localDb';
-import { allowsCloudWrites, canAttemptDelivery, shouldAttempt } from './outbox';
+import { needsDelivery } from './outbox';
 import { PeerTransport } from './p2p';
-import type { MessageMode } from './settings';
 
 export type EnginePhase = 'starting' | 'ready' | 'error' | 'stopped';
 export type P2PState = 'idle' | 'connecting' | 'connected' | 'failed';
@@ -61,36 +59,31 @@ export type PeerTrust = 'none' | 'verified' | 'unverified' | 'confirmed';
 export interface ChatState {
   phase: EnginePhase;
   uid: string;
-  peerUid: string;
+  /** The other person's id: known after the first pairing, null before. */
+  peerUid: string | null;
   conversationId: string;
-  messageMode: MessageMode;
-  selfProfile: UserProfile | null;
-  peerProfile: UserProfile | null;
   messages: ChatMessage[];
   connectionMode: ConnectionMode;
-  cloudConnected: boolean;
   p2pState: P2PState;
   p2pConnected: boolean;
   peerTrust: PeerTrust;
   safetyNumber: string | null;
   queuedCount: number;
-  hasOlder: boolean;
-  loadingOlder: boolean;
   storageBackend: 'sqlite' | 'browser';
   error: string | null;
   notice: string | null;
-  lastSyncAt: number | null;
-  manualMode: boolean;
-  peerKeySource: 'cloud' | 'cache' | 'manual' | null;
+  /** True once a peer key is pinned on this device. */
+  paired: boolean;
+  /** Measured from the live connection: direct or relayed. Null when not connected. */
+  path: ConnectionPath | null;
+  signaling: SignalingStatus;
+  /** A friend's card that was pasted but not yet confirmed by the user. */
+  pendingContact: { uid: string; safetyNumber: string; name?: string } | null;
 }
 
 export interface EngineDeps {
-  uid: string;
-  peerUid: string;
+  identity: DeviceIdentity;
   conversationId: string;
-  email: string;
-  displayName: string;
-  messageMode?: MessageMode;
   store: LocalStore;
   onNotify: (message: ChatMessage) => void;
 }
@@ -103,11 +96,10 @@ interface PeerAuthState {
   acknowledged: boolean;
   authenticated: boolean;
   timer: number;
-  origin: 'auto' | 'manual';
   trust: PeerTrust;
 }
 
-function freshAuth(origin: 'auto' | 'manual'): PeerAuthState {
+function freshAuth(): PeerAuthState {
   return {
     myNonce: '',
     peerHello: null,
@@ -116,72 +108,60 @@ function freshAuth(origin: 'auto' | 'manual'): PeerAuthState {
     acknowledged: false,
     authenticated: false,
     timer: 0,
-    origin,
     trust: 'none',
   };
 }
 
 const TICK_MS = 4_000;
-const HEALTH_CONNECTED_MS = 20_000;
-const HEALTH_OFFLINE_MS = 8_000;
-const OFFER_INTERVAL_MS = 20_000;
-const PRESENCE_INTERVAL_MS = 120_000;
 
 export class ChatEngine {
   private state: ChatState;
   private listeners = new Set<(state: ChatState) => void>();
-  private unsubs: Unsubscribe[] = [];
   private messages = new Map<string, ChatMessage>();
   private outbox = new Map<string, OutboxRow>();
-  private identity: DeviceIdentity | null = null;
+  private identity: DeviceIdentity;
+  private pairing: PairingRecord | null = null;
   private peer: PeerTransport | null = null;
-  private auth = freshAuth('auto');
+  private auth = freshAuth();
   private frameQueue: unknown[] = [];
   private processingFrames = false;
-  private cloudOk = false;
-  private draining = false;
-  private cloudInFlight = new Set<string>();
   private p2pSent = new Set<string>();
   private tickTimer = 0;
-  private healthTimer = 0;
-  private offerTimer = 0;
-  private lastOfferAt = 0;
-  private lastPresenceAt = 0;
   private lastReadWritten: string | null = null;
   private visible = false;
-  private manualMode = false;
   private manualExpectedKey: JsonWebKey | null = null;
-  private peerKeySource: 'cloud' | 'cache' | 'manual' | null = null;
-  private cursor: QueryDocumentSnapshot<DocumentData> | null = null;
   private stopped = false;
-  private knownIds = new Set<string>();
-  private selfLoaded = false;
+  private network: NetworkConfig = loadNetworkConfig();
+  private hub: SignalingHub | null = null;
+  private pendingCard: Contact | null = null;
+  private lastOfferAt = 0;
+  private offerAttempt = 0;
+  private relayed = new Set<string>();
+  private lastPathAt = 0;
+  private manualActive = false;
+  private offerTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private readonly deps: EngineDeps) {
+    this.identity = deps.identity;
     this.state = {
       phase: 'starting',
-      uid: deps.uid,
-      peerUid: deps.peerUid,
+      uid: deps.identity.uid,
+      peerUid: null,
       conversationId: deps.conversationId,
-      messageMode: deps.messageMode ?? 'cloud',
-      selfProfile: null,
-      peerProfile: null,
       messages: [],
-      connectionMode: 'CONNECTING',
-      cloudConnected: false,
+      connectionMode: 'OFFLINE_QUEUED',
       p2pState: 'idle',
       p2pConnected: false,
       peerTrust: 'none',
       safetyNumber: null,
       queuedCount: 0,
-      hasOlder: false,
-      loadingOlder: false,
       storageBackend: deps.store.backend,
       error: null,
       notice: null,
-      lastSyncAt: null,
-      manualMode: false,
-      peerKeySource: null,
+      paired: false,
+      path: null,
+      signaling: 'idle',
+      pendingContact: null,
     };
   }
 
@@ -216,53 +196,22 @@ export class ChatEngine {
   async start(): Promise<void> {
     try {
       await this.deps.store.init();
-      this.identity = await loadOrCreateIdentity(this.deps.uid);
-      const ownProfilePromise = loadProfile(this.deps.uid).catch(() => null);
-      const peerProfilePromise = loadProfile(this.deps.peerUid).catch(() => null);
-      const [ownProfile, peerProfile] = await Promise.all([
-        ownProfilePromise,
-        peerProfilePromise,
-      ]);
-      if (ownProfile) this.selfLoaded = true;
-
-      try {
-        await ensureOwnProfile(
-          this.deps.uid,
-          this.deps.email,
-          this.deps.displayName,
-        );
-      } catch (error) {
-        this.setState({ notice: `Profile setup failed: ${errorMessage(error)}` });
-      }
-
-      try {
-        await registerDevice(
-          this.deps.uid,
-          this.identity.deviceId,
-          this.identity.publicJwk,
-        );
-      } catch (error) {
-        this.setState({
-          notice: `Device identity could not be registered: ${errorMessage(error)}`,
-        });
-      }
-
       if (this.stopped) return;
+      this.pairing = loadPairing();
       const localMessages = await this.deps.store.loadMessages();
       this.messages = new Map(localMessages.map((message) => [message.messageId, message]));
-      this.knownIds = new Set(this.messages.keys());
       try {
         const rows = await this.deps.store.loadOutbox();
         this.outbox = new Map(rows.map((row) => [row.messageId, row]));
       } catch {
         this.outbox = new Map();
       }
-
       if (this.stopped) return;
+
       this.setState({
         phase: 'ready',
-        selfProfile: ownProfile,
-        peerProfile,
+        paired: this.pairing !== null,
+        peerUid: this.pairing?.peerUid ?? null,
         storageBackend: this.deps.store.backend,
         messages: [...this.messages.values()].sort(compareMessages),
         queuedCount: this.outbox.size,
@@ -270,12 +219,9 @@ export class ChatEngine {
           ? `SQLite was unavailable (${this.deps.store.initError}); this browser development store is not secure.`
           : null,
       });
-
-      this.startSubscriptions();
       this.updateConnection();
-      this.scheduleHealthCheck(0);
+      this.startSignaling();
       this.tickTimer = window.setInterval(() => void this.tick(), TICK_MS);
-      void this.touchPresence();
     } catch (error) {
       if (!this.stopped) this.setState({ phase: 'error', error: errorMessage(error) });
     }
@@ -284,127 +230,27 @@ export class ChatEngine {
   stop(): void {
     this.stopped = true;
     window.clearInterval(this.tickTimer);
-    window.clearTimeout(this.healthTimer);
-    window.clearTimeout(this.offerTimer);
     window.clearTimeout(this.auth.timer);
-    for (const unsubscribe of this.unsubs) unsubscribe();
-    this.unsubs = [];
+    this.hub?.stop();
+    this.hub = null;
     this.peer?.close();
     this.peer = null;
     this.setState({ phase: 'stopped' });
   }
 
-  private startSubscriptions(): void {
-    const { conversationId, uid, peerUid } = this.deps;
-    this.unsubs.push(
-      subscribeLatestMessages(
-        conversationId,
-        (messages, cursor) => {
-          this.cursor = cursor;
-          this.cloudOk = true;
-          this.setState({ cloudConnected: true, lastSyncAt: Date.now() });
-          this.setState({ hasOlder: messages.length >= 100 });
-          void this.mergeCloudMessages(messages);
-          this.updateConnection();
-        },
-        (error) => this.handleCloudError(error),
-      ),
-    );
-    this.unsubs.push(
-      subscribeProfile(
-        uid,
-        (profile) => {
-          this.selfLoaded = true;
-          this.setState({ selfProfile: profile });
-        },
-        () => undefined,
-      ),
-    );
-    this.unsubs.push(
-      subscribeProfile(
-        peerUid,
-        (profile) => this.setState({ peerProfile: profile }),
-        () => undefined,
-      ),
-    );
-    this.unsubs.push(
-      subscribePeerReadState(
-        conversationId,
-        peerUid,
-        (messageId) => {
-          if (messageId) void this.applyPeerReadThrough(messageId);
-        },
-        () => undefined,
-      ),
-    );
-    this.unsubs.push(
-      subscribeSignals(
-        conversationId,
-        uid,
-        (signal) => void this.handleSignal(signal),
-        (error) => this.handleCloudError(error),
-      ),
-    );
+  private async tick(): Promise<void> {
+    if (this.stopped) return;
+    this.setState({ signaling: this.hub?.status() ?? 'idle' });
+    if (this.p2pReady()) {
+      this.flushUndelivered();
+      if (Date.now() - this.lastPathAt > 15_000) void this.refreshPath();
+      return;
+    }
+    await this.maybeOffer();
   }
 
-  private handleCloudError(error: Error): void {
-    this.cloudOk = false;
-    this.updateConnection();
-    if (String(error).toLowerCase().includes('permission')) {
-      this.setState({
-        error:
-          'Firestore denied access. This account is not one of the two approved members, or setup is incomplete.',
-      });
-    } else {
-      this.setState({ notice: 'Cloud unavailable. Direct delivery and local queueing remain active.' });
-    }
-  }
-
-  private async mergeCloudMessages(cloudMessages: ChatMessage[]): Promise<void> {
-    const changed: ChatMessage[] = [];
-    const newlyReceived: ChatMessage[] = [];
-    for (const cloud of cloudMessages) {
-      const existing = this.messages.get(cloud.messageId);
-      if (existing) {
-        const normalized: ChatMessage =
-          cloud.senderId === this.deps.uid
-            ? {
-                ...cloud,
-                deliveryState:
-                  existing.deliveryState === 'READ' ||
-                  existing.deliveryState === 'DELIVERED'
-                    ? existing.deliveryState
-                    : 'SENT',
-              }
-            : cloud;
-        const merged = mergeMessages([existing], [normalized])[0];
-        if (merged) {
-          this.messages.set(merged.messageId, merged);
-          changed.push(merged);
-        }
-      } else {
-        this.messages.set(cloud.messageId, cloud);
-        changed.push(cloud);
-        if (cloud.senderId !== this.deps.uid && !this.knownIds.has(cloud.messageId)) {
-          newlyReceived.push(cloud);
-        }
-      }
-      this.knownIds.add(cloud.messageId);
-      if (cloud.senderId === this.deps.uid) {
-        this.outbox.delete(cloud.messageId);
-        await this.deps.store.removeOutbox(cloud.messageId).catch(() => undefined);
-      }
-    }
-    for (const message of changed) {
-      await this.deps.store.putMessage(message).catch(() => undefined);
-    }
-    this.emitMessages();
-    for (const message of newlyReceived) {
-      this.deps.onNotify(message);
-    }
-    if (newlyReceived.length > 0 && this.visible) {
-      void this.markRead();
-    }
+  private sortedMessages(): ChatMessage[] {
+    return [...this.messages.values()].sort(compareMessages);
   }
 
   private async applyPeerReadThrough(messageId: string): Promise<void> {
@@ -414,7 +260,7 @@ export class ChatEngine {
     let changed = false;
     for (let i = 0; i <= index; i += 1) {
       const message = ordered[i];
-      if (!message || message.senderId !== this.deps.uid) continue;
+      if (!message || message.senderId !== this.identity.uid) continue;
       if (message.deliveryState !== 'READ') {
         const updated: ChatMessage = {
           ...message,
@@ -426,53 +272,29 @@ export class ChatEngine {
           deliveryState: 'READ',
           readAt: updated.readAt,
         });
+        await this.dropOutbox(updated.messageId);
         changed = true;
       }
     }
     if (changed) this.emitMessages();
   }
 
-  private sortedMessages(): ChatMessage[] {
-    return [...this.messages.values()].sort(compareMessages);
-  }
-
-  async loadOlder(): Promise<void> {
-    if (!this.cursor || this.state.loadingOlder || !this.cloudOk) return;
-    this.setState({ loadingOlder: true });
-    try {
-      const page = await fetchOlderMessages(this.deps.conversationId, this.cursor);
-      this.cursor = page.cursor;
-      const changed: ChatMessage[] = [];
-      for (const message of page.messages) {
-        if (!this.messages.has(message.messageId)) {
-          this.messages.set(message.messageId, message);
-          changed.push(message);
-          this.knownIds.add(message.messageId);
-        }
-      }
-      for (const message of changed) await this.deps.store.putMessage(message);
-      this.setState({ hasOlder: page.hasMore });
-      this.emitMessages();
-    } catch (error) {
-      this.setState({ notice: `Could not load older messages: ${errorMessage(error)}` });
-    } finally {
-      this.setState({ loadingOlder: false });
-    }
+  private async dropOutbox(messageId: string): Promise<void> {
+    if (!this.outbox.delete(messageId)) return;
+    await this.deps.store.removeOutbox(messageId).catch(() => undefined);
   }
 
   async send(rawText: string): Promise<{ ok: true } | { ok: false; error: string }> {
-    if (!this.identity) return { ok: false, error: 'Identity is not ready yet.' };
     try {
       const message = createOutgoingMessage({
-        senderId: this.deps.uid,
+        senderId: this.identity.uid,
         text: rawText,
       });
       this.messages.set(message.messageId, message);
-      this.knownIds.add(message.messageId);
       await this.deps.store.putMessage(message);
       const row: OutboxRow = {
         messageId: message.messageId,
-        recipientId: this.deps.peerUid,
+        recipientId: this.state.peerUid ?? '',
         payload: JSON.stringify(message),
         createdAt: Date.now(),
         attemptCount: 0,
@@ -484,6 +306,7 @@ export class ChatEngine {
       await this.deps.store.enqueueOutbox(row);
       this.emitMessages();
       void this.deliver(message.messageId);
+      void this.relayPending();
       return { ok: true };
     } catch (error) {
       return { ok: false, error: errorMessage(error) };
@@ -492,290 +315,56 @@ export class ChatEngine {
 
   async retry(messageId: string): Promise<void> {
     const message = this.messages.get(messageId);
-    if (!message || message.senderId !== this.deps.uid) return;
-    const updated: ChatMessage = { ...message, deliveryState: 'QUEUED' };
-    this.messages.set(messageId, updated);
-    await this.deps.store.updateMessage(messageId, { deliveryState: 'QUEUED' });
-    const existing = this.outbox.get(messageId);
-    const row: OutboxRow =
-      existing ?? {
-        messageId,
-        recipientId: this.deps.peerUid,
-        payload: JSON.stringify(updated),
-        createdAt: Date.now(),
-        attemptCount: 0,
-        lastAttemptAt: null,
-        deliveryState: 'QUEUED',
-        lastError: null,
-      };
-    row.deliveryState = 'QUEUED';
-    row.lastError = null;
-    row.lastAttemptAt = null;
-    this.outbox.set(messageId, row);
-    await this.deps.store.enqueueOutbox(row);
+    if (!message || message.senderId !== this.identity.uid) return;
     this.p2pSent.delete(messageId);
-    this.emitMessages();
     await this.deliver(messageId);
   }
 
-  private async requeueFailedMessages(): Promise<void> {
-    const failed = [...this.messages.values()].filter(
-      (message) => message.senderId === this.deps.uid && message.deliveryState === 'FAILED',
-    );
-    if (failed.length === 0) return;
-    for (const message of failed) {
-      const queued: ChatMessage = { ...message, deliveryState: 'QUEUED' };
-      this.messages.set(queued.messageId, queued);
-      await this.deps.store.updateMessage(queued.messageId, { deliveryState: 'QUEUED' });
-      const existing = this.outbox.get(queued.messageId);
-      const row: OutboxRow =
-        existing ?? {
-          messageId: queued.messageId,
-          recipientId: this.deps.peerUid,
-          payload: JSON.stringify(queued),
-          createdAt: Date.now(),
-          attemptCount: 0,
-          lastAttemptAt: null,
-          deliveryState: 'QUEUED',
-          lastError: null,
-        };
-      row.attemptCount = 0;
-      row.lastAttemptAt = null;
-      row.deliveryState = 'QUEUED';
-      row.lastError = null;
-      this.outbox.set(queued.messageId, row);
-      await this.deps.store.enqueueOutbox(row);
-      this.p2pSent.delete(queued.messageId);
+  /** Send one own message over the direct channel if it is up; otherwise it stays queued. */
+  private async deliver(messageId: string): Promise<void> {
+    const message = this.messages.get(messageId);
+    if (!message || message.senderId !== this.identity.uid) return;
+    if (!needsDelivery(message.deliveryState)) return;
+    if (!this.p2pReady() || this.p2pSent.has(messageId)) return;
+    if (!this.peer?.sendJson(createPeerMessageFrame(message))) return;
+
+    this.p2pSent.add(messageId);
+    const updated: ChatMessage = { ...message, transport: 'p2p', deliveryState: 'SENT' };
+    this.messages.set(messageId, updated);
+    await this.deps.store.updateMessage(messageId, { transport: 'p2p', deliveryState: 'SENT' });
+    const row = this.outbox.get(messageId);
+    if (row) {
+      row.deliveryState = 'SENT';
+      row.lastAttemptAt = Date.now();
+      await this.deps.store.updateOutbox(messageId, {
+        deliveryState: 'SENT',
+        lastAttemptAt: row.lastAttemptAt,
+      });
     }
     this.emitMessages();
   }
 
-  private async deliver(messageId: string): Promise<void> {
-    const message = this.messages.get(messageId);
-    if (!message || message.senderId !== this.deps.uid || message.syncedToCloud) return;
-    let changed = false;
-    let sentDirect = false;
-
-    if (this.p2pReady() && !this.p2pSent.has(messageId)) {
-      const sent = this.peer?.sendJson(createPeerMessageFrame(message)) ?? false;
-      if (sent) {
-        sentDirect = true;
-        this.p2pSent.add(messageId);
-        const updated: ChatMessage = {
-          ...message,
-          transport: 'p2p',
-          deliveryState:
-            message.deliveryState === 'READ' || message.deliveryState === 'DELIVERED'
-              ? message.deliveryState
-              : 'SENT',
-        };
-        this.messages.set(messageId, updated);
-        await this.deps.store.updateMessage(messageId, {
-          transport: 'p2p',
-          deliveryState: updated.deliveryState,
-        });
-        const row = this.outbox.get(messageId);
-        if (row) {
-          row.deliveryState = updated.deliveryState;
-          row.lastAttemptAt = Date.now();
-          await this.deps.store.updateOutbox(messageId, {
-            deliveryState: updated.deliveryState,
-            lastAttemptAt: row.lastAttemptAt,
-          });
-        }
-        changed = true;
-      }
-    }
-
-    if (this.state.messageMode === 'direct') {
-      if (changed) {
-        this.emitMessages();
-        this.updateConnection();
-      }
-      return;
-    }
-
-    if (allowsCloudWrites(this.state.messageMode) && this.cloudOk && !this.cloudInFlight.has(messageId)) {
-      this.cloudInFlight.add(messageId);
-      try {
-        await writeMessage(this.deps.conversationId, message);
-        const current = this.messages.get(messageId) ?? message;
-        const synced: ChatMessage = {
-          ...current,
-          syncedToCloud: true,
-          deliveryState:
-            current.deliveryState === 'QUEUED' || current.deliveryState === 'FAILED'
-              ? 'SENT'
-              : current.deliveryState,
-        };
-        this.messages.set(messageId, synced);
-        await this.deps.store.putMessage(synced);
-        await this.deps.store.removeOutbox(messageId);
-        this.outbox.delete(messageId);
-        changed = true;
-      } catch (error) {
-        const row = this.outbox.get(messageId);
-        if (row) {
-          const attempts = row.attemptCount + 1;
-          row.attemptCount = attempts;
-          row.lastAttemptAt = Date.now();
-          row.lastError = errorMessage(error);
-          if (!sentDirect && attempts >= 5) row.deliveryState = 'FAILED';
-          this.outbox.set(messageId, row);
-          await this.deps.store.updateOutbox(messageId, {
-            attemptCount: row.attemptCount,
-            lastAttemptAt: row.lastAttemptAt,
-            lastError: row.lastError,
-            deliveryState: row.deliveryState,
-          });
-          if (!sentDirect && attempts >= 5) {
-            const failed: ChatMessage = { ...currentOf(this.messages, messageId), deliveryState: 'FAILED' };
-            this.messages.set(messageId, failed);
-            await this.deps.store.updateMessage(messageId, { deliveryState: 'FAILED' });
-          }
-        }
-        const errorText = errorMessage(error).toLowerCase();
-        if (errorText.includes('permission')) {
-          this.setState({
-            error: 'The cloud rejected this message. Check the two-user allowlist and security rules.',
-          });
-        } else {
-          this.cloudOk = false;
-        }
-        changed = true;
-      } finally {
-        this.cloudInFlight.delete(messageId);
-      }
-    }
-
-    if (changed) {
-      this.emitMessages();
-      this.updateConnection();
-    }
-  }
-
-  private async drainOutbox(): Promise<void> {
-    if (this.draining) return;
-    this.draining = true;
-    try {
-      const rows = await this.deps.store.loadOutbox();
-      this.outbox = new Map(rows.map((row) => [row.messageId, row]));
-      const now = Date.now();
-      for (const row of rows) {
-        if (!shouldAttempt(row, now)) continue;
-        if (
-          !canAttemptDelivery({
-            mode: this.state.messageMode,
-            cloudConnected: this.cloudOk,
-            p2pConnected: this.p2pReady(),
-          })
-        ) {
-          continue;
-        }
-        await this.deliver(row.messageId);
-      }
-      this.emitMessages();
-    } catch {
-      // Outbox drain retries on the next tick.
-    } finally {
-      this.draining = false;
-    }
-  }
-
-  private flushUnsynced(): void {
+  private flushUndelivered(): void {
     for (const message of this.messages.values()) {
-      if (message.senderId === this.deps.uid && !message.syncedToCloud) {
+      if (message.senderId === this.identity.uid && needsDelivery(message.deliveryState)) {
         void this.deliver(message.messageId);
       }
     }
   }
 
-  private async tick(): Promise<void> {
-    if (this.stopped) return;
-    await this.drainOutbox();
-    if (this.identity && Date.now() - this.lastPresenceAt > PRESENCE_INTERVAL_MS) {
-      void this.touchPresence();
-    }
-    await this.maybeStartAutomaticOffer();
-    this.updateConnection();
-  }
-
-  private async touchPresence(): Promise<void> {
-    this.lastPresenceAt = Date.now();
-    await touchLastSeen(this.deps.uid);
-  }
-
-  private scheduleHealthCheck(delay: number): void {
-    window.clearTimeout(this.healthTimer);
-    this.healthTimer = window.setTimeout(async () => {
-      if (this.stopped) return;
-      const ok = await checkCloud();
-      const wasOk = this.cloudOk;
-      this.cloudOk = ok;
-      if (ok) {
-        this.setState({ lastSyncAt: Date.now() });
-        if (!wasOk) {
-          await this.requeueFailedMessages();
-          this.p2pSent.clear();
-          void this.drainOutbox();
-          this.setState({
-            notice:
-              this.state.messageMode === 'direct'
-                ? 'Cloud signaling restored. Direct messages remain on this device.'
-                : 'Cloud synchronization restored. Reconciling queued messages.',
-          });
-        }
-      } else if (wasOk) {
-        this.setState({
-          notice:
-            'Cloud unavailable. Existing direct connections and the local queue are still available.',
-        });
-      }
-      this.updateConnection();
-      this.scheduleHealthCheck(ok ? HEALTH_CONNECTED_MS : HEALTH_OFFLINE_MS);
-    }, delay);
-  }
-
   private updateConnection(): void {
     const mode = deriveConnectionMode({
-      cloudConnected: this.cloudOk,
       p2pConnected: this.state.p2pConnected && this.p2pReady(),
       connecting: this.state.p2pState === 'connecting',
-      reconnecting: !this.cloudOk && this.state.p2pState === 'idle',
-      failed: !this.cloudOk && this.state.p2pState === 'failed',
+      failed: this.state.p2pState === 'failed',
       queuedMessages: this.outbox.size,
     });
-    this.setState({
-      connectionMode: mode,
-      cloudConnected: this.cloudOk,
-      queuedCount: this.outbox.size,
-    });
+    this.setState({ connectionMode: mode, queuedCount: this.outbox.size });
   }
 
   setVisible(visible: boolean): void {
     this.visible = visible;
     if (visible) void this.markRead();
-  }
-
-  setMessageMode(mode: MessageMode): void {
-    if (mode === this.state.messageMode) return;
-    this.setState({
-      messageMode: mode,
-      notice:
-        mode === 'direct'
-          ? 'Direct mode enabled. New messages stay on this device until the direct channel accepts them.'
-          : 'Cloud mode enabled. Pending messages will be uploaded to the cloud.',
-    });
-    if (mode === 'cloud') {
-      this.lastReadWritten = null;
-      void this.markRead();
-      if (this.cloudOk) void this.drainOutbox();
-    } else {
-      this.p2pSent.clear();
-      void this.requeueFailedMessages()
-        .then(() => this.drainOutbox())
-        .catch(() => undefined);
-    }
   }
 
   private async markRead(): Promise<void> {
@@ -785,7 +374,7 @@ export class ChatEngine {
     let changed = false;
     const now = Date.now();
     for (const message of ordered) {
-      if (message.senderId === this.deps.uid) continue;
+      if (message.senderId === this.identity.uid) continue;
       if (message.readAt == null) {
         const updated: ChatMessage = { ...message, readAt: now };
         this.messages.set(message.messageId, updated);
@@ -794,15 +383,8 @@ export class ChatEngine {
       }
     }
     if (changed) this.emitMessages();
-    if (this.lastReadWritten !== last.messageId) {
+    if (this.lastReadWritten !== last.messageId && this.p2pReady()) {
       this.lastReadWritten = last.messageId;
-      if (allowsCloudWrites(this.state.messageMode) && this.cloudOk) {
-        void writeReadState(
-          this.deps.conversationId,
-          this.deps.uid,
-          last.messageId,
-        ).catch(() => undefined);
-      }
       this.peer?.sendJson({
         v: 1,
         kind: 'read',
@@ -810,10 +392,6 @@ export class ChatEngine {
         at: now,
       });
     }
-  }
-
-  private isInitiator(): boolean {
-    return this.deps.uid < this.deps.peerUid;
   }
 
   private p2pReady(): boolean {
@@ -824,15 +402,14 @@ export class ChatEngine {
     );
   }
 
-  private newPeer(origin: 'auto' | 'manual'): PeerTransport {
+  private newPeer(): PeerTransport {
     this.peer?.close();
-    window.clearTimeout(this.offerTimer);
     window.clearTimeout(this.auth.timer);
-    this.auth = freshAuth(origin);
+    this.auth = freshAuth();
     this.frameQueue = [];
     this.p2pSent.clear();
-    const transport = new PeerTransport(iceServers(), {
-      onOpen: () => this.handlePeerOpen(origin),
+    const transport = new PeerTransport(rtcConfigFor(this.network), {
+      onOpen: () => this.handlePeerOpen(),
       onClose: () => this.handlePeerClose(),
       onFrame: (data) => this.handlePeerFrame(data),
       onStateChange: () => undefined,
@@ -844,100 +421,16 @@ export class ChatEngine {
       p2pConnected: false,
       peerTrust: 'none',
       safetyNumber: null,
-      peerKeySource: null,
     });
+    this.updateConnection();
     return transport;
   }
 
-  private async maybeStartAutomaticOffer(): Promise<void> {
-    if (
-      !this.isInitiator() ||
-      !this.cloudOk ||
-      this.manualMode ||
-      this.p2pReady() ||
-      this.state.p2pState === 'connecting' ||
-      Date.now() - this.lastOfferAt < OFFER_INTERVAL_MS
-    ) {
-      return;
-    }
-    this.lastOfferAt = Date.now();
-    const transport = this.newPeer('auto');
-    try {
-      const sdp = await transport.createOffer();
-      await sendSignal(this.deps.conversationId, {
-        from: this.deps.uid,
-        to: this.deps.peerUid,
-        fromDeviceId: this.identity?.deviceId ?? '',
-        kind: 'offer',
-        sdp,
-      });
-      this.offerTimer = window.setTimeout(() => {
-        if (!this.auth.authenticated) {
-          if (this.peer === transport) {
-            transport.close();
-            this.peer = null;
-          }
-          this.setState({ p2pState: 'failed' });
-          this.updateConnection();
-        }
-      }, 25_000);
-    } catch (error) {
-      this.peer = null;
-      transport.close();
-      this.setState({
-        p2pState: 'failed',
-        notice: `Direct connection offer failed: ${errorMessage(error)}`,
-      });
-    }
-  }
-
-  private async handleSignal(signal: IncomingSignal): Promise<void> {
-    if (signal.from !== this.deps.peerUid) {
-      void deleteSignals(this.deps.conversationId, [signal.id]);
-      return;
-    }
-    if (this.manualMode) {
-      void deleteSignals(this.deps.conversationId, [signal.id]);
-      return;
-    }
-    try {
-      if (signal.kind === 'offer' && !this.isInitiator()) {
-        if (this.p2pReady()) return;
-        const transport = this.newPeer('auto');
-        const answer = await transport.acceptOffer(signal.sdp);
-        await sendSignal(this.deps.conversationId, {
-          from: this.deps.uid,
-          to: this.deps.peerUid,
-          fromDeviceId: this.identity?.deviceId ?? '',
-          kind: 'answer',
-          sdp: answer,
-        });
-      } else if (signal.kind === 'answer' && this.isInitiator() && this.peer) {
-        await this.peer.applyAnswer(signal.sdp);
-      }
-    } catch (error) {
-      this.setState({
-        p2pState: 'failed',
-        notice: `Signaling failed: ${errorMessage(error)}`,
-      });
-      this.updateConnection();
-    } finally {
-      void deleteSignals(this.deps.conversationId, [signal.id]);
-    }
-  }
-
-  private handlePeerOpen(origin: 'auto' | 'manual'): void {
-    window.clearTimeout(this.offerTimer);
-    if (!this.identity) {
-      this.peer?.close();
-      return;
-    }
-    this.auth = freshAuth(origin);
+  private handlePeerOpen(): void {
+    this.auth = freshAuth();
     this.auth.myNonce = randomNonce();
     this.frameQueue = [];
-    this.auth.authenticated = false;
     this.sendHello();
-    window.clearTimeout(this.auth.timer);
     this.auth.timer = window.setTimeout(() => {
       if (!this.auth.authenticated) {
         this.failPeer('Peer identity verification timed out.');
@@ -947,30 +440,35 @@ export class ChatEngine {
   }
 
   private sendHello(): void {
-    if (!this.identity || !this.peer?.isOpen) return;
+    if (!this.peer?.isOpen) return;
     this.peer.sendJson({
       v: 1,
       kind: 'hello',
-      uid: this.deps.uid,
+      uid: this.identity.uid,
       deviceId: this.identity.deviceId,
       publicKeyJwk: this.identity.publicJwk,
+      dhJwk: this.identity.dhPublicJwk,
+      identityProof: this.identity.identityProof,
       nonce: this.auth.myNonce,
     });
   }
 
   private handlePeerClose(): void {
     window.clearTimeout(this.auth.timer);
-    window.clearTimeout(this.offerTimer);
     const wasConnected = this.auth.authenticated;
-    this.auth = freshAuth(this.manualMode ? 'manual' : 'auto');
+    this.auth = freshAuth();
     this.frameQueue = [];
     this.p2pSent.clear();
+    this.lastReadWritten = null;
     this.setState({
+      path: null,
       p2pState: wasConnected ? 'failed' : 'idle',
       p2pConnected: false,
       peerTrust: 'none',
       safetyNumber: null,
-      peerKeySource: null,
+      notice: wasConnected
+        ? 'Direct connection lost. Exchange a new connection code to reconnect.'
+        : this.state.notice,
     });
     this.updateConnection();
   }
@@ -1010,42 +508,37 @@ export class ChatEngine {
   private async handleControlFrame(frame: PeerControlFrame): Promise<void> {
     switch (frame.kind) {
       case 'hello': {
-        if (frame.uid !== this.deps.peerUid) {
-          this.failPeer('A different account attempted to connect.');
-          return;
-        }
-        const origin = this.auth.origin;
-        if (!this.identity) return;
         if (publicKeysEqual(this.identity.publicJwk, frame.publicKeyJwk)) {
           this.failPeer('Refused a connection that claimed our own device identity.');
           return;
         }
-        const resolved = await resolvePeerDeviceKey(
-          this.deps.peerUid,
-          frame.deviceId,
-        );
-        if (resolved) {
-          if (!publicKeysEqual(resolved.key, frame.publicKeyJwk)) {
-            this.failPeer('Peer identity key does not match the registered device.');
+        // The account id is a fingerprint of the identity key and the keys are bound by a signature,
+        // so a peer cannot claim someone else's id.
+        if (!(await uidMatchesKeys(frame.uid, frame.dhJwk, frame.publicKeyJwk, frame.identityProof))) {
+          this.failPeer('Peer identity does not match its key.');
+          return;
+        }
+        const pinned = this.pairing;
+        if (pinned) {
+          if (
+            frame.uid !== pinned.peerUid ||
+            !publicKeysEqual(pinned.publicKeyJwk, frame.publicKeyJwk)
+          ) {
+            this.failPeer(
+              'This is not the device you paired with. Use Reset pairing in Settings to pair a different one.',
+            );
             return;
           }
           this.auth.trust = 'verified';
-          this.peerKeySource = resolved.source;
-          if (resolved.source === 'cloud') {
-            cachePeerDeviceKey(this.deps.peerUid, frame.deviceId, frame.publicKeyJwk);
-          }
-        } else if (origin === 'manual') {
-          if (this.manualExpectedKey && !publicKeysEqual(this.manualExpectedKey, frame.publicKeyJwk)) {
+        } else {
+          if (
+            this.manualExpectedKey &&
+            !publicKeysEqual(this.manualExpectedKey, frame.publicKeyJwk)
+          ) {
             this.failPeer('Peer identity key does not match the connection code.');
             return;
           }
           this.auth.trust = 'unverified';
-          this.peerKeySource = 'manual';
-        } else {
-          this.failPeer(
-            'Could not verify the peer device key. Register the peer device in Firestore or use a manual code.',
-          );
-          return;
         }
         this.auth.peerHello = frame;
         await this.sendProofIfReady();
@@ -1053,7 +546,7 @@ export class ChatEngine {
       }
       case 'auth_proof': {
         const hello = this.auth.peerHello;
-        if (!hello || frame.uid !== this.deps.peerUid) {
+        if (!hello || frame.uid !== hello.uid) {
           this.failPeer('Peer identity proof arrived out of order.');
           return;
         }
@@ -1081,12 +574,12 @@ export class ChatEngine {
           return;
         }
         this.auth.proven = true;
-        this.peer?.sendJson({ v: 1, kind: 'auth_ok', uid: this.deps.uid });
+        this.peer?.sendJson({ v: 1, kind: 'auth_ok', uid: this.identity.uid });
         await this.finalizeAuthentication();
         return;
       }
       case 'auth_ok': {
-        if (frame.uid !== this.deps.peerUid) {
+        if (frame.uid !== this.auth.peerHello?.uid) {
           this.failPeer('Peer acknowledgement came from the wrong account.');
           return;
         }
@@ -1097,13 +590,12 @@ export class ChatEngine {
       case 'ack': {
         if (!this.auth.authenticated) return;
         const message = this.messages.get(frame.messageId);
-        if (!message || message.senderId !== this.deps.uid) return;
-        const nextState: DeliveryState =
-          frame.state === 'READ' ? 'READ' : 'DELIVERED';
+        if (!message || message.senderId !== this.identity.uid) return;
+        const nextState: DeliveryState = frame.state === 'READ' ? 'READ' : 'DELIVERED';
         const updated: ChatMessage = {
           ...message,
           deliveryState:
-            nextState === 'READ' ? 'READ' : message.deliveryState === 'READ' ? 'READ' : 'DELIVERED',
+            nextState === 'READ' || message.deliveryState === 'READ' ? 'READ' : 'DELIVERED',
           readAt: nextState === 'READ' ? frame.at : message.readAt,
         };
         this.messages.set(updated.messageId, updated);
@@ -1111,16 +603,15 @@ export class ChatEngine {
           deliveryState: updated.deliveryState,
           readAt: updated.readAt,
         });
-        if (this.state.messageMode === 'direct' && updated.deliveryState !== 'FAILED') {
-          this.outbox.delete(updated.messageId);
-          await this.deps.store.removeOutbox(updated.messageId).catch(() => undefined);
-        }
+        await this.dropOutbox(updated.messageId);
         this.emitMessages();
+        this.updateConnection();
         return;
       }
       case 'read': {
         if (!this.auth.authenticated) return;
         await this.applyPeerReadThrough(frame.lastReadMessageId);
+        this.updateConnection();
         return;
       }
       default:
@@ -1129,11 +620,11 @@ export class ChatEngine {
   }
 
   private async sendProofIfReady(): Promise<void> {
-    if (!this.auth.peerHello || !this.identity || !this.peer?.isOpen) return;
+    if (!this.auth.peerHello || !this.peer?.isOpen) return;
     if (this.auth.proofSent) return;
     const challenge = authChallenge({
       conversationId: this.deps.conversationId,
-      uid: this.deps.uid,
+      uid: this.identity.uid,
       deviceId: this.identity.deviceId,
       nonceSelf: this.auth.myNonce,
       noncePeer: this.auth.peerHello.nonce,
@@ -1143,59 +634,76 @@ export class ChatEngine {
     this.peer?.sendJson({
       v: 1,
       kind: 'auth_proof',
-      uid: this.deps.uid,
+      uid: this.identity.uid,
       signature,
     });
   }
 
   private async finalizeAuthentication(): Promise<void> {
-    if (
-      this.auth.authenticated ||
-      !this.auth.peerHello ||
-      !this.auth.proven ||
-      !this.auth.acknowledged ||
-      !this.identity
-    ) {
+    const hello = this.auth.peerHello;
+    if (this.auth.authenticated || !hello || !this.auth.proven || !this.auth.acknowledged) {
       return;
     }
     this.auth.authenticated = true;
+    this.manualActive = false;
     window.clearTimeout(this.auth.timer);
-    window.clearTimeout(this.offerTimer);
     const safetyNumber = await deriveSafetyNumber(
       this.identity.publicJwk,
-      this.auth.peerHello.publicKeyJwk,
+      hello.publicKeyJwk,
     ).catch(() => null);
     const trust = this.auth.trust;
+    if (trust === 'verified' && safetyNumber) {
+      // Refresh the pinned record's last-connected time.
+      this.pairing = savePairing({
+        peerUid: hello.uid,
+        peerDeviceId: hello.deviceId,
+        publicKeyJwk: hello.publicKeyJwk,
+        dhJwk: hello.dhJwk,
+        safetyNumber,
+      });
+    }
     this.setState({
       safetyNumber,
+      peerUid: hello.uid,
       peerTrust: trust,
-      peerKeySource: this.peerKeySource,
       p2pState: 'connected',
-      p2pConnected: trust === 'verified' || trust === 'confirmed',
+      p2pConnected: trust === 'verified',
       notice:
         trust === 'unverified'
-          ? 'Direct channel established. Compare the safety number with your friend, then mark it verified.'
+          ? 'Connected. Compare the safety number with your friend, then mark it verified to start chatting.'
           : null,
     });
-    if (trust === 'verified' || trust === 'confirmed') {
-      this.p2pSent.clear();
-      this.flushUnsynced();
-    }
+    if (trust === 'verified') this.onChannelReady();
     this.updateConnection();
+    void this.refreshPath();
+    this.startSignaling();
+  }
+
+  private onChannelReady(): void {
+    this.p2pSent.clear();
+    this.lastReadWritten = null;
+    this.offerAttempt = 0;
+    this.flushUndelivered();
+    if (this.visible) void this.markRead();
   }
 
   private async handlePeerMessage(message: ChatMessage): Promise<void> {
-    if (message.senderId !== this.deps.peerUid) return;
+    if (message.senderId !== this.auth.peerHello?.uid) return;
+    // Until the safety number is confirmed the peer is not trusted: drop its
+    // messages. It resends anything unacknowledged once the channel is verified.
+    if (!this.p2pReady()) return;
+    await this.ingest(message, (ack) => this.peer?.sendJson(ack));
+  }
+
+  /** Store a message from the paired peer, acknowledge it, notify. Shared by the direct and relay paths. */
+  private async ingest(message: ChatMessage, sendAck: (ack: unknown) => void): Promise<void> {
     const existing = this.messages.get(message.messageId);
-    const merged = existing
-      ? mergeMessages([existing], [message])[0]
-      : message;
+    const merged = existing ? mergeMessages([existing], [message])[0] : message;
     if (!merged) return;
     this.messages.set(merged.messageId, merged);
-    this.knownIds.add(merged.messageId);
     await this.deps.store.putMessage(merged);
     this.emitMessages();
-    this.peer?.sendJson({
+    sendAck({
       v: 1,
       kind: 'ack',
       messageId: merged.messageId,
@@ -1206,65 +714,95 @@ export class ChatEngine {
     if (this.visible) void this.markRead();
   }
 
+  /** The user compared the safety number: pin this peer so later connections are verified. */
   confirmPeer(): void {
-    if (!this.auth.authenticated || !this.auth.peerHello) return;
+    const hello = this.auth.peerHello;
+    if (!this.auth.authenticated || !hello || !this.state.safetyNumber) return;
     this.auth.trust = 'confirmed';
-    cachePeerDeviceKey(
-      this.deps.peerUid,
-      this.auth.peerHello.deviceId,
-      this.auth.peerHello.publicKeyJwk,
-    );
+    this.pairing = savePairing({
+      peerUid: hello.uid,
+      peerDeviceId: hello.deviceId,
+      publicKeyJwk: hello.publicKeyJwk,
+      dhJwk: hello.dhJwk,
+      safetyNumber: this.state.safetyNumber,
+    });
     this.setState({
+      paired: true,
+      peerUid: hello.uid,
       peerTrust: 'confirmed',
       p2pConnected: true,
       notice: null,
     });
-    this.p2pSent.clear();
-    this.flushUnsynced();
+    this.onChannelReady();
     this.updateConnection();
   }
 
   private failPeer(reason: string): void {
+    this.manualActive = false;
     window.clearTimeout(this.auth.timer);
-    window.clearTimeout(this.offerTimer);
     this.peer?.close();
     this.peer = null;
-    this.auth = freshAuth(this.manualMode ? 'manual' : 'auto');
+    this.auth = freshAuth();
     this.frameQueue = [];
     this.p2pSent.clear();
     this.setState({
+      path: null,
       p2pState: 'failed',
       p2pConnected: false,
       peerTrust: 'none',
       safetyNumber: null,
-      peerKeySource: null,
       notice: reason,
     });
     this.updateConnection();
   }
 
+  /**
+   * A code is only accepted if its id matches its own key and, once paired, only
+   * if it comes from the paired device.
+   */
+  private async checkSignalIdentity(signal: ManualSignal): Promise<void> {
+    if (signal.fromUid === this.identity.uid) {
+      throw new Error('This code was created on this device.');
+    }
+    if (!(await uidMatchesKeys(signal.fromUid, signal.dhJwk, signal.publicKeyJwk, signal.identityProof))) {
+      throw new Error('This connection code is corrupted: its identity does not match its key.');
+    }
+    const pinned = this.pairing;
+    if (
+      pinned &&
+      (signal.fromUid !== pinned.peerUid || !publicKeysEqual(pinned.publicKeyJwk, signal.publicKeyJwk))
+    ) {
+      throw new Error(
+        'This code comes from a different device than the one you paired with. Use Reset pairing in Settings to pair a new one.',
+      );
+    }
+  }
+
   async createManualOffer(): Promise<string> {
-    if (!this.identity) throw new Error('Identity is not ready.');
-    this.manualMode = true;
+    this.manualActive = true;
     this.manualExpectedKey = null;
-    this.setState({ manualMode: true, notice: null });
-    const transport = this.newPeer('manual');
+    this.setState({ notice: null });
+    const transport = this.newPeer();
     try {
       const sdp = await transport.createOffer();
       return encodeManualSignal(
         createManualSignal({
           kind: 'offer',
           conversationId: this.deps.conversationId,
-          fromUid: this.deps.uid,
+          fromUid: this.identity.uid,
           fromDeviceId: this.identity.deviceId,
           publicKeyJwk: this.identity.publicJwk,
+          dhJwk: this.identity.dhPublicJwk,
+          identityProof: this.identity.identityProof,
           sdp,
           nonce: randomNonce(),
         }),
       );
     } catch (error) {
-      this.manualMode = false;
       transport.close();
+      this.peer = null;
+      this.setState({ p2pState: 'idle' });
+      this.updateConnection();
       throw error;
     }
   }
@@ -1275,52 +813,35 @@ export class ChatEngine {
     if (decoded.value.kind !== 'answer') {
       throw new Error('This code is an offer. The other user must paste your offer and send back an answer.');
     }
-    if (decoded.value.fromUid !== this.deps.peerUid) {
-      throw new Error('This connection code belongs to a different account.');
-    }
+    await this.checkSignalIdentity(decoded.value);
     if (!this.peer) throw new Error('Create an offer before pasting an answer.');
-    const resolved = await resolvePeerDeviceKey(
-      this.deps.peerUid,
-      decoded.value.fromDeviceId,
-    );
-    if (resolved && !publicKeysEqual(resolved.key, decoded.value.publicKeyJwk)) {
-      throw new Error('This answer does not match the verified peer device key.');
-    }
     this.manualExpectedKey = decoded.value.publicKeyJwk;
     await this.peer.applyAnswer(decoded.value.sdp);
-    this.setState({ manualMode: true, p2pState: 'connecting' });
+    this.setState({ p2pState: 'connecting' });
   }
 
   async acceptManualOffer(code: string): Promise<string> {
-    if (!this.identity) throw new Error('Identity is not ready.');
     const decoded = decodeManualSignal(code, this.deps.conversationId);
     if (!decoded.ok) throw new Error(decoded.error);
     if (decoded.value.kind !== 'offer') {
       throw new Error('This code is an answer. Paste the offer from the other user instead.');
     }
-    if (decoded.value.fromUid !== this.deps.peerUid) {
-      throw new Error('This connection code belongs to a different account.');
-    }
-    this.manualMode = true;
+    await this.checkSignalIdentity(decoded.value);
+    this.manualActive = true;
     this.manualExpectedKey = decoded.value.publicKeyJwk;
-    this.setState({ manualMode: true, notice: null });
-    const resolved = await resolvePeerDeviceKey(
-      this.deps.peerUid,
-      decoded.value.fromDeviceId,
-    );
-    if (resolved && !publicKeysEqual(resolved.key, decoded.value.publicKeyJwk)) {
-      throw new Error('This offer does not match the verified peer device key.');
-    }
-    const transport = this.newPeer('manual');
+    this.setState({ notice: null });
+    const transport = this.newPeer();
     try {
       const sdp = await transport.acceptOffer(decoded.value.sdp);
       return encodeManualSignal(
         createManualSignal({
           kind: 'answer',
           conversationId: this.deps.conversationId,
-          fromUid: this.deps.uid,
+          fromUid: this.identity.uid,
           fromDeviceId: this.identity.deviceId,
           publicKeyJwk: this.identity.publicJwk,
+          dhJwk: this.identity.dhPublicJwk,
+          identityProof: this.identity.identityProof,
           sdp,
           nonce: randomNonce(),
         }),
@@ -1328,43 +849,295 @@ export class ChatEngine {
     } catch (error) {
       transport.close();
       this.peer = null;
-      this.manualMode = false;
+      this.setState({ p2pState: 'idle' });
+      this.updateConnection();
       throw error;
     }
   }
 
   cancelManual(): void {
-    this.manualMode = false;
+    this.manualActive = false;
     this.manualExpectedKey = null;
     this.peer?.close();
     this.peer = null;
-    this.auth = freshAuth('auto');
+    this.auth = freshAuth();
     this.p2pSent.clear();
     this.setState({
-      manualMode: false,
       p2pState: 'idle',
       p2pConnected: false,
       peerTrust: 'none',
       safetyNumber: null,
-      peerKeySource: null,
     });
     this.updateConnection();
   }
 
-  async changeDisplayName(name: string): Promise<void> {
-    await updateDisplayName(this.deps.uid, name);
+
+  /* ------------------------------------------------------------------ */
+  /* Contacts: exchange public cards, compare the safety number, pin     */
+  /* ------------------------------------------------------------------ */
+
+  /** Validate a pasted contact card and show its safety number. Nothing is saved yet. */
+  async previewContact(text: string): Promise<void> {
+    const contact = await decodeContactCard(text);
+    if (!contact) throw new Error('This is not a valid DuoChat contact card.');
+    if (contact.uid === this.identity.uid) throw new Error('This is your own contact card.');
+    if (this.pairing && this.pairing.peerUid !== contact.uid) {
+      throw new Error('You are already paired with someone else. Reset pairing in Settings first.');
+    }
+    const safetyNumber = await deriveSafetyNumber(this.identity.publicJwk, contact.card.sign);
+    this.pendingCard = contact;
+    this.setState({ pendingContact: { uid: contact.uid, safetyNumber, name: contact.card.name } });
   }
 
-  requestDirectConnection(): void {
+  /** The user compared the safety number over a separate channel: pin the contact. */
+  confirmContact(): void {
+    const contact = this.pendingCard;
+    const pending = this.state.pendingContact;
+    if (!contact || !pending) return;
+    this.pairing = savePairing({
+      peerUid: contact.uid,
+      peerDeviceId: 'card',
+      publicKeyJwk: contact.card.sign,
+      dhJwk: contact.card.dh,
+      safetyNumber: pending.safetyNumber,
+    });
+    this.pendingCard = null;
+    this.offerAttempt = 0;
     this.lastOfferAt = 0;
     this.setState({
-      notice: this.isInitiator()
-        ? 'Looking for a direct peer path?'
-        : 'Direct negotiation is initiated by the peer with the lower account ID. Use manual setup if automatic signaling is unavailable.',
+      paired: true,
+      peerUid: contact.uid,
+      pendingContact: null,
+      notice: this.hub || this.network.signaling.length > 0
+        ? 'Friend saved. Connecting automatically whenever you are both online.'
+        : 'Friend saved. No signaling is configured, so connect with a code (Settings > Network).',
     });
-    if (this.isInitiator()) {
-      void this.maybeStartAutomaticOffer();
+    this.startSignaling(true);
+  }
+
+  cancelContact(): void {
+    this.pendingCard = null;
+    this.setState({ pendingContact: null });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Signaling: find the paired friend again without typing codes        */
+  /* ------------------------------------------------------------------ */
+
+  /** Apply changed STUN/TURN/signaling settings. */
+  reloadNetwork(): void {
+    this.network = loadNetworkConfig();
+    this.startSignaling(true);
+    this.setState({ notice: 'Network settings applied. They take effect on the next connection.' });
+  }
+
+  private startSignaling(force = false): void {
+    if (this.stopped) return;
+    if (this.hub && !force) return;
+    this.hub?.stop();
+    this.hub = null;
+    const pinned = this.pairing;
+    if (!pinned?.dhJwk || this.network.signaling.length === 0) {
+      this.setState({ signaling: 'idle' });
+      return;
     }
+    const hub = new SignalingHub(transportsFor(this.network));
+    this.hub = hub;
+    void mailboxFor(this.identity.uid).then((mailbox) => {
+      if (this.hub !== hub || this.stopped) return;
+      hub.start(mailbox, (blob, id, via) => void this.handleBlob(blob, id, via));
+      // Tell the paired friend we are online so they can offer straight away.
+      this.offerAttempt = 0;
+      this.lastOfferAt = 0;
+    });
+    this.setState({ signaling: hub.status() });
+  }
+
+  private async sealToPeer(payload: unknown): Promise<{ blob: SealedBlob; mailbox: string } | null> {
+    const pinned = this.pairing;
+    if (!pinned?.dhJwk) return null;
+    const blob = await seal({
+      payload,
+      fromUid: this.identity.uid,
+      toUid: pinned.peerUid,
+      toDh: pinned.dhJwk,
+      signPriv: this.identity.privateJwk,
+    });
+    return { blob, mailbox: await mailboxFor(pinned.peerUid) };
+  }
+
+  private async putToPeer(payload: unknown, kind: 'sig' | 'msg', ttlSec: number): Promise<void> {
+    const sealed = await this.sealToPeer(payload);
+    if (!sealed || !this.hub) throw new Error('No signaling is available.');
+    await this.hub.put(sealed.mailbox, sealed.blob, { kind, ttlSec });
+  }
+
+  private async handleBlob(blob: SealedBlob, id: string, via: SignalingTransport): Promise<void> {
+    const pinned = this.pairing;
+    if (!pinned) return;
+    const payload = await openBlob({
+      blob,
+      ownUid: this.identity.uid,
+      ownDhPriv: this.identity.dhPrivateJwk,
+      senderSign: pinned.publicKeyJwk,
+      senderUid: pinned.peerUid,
+    });
+    if (!isRecord(payload)) return;
+    try {
+      switch (payload.t) {
+        case 'ready': {
+          if (this.isInitiator()) this.lastOfferAt = 0;
+          return;
+        }
+        case 'offer': {
+          if (this.isInitiator() || this.manualActive || this.p2pReady()) return;
+          if (typeof payload.sdp !== 'string') return;
+          const transport = this.newPeer();
+          const answer = await transport.acceptOffer(payload.sdp);
+          await this.putToPeer({ t: 'answer', sdp: answer }, 'sig', 120);
+          this.armOfferTimeout(transport);
+          return;
+        }
+        case 'answer': {
+          if (!this.isInitiator() || !this.peer || this.p2pReady() || typeof payload.sdp !== 'string') return;
+          await this.peer.applyAnswer(payload.sdp);
+          return;
+        }
+        case 'msg': {
+          if (
+            !validateClientMessageId(payload.id) ||
+            !validateIncomingText(payload.text) ||
+            typeof payload.at !== 'number' ||
+            !Number.isFinite(payload.at)
+          ) {
+            return;
+          }
+          const message: ChatMessage = {
+            messageId: payload.id,
+            clientMessageId: payload.id,
+            senderId: pinned.peerUid,
+            text: payload.text,
+            clientCreatedAt: payload.at,
+            type: 'text',
+            transport: 'relay',
+            deliveryState: 'DELIVERED',
+            readAt: null,
+          };
+          await this.ingest(message, () => {
+            void this.putToPeer({ t: 'ack', id: payload.id }, 'msg', 7 * 24 * 3600).catch(() => undefined);
+          });
+          this.hub?.remove(via, await mailboxFor(this.identity.uid), id);
+          return;
+        }
+        case 'ack': {
+          const message = typeof payload.id === 'string' ? this.messages.get(payload.id) : undefined;
+          if (!message || message.senderId !== this.identity.uid) return;
+          const updated: ChatMessage = {
+            ...message,
+            deliveryState: message.deliveryState === 'READ' ? 'READ' : 'DELIVERED',
+          };
+          this.messages.set(updated.messageId, updated);
+          await this.deps.store.updateMessage(updated.messageId, { deliveryState: updated.deliveryState });
+          await this.dropOutbox(updated.messageId);
+          this.emitMessages();
+          this.updateConnection();
+          this.hub?.remove(via, await mailboxFor(this.identity.uid), id);
+          return;
+        }
+        default:
+          return;
+      }
+    } catch (error) {
+      this.setState({ notice: `Signaling failed: ${errorMessage(error)}` });
+    }
+  }
+
+  private armOfferTimeout(transport: PeerTransport): void {
+    clearTimeout(this.offerTimer);
+    this.offerTimer = setTimeout(() => {
+      if (this.peer === transport && !this.auth.authenticated && !this.manualActive) {
+        transport.close();
+        this.peer = null;
+        this.setState({ p2pState: 'failed', notice: 'Could not reach your friend. Retrying…' });
+        this.updateConnection();
+      }
+    }, 40_000);
+  }
+
+  private isInitiator(): boolean {
+    return this.pairing !== null && this.identity.uid < this.pairing.peerUid;
+  }
+
+  /** Reconnect to a paired friend automatically, backing off between attempts. */
+  private async maybeOffer(): Promise<void> {
+    const pinned = this.pairing;
+    if (!pinned?.dhJwk || !this.hub || this.hub.status() !== 'online' || this.manualActive) {
+      void this.relayPending();
+      return;
+    }
+    void this.relayPending();
+    const now = Date.now();
+    if (this.state.p2pState === 'connecting') return;
+    if (now - this.lastOfferAt < reconnectDelayMs(this.offerAttempt)) return;
+    this.lastOfferAt = now;
+    this.offerAttempt += 1;
+    try {
+      if (!this.isInitiator()) {
+        await this.putToPeer({ t: 'ready' }, 'sig', 120);
+        return;
+      }
+      const transport = this.newPeer();
+      const sdp = await transport.createOffer();
+      await this.putToPeer({ t: 'offer', sdp }, 'sig', 120);
+      this.armOfferTimeout(transport);
+    } catch (error) {
+      this.peer?.close();
+      this.peer = null;
+      this.setState({ p2pState: 'idle', notice: `Could not reach signaling: ${errorMessage(error)}` });
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Optional store-and-forward (off by default)                         */
+  /* ------------------------------------------------------------------ */
+
+  private async relayPending(): Promise<void> {
+    if (!this.network.storeForward || !this.hub || !this.pairing?.dhJwk || this.p2pReady()) return;
+    if (this.hub.status() !== 'online') return;
+    for (const message of this.sortedMessages()) {
+      if (message.senderId !== this.identity.uid || !needsDelivery(message.deliveryState)) continue;
+      if (this.relayed.has(message.messageId)) continue;
+      this.relayed.add(message.messageId);
+      try {
+        await this.putToPeer(
+          { t: 'msg', id: message.messageId, text: message.text, at: message.clientCreatedAt },
+          'msg',
+          7 * 24 * 3600,
+        );
+        const updated: ChatMessage = { ...message, transport: 'relay', deliveryState: 'SENT' };
+        this.messages.set(message.messageId, updated);
+        await this.deps.store.updateMessage(message.messageId, { transport: 'relay', deliveryState: 'SENT' });
+        this.emitMessages();
+      } catch {
+        this.relayed.delete(message.messageId);
+      }
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* What path is the connection really using?                           */
+  /* ------------------------------------------------------------------ */
+
+  private async refreshPath(): Promise<void> {
+    this.lastPathAt = Date.now();
+    const stats = await this.peer?.getStats();
+    if (!stats || !this.p2pReady()) return;
+    const pair = selectedPairFromStats(stats);
+    this.setState({ path: pair ? classifyPath(pair.local, pair.remote) : classifyPath('unknown', 'unknown') });
+  }
+
+  get identityDetails(): DeviceIdentity {
+    return this.identity;
   }
 
   clearNotice(): void {
@@ -1375,65 +1148,63 @@ export class ChatEngine {
     await this.deps.store.clearAll();
     this.messages.clear();
     this.outbox.clear();
-    this.knownIds.clear();
     this.lastReadWritten = null;
     this.p2pSent.clear();
     this.emitMessages();
-    this.setState({ notice: 'Local messages, queue, and cached metadata were cleared.' });
+    this.setState({ notice: 'Local messages and the send queue were cleared.' });
   }
 
   /**
    * Per-conversation kill switch (Option A "CLEAR LOCAL CHAT"): erase every
-   * local message, draft queue row, and delivery record for this conversation.
-   * The peer subscription is detached during the wipe so cloud sync cannot
-   * repopulate the store mid-erase, then re-attached for future traffic.
+   * local message, queued message, and delivery record for this conversation.
    */
   async clearLocalChat(): Promise<void> {
-    const unsubs = this.unsubs;
-    this.unsubs = [];
-    for (const unsubscribe of unsubs) unsubscribe();
     this.messages.clear();
     this.outbox.clear();
-    this.knownIds.clear();
     this.lastReadWritten = null;
     this.p2pSent.clear();
-    try {
-      await this.deps.store.clearMessages();
-    } finally {
-      if (!this.stopped) {
-        this.startSubscriptions();
-        this.emitMessages();
-        this.updateConnection();
-      }
-    }
+    await this.deps.store.clearMessages();
     this.emitMessages();
+    this.updateConnection();
   }
 
   /**
    * Per-conversation kill switch (Option B "DELETE CHAT AND LOCAL SESSION
-   * STATE", used together with clearLocalChat): forget the peer trust cache
-   * binding and tear down the authenticated direct channel, so any future
-   * conversation requires a fresh identity handshake.
+   * STATE", used together with clearLocalChat): forget the pinned peer and
+   * tear down the authenticated direct channel, so any future conversation
+   * requires a fresh identity handshake.
    */
   eraseLocalChatSession(): Promise<void> | void {
     this.peer?.close();
     this.peer = null;
-    this.auth = freshAuth('auto');
+    this.auth = freshAuth();
     this.frameQueue = [];
     this.p2pSent.clear();
     this.lastReadWritten = null;
-    this.manualMode = false;
     this.manualExpectedKey = null;
+    this.pairing = null;
+    this.hub?.stop();
+    this.hub = null;
     this.setState({
-      manualMode: false,
+      path: null,
+      signaling: 'idle',
+      pendingContact: null,
+      paired: false,
+      peerUid: null,
       p2pState: 'idle',
       p2pConnected: false,
       peerTrust: 'none',
       safetyNumber: null,
-      peerKeySource: null,
       notice: 'Local chat erased. Sending again requires a new identity handshake.',
     });
     this.updateConnection();
+  }
+
+  /** Forget the pinned peer so a different device can be paired. Messages are kept. */
+  resetPairing(): void {
+    purgePeerKeyCaches();
+    this.eraseLocalChatSession();
+    this.setState({ notice: 'Pairing reset. Connect again to pair a device.' });
   }
 }
 
@@ -1441,23 +1212,4 @@ function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === 'string') return error;
   return 'Unknown error';
-}
-
-function currentOf(
-  messages: Map<string, ChatMessage>,
-  messageId: string,
-): ChatMessage {
-  return (
-    messages.get(messageId) ?? {
-      messageId,
-      clientMessageId: messageId,
-      senderId: '',
-      text: '',
-      clientCreatedAt: Date.now(),
-      type: 'text',
-      transport: 'cloud',
-      deliveryState: 'FAILED',
-      syncedToCloud: false,
-    }
-  );
 }

@@ -41,9 +41,12 @@ describe('peer authentication', () => {
 
   it('parses valid control frames and rejects invalid ones', () => {
     expect(
-      parsePeerFrame({ v: 1, kind: 'hello', uid: 'a', deviceId: 'd', publicKeyJwk: key, nonce: '1234567890abcdef' })
+      parsePeerFrame({ v: 1, kind: 'hello', uid: 'a', deviceId: 'd', publicKeyJwk: key, dhJwk: key, identityProof: 'p'.repeat(64), nonce: '1234567890abcdef' })
         ?.kind,
     ).toBe('hello');
+    expect(
+      parsePeerFrame({ v: 1, kind: 'hello', uid: 'a', deviceId: 'd', publicKeyJwk: key, nonce: '1234567890abcdef' }),
+    ).toBeNull();
     expect(parsePeerFrame({ v: 2, kind: 'hello' })).toBeNull();
     expect(parsePeerFrame({ v: 1, kind: 'ack', messageId: 'm', state: 'BOGUS', at: 1 })).toBeNull();
     expect(parsePeerFrame({ v: 1, kind: 'read', lastReadMessageId: 'm', at: 1 })?.kind).toBe('read');

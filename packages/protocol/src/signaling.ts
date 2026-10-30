@@ -19,7 +19,12 @@ export interface ManualSignal {
   conversationId: string;
   fromUid: string;
   fromDeviceId: string;
+  /** ECDSA identity signing key. */
   publicKeyJwk: JsonWebKey;
+  /** ECDH identity key; the uid is its fingerprint. */
+  dhJwk: JsonWebKey;
+  /** Self-signature binding dhJwk to publicKeyJwk. */
+  identityProof: string;
   sdp: string;
   nonce: string;
   createdAt: number;
@@ -71,6 +76,8 @@ export function createManualSignal(input: Omit<ManualSignal, 'v' | 'createdAt'> 
     fromUid: input.fromUid,
     fromDeviceId: input.fromDeviceId,
     publicKeyJwk: input.publicKeyJwk,
+    dhJwk: input.dhJwk,
+    identityProof: input.identityProof,
     sdp: input.sdp,
     nonce: input.nonce,
     createdAt: input.createdAt ?? Date.now(),
@@ -136,6 +143,9 @@ export function validateManualSignal(
   if (!isValidPublicJwk(value.publicKeyJwk)) {
     return { ok: false, error: 'Connection code has an invalid identity key.' };
   }
+  if (!isValidPublicJwk(value.dhJwk) || typeof value.identityProof !== 'string' || value.identityProof.length < 40) {
+    return { ok: false, error: 'Connection code has no identity proof.' };
+  }
   if (
     typeof value.sdp !== 'string' ||
     value.sdp.length < 20 ||
@@ -163,6 +173,8 @@ export function validateManualSignal(
       fromUid: value.fromUid,
       fromDeviceId: value.fromDeviceId,
       publicKeyJwk: value.publicKeyJwk,
+      dhJwk: value.dhJwk,
+      identityProof: value.identityProof,
       sdp: value.sdp,
       nonce: value.nonce,
       createdAt: value.createdAt,

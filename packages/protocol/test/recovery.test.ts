@@ -110,10 +110,13 @@ describe('12-word recovery phrase', () => {
 
   it('rejects words in the wrong order (checksum breaks)', () => {
     const words = generateRecoveryPhrase().split(' ');
-    const swapped = words.slice();
-    [swapped[0], swapped[1]] = [swapped[1]!, swapped[0]!];
-    const result = validateRecoveryPhrase(swapped.join(' '));
-    expect(result.ok).toBe(false);
+    // A single swap can collide with the checksum by chance, so try every adjacent swap.
+    const results = words.slice(0, -1).map((_, i) => {
+      const swapped = words.slice();
+      [swapped[i], swapped[i + 1]] = [swapped[i + 1]!, swapped[i]!];
+      return validateRecoveryPhrase(swapped.join(' ')).ok;
+    });
+    expect(results.filter((ok) => !ok).length).toBeGreaterThan(0);
   });
 
   it('rejects empty input', () => {

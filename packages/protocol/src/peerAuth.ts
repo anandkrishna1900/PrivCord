@@ -8,6 +8,8 @@ export interface AuthHello {
   uid: string;
   deviceId: string;
   publicKeyJwk: JsonWebKey;
+  dhJwk: JsonWebKey;
+  identityProof: string;
   nonce: string;
 }
 
@@ -80,7 +82,10 @@ export function parsePeerFrame(value: unknown): PeerControlFrame | null {
         value.deviceId.length > 0 &&
         typeof value.nonce === 'string' &&
         value.nonce.length >= 16 &&
-        isValidPublicJwk(value.publicKeyJwk)
+        isValidPublicJwk(value.publicKeyJwk) &&
+        isValidPublicJwk(value.dhJwk) &&
+        typeof value.identityProof === 'string' &&
+        value.identityProof.length >= 40
       ) {
         return {
           v: PROTOCOL_VERSION,
@@ -88,6 +93,8 @@ export function parsePeerFrame(value: unknown): PeerControlFrame | null {
           uid: value.uid,
           deviceId: value.deviceId,
           publicKeyJwk: value.publicKeyJwk,
+          dhJwk: value.dhJwk,
+          identityProof: value.identityProof,
           nonce: value.nonce,
         };
       }

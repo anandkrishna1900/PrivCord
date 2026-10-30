@@ -1,28 +1,29 @@
 import { useEffect, useRef, useState } from 'react';
-import type { User } from 'firebase/auth';
 import { ChatEngine, type ChatState } from '../lib/engine';
+import { LOCAL_ID, loadIdentity } from '../lib/identity';
 import { LocalStore } from '../lib/localDb';
 import { createTextCipher } from '../lib/encryption';
 import { notifyIncoming } from '../lib/notifications';
 import { config } from '../config';
-import type { MessageMode } from '../lib/settings';
 
 export interface UseChatEngine {
   state: ChatState | null;
   engine: ChatEngine | null;
   fatal: string | null;
+  /** First run: no identity yet, so the 12-word phrase flow must run first. */
+  needsIdentity: boolean;
+  /** Call after an identity was created or restored. */
+  reload: () => void;
 }
 
-export function useChatEngine(
-  user: User,
-  peerUid: string,
-  messageMode: MessageMode,
-): UseChatEngine {
+export function useChatEngine(peerName: string): UseChatEngine {
   const [state, setState] = useState<ChatState | null>(null);
   const [engine, setEngine] = useState<ChatEngine | null>(null);
   const [fatal, setFatal] = useState<string | null>(null);
-  const modeRef = useRef(messageMode);
-  modeRef.current = messageMode;
+  const [needsIdentity, setNeedsIdentity] = useState(false);
+  const [version, setVersion] = useState(0);
+  const nameRef = useRef(peerName);
+  nameRef.current = peerName;
 
   useEffect(() => {
     let cancelled = false;
@@ -31,27 +32,18 @@ export function useChatEngine(
 
     void (async () => {
       const store = new LocalStore();
-      const cipher = await createTextCipher(user.uid);
-      store.setCipher(cipher);
+      store.setCipher(await createTextCipher(LOCAL_ID));
+      const identity = await loadIdentity();
+      if (cancelled) return;
+      setNeedsIdentity(identity === null);
+      if (!identity) return;
       const chatEngine = new ChatEngine({
-        uid: user.uid,
-        peerUid,
+        identity,
         conversationId: config.conversationId,
-        email: user.email ?? '',
-        displayName: user.displayName ?? '',
-        messageMode: modeRef.current,
         store,
-        onNotify: (message) => {
-          const name =
-            created?.getState().peerProfile?.displayName ?? 'your friend';
-          void notifyIncoming(message, name);
-        },
+        onNotify: (message) => void notifyIncoming(message, nameRef.current),
       });
       created = chatEngine;
-      if (cancelled) {
-        chatEngine.stop();
-        return;
-      }
       setEngine(chatEngine);
       unsubscribe = chatEngine.subscribe(setState);
       await chatEngine.start();
@@ -68,11 +60,7 @@ export function useChatEngine(
       setEngine(null);
       setState(null);
     };
-  }, [user.uid, user.email, user.displayName, peerUid]);
+  }, [version]);
 
-  useEffect(() => {
-    engine?.setMessageMode(messageMode);
-  }, [engine, messageMode]);
-
-  return { state, engine, fatal };
+  return { state, engine, fatal, needsIdentity, reload: () => setVersion((v) => v + 1) };
 }

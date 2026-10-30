@@ -1,7 +1,7 @@
 /**
  * `DuoEnvelope` — the transport-independent encrypted message container.
  *
- * One envelope type is used by *every* transport (Cloud Firestore, WebRTC
+ * One envelope type is used by *every* transport (relay mailbox, WebRTC
  * DataChannel, BLE packets, relay storage): a relay or signaling service that
  * handles an envelope sees only opaque ciphertext, routing counters, and
  * identity key material chosen for verification — never message plaintext.

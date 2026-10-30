@@ -1,12 +1,12 @@
 export type ThemeMode = 'system' | 'dark' | 'light';
-export type MessageMode = 'cloud' | 'direct';
 
 export interface AppSettings {
   theme: ThemeMode;
   accent: string;
   notificationsEnabled: boolean;
   notificationPreviews: boolean;
-  messageMode: MessageMode;
+  /** Local nickname for the other person (never sent anywhere). */
+  peerNickname: string;
 }
 
 export const ACCENTS = [
@@ -24,12 +24,8 @@ const DEFAULTS: AppSettings = {
   accent: ACCENTS[0].value,
   notificationsEnabled: true,
   notificationPreviews: true,
-  messageMode: 'cloud',
+  peerNickname: '',
 };
-
-export function normalizeMessageMode(value: unknown): MessageMode {
-  return value === 'direct' ? 'direct' : 'cloud';
-}
 
 export function parseSettings(raw: string | null): AppSettings {
   if (!raw) return { ...DEFAULTS };
@@ -52,7 +48,10 @@ export function parseSettings(raw: string | null): AppSettings {
         typeof parsed.notificationPreviews === 'boolean'
           ? parsed.notificationPreviews
           : DEFAULTS.notificationPreviews,
-      messageMode: normalizeMessageMode(parsed.messageMode),
+      peerNickname:
+        typeof parsed.peerNickname === 'string'
+          ? parsed.peerNickname.trim().slice(0, 40)
+          : DEFAULTS.peerNickname,
     };
   } catch {
     return { ...DEFAULTS };

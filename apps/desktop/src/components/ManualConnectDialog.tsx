@@ -119,16 +119,17 @@ export function ManualConnectDialog({
     <Modal
       open={open}
       onClose={close}
-      eyebrow="Outage fallback"
-      title="Manual direct connection"
+      eyebrow="Direct connection"
+      title="Connect to your friend"
       wide
     >
       <div className="manual-intro">
         <KeyIcon size={20} />
         <p>
-          Use this when automatic signaling is unavailable. Codes only carry
-          connection data. Each side must still verify the peer's identity and
-          compare the safety number before trusting the channel.
+          There is no server, so you introduce your devices with codes: one of you
+          creates a code, the other pastes it and sends back a reply. Codes only
+          carry connection data. The first time, compare the safety number to be
+          sure you are talking to the right device.
         </p>
       </div>
 
@@ -140,8 +141,8 @@ export function ManualConnectDialog({
           <div>
             <h3>Direct channel established</h3>
             <p className="muted">
-              Messages can now travel directly. Cloud sync will resume
-              automatically when the backend returns.
+              Messages now travel straight between your devices. If the
+              connection drops, exchange a new code to reconnect.
             </p>
           </div>
         </div>

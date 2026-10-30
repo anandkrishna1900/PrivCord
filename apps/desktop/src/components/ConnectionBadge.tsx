@@ -2,7 +2,7 @@ import {
   presentConnection,
   type ConnectionMode,
 } from '@duochat/protocol';
-import { CloudIcon, CloudOffIcon, LinkIcon, WifiOffIcon } from './Icons';
+import { AlertIcon, LinkIcon, WifiOffIcon } from './Icons';
 
 export function ConnectionBadge({
   mode,
@@ -22,13 +22,8 @@ export function ConnectionBadge({
       <span className="connection-dot" />
       {compact ? null : <span>{presentation.label}</span>}
       {!compact && presentation.p2p ? <LinkIcon size={13} /> : null}
-      {!compact && presentation.cloud ? <CloudIcon size={13} /> : null}
-      {!compact && !presentation.cloud && !presentation.p2p ? (
-        presentation.tone === 'error' ? (
-          <CloudOffIcon size={13} />
-        ) : (
-          <WifiOffIcon size={13} />
-        )
+      {!compact && !presentation.p2p ? (
+        presentation.tone === 'error' ? <AlertIcon size={13} /> : <WifiOffIcon size={13} />
       ) : null}
     </span>
   );
