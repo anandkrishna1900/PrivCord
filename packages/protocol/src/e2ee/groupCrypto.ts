@@ -134,3 +134,4 @@ export class GroupSessionManager {
     return JSON.parse(dec.decode(plain));
   }
 }
+

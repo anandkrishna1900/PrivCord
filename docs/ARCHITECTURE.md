@@ -57,3 +57,4 @@ PrivCord (DuoChat) is an end-to-end encrypted, zero-account, decentralized messa
   - Destroys active WebRTC peer connections and BLE links.
   - Purges local Room SQLite database tables (`messages`, `outbox`, `contacts`, `groups`, `file_transfers`).
   - Purges Android Keystore / local encrypted private key material.
+

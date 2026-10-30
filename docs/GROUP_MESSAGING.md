@@ -17,3 +17,4 @@ PrivCord groups utilize epoch-based forward-secret group encryption:
    - When a member is removed, the epoch is incremented immediately ($e \to e + 1$).
    - A new epoch secret is generated and delivered only to remaining active members.
    - The removed member cannot decrypt epoch $e + 1$ or any future epochs.
+

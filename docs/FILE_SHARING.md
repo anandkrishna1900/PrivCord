@@ -28,3 +28,4 @@
    - Reassembles in sequential chunk order.
    - Computes SHA-256 digest and verifies match with metadata.
    - If hash mismatch occurs, transfer is discarded as tampered.
+

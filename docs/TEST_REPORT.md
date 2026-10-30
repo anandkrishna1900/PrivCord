@@ -43,3 +43,4 @@ For multi-device BLE Mesh verification:
 2. Space Device A and Device C apart so they are out of direct BLE range (~20-30 meters or obstructed).
 3. Place Device B between Device A and Device C.
 4. Send an encrypted message from Device A to Device C. Observe Device B relaying the ciphertext packet and Device C successfully decrypting and acknowledging delivery.
+
