@@ -3,7 +3,7 @@
 ## Original Creator
 - **Project**: PrivCord
 - **Original Creator and Maintainer**: anandkrishna1900
-- **Email**: [blackydog0007@gmail.com](mailto:blackydog0007@gmail.com)
+- **X (Twitter)**: https://x.com/AnandKrishnaK1
 - **GitHub**: https://github.com/anandkrishna1900
 - **Repository**: https://github.com/anandkrishna1900/PrivCord
 
@@ -38,5 +38,5 @@ Their respective authors and maintainers retain their original rights. Please re
 
 ## Contact
 For attribution questions, contributions, or licensing enquiries:
-[blackydog0007@gmail.com](mailto:blackydog0007@gmail.com)
+X (Twitter): https://x.com/AnandKrishnaK1
 
