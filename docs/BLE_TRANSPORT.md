@@ -160,18 +160,40 @@ about 3,900 writes and will take many seconds. Typical BLE range is roughly 10 m
 indoors and drops sharply through walls and bodies. No relaying: both devices
 must be in direct radio range.
 
-## 8. Known gaps in v1
+## 8. Link encryption and known gaps
 
-* **Link is not encrypted at the BLE layer** and the handshake authenticates but
-  does not establish an encrypted channel. Anyone in range could read frames in
-  flight. Before trusting BLE for real, derive a session key from the handshake
-  (ECDH of the identity DH keys + nonces) and AES-GCM each frame, or require BLE LE
-  Secure Connections bonding. This is **not implemented**.
-* No store-and-forward and no multi-hop mesh (unlike Bitchat). Two devices, one
-  link.
-* No BLE-based first contact.
-* Windows needs a Bluetooth 4.0+ adapter; behaviour of btleplug's WinRT backend
-  with manufacturer-data matching has not been verified.
+**Link encryption (desktop: implemented and simulated-radio tested; Android: not yet).**
+BLE itself is not relied on for secrecy. Every frame after the first is wrapped by
+`SecureChannel` (`packages/protocol/src/connectivity/secureChannel.ts`):
+
+1. Each side sends `sc_hello` = a fresh ephemeral ECDH P-256 key + random nonce, signed with
+   its identity signing key over `(own uid | peer uid | ephemeral key | nonce)`.
+2. The receiver verifies the signature against the **pinned** contact's signing key.
+   Anyone else cannot complete the handshake.
+3. Keys: HKDF-SHA-256 over the ephemeral ECDH secret, salted with both nonces, one key per
+   direction. Frames are AES-256-GCM with a strictly increasing counter as the IV; replayed,
+   reordered, or tampered frames are rejected and the link is dropped.
+4. Ephemeral keys give forward secrecy: recording the air and later stealing the identity
+   key does not reveal past sessions.
+5. The normal `hello`/`auth_proof`/`auth_ok` handshake then runs *inside* the encrypted
+   channel, so identity details are never visible over the air.
+
+Tested: 5 protocol unit tests (round trip, tamper, replay, impostor, forward secrecy) and a
+desktop end-to-end scenario with a *simulated* radio that records every chunk and asserts the
+message text and handshake never appear in it, and that a flipped bit drops the link.
+
+**Still open**
+
+* Android has no `SecureChannel` port yet, so Android Bluetooth must not be enabled until it
+  has one (it would be unencrypted).
+* Nothing here has run on a real Bluetooth radio. Timing, MTU, pairing prompts, background
+  scanning limits, and range are unmeasured.
+* No store-and-forward and no multi-hop mesh (unlike Bitchat). Two devices, one link.
+* No BLE-based first contact: contact cards must be exchanged beforehand.
+* Windows needs a Bluetooth 4.0+ adapter; behaviour of btleplug's WinRT backend with
+  manufacturer-data matching has not been verified.
+* The Windows desktop is central-only, so two desktops cannot connect to each other over
+  Bluetooth; a phone must be the other side.
 
 ## 9. Permissions
 

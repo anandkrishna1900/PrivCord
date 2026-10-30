@@ -1,7 +1,9 @@
 import {
   AUTH_TIMEOUT_MS,
   authChallenge,
+  BLUETOOTH_PATH,
   classifyPath,
+  ecdhAgree,
   decodeContactCard,
   mailboxFor,
   open as openBlob,
@@ -51,6 +53,8 @@ import type { SignalingStatus, SignalingTransport } from './signaling/types';
 import { LocalStore, type OutboxRow } from './localDb';
 import { needsDelivery } from './outbox';
 import { PeerTransport } from './p2p';
+import { SecureBleLink, getBleBridge } from './bleLink';
+import type { BleBridge } from './ble';
 
 export type EnginePhase = 'starting' | 'ready' | 'error' | 'stopped';
 export type P2PState = 'idle' | 'connecting' | 'connected' | 'failed';
@@ -113,6 +117,8 @@ function freshAuth(): PeerAuthState {
 }
 
 const TICK_MS = 4_000;
+/** No frame (not even a pong) for this long means the link is dead. */
+const DEAD_LINK_MS = 14_000;
 
 export class ChatEngine {
   private state: ChatState;
@@ -121,7 +127,7 @@ export class ChatEngine {
   private outbox = new Map<string, OutboxRow>();
   private identity: DeviceIdentity;
   private pairing: PairingRecord | null = null;
-  private peer: PeerTransport | null = null;
+  private peer: PeerTransport | SecureBleLink | null = null;
   private auth = freshAuth();
   private frameQueue: unknown[] = [];
   private processingFrames = false;
@@ -139,6 +145,10 @@ export class ChatEngine {
   private relayed = new Set<string>();
   private lastPathAt = 0;
   private manualActive = false;
+  private bleBridge: BleBridge | null | undefined;
+  private lastBleAt = 0;
+  private bleAttempt = 0;
+  private lastFrameAt = 0;
   private offerTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private readonly deps: EngineDeps) {
@@ -242,10 +252,16 @@ export class ChatEngine {
     if (this.stopped) return;
     this.setState({ signaling: this.hub?.status() ?? 'idle' });
     if (this.p2pReady()) {
+      if (Date.now() - this.lastFrameAt > DEAD_LINK_MS) {
+        this.failPeer('Connection to your friend was lost. Reconnecting…');
+        return;
+      }
+      this.peer?.sendJson({ v: 1, kind: 'ping', at: Date.now() });
       this.flushUndelivered();
       if (Date.now() - this.lastPathAt > 15_000) void this.refreshPath();
       return;
     }
+    void this.maybeBluetooth();
     await this.maybeOffer();
   }
 
@@ -427,6 +443,7 @@ export class ChatEngine {
   }
 
   private handlePeerOpen(): void {
+    this.lastFrameAt = Date.now();
     this.auth = freshAuth();
     this.auth.myNonce = randomNonce();
     this.frameQueue = [];
@@ -476,6 +493,7 @@ export class ChatEngine {
   }
 
   private handlePeerFrame(raw: string): void {
+    this.lastFrameAt = Date.now();
     try {
       const parsed = JSON.parse(raw) as unknown;
       this.frameQueue.push(parsed);
@@ -610,6 +628,12 @@ export class ChatEngine {
         this.updateConnection();
         return;
       }
+      case 'ping': {
+        if (this.auth.authenticated) this.peer?.sendJson({ v: 1, kind: 'pong', at: frame.at });
+        return;
+      }
+      case 'pong':
+        return;
       case 'read': {
         if (!this.auth.authenticated) return;
         await this.applyPeerReadThrough(frame.lastReadMessageId);
@@ -647,6 +671,7 @@ export class ChatEngine {
       return;
     }
     this.auth.authenticated = true;
+    this.lastFrameAt = Date.now();
     this.manualActive = false;
     window.clearTimeout(this.auth.timer);
     const safetyNumber = await deriveSafetyNumber(
@@ -685,6 +710,7 @@ export class ChatEngine {
     this.p2pSent.clear();
     this.lastReadWritten = null;
     this.offerAttempt = 0;
+    this.bleAttempt = 0;
     this.flushUndelivered();
     if (this.visible) void this.markRead();
   }
@@ -816,7 +842,7 @@ export class ChatEngine {
       throw new Error('This code is an offer. The other user must paste your offer and send back an answer.');
     }
     await this.checkSignalIdentity(decoded.value);
-    if (!this.peer) throw new Error('Create an offer before pasting an answer.');
+    if (!(this.peer instanceof PeerTransport)) throw new Error('Create an offer before pasting an answer.');
     this.manualExpectedKey = decoded.value.publicKeyJwk;
     await this.peer.applyAnswer(decoded.value.sdp);
     this.setState({ p2pState: 'connecting' });
@@ -1001,7 +1027,7 @@ export class ChatEngine {
           return;
         }
         case 'answer': {
-          if (!this.isInitiator() || !this.peer || this.p2pReady() || typeof payload.sdp !== 'string') return;
+          if (!this.isInitiator() || !(this.peer instanceof PeerTransport) || this.p2pReady() || typeof payload.sdp !== 'string') return;
           await this.peer.applyAnswer(payload.sdp);
           return;
         }
@@ -1132,10 +1158,77 @@ export class ChatEngine {
 
   private async refreshPath(): Promise<void> {
     this.lastPathAt = Date.now();
+    if (this.peer instanceof SecureBleLink) {
+      if (this.p2pReady()) this.setState({ path: BLUETOOTH_PATH });
+      return;
+    }
     const stats = await this.peer?.getStats();
     if (!stats || !this.p2pReady()) return;
     const pair = selectedPairFromStats(stats);
     this.setState({ path: pair ? classifyPath(pair.local, pair.remote) : classifyPath('unknown', 'unknown') });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Bluetooth LE: works with no internet, within radio range            */
+  /* ------------------------------------------------------------------ */
+
+  /** True when this build can use Bluetooth (Tauri desktop with an adapter, or a test radio). */
+  async bluetoothAvailable(): Promise<boolean> {
+    if (this.bleBridge === undefined) this.bleBridge = await getBleBridge();
+    return this.bleBridge !== null;
+  }
+
+  /** Look for the paired friend over Bluetooth. Resolves once connected or when the scan ends. */
+  async connectBluetooth(): Promise<void> {
+    const pinned = this.pairing;
+    if (!pinned?.dhJwk) throw new Error('Add your friend first.');
+    if (this.p2pReady() || this.manualActive) return;
+    if (!(await this.bluetoothAvailable()) || !this.bleBridge) {
+      throw new Error('Bluetooth is not available in this build or on this computer.');
+    }
+    const secret = await ecdhAgree(this.identity.dhPrivateJwk, pinned.dhJwk);
+    this.peer?.close();
+    window.clearTimeout(this.auth.timer);
+    this.auth = freshAuth();
+    this.frameQueue = [];
+    this.p2pSent.clear();
+    const link = new SecureBleLink(
+      this.bleBridge,
+      { ownUid: this.identity.uid, peerUid: pinned.peerUid, signPriv: this.identity.privateJwk, peerSign: pinned.publicKeyJwk },
+      {
+        onOpen: () => this.handlePeerOpen(),
+        onClose: () => this.handlePeerClose(),
+        onFrame: (data) => this.handlePeerFrame(data),
+        onError: (message) => this.setState({ notice: message }),
+      },
+    );
+    this.peer = link;
+    this.setState({ p2pState: 'connecting', p2pConnected: false, peerTrust: 'none', safetyNumber: null });
+    this.updateConnection();
+    try {
+      await link.connect(secret);
+    } catch (error) {
+      if (this.peer === link) this.peer = null;
+      link.close();
+      this.setState({ p2pState: 'idle', notice: `Bluetooth: ${errorMessage(error)}` });
+      this.updateConnection();
+      throw error;
+    }
+  }
+
+  /** Quietly try Bluetooth now and then while not connected; backs off like internet reconnects. */
+  private async maybeBluetooth(): Promise<void> {
+    if (!this.network.bluetooth || !this.pairing?.dhJwk || this.manualActive || this.state.p2pState === 'connecting') return;
+    if (this.bleBridge === null) return;
+    const now = Date.now();
+    if (now - this.lastBleAt < reconnectDelayMs(this.bleAttempt, { baseMs: 15_000, maxMs: 120_000 })) return;
+    this.lastBleAt = now;
+    this.bleAttempt += 1;
+    try {
+      await this.connectBluetooth();
+    } catch {
+      // Not in range / not available: the next attempt backs off further.
+    }
   }
 
   get identityDetails(): DeviceIdentity {

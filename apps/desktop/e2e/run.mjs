@@ -1,7 +1,7 @@
 // Usage: node e2e/run.mjs [--only 1,2,...]   (or: npm run e2e)
 import fs from 'node:fs';
 import path from 'node:path';
-import { build, connected, device, launch, onboard, pair, realPath, relayNet, say, serve, startNostrRelay, startRelay, startTurn, uidOf, uiPath } from './lib.mjs';
+import { build, connected, device, installBleSim, launch, onboard, pair, realPath, relayNet, say, serve, startNostrRelay, startRelay, startTurn, uidOf, uiPath } from './lib.mjs';
 
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1].split(',') : null;
 const results = [];
@@ -265,6 +265,63 @@ await scenario(7, 'path truth: host-only = "Direct, same network"; TURN + forceR
   await say(a.page, 'through turn');
   await b.page.waitForSelector('text=through turn', { timeout: 15000 });
   ctx.note('message delivered over the TURN-relayed path');
+});
+
+/* 8 ------------------------------------------------------------------ */
+await scenario(8, 'Bluetooth (simulated radio), NO internet, NO signaling: connect, encrypted, tamper kills link', async (ctx) => {
+  // Nothing configured at all: no STUN, no TURN, no signaling. Bluetooth is the only way to connect.
+  const offline = { stun: [], turn: [], signaling: [], storeForward: false, forceRelay: false, bluetooth: true };
+  const a = await device(browser, appUrl, offline);
+  const b = await device(browser, appUrl, offline);
+  ctx.cleanups.push(() => a.context.close(), () => b.context.close());
+  a.name = 'A';
+  b.name = 'B';
+  const sim = await installBleSim([a, b]);
+  await onboard(a.page);
+  await onboard(b.page);
+  await pair(a.page, b.page);
+  await connected(a.page, 120000);
+  await connected(b.page, 120000);
+  const label = await uiPath(a.page);
+  ctx.note(`UI path label: "${label}"`);
+  check(label === 'Bluetooth, no internet', 'path says Bluetooth', label);
+  check(sim.links >= 1, 'link formed through the simulated radio', sim.links);
+  check((await realPath(a.page)) === null, 'no WebRTC connection exists (it really is Bluetooth)');
+  const secret = 'bt-secret-marker-5521';
+  await say(a.page, secret);
+  await b.page.waitForSelector(`text=${secret}`, { timeout: 15000 });
+  await say(b.page, 'reply-over-bluetooth');
+  await a.page.waitForSelector('text=reply-over-bluetooth', { timeout: 15000 });
+  const wire = sim.text();
+  ctx.note(`${sim.log.length} radio chunks recorded, ${wire.length} bytes on the air`);
+  check(!wire.includes(secret) && !wire.includes('reply-over-bluetooth'), 'message text never appears on the air');
+  check(!wire.includes('"kind":"hello"') && !wire.includes('publicKeyJwk'), 'identity handshake is also encrypted');
+  // Heartbeat: both directions must keep seeing frames; then an attacker flips a bit on the air.
+  sim.tamper = (hex) => {
+    const bytes = hex.match(/../g);
+    bytes[bytes.length - 1] = ((parseInt(bytes[bytes.length - 1], 16) ^ 1) & 255).toString(16).padStart(2, '0');
+    return bytes.join('');
+  };
+  await say(a.page, 'this-will-be-tampered');
+  await b.page.waitForFunction(() => document.querySelector('.composer textarea')?.getAttribute('placeholder') !== 'Write a message…', null, { timeout: 30000 });
+  check((await b.page.locator('text=this-will-be-tampered').count()) === 0, 'tampered message is NOT accepted');
+  ctx.note('tampered chunk rejected, link dropped');
+  check([...a.errors, ...b.errors].length === 0, 'no page errors', [...a.errors, ...b.errors]);
+});
+
+/* 9 ------------------------------------------------------------------ */
+await scenario(9, 'dead-link detection: a vanished peer is noticed within ~15s', async (ctx) => {
+  const relay = await startRelay(false);
+  ctx.cleanups.push(relay.close);
+  const { a, b } = await pairedDevices(ctx, relayNet(relay.url));
+  // Freeze B's network without closing sockets: block outbound data-channel traffic by suspending its page timers is not
+  // possible, so we simulate a vanished peer by closing B's context abruptly and timing how fast A notices.
+  const started = Date.now();
+  await b.context.close();
+  await a.page.waitForFunction(() => document.querySelector('.composer textarea')?.getAttribute('placeholder') !== 'Write a message…', null, { timeout: 40000 });
+  const secs = Math.round((Date.now() - started) / 1000);
+  ctx.note(`A noticed the peer was gone after ${secs}s`);
+  check(secs <= 25, 'dead link noticed in <= 25s', secs);
 });
 
 console.log('\n=== SUMMARY ===');

@@ -212,3 +212,80 @@ export async function uiPath(page) {
 }
 
 export const relayNet = (url, extra = {}) => ({ stun: [], turn: [], signaling: [{ kind: 'relay', url }], storeForward: false, forceRelay: false, ...extra });
+
+/**
+ * A simulated Bluetooth radio between two devices: the app's real Bluetooth code (framing, secure
+ * channel, handshake) runs unchanged on top; only the radio is replaced. Every chunk that crosses
+ * is recorded in `log` so tests can inspect exactly what a Bluetooth eavesdropper would see.
+ * `tamper` may rewrite a chunk (return the new hex) to simulate an attacker on the air.
+ */
+export async function installBleSim(devs) {
+  const sim = { log: [], tamper: null, links: 0, events: [] };
+  const waiting = [];
+  const peers = new Map(); // page -> other page
+  const opens = new Map(); // page -> promise resolved once both ends were told the link is open
+  const emit = (page, event) => page.evaluate((e) => window.__duochatBleHandler?.(e), event).catch(() => undefined);
+  for (const dev of devs) {
+    await dev.context.exposeBinding('__bleConnect', async ({ page }, _tags, timeoutSecs) => {
+      sim.events.push(`${dev.name} connect`);
+      const other = waiting.find((w) => w.page !== page);
+      if (other) {
+        waiting.splice(waiting.indexOf(other), 1);
+        clearTimeout(other.timer);
+        peers.set(page, other.page);
+        peers.set(other.page, page);
+        sim.links += 1;
+        // A real radio never delivers data before both ends know the link is open; writes wait for this.
+        const opened = Promise.all([emit(page, { kind: 'open', maxChunk: 185 }), emit(other.page, { kind: 'open', maxChunk: 185 })]);
+        opens.set(page, opened);
+        opens.set(other.page, opened);
+        await opened;
+        other.resolve(185);
+        return 185;
+      }
+      return new Promise((resolve, reject) => {
+        const entry = { page, resolve };
+        entry.timer = setTimeout(() => {
+          waiting.splice(waiting.indexOf(entry), 1);
+          reject(new Error('No paired device found nearby.'));
+        }, Math.min(timeoutSecs, 20) * 1000);
+        waiting.push(entry);
+      });
+    });
+    await dev.context.exposeBinding('__bleWrite', async ({ page }, hex) => {
+      const other = peers.get(page);
+      if (!other) return;
+      await opens.get(page);
+      const data = sim.tamper ? sim.tamper(hex) : hex;
+      sim.log.push({ from: devs.find((d) => d.page === page || d.context === page.context())?.name ?? '?', hex: data });
+      await emit(other, { kind: 'chunk', data });
+    });
+    await dev.context.exposeBinding('__bleDisc', async ({ page }) => {
+      sim.events.push(`${dev.name} disconnect`);
+      const other = peers.get(page);
+      peers.delete(page);
+      if (other) {
+        peers.delete(other);
+        await emit(other, { kind: 'close' });
+      }
+    });
+    await dev.context.addInitScript(() => {
+      window.__duochatBleBridge = {
+        capabilities: async () => ({ central: true, peripheral: false, platform: 'simulated' }),
+        connect: (tags, timeoutSecs) => window.__bleConnect(tags, timeoutSecs),
+        write: (hex) => window.__bleWrite(hex),
+        disconnect: () => window.__bleDisc(),
+        onEvent: async (handler) => {
+          window.__duochatBleHandler = handler;
+          return () => {
+            window.__duochatBleHandler = null;
+          };
+        },
+      };
+    });
+    await dev.page.reload();
+  }
+  sim.text = () =>
+    sim.log.map((c) => Buffer.from(c.hex.match(/../g).map((h) => parseInt(h, 16))).toString('latin1')).join('');
+  return sim;
+}
