@@ -87,6 +87,7 @@ fun ContactDialog(
     var pasted by remember { mutableStateOf("") }
     var wordInput by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    var wordResult by remember { mutableStateOf<String?>(null) }  // success info for word lookup
     var copied by remember { mutableStateOf(false) }
     var wordsCopied by remember { mutableStateOf(false) }
 
@@ -364,6 +365,21 @@ fun ContactDialog(
                                 Spacer(Modifier.height(4.dp))
                                 Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                             }
+                            wordResult?.let {
+                                Spacer(Modifier.height(6.dp))
+                                Surface(
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Text(
+                                        it,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.padding(10.dp),
+                                    )
+                                }
+                            }
                             Spacer(Modifier.height(8.dp))
                             Button(
                                 enabled = wordInput.isNotBlank(),
@@ -371,12 +387,10 @@ fun ContactDialog(
                                     val uid = WordCode.decode(wordInput.trim())
                                     if (uid == null) {
                                         error = "Invalid word code — please check spelling and try again."
+                                        wordResult = null
                                     } else {
                                         error = null
-                                        // Word code only gives the public UID (64-bit).
-                                        // We can't fully verify without the full card, so inform the user.
-                                        error = "Found UID: $uid\n\nAsk your friend to also share their QR or card text so " +
-                                            "you can complete secure pairing with full key verification."
+                                        wordResult = "Found public address: $uid\n\nAsk your friend to scan QRs or share their card text to complete secure pairing."
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth(),

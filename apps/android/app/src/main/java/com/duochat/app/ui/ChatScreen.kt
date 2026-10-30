@@ -580,15 +580,76 @@ private fun MessageBubble(
                     ),
             ) {
                 Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                    Text(
-                        text = message.text,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = if (own) {
-                            MaterialTheme.colorScheme.onPrimary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
+                    val attachMatch = remember(message.text) {
+                        Regex("""^\[Attachment: ([^:]+):([^\]]+)\]$""").find(message.text.trim())
+                    }
+                    if (attachMatch != null) {
+                        val attachType = attachMatch.groupValues[1] // e.g. "image"
+                        val attachId = attachMatch.groupValues[2]   // e.g. "1000103850"
+                        val isImage = attachType == "image"
+                        // Try to load as a content URI thumbnail
+                        val context2 = LocalContext.current
+                        val bmp = remember(attachId) {
+                            runCatching {
+                                val uri = android.net.Uri.parse("content://media/external/images/media/$attachId")
+                                context2.contentResolver.openInputStream(uri)?.use { stream ->
+                                    android.graphics.BitmapFactory.decodeStream(stream)
+                                }
+                            }.getOrNull()
+                        }
+                        Surface(
+                            color = if (own) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                    else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(8.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                if (isImage && bmp != null) {
+                                    androidx.compose.foundation.Image(
+                                        bitmap = bmp.asImageBitmap(),
+                                        contentDescription = "Image attachment",
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .widthIn(max = 260.dp)
+                                            .clip(RoundedCornerShape(10.dp)),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.FillWidth,
+                                    )
+                                } else {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(4.dp),
+                                    ) {
+                                        Icon(
+                                            if (isImage) Icons.Filled.ImageIcon else Icons.Filled.InsertDriveFile,
+                                            contentDescription = null,
+                                            tint = if (own) MaterialTheme.colorScheme.onPrimary
+                                                   else MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(28.dp),
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(
+                                            if (isImage) "Image #$attachId" else "$attachType: $attachId",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = if (own) MaterialTheme.colorScheme.onPrimary
+                                                    else MaterialTheme.colorScheme.onSurface,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        Text(
+                            text = message.text,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = if (own) {
+                                MaterialTheme.colorScheme.onPrimary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
                     Spacer(Modifier.height(3.dp))
                     Row(
                         modifier = Modifier.align(Alignment.End),
