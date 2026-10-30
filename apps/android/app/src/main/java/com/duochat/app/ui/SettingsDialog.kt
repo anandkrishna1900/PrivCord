@@ -416,6 +416,21 @@ fun SettingsDialog(
                 HorizontalDivider()
                 Spacer(Modifier.height(14.dp))
 
+                SectionTitle("Communication Mode")
+                Text("Select how DuoChat connects to peers:", style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ChoiceChip("1. Auto", settings.network.transportMode == com.duochat.app.data.TransportMode.AUTOMATIC) {
+                        onUpdateSettings { copy(network = network.copy(transportMode = com.duochat.app.data.TransportMode.AUTOMATIC)) }
+                    }
+                    ChoiceChip("2. BLE Only", settings.network.transportMode == com.duochat.app.data.TransportMode.BLUETOOTH_ONLY) {
+                        onUpdateSettings { copy(network = network.copy(transportMode = com.duochat.app.data.TransportMode.BLUETOOTH_ONLY)) }
+                    }
+                    ChoiceChip("3. Internet Only", settings.network.transportMode == com.duochat.app.data.TransportMode.INTERNET_ONLY) {
+                        onUpdateSettings { copy(network = network.copy(transportMode = com.duochat.app.data.TransportMode.INTERNET_ONLY)) }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
                 SectionTitle("Network")
                 Text(
                     "STUN only tells your device its public address; no messages pass through " +

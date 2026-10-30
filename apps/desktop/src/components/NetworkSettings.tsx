@@ -105,7 +105,7 @@ export function NetworkSettings({ engine, state }: { engine: ChatEngine | null; 
     setProblems(errors);
     if (errors.length > 0) return;
     saveNetworkConfig(config);
-    engine?.applyNetworkConfig(config);
+    engine?.reloadNetwork();
     setSaved(true);
   }
 
@@ -123,7 +123,7 @@ export function NetworkSettings({ engine, state }: { engine: ChatEngine | null; 
     setTransportMode(d.transportMode ?? 'AUTOMATIC');
     setProblems([]);
     saveNetworkConfig(d);
-    engine?.applyNetworkConfig(d);
+    engine?.reloadNetwork();
     setSaved(true);
   }
 

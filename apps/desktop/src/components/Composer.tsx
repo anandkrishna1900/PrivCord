@@ -1,13 +1,15 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { MAX_TEXT_LENGTH, countCodePoints } from '@duochat/protocol';
+import { useEffect, useRef, useState, type KeyboardEvent, type ChangeEvent } from 'react';
+import { MAX_TEXT_LENGTH, countCodePoints, FileTransferManager, type FileMetadata } from '@duochat/protocol';
 import { SendIcon } from './Icons';
 
 export function Composer({
   onSend,
+  onSendFile,
   disabled,
   connected,
 }: {
   onSend: (text: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  onSendFile?: (file: File) => Promise<void>;
   disabled: boolean;
   connected: boolean;
 }) {
@@ -15,6 +17,7 @@ export function Composer({
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const sendingRef = useRef(false);
 
   const length = countCodePoints(text);
@@ -51,21 +54,59 @@ export function Composer({
     }
   }
 
-  function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       void send();
     }
   }
 
+  async function handleFileSelected(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      setSending(true);
+      if (onSendFile) {
+        await onSendFile(file);
+      } else {
+        // Fallback: send as metadata representation
+        await onSend(`[Attachment: ${file.name} (${(file.size / 1024).toFixed(1)} KB)]`);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'File transfer failed');
+    } finally {
+      setSending(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
   return (
-    <div className="composer-shell">
+    <div className="composer-wrapper">
       {error ? (
-        <p className="composer-error" role="alert">
+        <div className="composer-error" role="alert">
           {error}
-        </p>
+        </div>
       ) : null}
-      <div className={`composer ${overLimit ? 'invalid' : ''}`}>
+
+      <input
+        type="file"
+        ref={fileInputRef}
+        style={{ display: 'none' }}
+        onChange={handleFileSelected}
+      />
+
+      <div className={`composer ${overLimit ? 'over-limit' : ''}`}>
+        <button
+          type="button"
+          className="icon-button attach-button"
+          title="Attach encrypted file or image"
+          disabled={disabled || sending}
+          onClick={() => fileInputRef.current?.click()}
+          style={{ marginRight: '4px' }}
+        >
+          📎
+        </button>
+
         <textarea
           ref={textareaRef}
           value={text}
@@ -73,38 +114,39 @@ export function Composer({
             setText(event.target.value);
             if (error) setError(null);
           }}
-          onKeyDown={onKeyDown}
+          onKeyDown={handleKeyDown}
           placeholder={
             connected
-              ? 'Write a message…'
-              : 'Write a message — it is sent when you connect…'
+              ? 'Write a message… (Enter to send, Shift+Enter for newline)'
+              : 'Write a message — it will be queued until connected…'
           }
-          rows={1}
-          maxLength={MAX_TEXT_LENGTH + 200}
           disabled={disabled}
-          aria-label="Message"
+          rows={1}
+          aria-label="Message text"
         />
+
         <div className="composer-actions">
-          {length > MAX_TEXT_LENGTH - 400 ? (
-            <span className={`char-count ${overLimit ? 'over' : ''}`}>
-              {length.toLocaleString()} / {MAX_TEXT_LENGTH.toLocaleString()}
+          {overLimit ? (
+            <span className="char-count danger">
+              {length}/{MAX_TEXT_LENGTH}
+            </span>
+          ) : length > MAX_TEXT_LENGTH * 0.9 ? (
+            <span className="char-count warning">
+              {length}/{MAX_TEXT_LENGTH}
             </span>
           ) : null}
+
           <button
             type="button"
             className="send-button"
-            onClick={() => void send()}
+            onClick={send}
             disabled={disabled || sending || !text.trim() || overLimit}
             aria-label="Send message"
-            title="Send (Enter)"
           >
             <SendIcon size={18} />
           </button>
         </div>
       </div>
-      <p className="composer-hint">
-        Enter sends · Shift + Enter adds a line · Messages go straight to your friend and are never uploaded
-      </p>
     </div>
   );
 }
