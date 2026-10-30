@@ -140,38 +140,122 @@ export async function onboard(page) {
     await page.fill(`#verify-word-${n}`, words[Number(/#(\d+)/.exec(label)[1]) - 1]);
   }
   await page.click('text=Verify & Confirm');
-  await page.click('text=Start DuoChat');
-  await page.waitForSelector('.chat-header', { timeout: 15000 });
+  await page.click('text=Start PrivCord');
+  await page.waitForSelector('.app-shell', { timeout: 15000 });
   return words.join(' ');
 }
 
 export async function uidOf(page) {
   await page.click('button[aria-label="Settings"]');
+  await page.click('.tab:has-text("About")');
   const uid = await page.locator('.settings-content dd.selectable').first().innerText();
   await page.keyboard.press('Escape');
   return uid.trim();
 }
 
-export async function pair(a, b) {
-  const cards = [];
+/** Open the Add-friend dialog and return my invite text (dialog stays open). */
+export async function openAdd(page) {
+  await page.click('button[aria-label="Add friend"]');
+  return page.locator('textarea[aria-label="Your invite"]').inputValue();
+}
+
+/** Paste an invite; returns the safety number shown (the dialog stays on the check step). */
+export async function pasteInvite(page, invite) {
+  await page.fill('textarea[aria-label="Friend\'s invite"]', invite);
+  await page.click('button:has-text("Continue")');
+  await page.waitForSelector('.verify-panel .safety-number');
+  return page.locator('.verify-panel .safety-number').innerText();
+}
+
+/** Add `invite` as a friend on `page` (verifying the numbers). Returns the safety number. */
+export async function addFriend(page, invite, { verify = true } = {}) {
+  await page.click('button[aria-label="Add friend"]');
+  const number = await pasteInvite(page, invite);
+  await page.click(verify ? 'button:has-text("Numbers match")' : 'button:has-text("Skip for now")');
+  await page.waitForSelector('.modal-backdrop', { state: 'detached' });
+  return number;
+}
+
+export async function invites(a, b) {
+  const out = [];
   for (const p of [a, b]) {
-    await p.click('button[aria-label="Add your friend"]');
-    cards.push(await p.locator('textarea[aria-label="Your contact card"]').inputValue());
+    out.push(await openAdd(p));
+    await p.keyboard.press('Escape');
   }
+  return out;
+}
+
+export async function pair(a, b) {
+  const cards = await invites(a, b);
   const numbers = [];
-  for (const [p, card] of [[a, cards[1]], [b, cards[0]]]) {
-    await p.fill('textarea[aria-label="Friend\'s contact card"]', card);
-    await p.click('button:has-text("Continue")');
-    await p.waitForSelector('.verify-panel .safety-number');
-    numbers.push(await p.locator('.verify-panel .safety-number').innerText());
-  }
-  for (const p of [a, b]) await p.click('text=Numbers match, save friend');
+  numbers.push(await addFriend(a, cards[1]));
+  numbers.push(await addFriend(b, cards[0]));
   return { cards, numbers };
+}
+
+/** Give this device a name friends see (Settings > Profile). */
+export async function setName(page, name) {
+  await page.click('button[aria-label="Settings"]');
+  await page.fill('.settings-content input', name);
+  await page.click('.settings-content button:has-text("Save")');
+  await page.waitForSelector('.settings-content .status-text');
+  await page.keyboard.press('Escape');
+}
+
+export async function newGroup(page, name, friendNames) {
+  await page.click('button[aria-label="New group"]');
+  await page.getByLabel('Group name').fill(name);
+  for (const f of friendNames) await page.locator('.pick-row', { hasText: f }).locator('input').check();
+  await page.click('button:has-text("Create group")');
+  await page.waitForSelector(`.chat-header h2:has-text("${name}")`);
+}
+
+async function openGroupDetails(page) {
+  await page.click('button[aria-label="More"]');
+  await page.click('[role="menuitem"]:has-text("Group details")');
+  await page.waitForSelector('.member-list');
+}
+
+export async function groupAdd(page, friendName) {
+  await openGroupDetails(page);
+  await page.click('button:has-text("Add member")');
+  await page.locator('.pick-row', { hasText: friendName }).locator('input').check();
+  await page.click('button:has-text("Add 1")');
+  await page.waitForSelector('button:has-text("Add member")');
+  await page.keyboard.press('Escape');
+}
+
+export async function groupRemove(page, memberName) {
+  await openGroupDetails(page);
+  await page.locator('.member-row', { hasText: memberName }).locator('button:has-text("Remove")').click();
+  await page.waitForFunction((n) => ![...document.querySelectorAll('.member-row')].some((r) => r.textContent.includes(n)), memberName);
+  await page.keyboard.press('Escape');
+}
+
+export async function memberNames(page) {
+  await openGroupDetails(page);
+  const names = await page.locator('.member-row strong').allInnerTexts();
+  await page.keyboard.press('Escape');
+  return names.map((n) => n.replace(/ · admin$/, ''));
+}
+
+/** Select a chat in the list by (part of) its name; index fallback. */
+export async function openChat(page, nameOrIndex = 0) {
+  const rows = page.locator('.chat-row');
+  await rows.first().waitFor({ timeout: 15000 });
+  if (typeof nameOrIndex === 'number') await rows.nth(nameOrIndex).click();
+  else await rows.filter({ hasText: nameOrIndex }).first().click();
+  await page.waitForSelector('.chat-header');
+}
+
+const statusText = (page) => page.locator('.chat-header-identity p').first().innerText();
+export async function isConnected(page) {
+  return (await statusText(page).catch(() => '')).startsWith('Connected');
 }
 
 export async function connected(page, ms = 90000) {
   await page.waitForFunction(
-    () => document.querySelector('.composer textarea')?.getAttribute('placeholder')?.startsWith('Write a message…') === true,
+    () => (document.querySelector('.chat-header-identity p')?.textContent ?? '').startsWith('Connected'),
     null,
     { timeout: ms },
   );
@@ -201,14 +285,10 @@ export async function realPath(page) {
   });
 }
 
-/** Label shown in Settings > Connection (the app's own claim). */
+/** The path label the app shows in the open chat header ("Connected · Direct, same network"). */
 export async function uiPath(page) {
-  await page.click('button[aria-label="Settings"]');
-  await page.click('.settings-nav-button:has-text("Connection")');
-  await page.waitForSelector('.callout strong', { timeout: 20000 });
-  const label = await page.locator('.callout strong').first().innerText();
-  await page.keyboard.press('Escape');
-  return label.replace(/\.$/, '');
+  await connected(page, 20000);
+  return (await statusText(page)).replace(/^Connected · /, '').replace(/\.$/, '');
 }
 
 export const relayNet = (url, extra = {}) => ({ stun: [], turn: [], signaling: [{ kind: 'relay', url }], storeForward: false, forceRelay: false, ...extra });

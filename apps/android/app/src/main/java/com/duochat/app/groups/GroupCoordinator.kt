@@ -143,6 +143,8 @@ class GroupCoordinator(
     /** Persistable form: every event of every group, in causal order. */
     fun export(): Map<String, List<JSONObject>> = logs.mapValues { it.value.toJson() }
 
+    fun exportGroup(groupId: String): List<JSONObject>? = logs[groupId]?.toJson()
+
     fun load(saved: Map<String, List<Any?>>) {
         for ((groupId, events) in saved) logs[groupId] = GroupLog.fromJson(groupId, events)
     }

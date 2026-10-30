@@ -28,6 +28,7 @@ class GroupLog(val groupId: String) {
     private val events = LinkedHashMap<String, GroupEvent>()
     private val pending = LinkedHashMap<String, GroupEvent>()
     private val sigCache = HashMap<String, Boolean>()
+    private val cardCache = HashMap<String, Boolean>()
     private var current: GroupState? = null
     private var validIds = HashSet<String>()
 
@@ -119,6 +120,9 @@ class GroupLog(val groupId: String) {
     private fun verifySig(e: GroupEvent, signer: ContactCard): Boolean =
         sigCache.getOrPut("${e.eventId}|${signer.sign.x}.${signer.sign.y}") { GroupEvents.signatureValid(e, signer.sign) }
 
+    private fun cardOk(card: JSONObject?, uid: String): Boolean =
+        cardCache.getOrPut("$uid|${card}") { GroupEvents.cardIsValid(card, uid) }
+
     private fun refold() {
         var state: GroupState? = null
         val valid = HashSet<String>()
@@ -126,7 +130,7 @@ class GroupLog(val groupId: String) {
             if (e.type == "create") {
                 if (state != null || e.deps.isNotEmpty() || e.groupId != e.eventId) continue
                 val card = GroupEvents.cardFromJson(e.cardJson)
-                if (card == null || !GroupEvents.cardIsValid(e.cardJson, e.actor) || !verifySig(e, card)) continue
+                if (card == null || !cardOk(e.cardJson, e.actor) || !verifySig(e, card)) continue
                 state = GroupState(
                     e.groupId, e.name!!, e.actor,
                     linkedMapOf(e.actor to GroupMemberInfo(e.actor, card, "admin", e.actor)),
@@ -140,7 +144,7 @@ class GroupLog(val groupId: String) {
             when (e.type) {
                 "add" -> {
                     val target = e.target!!
-                    if (!GroupEvents.cardIsValid(e.cardJson, target)) continue
+                    if (!cardOk(e.cardJson, target)) continue
                     if (!state.members.containsKey(target)) {
                         val card = GroupEvents.cardFromJson(e.cardJson) ?: continue
                         state.members[target] = GroupMemberInfo(target, card, "member", e.actor)

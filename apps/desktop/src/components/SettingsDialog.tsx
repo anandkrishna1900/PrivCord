@@ -135,6 +135,7 @@ export function SettingsDialog({
                 disabled={displayName.trim() === settings.displayName}
                 onClick={() => {
                   updateSettings({ displayName: displayName.trim() });
+                  void engine?.refreshOwnName(displayName);
                   setSaved(true);
                 }}
               >

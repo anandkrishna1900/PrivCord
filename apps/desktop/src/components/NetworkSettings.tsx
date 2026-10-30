@@ -79,7 +79,7 @@ export function NetworkSettings({ engine, state }: { engine: ChatEngine | null; 
 
     const relayList = lines(relays);
     const badRelays = relayList.filter((u) => !isWsUrl(u));
-    if (badRelays.length > 0) errors.push(`Invalid DuoChat relay URL: ${badRelays[0]}`);
+    if (badRelays.length > 0) errors.push(`Invalid PrivCord relay URL: ${badRelays[0]}`);
     for (const u of relayList) signaling.push({ kind: 'relay', url: u });
 
     if (forceRelay && turnList.length === 0) {
@@ -133,7 +133,7 @@ export function NetworkSettings({ engine, state }: { engine: ChatEngine | null; 
       <header>
         <h3>Network & Communication Mode</h3>
         <p className="muted">
-          DuoChat operates peer-to-peer without central accounts. Select your preferred transport mode below.
+          PrivCord operates peer-to-peer without central accounts. Select your preferred transport mode below.
         </p>
       </header>
 
@@ -174,7 +174,7 @@ export function NetworkSettings({ engine, state }: { engine: ChatEngine | null; 
         <textarea rows={3} value={nostr} onChange={(e) => setNostr(e.target.value)} placeholder="wss://relay.example" />
       </label>
       <label className="field">
-        <span>Signaling: your own DuoChat relay (optional, one per line)</span>
+        <span>Signaling: your own PrivCord relay (optional, one per line)</span>
         <textarea rows={2} value={relays} onChange={(e) => setRelays(e.target.value)} placeholder="wss://my-relay.example.org" />
       </label>
       <p className="muted small">

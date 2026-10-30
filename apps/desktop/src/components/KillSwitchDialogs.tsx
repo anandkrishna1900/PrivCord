@@ -93,7 +93,7 @@ function ReportView({
         <div className="callout subtle" role="status">
           <CheckIcon size={17} />
           <p>
-            <strong>Erase finished.</strong> Everything DuoChat could remove on
+            <strong>Erase finished.</strong> Everything PrivCord could remove on
             this device was removed.
           </p>
         </div>
@@ -218,7 +218,7 @@ export function NukeDialog({
           <div className="callout warning" role="alert">
             <AlertIcon size={17} />
             <p>
-              <strong>This action permanently deletes the local DuoChat
+              <strong>This action permanently deletes the local PrivCord
               identity, conversations, contacts, files, cryptographic state,
               and application data. You will need your separately backed-up
               12-word recovery phrase to restore your identity.</strong>
@@ -326,7 +326,7 @@ export function NukeDialog({
             </button>
           </div>
           <p className="muted small">
-            Nothing stored outside DuoChat (browser caches managed by the
+            Nothing stored outside PrivCord (browser caches managed by the
             operating system, OS-level backups, screenshots) is deleted or
             overwritable — see the deletion documentation.
           </p>

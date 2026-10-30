@@ -2703,3 +2703,403 @@ input[type='checkbox'] {
   font-size: 0.88rem;
   color: var(--text-soft);
 }
+
+/* ====================== v2: chats + groups layout ====================== */
+
+.app-shell .sidebar {
+  position: static;
+  transform: none;
+  width: auto;
+  padding: 0;
+  gap: 0;
+  box-shadow: none;
+}
+
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 16px 12px;
+}
+
+.sidebar-head h1 {
+  flex: 1;
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.sidebar-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 0 16px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-actions .button {
+  justify-content: center;
+  padding-inline: 8px;
+  min-height: 40px;
+}
+
+.chat-list {
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  gap: 2px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.chat-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.chat-row:hover {
+  background: var(--surface-hover);
+}
+
+.chat-row.active {
+  background: var(--accent-soft);
+}
+
+.chat-row:focus-visible,
+.menu button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.chat-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.chat-row-top,
+.chat-row-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.chat-row-top strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-row-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.unread-dot {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-empty {
+  padding: 20px 16px;
+}
+
+.chat-header-identity h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-header-identity p {
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-header-identity {
+  flex: 1;
+}
+
+.back-button {
+  display: none;
+}
+
+.menu-wrap {
+  position: relative;
+}
+
+.menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  min-width: 220px;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+}
+
+.menu button {
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.menu button:hover {
+  background: var(--surface-hover);
+}
+
+.welcome {
+  margin: auto;
+  max-width: 420px;
+  padding: 32px 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.welcome h2 {
+  margin: 0;
+}
+
+.welcome-steps {
+  text-align: left;
+  margin: 4px 0 8px;
+  padding-left: 20px;
+  color: var(--text-soft);
+  line-height: 1.55;
+}
+
+.composer-note {
+  padding: 16px;
+  text-align: center;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+}
+
+.bubble-sender {
+  display: block;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 2px;
+}
+
+.empty-state.small {
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.qr {
+  width: 200px;
+  max-width: 100%;
+  margin: 8px auto;
+  padding: 8px;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.qr svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.add-friend {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.add-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.add-card h3,
+.section-title {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.add-card .code-area {
+  font-size: 0.72rem;
+}
+
+.pick-list,
+.member-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.pick-row,
+.member-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.pick-row:hover {
+  background: var(--surface-hover);
+}
+
+.member-row {
+  cursor: default;
+}
+
+.member-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab {
+  padding: 10px 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.card-box {
+  padding: 14px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.advanced > summary {
+  cursor: pointer;
+  padding: 8px 0;
+  color: var(--text-soft);
+  font-weight: 600;
+}
+
+.connection-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.connection-summary p {
+  margin: 0;
+}
+
+.connection-dot.on {
+  background: var(--success);
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell .sidebar {
+    border-right: 0;
+  }
+
+  .app-shell.has-chat .sidebar,
+  .app-shell:not(.has-chat) .chat-panel {
+    display: none;
+  }
+
+  .back-button {
+    display: inline-flex;
+  }
+
+  .app-shell::after {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .add-friend {
+    grid-template-columns: 1fr;
+  }
+
+  .chat-header-identity .avatar {
+    display: inline-flex;
+  }
+
+  .chat-header-actions .icon-button:nth-of-type(1) {
+    display: inline-flex;
+  }
+}

@@ -33,8 +33,14 @@ data class ChatMessage(
     val transport: TransportKind = TransportKind.P2P,
     val deliveryState: DeliveryState = DeliveryState.QUEUED,
     val readAt: Long? = null,
+    /** A contact's uid (direct chat) or a group id. Empty only for messages not yet placed in a chat. */
+    val conversationId: String = "",
+    /** Group messages: members it had to reach, and how many have confirmed it. */
+    val totalRecipients: Int = 0,
+    val deliveredTo: Int = 0,
 )
 
+/** One message waiting for one recipient. */
 data class OutboxRow(
     val messageId: String,
     val recipientId: String,
@@ -44,7 +50,9 @@ data class OutboxRow(
     val lastAttemptAt: Long?,
     val deliveryState: DeliveryState,
     val lastError: String?,
-)
+) {
+    val key: String get() = "$messageId|$recipientId"
+}
 
 /** NEEDS_IDENTITY: first run, the 12-word phrase flow must finish before anything else. */
 enum class EnginePhase { STARTING, NEEDS_IDENTITY, READY, ERROR, STOPPED }
@@ -108,32 +116,97 @@ fun classifyConnectionPath(localType: String?, remoteType: String?): ConnectionP
     }
 }
 
+enum class ContactTrust(val wire: String) {
+    /** We exchanged cards (QR / invite text), or compared the safety number. */
+    VERIFIED("verified"),
+
+    /** We learned the card from a group roster; the keys are pinned but nobody compared anything. */
+    INTRODUCED("introduced");
+
+    companion object {
+        fun fromWire(value: String?): ContactTrust = entries.firstOrNull { it.wire == value } ?: VERIFIED
+    }
+}
+
+enum class LinkStatus { CONNECTED, CONNECTING, OFFLINE }
+
+data class ContactView(
+    val uid: String,
+    val name: String,
+    val trust: ContactTrust,
+    /** Display name of whoever introduced them (introduced contacts only). */
+    val introducedByName: String?,
+    /** Safety numbers were compared, or the card was exchanged in person. */
+    val checked: Boolean,
+    val link: LinkStatus,
+    val path: ConnectionPath?,
+    val safetyNumber: String,
+)
+
+data class MemberView(
+    val uid: String,
+    val name: String,
+    val isMe: Boolean,
+    val isAdmin: Boolean,
+    val addedByName: String?,
+    val trust: ContactTrust?,
+    val link: LinkStatus?,
+)
+
+data class GroupView(
+    val groupId: String,
+    val name: String,
+    val members: List<MemberView>,
+    val iAmMember: Boolean,
+    val iAmAdmin: Boolean,
+    /** "You were removed" / "You left" once we are out; the group stays visible and read-only. */
+    val exitNote: String?,
+    val connectedCount: Int,
+)
+
+/** One row of the home list: a person or a group. */
+data class ChatSummary(
+    val id: String,
+    val isGroup: Boolean,
+    val title: String,
+    val lastText: String?,
+    val lastAt: Long,
+    val unread: Int,
+    val link: LinkStatus,
+    val subtitle: String,
+)
+
+/** The manual connection-code flow (Advanced). It is not tied to a saved friend until it is confirmed. */
+data class ManualState(
+    val p2pState: P2PState = P2PState.IDLE,
+    val connected: Boolean = false,
+    val trust: PeerTrust = PeerTrust.NONE,
+    val safetyNumber: String? = null,
+    val peerName: String? = null,
+)
+
 data class ChatState(
     val phase: EnginePhase = EnginePhase.STARTING,
     val uid: String = "",
-    /** The other person's id: known after the first pairing, null before. */
-    val peerUid: String? = null,
-    val conversationId: String = "",
-    val messages: List<ChatMessage> = emptyList(),
-    val connectionMode: ConnectionMode = ConnectionMode.OFFLINE_QUEUED,
-    val p2pState: P2PState = P2PState.IDLE,
-    val p2pConnected: Boolean = false,
-    val peerTrust: PeerTrust = PeerTrust.NONE,
-    val safetyNumber: String? = null,
+    val contacts: List<ContactView> = emptyList(),
+    val groups: List<GroupView> = emptyList(),
+    val chats: List<ChatSummary> = emptyList(),
+    /** Messages by conversation id (contact uid or group id), oldest first. */
+    val messages: Map<String, List<ChatMessage>> = emptyMap(),
     val queuedCount: Int = 0,
+    val linkCount: Int = 0,
     val error: String? = null,
     val notice: String? = null,
-    /** True once a peer key is pinned on this device. */
-    val paired: Boolean = false,
-    /** Null until the channel is open and the selected candidate pair has been read. */
-    val connectionPath: ConnectionPath? = null,
     val signaling: com.duochat.app.signaling.SignalingStatus = com.duochat.app.signaling.SignalingStatus.IDLE,
     val bluetooth: BluetoothStatus = BluetoothStatus.DISABLED,
-    /** A friend's card that was pasted but not yet confirmed by the user. */
-    val pendingContact: PendingContact? = null,
+    val manual: ManualState = ManualState(),
 )
 
 data class PendingContact(val uid: String, val safetyNumber: String, val name: String?)
+
+/** Soft cap on simultaneous links (full mesh: N members means N-1 links per phone). */
+const val MAX_LINKS = 30
+const val MAX_CONNECTING = 3
 
 fun deriveConnectionMode(
     p2pConnected: Boolean,

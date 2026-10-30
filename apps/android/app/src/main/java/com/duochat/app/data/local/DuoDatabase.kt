@@ -21,16 +21,21 @@ data class MessageEntity(
     val transport: String,
     val deliveryState: String,
     val readAt: Long?,
+    /** A contact's uid for a direct chat, the group id for a group. Legacy rows carry "duo" until migrated. */
     val conversationId: String = LEGACY_CONVERSATION_ID,
+    /** Group messages only: how many members it had to reach (the delivery detail is this minus the pending outbox rows). */
+    val totalRecipients: Int = 0,
 ) {
     companion object {
         const val LEGACY_CONVERSATION_ID = "duo"
     }
 }
 
+/** One row per (message, recipient): a group message waits separately for each member. */
 @Entity(tableName = "outbox")
 data class OutboxEntity(
-    @PrimaryKey val messageId: String,
+    @PrimaryKey val key: String,
+    val messageId: String,
     val recipientId: String,
     val payloadCipher: String,
     val createdAt: Long,
@@ -58,50 +63,18 @@ data class ContactEntity(
     val isBlocked: Boolean = false,
     val verifiedAt: Long? = null,
     val createdAt: Long = System.currentTimeMillis(),
+    /** "verified": we exchanged cards. "introduced": we learned the card from a group roster. */
+    val trust: String = "verified",
+    /** For introduced contacts: the uid of the member who added them to the group. */
+    val introducedBy: String? = null,
 )
 
-@Entity(tableName = "groups")
-data class GroupEntity(
+/** A group is its signed event log; the whole log (encrypted at rest) is rewritten when it changes. */
+@Entity(tableName = "group_logs")
+data class GroupLogEntity(
     @PrimaryKey val groupId: String,
-    val name: String,
-    val avatarUrl: String?,
-    val createdBy: String,
-    val createdAt: Long,
-    val currentEpoch: Int = 1,
-)
-
-@Entity(tableName = "group_members")
-data class GroupMemberEntity(
-    val groupId: String,
-    val uid: String,
-    val role: String, // "admin" | "member"
-    val joinedEpoch: Int,
-    val addedBy: String,
-    @PrimaryKey val id: String = "$groupId:$uid",
-)
-
-@Entity(tableName = "group_epoch_keys")
-data class GroupEpochKeyEntity(
-    val groupId: String,
-    val epoch: Int,
-    val keyCipher: String, // AES-encrypted epoch key
-    @PrimaryKey val id: String = "$groupId:$epoch",
-)
-
-@Entity(tableName = "file_transfers")
-data class FileTransferEntity(
-    @PrimaryKey val transferId: String,
-    val conversationId: String,
-    val name: String,
-    val mimeType: String,
-    val size: Long,
-    val sha256: String,
-    val totalChunks: Int,
-    val receivedChunks: Int,
-    val state: String, // "queued" | "transferring" | "paused" | "completed" | "failed" | "cancelled"
-    val localPath: String?,
-    val keyB64Url: String,
-    val createdAt: Long = System.currentTimeMillis(),
+    val eventsCipher: String,
+    val updatedAt: Long,
 )
 
 @Dao
@@ -127,36 +100,35 @@ interface DuoDao {
     @Query("SELECT * FROM outbox ORDER BY createdAt ASC")
     suspend fun loadOutbox(): List<OutboxEntity>
 
-    @Query("SELECT * FROM outbox WHERE conversationId = :conversationId ORDER BY createdAt ASC")
-    suspend fun loadOutboxFor(conversationId: String): List<OutboxEntity>
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putOutbox(row: OutboxEntity)
 
     @Query(
         "UPDATE outbox SET attemptCount = :attemptCount, lastAttemptAt = :lastAttemptAt, " +
-            "deliveryState = :deliveryState, lastError = :lastError WHERE messageId = :messageId",
+            "deliveryState = :deliveryState, lastError = :lastError WHERE `key` = :key",
     )
     suspend fun updateOutboxAttempt(
-        messageId: String,
+        key: String,
         attemptCount: Int,
         lastAttemptAt: Long?,
         deliveryState: String,
         lastError: String?,
     )
 
-    @Query(
-        "UPDATE outbox SET deliveryState = :deliveryState, lastAttemptAt = :lastAttemptAt " +
-            "WHERE messageId = :messageId",
-    )
-    suspend fun updateOutboxDelivery(
-        messageId: String,
-        deliveryState: String,
-        lastAttemptAt: Long?,
-    )
+    @Query("UPDATE outbox SET deliveryState = :deliveryState, lastAttemptAt = :lastAttemptAt WHERE `key` = :key")
+    suspend fun updateOutboxDelivery(key: String, deliveryState: String, lastAttemptAt: Long?)
 
-    @Query("DELETE FROM outbox WHERE messageId = :messageId")
-    suspend fun removeOutbox(messageId: String)
+    @Query("DELETE FROM outbox WHERE `key` = :key")
+    suspend fun removeOutbox(key: String)
+
+    @Query("UPDATE messages SET totalRecipients = :total WHERE messageId = :messageId")
+    suspend fun updateMessageRecipients(messageId: String, total: Int)
+
+    @Query("UPDATE messages SET conversationId = :to WHERE conversationId = :from")
+    suspend fun moveMessages(from: String, to: String)
+
+    @Query("UPDATE outbox SET conversationId = :to WHERE conversationId = :from")
+    suspend fun moveOutbox(from: String, to: String)
 
     @Query("DELETE FROM messages")
     suspend fun clearMessages()
@@ -192,69 +164,24 @@ interface DuoDao {
     @Query("DELETE FROM contacts")
     suspend fun clearContacts()
 
-    // Groups
-    @Query("SELECT * FROM groups ORDER BY createdAt DESC")
-    suspend fun loadGroups(): List<GroupEntity>
+    @Query("UPDATE contacts SET trust = :trust, verifiedAt = :verifiedAt WHERE uid = :uid")
+    suspend fun setContactTrust(uid: String, trust: String, verifiedAt: Long?)
 
-    @Query("SELECT * FROM groups WHERE groupId = :groupId LIMIT 1")
-    suspend fun getGroup(groupId: String): GroupEntity?
+    @Query("UPDATE contacts SET identityProof = :proof WHERE uid = :uid")
+    suspend fun setContactProof(uid: String, proof: String)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun putGroup(group: GroupEntity)
-
-    @Query("DELETE FROM groups WHERE groupId = :groupId")
-    suspend fun deleteGroup(groupId: String)
-
-    @Query("DELETE FROM groups")
-    suspend fun clearGroups()
-
-    // Group Members
-    @Query("SELECT * FROM group_members WHERE groupId = :groupId")
-    suspend fun loadGroupMembers(groupId: String): List<GroupMemberEntity>
+    // Group logs
+    @Query("SELECT * FROM group_logs")
+    suspend fun loadGroupLogs(): List<GroupLogEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun putGroupMember(member: GroupMemberEntity)
+    suspend fun putGroupLog(log: GroupLogEntity)
 
-    @Query("DELETE FROM group_members WHERE groupId = :groupId AND uid = :uid")
-    suspend fun removeGroupMember(groupId: String, uid: String)
+    @Query("DELETE FROM group_logs WHERE groupId = :groupId")
+    suspend fun deleteGroupLog(groupId: String)
 
-    @Query("DELETE FROM group_members WHERE groupId = :groupId")
-    suspend fun clearGroupMembers(groupId: String)
-
-    @Query("DELETE FROM group_members")
-    suspend fun clearAllGroupMembers()
-
-    // Group Epoch Keys
-    @Query("SELECT * FROM group_epoch_keys WHERE groupId = :groupId AND epoch = :epoch LIMIT 1")
-    suspend fun getEpochKey(groupId: String, epoch: Int): GroupEpochKeyEntity?
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun putEpochKey(key: GroupEpochKeyEntity)
-
-    @Query("DELETE FROM group_epoch_keys WHERE groupId = :groupId")
-    suspend fun clearGroupEpochKeys(groupId: String)
-
-    @Query("DELETE FROM group_epoch_keys")
-    suspend fun clearAllGroupEpochKeys()
-
-    // File Transfers
-    @Query("SELECT * FROM file_transfers WHERE conversationId = :conversationId ORDER BY createdAt DESC")
-    suspend fun loadFileTransfers(conversationId: String): List<FileTransferEntity>
-
-    @Query("SELECT * FROM file_transfers WHERE transferId = :transferId LIMIT 1")
-    suspend fun getFileTransfer(transferId: String): FileTransferEntity?
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun putFileTransfer(transfer: FileTransferEntity)
-
-    @Query("UPDATE file_transfers SET receivedChunks = :chunks, state = :state WHERE transferId = :transferId")
-    suspend fun updateFileProgress(transferId: String, chunks: Int, state: String)
-
-    @Query("DELETE FROM file_transfers WHERE transferId = :transferId")
-    suspend fun deleteFileTransfer(transferId: String)
-
-    @Query("DELETE FROM file_transfers")
-    suspend fun clearFileTransfers()
+    @Query("DELETE FROM group_logs")
+    suspend fun clearGroupLogs()
 }
 
 @Database(
@@ -262,12 +189,9 @@ interface DuoDao {
         MessageEntity::class,
         OutboxEntity::class,
         ContactEntity::class,
-        GroupEntity::class,
-        GroupMemberEntity::class,
-        GroupEpochKeyEntity::class,
-        FileTransferEntity::class,
+        GroupLogEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class DuoDatabase : RoomDatabase() {
@@ -359,6 +283,42 @@ abstract class DuoDatabase : RoomDatabase() {
                         "keyB64Url TEXT NOT NULL, " +
                         "createdAt INTEGER NOT NULL)",
                 )
+            }
+        }
+
+        /**
+         * v4 -> v5: real multi-contact and groups. The outbox gets one row per (message, recipient), contacts
+         * learn how they were met, groups become signed event logs, and the never-used placeholder tables
+         * (fake groups, epoch keys, file transfers) go away. Existing messages and the queue are kept.
+         */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN totalRecipients INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    "CREATE TABLE outbox_new (" +
+                        "`key` TEXT NOT NULL, messageId TEXT NOT NULL, recipientId TEXT NOT NULL, " +
+                        "payloadCipher TEXT NOT NULL, createdAt INTEGER NOT NULL, attemptCount INTEGER NOT NULL, " +
+                        "lastAttemptAt INTEGER, deliveryState TEXT NOT NULL, lastError TEXT, " +
+                        "conversationId TEXT NOT NULL, PRIMARY KEY(`key`))",
+                )
+                db.execSQL(
+                    "INSERT OR REPLACE INTO outbox_new (`key`, messageId, recipientId, payloadCipher, createdAt, " +
+                        "attemptCount, lastAttemptAt, deliveryState, lastError, conversationId) " +
+                        "SELECT messageId || '|' || recipientId, messageId, recipientId, payloadCipher, createdAt, " +
+                        "attemptCount, lastAttemptAt, deliveryState, lastError, conversationId FROM outbox",
+                )
+                db.execSQL("DROP TABLE outbox")
+                db.execSQL("ALTER TABLE outbox_new RENAME TO outbox")
+                db.execSQL("ALTER TABLE contacts ADD COLUMN trust TEXT NOT NULL DEFAULT 'verified'")
+                db.execSQL("ALTER TABLE contacts ADD COLUMN introducedBy TEXT")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS group_logs (" +
+                        "groupId TEXT NOT NULL PRIMARY KEY, eventsCipher TEXT NOT NULL, updatedAt INTEGER NOT NULL)",
+                )
+                db.execSQL("DROP TABLE IF EXISTS groups")
+                db.execSQL("DROP TABLE IF EXISTS group_members")
+                db.execSQL("DROP TABLE IF EXISTS group_epoch_keys")
+                db.execSQL("DROP TABLE IF EXISTS file_transfers")
             }
         }
     }

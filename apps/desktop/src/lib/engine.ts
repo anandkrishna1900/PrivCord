@@ -164,6 +164,7 @@ export class ChatEngine {
   private links = new Map<string, PeerLink>();
   private msgs = new Map<string, StoredMessage>();
   private coord: GroupCoordinator;
+  private ownName: string | null = null;
   private known = new Set<string>();
   private pendingGroup = new Map<string, { from: string; frame: Extract<GroupFrame, { kind: 'gmsg' }>; at: number }>();
   private seenBlobs = new Set<string>();
@@ -181,12 +182,7 @@ export class ChatEngine {
 
   constructor(private readonly deps: EngineDeps) {
     this.identity = deps.identity;
-    this.coord = new GroupCoordinator({
-      ownUid: deps.identity.uid,
-      ownCard: JSON.parse(JSON.stringify(this.ownCard())),
-      signPriv: deps.identity.privateJwk,
-      knownUids: () => this.known,
-    });
+    this.coord = this.newCoordinator();
     this.state = {
       phase: 'starting',
       uid: deps.identity.uid,
@@ -221,14 +217,31 @@ export class ChatEngine {
     return () => this.listeners.delete(listener);
   }
 
+  private newCoordinator(): GroupCoordinator {
+    return new GroupCoordinator({
+      ownUid: this.identity.uid,
+      ownCard: JSON.parse(JSON.stringify(this.ownCard())),
+      signPriv: this.identity.privateJwk,
+      knownUids: () => this.known,
+    });
+  }
+
+  /** The name on our invite changed: groups we add people to from now on carry the new name. */
+  async refreshOwnName(name: string): Promise<void> {
+    this.ownName = name.trim();
+    const saved = this.coord.export();
+    this.coord = this.newCoordinator();
+    await this.coord.load(saved);
+  }
+
   private ownCard(): ContactCard {
-    const text = contactCardOf(this.identity, loadSettings().displayName || undefined);
+    const text = contactCardOf(this.identity, (this.ownName ?? loadSettings().displayName) || undefined);
     return decodeCardSync(text);
   }
 
   /** The text a friend scans or pastes to add us. */
   myInvite(): string {
-    return contactCardOf(this.identity, loadSettings().displayName || undefined);
+    return contactCardOf(this.identity, (this.ownName ?? loadSettings().displayName) || undefined);
   }
 
   private emit(patch: Partial<ChatState> = {}): void {
