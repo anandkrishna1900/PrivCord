@@ -2,7 +2,7 @@
   "name": "duochat",
   "version": "0.1.0",
   "private": true,
-  "description": "DuoChat \u2014 private two-person messenger: end-to-end encrypted, direct WebRTC, no accounts",
+  "description": "DuoChat — private two-person messenger: end-to-end encrypted, direct WebRTC, no accounts",
   "workspaces": [
     "packages/protocol",
     "apps/desktop"
@@ -20,5 +20,6 @@
   },
   "allowScripts": {
     "esbuild@0.25.12": true
-  }
+  },
+  "license": "Apache-2.0"
 }

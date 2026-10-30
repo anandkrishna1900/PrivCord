@@ -14,7 +14,7 @@ Be clear with users about what they are trusting: see [CONNECTIVITY.md](CONNECTI
 
 ## 1. Release checklist
 
-1. Choose and add a `LICENSE` file (none exists yet).
+1. (License: Apache-2.0, already in `LICENSE`.)
 2. Bump the version in one pass: `package.json` (root and `apps/desktop`, which feeds the
    in-app version), `apps/desktop/src-tauri/tauri.conf.json`, `apps/desktop/src-tauri/Cargo.toml`,
    `apps/android/app/build.gradle.kts` (`versionName`, **and increase `versionCode`**).

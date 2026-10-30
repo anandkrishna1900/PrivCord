@@ -125,4 +125,6 @@ and, in restrictive networks, TURN infrastructure, whichever you choose.
 
 ## License
 
-No license has been chosen yet. Until the owner adds a `LICENSE` file, all rights are reserved.
+Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). You may use, modify and
+distribute DuoChat, including commercially, under its terms. Contributions are accepted under
+the same license.
