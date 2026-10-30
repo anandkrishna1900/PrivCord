@@ -1,6 +1,7 @@
 package com.duochat.app.data
 
 import android.content.Context
+import com.duochat.app.AppConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -11,7 +12,9 @@ data class AppSettings(
     val accent: String = ACCENTS.first().second,
     val notificationsEnabled: Boolean = true,
     val notificationPreviews: Boolean = true,
-    val messageMode: MessageMode = MessageMode.CLOUD,
+    /** Local nickname for the other person (never sent anywhere). */
+    val peerNickname: String = "",
+    val network: NetworkConfig = NetworkConfig(),
 )
 
 val ACCENTS: List<Pair<String, String>> = listOf(
@@ -37,7 +40,8 @@ class SettingsRepository(context: Context) {
             .putString("accent", next.accent)
             .putBoolean("notificationsEnabled", next.notificationsEnabled)
             .putBoolean("notificationPreviews", next.notificationPreviews)
-            .putString("messageMode", next.messageMode.wire)
+            .putString("peerNickname", next.peerNickname)
+            .putString("network", next.network.toJson())
             .apply()
     }
 
@@ -49,7 +53,11 @@ class SettingsRepository(context: Context) {
             accent = if (Regex("^#[0-9a-fA-F]{6}$").matches(accent)) accent else ACCENTS.first().second,
             notificationsEnabled = prefs.getBoolean("notificationsEnabled", true),
             notificationPreviews = prefs.getBoolean("notificationPreviews", true),
-            messageMode = MessageMode.fromWire(prefs.getString("messageMode", null)),
+            peerNickname = (prefs.getString("peerNickname", "") ?: "").trim().take(40),
+            network = NetworkConfig.fromJson(
+                prefs.getString("network", null),
+                fallback = AppConfig.defaultNetworkConfig(),
+            ),
         )
     }
 }

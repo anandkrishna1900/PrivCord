@@ -2,19 +2,19 @@ package com.duochat.app.p2p
 
 import com.duochat.app.data.AUTH_TIMEOUT_MS
 import com.duochat.app.data.ChatMessage
+import com.duochat.app.data.ConnectionPath
 import com.duochat.app.data.DeliveryState
 import com.duochat.app.data.MAX_TEXT_LENGTH
-import com.duochat.app.data.PROTOCOL_VERSION
 import com.duochat.app.data.P2PState
-import com.duochat.app.data.PeerKeySource
+import com.duochat.app.data.PROTOCOL_VERSION
 import com.duochat.app.data.PeerTrust
 import com.duochat.app.data.TransportKind
 import com.duochat.app.data.countCodePoints
 import com.duochat.app.data.isValidClientMessageId
 import com.duochat.app.security.AndroidIdentityManager
 import com.duochat.app.security.DeviceIdentity
+import com.duochat.app.security.PinnedPeer
 import com.duochat.app.security.PublicJwk
-import com.duochat.app.security.ResolvedPeerKey
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -23,27 +23,30 @@ import org.json.JSONObject
 import org.webrtc.PeerConnection
 import java.security.SecureRandom
 
+/**
+ * One direct connection to the other person: the WebRTC data channel plus the
+ * identity handshake (hello / auth_proof / auth_ok) that runs over it. Mirrors
+ * the desktop engine's peer handling.
+ */
 class PeerSession(
     private val scope: CoroutineScope,
     private val conversationId: String,
     private val selfUid: String,
-    private val peerUid: String,
     private val identityManager: AndroidIdentityManager,
     private val identity: () -> DeviceIdentity?,
-    private val resolvePeerKey: suspend (deviceId: String) -> ResolvedPeerKey?,
-    private val cachePeerKey: (deviceId: String, key: PublicJwk) -> Unit,
-    private val iceServers: List<PeerConnection.IceServer>,
+    private val pinned: () -> PinnedPeer?,
+    private val pinPeer: (uid: String, deviceId: String, key: PublicJwk) -> Unit,
+    private val iceServers: () -> List<PeerConnection.IceServer>,
+    private val forceRelay: () -> Boolean,
     private val listener: Listener,
 ) {
-    enum class Origin { AUTO, MANUAL }
-
     interface Listener {
         fun onStateChanged(
             state: P2PState,
             connected: Boolean,
             trust: PeerTrust,
             safetyNumber: String?,
-            keySource: PeerKeySource?,
+            peerUid: String?,
         )
 
         fun onNotice(message: String)
@@ -67,9 +70,7 @@ class PeerSession(
         var proven: Boolean = false,
         var acknowledged: Boolean = false,
         var authenticated: Boolean = false,
-        var origin: Origin = Origin.AUTO,
         var trust: PeerTrust = PeerTrust.NONE,
-        var keySource: PeerKeySource? = null,
         var safetyNumber: String? = null,
     )
 
@@ -94,28 +95,15 @@ class PeerSession(
     val hasPendingConnection: Boolean
         get() = transport != null
 
-    val trust: PeerTrust
-        get() = auth.trust
-
-    val safetyNumber: String?
-        get() = auth.safetyNumber
-
-    val keySource: PeerKeySource?
-        get() = auth.keySource
+    suspend fun connectionPath(): ConnectionPath? = transport?.connectionPath()
 
     fun setExpectedPeerKey(key: PublicJwk?) {
         manualExpectedKey = key
     }
 
-    suspend fun createOffer(origin: Origin): String {
-        val created = newTransport(origin)
-        return created.createOffer()
-    }
+    suspend fun createOffer(): String = newTransport().createOffer()
 
-    suspend fun acceptOffer(origin: Origin, sdp: String): String {
-        val created = newTransport(origin)
-        return created.acceptOffer(sdp)
-    }
+    suspend fun acceptOffer(sdp: String): String = newTransport().acceptOffer(sdp)
 
     suspend fun applyAnswer(sdp: String) {
         val current = transport ?: throw IllegalStateException("No pending connection offer.")
@@ -128,31 +116,38 @@ class PeerSession(
         cancelTimer()
         transport?.close()
         transport = null
-        resetAuth(auth.origin)
+        auth = Auth()
     }
 
+    /** The user compared the safety number: pin this peer so later connections are verified. */
     fun confirmPeer() {
         val hello = auth.hello ?: return
         if (!auth.authenticated) return
         auth.trust = PeerTrust.CONFIRMED
-        cachePeerKey(hello.deviceId, hello.key)
+        pinPeer(hello.uid, hello.deviceId, hello.key)
+        publishState(P2PState.CONNECTED)
+    }
+
+    private fun publishState(state: P2PState) {
         listener.onStateChanged(
-            P2PState.CONNECTED,
-            true,
-            PeerTrust.CONFIRMED,
+            state,
+            auth.authenticated &&
+                (auth.trust == PeerTrust.VERIFIED || auth.trust == PeerTrust.CONFIRMED),
+            auth.trust,
             auth.safetyNumber,
-            auth.keySource,
+            auth.hello?.uid,
         )
     }
 
-    private fun newTransport(origin: Origin): WebRtcTransport {
+    private fun newTransport(): WebRtcTransport {
         cancelTimer()
         transport?.close()
         frameQueue.clear()
-        resetAuth(origin)
+        auth = Auth()
         listener.onStateChanged(P2PState.CONNECTING, false, PeerTrust.NONE, null, null)
         val created = WebRtcTransport(
-            iceServers,
+            iceServers(),
+            forceRelay(),
             object : WebRtcTransport.Handlers {
                 override fun onOpen() = handleOpen()
 
@@ -167,28 +162,19 @@ class PeerSession(
         return created
     }
 
-    private fun resetAuth(origin: Origin) {
-        auth = Auth(
-            origin = origin,
-            keySource = null,
-        )
-    }
-
     private fun cancelTimer() {
         authJob?.cancel()
         authJob = null
     }
 
     private fun handleOpen() {
-        val currentIdentity = identity()
-        if (currentIdentity == null) {
+        if (identity() == null) {
             transport?.close()
             transport = null
             return
         }
         cancelTimer()
-        auth.myNonce = randomNonce()
-        auth.authenticated = false
+        auth = Auth(myNonce = randomNonce())
         frameQueue.clear()
         listener.onStateChanged(P2PState.CONNECTING, false, PeerTrust.NONE, null, null)
         sendHello()
@@ -207,14 +193,9 @@ class PeerSession(
                 .put("kind", "hello")
                 .put("uid", selfUid)
                 .put("deviceId", currentIdentity.deviceId)
-                .put(
-                    "publicKeyJwk",
-                    JSONObject()
-                        .put("kty", "EC")
-                        .put("crv", "P-256")
-                        .put("x", currentIdentity.publicJwk.x)
-                        .put("y", currentIdentity.publicJwk.y),
-                )
+                .put("publicKeyJwk", jwk(currentIdentity.publicJwk))
+                .put("dhJwk", jwk(currentIdentity.dhJwk))
+                .put("identityProof", currentIdentity.identityProof)
                 .put("nonce", auth.myNonce),
         )
     }
@@ -222,8 +203,7 @@ class PeerSession(
     private fun handleClose() {
         cancelTimer()
         val wasConnected = auth.authenticated
-        val origin = auth.origin
-        resetAuth(origin)
+        auth = Auth()
         frameQueue.clear()
         listener.onStateChanged(
             if (wasConnected) P2PState.FAILED else P2PState.IDLE,
@@ -241,8 +221,7 @@ class PeerSession(
         scope.launch {
             try {
                 while (frameQueue.isNotEmpty()) {
-                    val next = frameQueue.removeFirst()
-                    processFrame(next)
+                    processFrame(frameQueue.removeFirst())
                 }
             } finally {
                 processingFrames = false
@@ -250,7 +229,7 @@ class PeerSession(
         }
     }
 
-    private suspend fun processFrame(raw: String) {
+    private fun processFrame(raw: String) {
         val frame = try {
             JSONObject(raw)
         } catch (_: Exception) {
@@ -267,15 +246,17 @@ class PeerSession(
         }
     }
 
-    private suspend fun handleHello(frame: JSONObject) {
+    private fun handleHello(frame: JSONObject) {
         val uid = frame.optString("uid")
         val deviceId = frame.optString("deviceId")
         val nonce = frame.optString("nonce")
-        val keyObject = frame.optJSONObject("publicKeyJwk")
-        val key = keyObject?.let { publicKeyFrom(it) }
-        if (uid.isEmpty() || deviceId.isEmpty() || nonce.length < 16 || key == null) return
-        if (uid != peerUid) {
-            failPeer("A different account attempted to connect.")
+        val key = frame.optJSONObject("publicKeyJwk")?.let { publicKeyFrom(it) }
+        val dh = frame.optJSONObject("dhJwk")?.let { publicKeyFrom(it) }
+        val proof = frame.optString("identityProof")
+        if (
+            uid.isEmpty() || deviceId.isEmpty() || nonce.length < 16 ||
+            key == null || dh == null || proof.length < 40
+        ) {
             return
         }
         val currentIdentity = identity() ?: return
@@ -283,33 +264,33 @@ class PeerSession(
             failPeer("Refused a connection that claimed our own device identity.")
             return
         }
-        val resolved = resolvePeerKey(deviceId)
-        if (resolved != null) {
-            if (!identityManager.publicKeysEqual(resolved.key, key)) {
-                failPeer("Peer identity key does not match the registered device.")
+        // The id is a fingerprint of the ECDH identity key, and that key is bound
+        // to the signing key by a self-signature: nobody can claim someone else's id.
+        if (!identityManager.verifyIdentityProof(key, dh, proof)) {
+            failPeer("Peer identity proof is invalid.")
+            return
+        }
+        if (identityManager.uidFor(dh) != uid) {
+            failPeer("Peer identity does not match its key.")
+            return
+        }
+        val pin = pinned()
+        if (pin != null) {
+            if (uid != pin.uid || !identityManager.publicKeysEqual(pin.key, key)) {
+                failPeer(
+                    "This is not the device you paired with. Use Reset pairing in " +
+                        "Settings to pair a different one.",
+                )
                 return
             }
             auth.trust = PeerTrust.VERIFIED
-            auth.keySource = when (resolved.source) {
-                "cloud" -> PeerKeySource.CLOUD
-                "cache" -> PeerKeySource.CACHE
-                else -> PeerKeySource.CACHE
-            }
-            if (resolved.source == "cloud") cachePeerKey(deviceId, key)
-        } else if (auth.origin == Origin.MANUAL) {
+        } else {
             val expected = manualExpectedKey
             if (expected != null && !identityManager.publicKeysEqual(expected, key)) {
-                failPeer("This peer's identity key does not match the connection code.")
+                failPeer("Peer identity key does not match the connection code.")
                 return
             }
             auth.trust = PeerTrust.UNVERIFIED
-            auth.keySource = PeerKeySource.MANUAL
-        } else {
-            failPeer(
-                "Could not verify the peer device key. Register the peer device in " +
-                    "Firestore or use a manual code.",
-            )
-            return
         }
         auth.hello = Hello(uid, deviceId, nonce, key)
         sendProofIfReady()
@@ -317,9 +298,8 @@ class PeerSession(
 
     private fun handleProof(frame: JSONObject) {
         val hello = auth.hello
-        val uid = frame.optString("uid")
         val signature = frame.optString("signature")
-        if (hello == null || uid != peerUid || signature.length <= 40) {
+        if (hello == null || frame.optString("uid") != hello.uid || signature.length <= 40) {
             failPeer("Peer identity proof arrived out of order.")
             return
         }
@@ -345,7 +325,7 @@ class PeerSession(
     }
 
     private fun handleAuthOk(frame: JSONObject) {
-        if (frame.optString("uid") != peerUid) {
+        if (frame.optString("uid") != auth.hello?.uid) {
             failPeer("Peer acknowledgement came from the wrong account.")
             return
         }
@@ -365,7 +345,7 @@ class PeerSession(
             noncePeer = hello.nonce,
         )
         val signature = try {
-            identityManager.sign(selfUid, challenge)
+            identityManager.sign(challenge)
         } catch (error: Exception) {
             failPeer("Could not sign the identity proof: ${error.message}")
             return
@@ -391,17 +371,13 @@ class PeerSession(
         } catch (_: Exception) {
             null
         }
-        listener.onStateChanged(
-            P2PState.CONNECTED,
-            auth.trust == PeerTrust.VERIFIED || auth.trust == PeerTrust.CONFIRMED,
-            auth.trust,
-            auth.safetyNumber,
-            auth.keySource,
-        )
+        // Refresh the pinned record for a verified reconnect.
+        if (auth.trust == PeerTrust.VERIFIED) pinPeer(hello.uid, hello.deviceId, hello.key)
+        publishState(P2PState.CONNECTED)
         if (auth.trust == PeerTrust.UNVERIFIED) {
             listener.onNotice(
-                "Direct channel established. Compare the safety number with your friend, " +
-                    "then mark it verified.",
+                "Connected. Compare the safety number with your friend, then mark it " +
+                    "verified to start chatting.",
             )
         }
     }
@@ -425,13 +401,16 @@ class PeerSession(
     }
 
     private fun handlePeerMessage(frame: JSONObject) {
+        // Until the safety number is confirmed the peer is not trusted: drop its
+        // messages. It resends anything unacknowledged once the channel is verified.
+        if (!isReady) return
         val messageId = frame.optString("messageId")
         val clientMessageId = frame.optString("clientMessageId")
         val senderId = frame.optString("senderId")
         val text = frame.optString("text")
         val clientCreatedAt = (frame.opt("clientCreatedAt") as? Number)?.toLong() ?: return
         if (!isValidClientMessageId(messageId) || !isValidClientMessageId(clientMessageId)) return
-        if (senderId != peerUid) return
+        if (senderId != auth.hello?.uid) return
         if (text.trim().isEmpty() || countCodePoints(text) > MAX_TEXT_LENGTH) return
         if (clientCreatedAt <= 0) return
         listener.onPeerMessage(
@@ -441,10 +420,8 @@ class PeerSession(
                 senderId = senderId,
                 text = text,
                 clientCreatedAt = clientCreatedAt,
-                serverCreatedAt = null,
                 transport = TransportKind.P2P,
                 deliveryState = DeliveryState.DELIVERED,
-                syncedToCloud = false,
                 readAt = null,
             ),
         )
@@ -455,10 +432,13 @@ class PeerSession(
         transport?.close()
         transport = null
         frameQueue.clear()
-        resetAuth(auth.origin)
+        auth = Auth()
         listener.onFailure(reason)
         listener.onStateChanged(P2PState.FAILED, false, PeerTrust.NONE, null, null)
     }
+
+    private fun jwk(key: PublicJwk): JSONObject =
+        JSONObject().put("kty", "EC").put("crv", "P-256").put("x", key.x).put("y", key.y)
 
     private fun publicKeyFrom(value: JSONObject): PublicJwk? {
         if (value.optString("kty") != "EC" || value.optString("crv") != "P-256") return null

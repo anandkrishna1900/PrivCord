@@ -19,13 +19,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.duochat.app.data.EnginePhase
 import com.duochat.app.ui.AppViewModel
-import com.duochat.app.ui.AuthUiState
 import com.duochat.app.ui.ChatScreen
-import com.duochat.app.ui.DeniedScreen
 import com.duochat.app.ui.DuoChatTheme
 import com.duochat.app.ui.FatalScreen
 import com.duochat.app.ui.LoadingScreen
-import com.duochat.app.ui.LoginScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -49,11 +46,8 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun RootScreen(viewModel: AppViewModel) {
-    val auth by viewModel.auth.collectAsStateWithLifecycle()
     val chat by viewModel.chat.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
-    val authError by viewModel.authError.collectAsStateWithLifecycle()
-    val busy by viewModel.busy.collectAsStateWithLifecycle()
     val killSwitchReport by viewModel.killSwitchReport.collectAsStateWithLifecycle()
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -69,65 +63,34 @@ private fun RootScreen(viewModel: AppViewModel) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    when (val current = auth) {
-        is AuthUiState.Unconfigured -> FatalScreen(
-            message = "Firebase is not configured for this build. Add the Firebase values " +
-                "to local.properties or gradle.properties (see android/README).",
-            signOut = viewModel::signOut,
+    val state = chat
+    when {
+        state == null || state.phase == EnginePhase.STOPPED ||
+            state.phase == EnginePhase.STARTING -> LoadingScreen("Opening your encrypted local conversation…")
+
+        state.phase == EnginePhase.ERROR -> FatalScreen(
+            message = state.error ?: "The chat engine could not start.",
+            onRetry = viewModel::startEngine,
         )
 
-        is AuthUiState.SignedOut -> LoginScreen(
-            busy = busy,
-            error = authError,
-            onSignIn = viewModel::signIn,
+        else -> ChatScreen(
+            state = state,
+            settings = settings,
+            onSend = viewModel::send,
+            onRetry = viewModel::retry,
+            onClearNotice = viewModel::clearNotice,
+            onConfirmPeer = viewModel::confirmPeer,
+            onCancelManual = viewModel::cancelManual,
+            onResetPairing = viewModel::resetPairing,
+            onClearLocalData = viewModel::clearLocalData,
+            onUpdateSettings = viewModel::updateSettings,
+            onCreateManualOffer = viewModel::createManualOffer,
+            onApplyManualAnswer = viewModel::applyManualAnswer,
+            onAcceptManualOffer = viewModel::acceptManualOffer,
+            onRunNuke = viewModel::runNuke,
+            onRunChatSwitch = viewModel::runChatSwitch,
+            killSwitchReport = killSwitchReport,
+            onAcknowledgeKillSwitch = viewModel::acknowledgeKillSwitch,
         )
-
-        is AuthUiState.Loading -> LoadingScreen(
-            message = current.email?.let { "Checking access for $it…" } ?: "Checking access…",
-        )
-
-        is AuthUiState.Denied -> DeniedScreen(
-            reason = current.reason,
-            uid = current.uid,
-            email = current.email,
-            signOut = viewModel::signOut,
-        )
-
-        is AuthUiState.SignedIn -> {
-            val state = chat
-            when {
-                state == null -> LoadingScreen("Starting DuoChat…")
-                state.phase == EnginePhase.STOPPED -> LoadingScreen("Starting DuoChat…")
-                state.phase == EnginePhase.ERROR -> FatalScreen(
-                    message = state.error ?: "The chat engine could not start.",
-                    signOut = viewModel::signOut,
-                )
-
-                else -> ChatScreen(
-                    signedIn = current,
-                    state = state,
-                    settings = settings,
-                    onSignOut = viewModel::signOut,
-                    onSend = viewModel::send,
-                    onRetry = viewModel::retry,
-                    onLoadOlder = viewModel::loadOlder,
-                    onClearNotice = viewModel::clearNotice,
-                    onConfirmPeer = viewModel::confirmPeer,
-                    onReconnect = viewModel::requestDirectConnection,
-                    onCancelManual = viewModel::cancelManual,
-                    onChangeDisplayName = viewModel::changeDisplayName,
-                    onClearLocalData = viewModel::clearLocalData,
-                    onUpdateSettings = viewModel::updateSettings,
-                    onSetMessageMode = viewModel::setMessageMode,
-                    onCreateManualOffer = viewModel::createManualOffer,
-                    onApplyManualAnswer = viewModel::applyManualAnswer,
-                    onAcceptManualOffer = viewModel::acceptManualOffer,
-                    onRunNuke = viewModel::runNuke,
-                    onRunChatSwitch = viewModel::runChatSwitch,
-                    killSwitchReport = killSwitchReport,
-                    onAcknowledgeKillSwitch = viewModel::acknowledgeKillSwitch,
-                )
-            }
-        }
     }
 }

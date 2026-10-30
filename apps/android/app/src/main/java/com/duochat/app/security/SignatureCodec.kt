@@ -1,17 +1,17 @@
 package com.duochat.app.security
 
-import android.util.Base64
+import java.util.Base64
 
 object SignatureCodec {
     private const val PART_LENGTH = 32
 
     fun base64UrlEncode(bytes: ByteArray): String =
-        Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+        Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
 
     fun base64UrlDecode(value: String): ByteArray {
-        val normalized = value.replace('-', '+').replace('_', '/')
+        val normalized = value.filterNot { it.isWhitespace() }.replace('-', '+').replace('_', '/')
         val padded = normalized + "=".repeat((4 - normalized.length % 4) % 4)
-        return Base64.decode(padded, Base64.DEFAULT)
+        return Base64.getDecoder().decode(padded)
     }
 
     fun derToP1363(der: ByteArray): ByteArray {

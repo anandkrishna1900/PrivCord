@@ -3,6 +3,8 @@ package com.duochat.app.p2p
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import com.duochat.app.data.ConnectionPath
+import com.duochat.app.data.classifyConnectionPath
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import org.webrtc.DataChannel
@@ -11,6 +13,7 @@ import org.webrtc.MediaConstraints
 import org.webrtc.MediaStream
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
+import org.webrtc.RTCStatsReport
 import org.webrtc.RtpReceiver
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
@@ -20,6 +23,7 @@ import kotlin.coroutines.resumeWithException
 
 class WebRtcTransport(
     private val iceServers: List<PeerConnection.IceServer>,
+    private val forceRelay: Boolean,
     private val handlers: Handlers,
 ) {
     interface Handlers {
@@ -89,6 +93,34 @@ class WebRtcTransport(
         }
     }
 
+    /**
+     * Reads the nominated ICE candidate pair and classifies it. Returns null if
+     * stats are not available yet. Never inferred from configuration.
+     */
+    suspend fun connectionPath(): ConnectionPath? {
+        val pc = peerConnection ?: return null
+        val report = withTimeoutOrNull(3_000) {
+            suspendCancellableCoroutine<RTCStatsReport?> { continuation ->
+                pc.getStats { result -> if (continuation.isActive) continuation.resume(result) }
+            }
+        } ?: return null
+        val stats = report.statsMap
+        val selectedId = stats.values.firstOrNull { it.type == "transport" }
+            ?.members?.get("selectedCandidatePairId") as? String
+        val pair = stats[selectedId]
+            ?: stats.values.firstOrNull {
+                it.type == "candidate-pair" &&
+                    it.members["state"] == "succeeded" &&
+                    it.members["nominated"] == true
+            }
+            ?: return null
+        val local = stats[pair.members["localCandidateId"] as? String]
+            ?.members?.get("candidateType") as? String
+        val remote = stats[pair.members["remoteCandidateId"] as? String]
+            ?.members?.get("candidateType") as? String
+        return classifyConnectionPath(local, remote)
+    }
+
     fun close() {
         closedByUs = true
         isOpen = false
@@ -118,6 +150,7 @@ class WebRtcTransport(
     private fun createPeerConnection(): PeerConnection {
         val configuration = PeerConnection.RTCConfiguration(iceServers).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
+            if (forceRelay) iceTransportsType = PeerConnection.IceTransportsType.RELAY
         }
         val pc = PeerConnectionFactoryHolder.factory().createPeerConnection(
             configuration,

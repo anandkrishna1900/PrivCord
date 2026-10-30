@@ -130,9 +130,10 @@ fun ManualConnectDialog(
                     }
                 }
                 Text(
-                    "Use this when the cloud is unavailable. Share the codes over another " +
-                        "channel you trust, such as a call. The codes contain signaling data " +
-                        "and a public key, never private keys or message text.",
+                    "There is no server, so you introduce your devices with codes: one of you " +
+                        "creates a code, the other pastes it and sends back a reply. Share the " +
+                        "codes over a channel you trust. They contain connection data and public " +
+                        "keys, never private keys or message text.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -372,7 +373,7 @@ fun ManualConnectDialog(
                 Spacer(Modifier.height(6.dp))
                 Text(
                     "Compare the safety number below with your friend over the same trusted " +
-                        "channel before confirming. Manual connections are not cloud-verified.",
+                        "channel before confirming. The first time, this check makes sure you are talking to the right device.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -424,7 +425,7 @@ fun ManualConnectDialog(
                     Text(
                         when (state.peerTrust) {
                             PeerTrust.CONFIRMED -> "confirmed"
-                            PeerTrust.VERIFIED -> "cloud-verified"
+                            PeerTrust.VERIFIED -> "verified (paired device)"
                             PeerTrust.UNVERIFIED -> "unverified"
                             PeerTrust.NONE -> "not established"
                         },

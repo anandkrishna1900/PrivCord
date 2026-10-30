@@ -24,11 +24,9 @@ class MessageStore(
                 senderId = row.senderId,
                 text = text,
                 clientCreatedAt = row.clientCreatedAt,
-                serverCreatedAt = row.serverCreatedAt,
-                transport = TransportKind.fromWire(row.transport) ?: TransportKind.CLOUD,
+                transport = TransportKind.fromWire(row.transport) ?: TransportKind.P2P,
                 deliveryState = runCatching { DeliveryState.valueOf(row.deliveryState) }
                     .getOrDefault(DeliveryState.QUEUED),
-                syncedToCloud = row.syncedToCloud,
                 readAt = row.readAt,
             )
         }
@@ -42,10 +40,8 @@ class MessageStore(
                 senderId = message.senderId,
                 textCipher = crypto.encrypt(message.text),
                 clientCreatedAt = message.clientCreatedAt,
-                serverCreatedAt = message.serverCreatedAt,
                 transport = message.transport.wire,
                 deliveryState = message.deliveryState.name,
-                syncedToCloud = message.syncedToCloud,
                 readAt = message.readAt,
                 conversationId = conversationId,
             ),
@@ -56,13 +52,11 @@ class MessageStore(
         messageId: String,
         deliveryState: DeliveryState? = null,
         transport: TransportKind? = null,
-        syncedToCloud: Boolean? = null,
         readAt: Long? = null,
         setReadAt: Boolean = false,
     ) {
         if (deliveryState != null) dao.updateMessageDelivery(messageId, deliveryState.name)
         if (transport != null) dao.updateMessageTransport(messageId, transport.wire)
-        if (syncedToCloud != null) dao.updateMessageSynced(messageId, syncedToCloud)
         if (setReadAt || readAt != null) dao.updateMessageReadAt(messageId, readAt)
     }
 

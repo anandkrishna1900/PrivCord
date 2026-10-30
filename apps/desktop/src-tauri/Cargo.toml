@@ -28,3 +28,10 @@ keyring = { version = "3", features = ["sync-secret-service"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
+
+# Bluetooth LE central (desktop only). UNTESTED on hardware; see docs/BLE_TRANSPORT.md.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+btleplug = "=0.13.5"
+futures = "0.3"
+tokio = { version = "1", features = ["rt", "time", "sync"] }
+uuid = "1"

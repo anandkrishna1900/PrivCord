@@ -13,7 +13,12 @@ data class ManualSignal(
     val conversationId: String,
     val fromUid: String,
     val fromDeviceId: String,
+    /** ECDSA identity signing key. */
     val publicKeyJwk: PublicJwk,
+    /** ECDH identity key; the uid is its fingerprint. */
+    val dhJwk: PublicJwk,
+    /** Sign-key signature binding [dhJwk] to [publicKeyJwk]. */
+    val identityProof: String,
     val sdp: String,
     val nonce: String,
     val createdAt: Long,
@@ -35,6 +40,15 @@ object ManualSignalCodec {
                     .put("x", signal.publicKeyJwk.x)
                     .put("y", signal.publicKeyJwk.y),
             )
+            .put(
+                "dhJwk",
+                JSONObject()
+                    .put("kty", "EC")
+                    .put("crv", "P-256")
+                    .put("x", signal.dhJwk.x)
+                    .put("y", signal.dhJwk.y),
+            )
+            .put("identityProof", signal.identityProof)
             .put("sdp", signal.sdp)
             .put("nonce", signal.nonce)
             .put("createdAt", signal.createdAt)
@@ -86,6 +100,18 @@ object ManualSignalCodec {
         ) {
             throw IllegalArgumentException("Connection code has an invalid identity key.")
         }
+        val dhObject = signal.optJSONObject("dhJwk")
+        val identityProof = signal.optString("identityProof")
+        if (
+            dhObject == null ||
+            dhObject.optString("kty") != "EC" ||
+            dhObject.optString("crv") != "P-256" ||
+            dhObject.optString("x").length < 40 ||
+            dhObject.optString("y").length < 40 ||
+            identityProof.length < 40
+        ) {
+            throw IllegalArgumentException("Connection code has no identity proof.")
+        }
         val sdp = signal.optString("sdp")
         if (sdp.length < 20 || sdp.length > MAX_MANUAL_SIGNAL_BYTES || !sdp.contains("v=0")) {
             throw IllegalArgumentException("Connection code has an invalid session description.")
@@ -104,6 +130,8 @@ object ManualSignalCodec {
             fromUid = fromUid,
             fromDeviceId = fromDeviceId,
             publicKeyJwk = PublicJwk(keyObject.getString("x"), keyObject.getString("y")),
+            dhJwk = PublicJwk(dhObject.getString("x"), dhObject.getString("y")),
+            identityProof = identityProof,
             sdp = sdp,
             nonce = nonce,
             createdAt = createdAt,

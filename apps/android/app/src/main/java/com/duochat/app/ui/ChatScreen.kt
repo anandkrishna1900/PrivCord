@@ -34,8 +34,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.DoneAll
@@ -88,7 +86,6 @@ import com.duochat.app.data.ChatState
 import com.duochat.app.data.ConnectionTone
 import com.duochat.app.data.DeliveryState
 import com.duochat.app.data.MAX_TEXT_LENGTH
-import com.duochat.app.data.MessageMode
 import com.duochat.app.data.P2PState
 import com.duochat.app.data.PeerTrust
 import com.duochat.app.data.countCodePoints
@@ -104,21 +101,16 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
-    signedIn: AuthUiState.SignedIn,
     state: ChatState,
     settings: AppSettings,
-    onSignOut: () -> Unit,
     onSend: (String, (Result<Unit>) -> Unit) -> Unit,
     onRetry: (String) -> Unit,
-    onLoadOlder: () -> Unit,
     onClearNotice: () -> Unit,
     onConfirmPeer: () -> Unit,
-    onReconnect: () -> Unit,
     onCancelManual: () -> Unit,
-    onChangeDisplayName: (String, (Result<Unit>) -> Unit) -> Unit,
+    onResetPairing: () -> Unit,
     onClearLocalData: ((Result<Unit>) -> Unit) -> Unit,
     onUpdateSettings: (AppSettings.() -> AppSettings) -> Unit,
-    onSetMessageMode: (MessageMode) -> Unit,
     onCreateManualOffer: ((Result<String>) -> Unit) -> Unit,
     onApplyManualAnswer: (String, (Result<Unit>) -> Unit) -> Unit,
     onAcceptManualOffer: ((String, (Result<String>) -> Unit) -> Unit),
@@ -146,16 +138,12 @@ fun ChatScreen(
         }
     }
 
-    val peerName = state.peerProfile?.displayName ?: "Your friend"
-    val peerLastSeen = state.peerProfile?.lastSeenAt
-    val peerActive = state.p2pConnected ||
-        (state.cloudConnected &&
-            peerLastSeen != null &&
-            System.currentTimeMillis() - peerLastSeen < 150_000)
+    val peerName = settings.peerNickname.ifBlank { "Your friend" }
+    val peerActive = state.p2pConnected
     val subline = when {
         state.p2pConnected -> "Direct connection active"
-        peerActive -> "Active now"
-        else -> formatLastSeen(state.peerProfile?.lastSeenAt)
+        state.paired -> "Not connected"
+        else -> "Not paired yet"
     }
 
     Scaffold(
@@ -186,11 +174,8 @@ fun ChatScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = onReconnect) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "Reconnect")
-                    }
                     IconButton(onClick = { manualOpen = true }) {
-                        Icon(Icons.Filled.Key, contentDescription = "Manual connection")
+                        Icon(Icons.Filled.Key, contentDescription = "Connect to your friend")
                     }
                     IconButton(onClick = { settingsOpen = true }) {
                         Icon(Icons.Filled.Settings, contentDescription = "Settings")
@@ -202,20 +187,9 @@ fun ChatScreen(
             )
         },
         bottomBar = {
-            val directMode = settings.messageMode == MessageMode.DIRECT
             Composer(
                 enabled = state.phase == com.duochat.app.data.EnginePhase.READY,
-                connected = if (directMode) {
-                    state.p2pConnected
-                } else {
-                    state.cloudConnected || state.p2pConnected
-                },
-                queued = if (directMode) {
-                    !state.p2pConnected
-                } else {
-                    !state.cloudConnected && !state.p2pConnected
-                },
-                directMode = directMode,
+                connected = state.p2pConnected,
                 modifier = Modifier.navigationBarsPadding().imePadding(),
                 onSend = onSend,
             )
@@ -226,7 +200,7 @@ fun ChatScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            ConnectionSummary(state, settings.messageMode)
+            ConnectionSummary(state)
             state.error?.let { message ->
                 Banner(
                     icon = Icons.Filled.ErrorOutline,
@@ -248,8 +222,8 @@ fun ChatScreen(
             if (state.p2pState == P2PState.CONNECTED && state.peerTrust == PeerTrust.UNVERIFIED) {
                 Banner(
                     icon = Icons.Filled.Shield,
-                    text = "A direct channel is open but its identity is not cloud-verified. " +
-                        "Compare the safety number before sending.",
+                    text = "A direct channel is open but this device is not verified yet. " +
+                        "Compare the safety number with your friend, then confirm it.",
                     container = MaterialTheme.colorScheme.surfaceVariant,
                     content = MaterialTheme.colorScheme.onSurfaceVariant,
                     actionLabel = "Verify",
@@ -262,7 +236,6 @@ fun ChatScreen(
                 state = state,
                 selfUid = state.uid,
                 peerName = peerName,
-                onLoadOlder = onLoadOlder,
                 onRetry = onRetry,
                 modifier = Modifier.weight(1f),
             )
@@ -273,15 +246,12 @@ fun ChatScreen(
         SettingsDialog(
             state = state,
             settings = settings,
-            email = signedIn.email.orEmpty(),
             peerName = peerName,
             onDismiss = { settingsOpen = false },
             onRequestNotifications = requestNotifications,
             onUpdateSettings = onUpdateSettings,
-            onSetMessageMode = onSetMessageMode,
-            onChangeDisplayName = onChangeDisplayName,
+            onResetPairing = onResetPairing,
             onClearLocalData = onClearLocalData,
-            onReconnect = onReconnect,
             onOpenManual = {
                 settingsOpen = false
                 manualOpen = true
@@ -289,10 +259,6 @@ fun ChatScreen(
             onOpenNuke = {
                 settingsOpen = false
                 nukeOpen = true
-            },
-            onSignOut = {
-                settingsOpen = false
-                onSignOut()
             },
         )
     }
@@ -341,18 +307,14 @@ fun ChatScreen(
 }
 
 @Composable
-private fun ConnectionSummary(state: ChatState, messageMode: MessageMode) {
+private fun ConnectionSummary(state: ChatState) {
     val presentation = presentConnection(state.connectionMode, state.queuedCount)
-    val toneColor = if (messageMode == MessageMode.DIRECT) {
-        if (state.p2pConnected) Color(0xFF0D9488) else Color(0xFFD97706)
-    } else {
-        when (presentation.tone) {
-            ConnectionTone.ONLINE -> MaterialTheme.colorScheme.primary
-            ConnectionTone.DIRECT -> Color(0xFF0D9488)
-            ConnectionTone.BUSY -> Color(0xFFD97706)
-            ConnectionTone.OFFLINE -> MaterialTheme.colorScheme.onSurfaceVariant
-            ConnectionTone.ERROR -> MaterialTheme.colorScheme.error
-        }
+    val toneColor = when (presentation.tone) {
+        ConnectionTone.ONLINE -> MaterialTheme.colorScheme.primary
+        ConnectionTone.DIRECT -> Color(0xFF0D9488)
+        ConnectionTone.BUSY -> Color(0xFFD97706)
+        ConnectionTone.OFFLINE -> MaterialTheme.colorScheme.onSurfaceVariant
+        ConnectionTone.ERROR -> MaterialTheme.colorScheme.error
     }
     Row(
         modifier = Modifier
@@ -369,25 +331,14 @@ private fun ConnectionSummary(state: ChatState, messageMode: MessageMode) {
         )
         Spacer(Modifier.width(8.dp))
         Text(
-            if (messageMode == MessageMode.DIRECT) {
-                if (state.p2pConnected) "Direct mode · connected" else "Direct mode · waiting"
-            } else {
-                "Cloud mode · ${presentation.label}"
-            },
+            presentation.label,
             style = MaterialTheme.typography.labelSmall,
             color = toneColor,
         )
         Spacer(Modifier.width(8.dp))
         Text(
-            if (messageMode == MessageMode.DIRECT) {
-                if (state.p2pConnected) {
-                    "Messages use the direct channel only. No message text is uploaded to the cloud."
-                } else {
-                    "Messages stay on this device until a direct channel accepts them."
-                }
-            } else {
-                presentation.detail
-            },
+            // The real route, read from the selected ICE candidate pair.
+            state.connectionPath?.label ?: presentation.detail,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -438,7 +389,6 @@ private fun MessageList(
     state: ChatState,
     selfUid: String,
     peerName: String,
-    onLoadOlder: () -> Unit,
     onRetry: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -447,7 +397,7 @@ private fun MessageList(
     val lastId = messages.lastOrNull()?.messageId
     LaunchedEffect(lastId) {
         if (messages.isNotEmpty()) {
-            val target = messages.lastIndex + if (state.hasOlder) 1 else 0
+            val target = messages.lastIndex
             if (target >= 0) listState.animateScrollToItem(target)
         }
     }
@@ -477,13 +427,8 @@ private fun MessageList(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    if (state.messageMode == MessageMode.DIRECT) {
-                        "Only the two approved accounts can read this thread. Messages are " +
-                            "stored locally and sent only over an authenticated direct connection."
-                    } else {
-                        "Only the two approved accounts can read this thread. Messages are " +
-                            "stored locally and synchronized through the cloud when it is available."
-                    },
+                    "Messages are stored only on this device and sent straight to your friend " +
+                        "over an encrypted direct connection. No account, no server.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -499,25 +444,6 @@ private fun MessageList(
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
-        if (state.hasOlder) {
-            item(key = "older") {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    horizontalArrangement = Arrangement.Center,
-                ) {
-                    TextButton(onClick = onLoadOlder, enabled = !state.loadingOlder) {
-                        if (state.loadingOlder) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(14.dp),
-                                strokeWidth = 2.dp,
-                            )
-                            Spacer(Modifier.width(8.dp))
-                        }
-                        Text(if (state.loadingOlder) "Loading…" else "Load earlier messages")
-                    }
-                }
-            }
-        }
         itemsIndexed(messages, key = { _, message -> message.messageId }) { index, message ->
             val day = formatDay(message.clientCreatedAt)
             val previous = messages.getOrNull(index - 1)
@@ -707,8 +633,6 @@ private fun DeliveryIndicator(state: DeliveryState, onRetry: () -> Unit) {
 private fun Composer(
     enabled: Boolean,
     connected: Boolean,
-    queued: Boolean,
-    directMode: Boolean,
     modifier: Modifier = Modifier,
     onSend: (String, (Result<Unit>) -> Unit) -> Unit,
 ) {
@@ -764,11 +688,10 @@ private fun Composer(
                     enabled = enabled,
                     placeholder = {
                         Text(
-                            when {
-                                connected -> "Write a message…"
-                                directMode -> "Write a message — it stays local until a direct channel is ready…"
-                                queued -> "Write a message — it will queue until a connection returns…"
-                                else -> "Reconnecting…"
+                            if (connected) {
+                                "Write a message…"
+                            } else {
+                                "Write a message — it is sent when you connect…"
                             },
                         )
                     },
@@ -815,11 +738,7 @@ private fun Composer(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    if (directMode) {
-                        "Direct mode · no cloud message upload"
-                    } else {
-                        "Messages stay on this device until transport accepts them"
-                    },
+                    "Messages go straight to your friend and are never uploaded",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

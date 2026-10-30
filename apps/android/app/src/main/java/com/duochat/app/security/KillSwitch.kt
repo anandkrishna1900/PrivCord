@@ -69,7 +69,7 @@ object KillSwitchPlans {
         KillSwitchPlanStep(
             "contacts.erase",
             "Erase contacts and trust records",
-            "Locally cached contact trust entries are deleted. Profiles live in the cloud account.",
+            "The pinned contact key is deleted from this device.",
         ),
         KillSwitchPlanStep(
             "attachments.erase",
@@ -303,7 +303,7 @@ class AppWideHooks(
                 KillSwitchStepResult(
                     stepId,
                     StepStatus.ERASED,
-                    "Local trust records deleted ($removed entries). Cloud account profiles are remote data.",
+                    "Local trust records deleted ($removed entries).",
                 )
             }
             "attachments.erase" -> KillSwitchStepResult(
@@ -319,7 +319,7 @@ class AppWideHooks(
             "keys.erase" -> {
                 val failures: MutableList<String> = mutableListOf()
                 try {
-                    identityManager.deleteIdentityKey(uid)
+                    identityManager.deleteIdentityKey()
                 } catch (_: Exception) {
                     failures.add("identity-sign")
                 }
@@ -424,12 +424,12 @@ class ConversationHooks(
                 KillSwitchStepResult(stepId, StepStatus.ERASED)
             }
             "conv.session.erase" -> {
-                val removed = identityManager.erasePeerKey(uid)
+                val removed = identityManager.erasePeerKey(null)
                 KillSwitchStepResult(
                     stepId,
                     StepStatus.ERASED,
                     "Trust entries erased ($removed). A new identity handshake is required before sending again." +
-                        " The contact stays paired at the account level.",
+                        "",
                 )
             }
             else -> KillSwitchStepResult(stepId, StepStatus.FAILED, "Unknown step id.")
