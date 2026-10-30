@@ -14,3 +14,7 @@ export * from './connectivity/contactCard';
 export * from './connectivity/networkConfig';
 export * from './connectivity/connectionPath';
 export * from './connectivity/secureChannel';
+
+export * from './connectivity/mesh';
+export * from './connectivity/fileSharing';
+export * from './e2ee/groupCrypto';
