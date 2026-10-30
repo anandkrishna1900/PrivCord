@@ -2,36 +2,15 @@
   {
     "id": 5,
     "name": "store-and-forward: offline message arrives via relay; off = nothing stored",
-    "status": "FAIL",
+    "status": "PASS",
     "notes": [
-      "safety number 49933 05659 15974 67547 34855 47568",
+      "safety number 18245 01323 84488 83144 05333 99620",
       "storeForward off: relay queue.jsonl has 0 put records",
-      "safety number 58239 71549 84265 77739 11692 77429",
-      "storeForward on: sealed message persisted on the relay :: 0"
+      "safety number 28160 79903 71733 99908 76123 17789",
+      "relay holds 1 sealed record(s), plaintext absent",
+      "B received the message after coming online",
+      "A shows it delivered"
     ],
-    "secs": 48
-  },
-  {
-    "id": 6,
-    "name": "Nostr signaling (in-memory NIP-01 relay): automatic connect + messages",
-    "status": "PASS",
-    "notes": [
-      "safety number 57174 99891 41806 26918 43472 85004",
-      "event kinds seen on relay: [21733]; message text never crossed the relay (direct channel)"
-    ],
-    "secs": 14
-  },
-  {
-    "id": 7,
-    "name": "path truth: host-only = \"Direct, same network\"; TURN + forceRelay = \"Relayed through TURN\"",
-    "status": "PASS",
-    "notes": [
-      "safety number 69233 79152 91634 67401 54859 92386",
-      "no TURN: UI says \"Direct, same network\"; getStats says {\"local\":\"host\",\"remote\":\"host\"}",
-      "safety number 02516 23512 07096 65728 09239 88760",
-      "forceRelay+TURN: UI says \"Relayed through TURN\"; getStats A={\"local\":\"relay\",\"remote\":\"relay\"} B={\"local\":\"relay\",\"remote\":\"relay\"}",
-      "message delivered over the TURN-relayed path"
-    ],
-    "secs": 37
+    "secs": 75
   }
 ]

@@ -240,7 +240,7 @@ on `duochat://ble` (`open` / `chunk` / `close` / `error`). `btleplug` is pinned 
 | Piece | Status |
 |---|---|
 | Framing/reassembly (TS) | Unit-tested, shared vectors |
-| Framing/reassembly + tag (Kotlin) | Written against the same vectors; JVM test run status is in the PR notes |
+| Framing/reassembly + tag (Kotlin) | 8 JVM tests pass against the same vectors, compiled in a standalone Kotlin/JVM harness (not through the Android Gradle module, which needs the Android SDK); a deliberate one-byte mutation made them fail |
 | `BleTransport` (TS) with a fake bridge | Unit-tested |
 | `ble.rs` | Type-checks for `x86_64-pc-windows-msvc`; no unit tests run on Linux (btleplug needs libdbus); **never run against a radio** |
 | Tauri command wiring | Type-checked in isolation only; the full Tauri crate could not be built in the authoring sandbox |
