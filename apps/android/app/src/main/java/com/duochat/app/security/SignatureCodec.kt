@@ -58,7 +58,9 @@ object SignatureCodec {
     }
 
     private fun unsignedInteger(value: ByteArray): ByteArray {
-        val trimmed = normalize(value)
+        var start = 0
+        while (start < value.size - 1 && value[start] == 0.toByte()) start += 1
+        val trimmed = value.copyOfRange(start, value.size)
         return if (trimmed[0].toInt() and 0x80 != 0) byteArrayOf(0) + trimmed else trimmed
     }
 
