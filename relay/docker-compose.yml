@@ -1,0 +1,35 @@
+# Self-hosted DuoChat relay with automatic HTTPS (Caddy).
+#   1. Point a DNS name at this machine and open ports 80 and 443.
+#   2. Set RELAY_DOMAIN in a .env file next to this one, e.g. RELAY_DOMAIN=relay.example.org
+#   3. docker compose up -d
+#   4. In DuoChat: Settings > Network > your own relay: wss://relay.example.org
+services:
+  relay:
+    build: .
+    restart: unless-stopped
+    environment:
+      PORT: "8787"
+      DATA_DIR: /data
+      # Set to "true" to hold encrypted messages for offline friends (up to 7 days).
+      ALLOW_STORE_FORWARD: "false"
+    volumes:
+      - relay-data:/data
+    expose:
+      - "8787"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [relay]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      RELAY_DOMAIN: ${RELAY_DOMAIN:?set RELAY_DOMAIN in .env}
+    command: caddy reverse-proxy --from ${RELAY_DOMAIN} --to relay:8787
+    volumes:
+      - caddy-data:/data
+
+volumes:
+  relay-data:
+  caddy-data:

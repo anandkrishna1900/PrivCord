@@ -20,6 +20,8 @@ import {
   importPublicJwk,
   mailboxFor,
   parseNetworkConfig,
+  parsePeerFrame,
+  reconnectDelayMs,
   seal,
   toB64Url,
   uidFromDh,
@@ -158,13 +160,30 @@ async function main() {
     note: `content of fixedEvent is the wire blob ${blobForEvent.length} chars`,
   };
 
+  const livenessInputs: unknown[] = [
+    { v: 1, kind: 'ping', at: 1700000000123 },
+    { v: 1, kind: 'pong', at: 0 },
+    { v: 1, kind: 'ping', at: -5 },
+    { v: 1, kind: 'ping' },
+    { v: 1, kind: 'ping', at: '12' },
+    { v: 2, kind: 'ping', at: 1 },
+    { v: 1, kind: 'pang', at: 1 },
+    { kind: 'pong', at: 1 },
+  ];
+  const liveness = livenessInputs.map((input) => {
+    const parsed = parsePeerFrame(input);
+    return { input, parsed: parsed && (parsed.kind === 'ping' || parsed.kind === 'pong') ? { kind: parsed.kind, at: parsed.at } : null };
+  });
+
+  const reconnect = [-3, 0, 1, 2, 3, 4, 5, 8, 9, 20].map((attempt) => ({ attempt, ms: reconnectDelayMs(attempt) }));
+
   const safety = {
     ann_bob: await deriveSafetyNumber(importKeyless(ann.id.signKey.pubJwk), importKeyless(bob.id.signKey.pubJwk)),
   };
 
   writeFileSync(
     new URL('../../../docs/android-vectors.json', import.meta.url),
-    JSON.stringify({ generatedBy: 'packages/protocol/scripts/gen-android-vectors.ts', recovery, entropy, invalidPhrases, cards, sealed, flippedWire: flipped, canonical, network, nostr, uids: { ann: ann.uid, bob: bob.uid, cat: cat.uid }, safety, toB64Url: toB64Url(new Uint8Array([251, 255, 254])) }, null, 2) + '\n',
+    JSON.stringify({ generatedBy: 'packages/protocol/scripts/gen-android-vectors.ts', recovery, entropy, invalidPhrases, cards, sealed, flippedWire: flipped, canonical, network, nostr, liveness, reconnect, uids: { ann: ann.uid, bob: bob.uid, cat: cat.uid }, safety, toB64Url: toB64Url(new Uint8Array([251, 255, 254])) }, null, 2) + '\n',
   );
   console.log('wrote docs/android-vectors.json');
 }

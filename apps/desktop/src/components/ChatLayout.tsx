@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ChatEngine, ChatState } from '../lib/engine';
 import type { AppSettings } from '../lib/settings';
 import { LOCAL_ID } from '../lib/identity';
+import { config } from '../config';
 import { Avatar } from './Avatar';
 import { ConnectionBadge } from './ConnectionBadge';
 import { Composer } from './Composer';
@@ -205,7 +206,7 @@ export function ChatLayout({
         </div>
 
         <div className="sidebar-footer">
-          <span className="muted small">v0.1.0</span>
+          <span className="muted small">v{config.appVersion}</span>
         </div>
       </aside>
 
