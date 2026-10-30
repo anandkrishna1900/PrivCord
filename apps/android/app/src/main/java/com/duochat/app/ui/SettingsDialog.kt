@@ -1,6 +1,11 @@
 package com.duochat.app.ui
 
+import android.content.Intent
 import android.graphics.Color as AndroidColor
+import android.net.Uri
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,6 +29,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -46,13 +52,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.duochat.app.AppConfig
+import com.duochat.app.ble.BlePermissions
 import com.duochat.app.data.ACCENTS
+import com.duochat.app.data.BluetoothStatus
 import com.duochat.app.data.AppSettings
 import com.duochat.app.data.ChatState
 import com.duochat.app.data.NetworkConfig
@@ -73,6 +82,8 @@ fun SettingsDialog(
     onClearLocalData: ((Result<Unit>) -> Unit) -> Unit,
     onOpenManual: () -> Unit,
     onOpenNuke: () -> Unit,
+    onConnectBluetooth: ((Result<Unit>) -> Unit) -> Unit = {},
+    onBluetoothPermissionResult: () -> Unit = {},
 ) {
     var nickname by remember { mutableStateOf(settings.peerNickname) }
     var nameStatus by remember { mutableStateOf<String?>(null) }
@@ -212,6 +223,13 @@ fun SettingsDialog(
                         }
                     }
                 }
+
+                Spacer(Modifier.height(14.dp))
+                BluetoothBlock(
+                    status = state.bluetooth,
+                    onConnect = onConnectBluetooth,
+                    onPermissionResult = onBluetoothPermissionResult,
+                )
 
                 Spacer(Modifier.height(18.dp))
                 HorizontalDivider()
@@ -475,7 +493,7 @@ fun SettingsDialog(
                 ) { onUpdateSettings { copy(network = network.copy(storeForward = it)) } }
                 ToggleRow(
                     "Bluetooth (works with no internet)",
-                    "Also look for your friend over Bluetooth LE when you are close by. Experimental and untested on devices.",
+                    "Also look for your friend over Bluetooth LE when you are close by. Experimental: wired and unit-tested, never run on real radios.",
                     settings.network.bluetooth,
                 ) { onUpdateSettings { copy(network = network.copy(bluetooth = it)) } }
                 Spacer(Modifier.height(4.dp))
@@ -775,4 +793,103 @@ private fun parseColor(value: String): Color = try {
     Color(AndroidColor.parseColor(value))
 } catch (_: Exception) {
     Color(0xFF6366F1)
+}
+
+/**
+ * Bluetooth LE status and controls. Permissions are requested only from the button here, after an explanation,
+ * and a denial is handled with a pointer to the system settings. UNTESTED on a real radio.
+ */
+@Composable
+private fun BluetoothBlock(
+    status: BluetoothStatus,
+    onConnect: ((Result<Unit>) -> Unit) -> Unit,
+    onPermissionResult: () -> Unit,
+) {
+    val context = LocalContext.current
+    var rationale by remember { mutableStateOf(false) }
+    var denied by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        denied = !result.values.all { it }
+        onPermissionResult()
+    }
+
+    DetailRow(
+        "Bluetooth",
+        when (status) {
+            BluetoothStatus.DISABLED -> "Off in network settings"
+            BluetoothStatus.UNSUPPORTED -> "Not available on this phone"
+            BluetoothStatus.NEEDS_PERMISSION -> "Permission needed"
+            BluetoothStatus.ADAPTER_OFF -> "Turned off"
+            BluetoothStatus.NOT_PAIRED -> "Add your friend first"
+            BluetoothStatus.READY -> "Ready"
+            BluetoothStatus.SEARCHING -> "Searching nearby…"
+            BluetoothStatus.CONNECTED -> "Connected"
+        },
+    )
+    Text(
+        when (status) {
+            BluetoothStatus.NEEDS_PERMISSION ->
+                "DuoChat can find your paired friend over Bluetooth when you are close by, with no internet. " +
+                    "It needs the nearby-devices permission for that."
+            BluetoothStatus.ADAPTER_OFF -> "Turn Bluetooth on in the quick settings panel, then come back."
+            BluetoothStatus.CONNECTED -> "Traffic is encrypted on top of Bluetooth and never touches a server."
+            else -> "Works with the internet off, but only within radio range. Experimental: never run on real radios yet."
+        },
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(Modifier.height(8.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (status == BluetoothStatus.NEEDS_PERMISSION) {
+            Button(onClick = { rationale = true }) { Text("Allow Bluetooth") }
+            if (denied) {
+                OutlinedButton(
+                    onClick = {
+                        context.startActivity(
+                            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    },
+                ) { Text("Open app settings") }
+            }
+        } else if (status == BluetoothStatus.READY) {
+            OutlinedButton(onClick = { onConnect { result -> message = result.exceptionOrNull()?.message } }) {
+                Text("Connect over Bluetooth")
+            }
+        }
+    }
+    if (denied && status == BluetoothStatus.NEEDS_PERMISSION) {
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Permission was denied. You can allow it under Android Settings > Apps > DuoChat > Permissions.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+    message?.let {
+        Spacer(Modifier.height(4.dp))
+        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+    }
+    if (rationale) {
+        AlertDialog(
+            onDismissRequest = { rationale = false },
+            title = { Text("Allow nearby devices?") },
+            text = {
+                Text(
+                    "Bluetooth lets DuoChat find and talk to your paired friend with no internet. DuoChat only " +
+                        "connects to the one device you paired with. It never uses Bluetooth to learn your location.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        rationale = false
+                        launcher.launch(BlePermissions.required())
+                    },
+                ) { Text("Continue") }
+            },
+            dismissButton = { TextButton(onClick = { rationale = false }) { Text("Not now") } },
+        )
+    }
 }

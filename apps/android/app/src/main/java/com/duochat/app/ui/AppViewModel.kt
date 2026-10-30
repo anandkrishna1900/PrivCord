@@ -107,6 +107,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             store = store,
             identityManager = identityManager,
             networkConfig = { settingsRepository.settings.value.network },
+            ble = com.duochat.app.ble.AndroidBleEnvironment(application),
             onNotify = { message ->
                 if (!visible) {
                     val nickname = settingsRepository.settings.value.peerNickname
@@ -165,6 +166,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun confirmPeer() {
         engine?.confirmPeer()
+    }
+
+    /** Looks for the paired friend over Bluetooth. Fails with a readable message instead of prompting. */
+    fun connectBluetooth(onResult: (Result<Unit>) -> Unit) {
+        val current = engine ?: return onResult(Result.failure(IllegalStateException("Chat is not ready.")))
+        viewModelScope.launch { onResult(current.connectBluetooth(manual = true)) }
+    }
+
+    /** Call after the user answered the Bluetooth permission prompt. */
+    fun refreshBluetooth() {
+        engine?.refreshBluetooth()
     }
 
     fun cancelManual() {

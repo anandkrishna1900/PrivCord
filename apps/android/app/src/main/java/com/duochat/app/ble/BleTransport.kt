@@ -1,6 +1,5 @@
 package com.duochat.app.ble
 
-import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
@@ -21,11 +20,9 @@ import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import androidx.core.content.ContextCompat
 import java.util.UUID
 
 /**
@@ -54,13 +51,23 @@ object BleConstants {
     const val DEFAULT_MTU = 23
 }
 
+/** The radio link under [SecureBleLink]: a faked pair of these makes the secure handshake testable without hardware. */
+interface RawLink {
+    val isOpen: Boolean
+    fun start()
+    fun sendJson(value: String): Boolean
+    fun close()
+}
+
 class BleTransport(
-    private val context: Context,
+    context: Context,
     /** 32-byte ECDH secret shared with the pinned contact; used only to derive tags. */
     private val secretProvider: () -> ByteArray,
     private val initiateAsCentral: Boolean,
     private val handlers: Handlers,
-) {
+) : RawLink {
+    private val context: Context = context
+
     interface Handlers {
         fun onOpen()
         fun onClose()
@@ -90,28 +97,17 @@ class BleTransport(
     private enum class Role { PERIPHERAL, CENTRAL }
 
     @Volatile
-    var isOpen: Boolean = false
+    override var isOpen: Boolean = false
         private set
 
     /** Max bytes per chunk (header included) for the active link. */
     private val maxChunk: Int get() = (mtu - BleConstants.ATT_OVERHEAD).coerceAtLeast(BleFraming.MIN_CHUNK_BYTES)
 
-    fun hasPermissions(): Boolean {
-        val needed = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            listOf(
-                Manifest.permission.BLUETOOTH_SCAN,
-                Manifest.permission.BLUETOOTH_ADVERTISE,
-                Manifest.permission.BLUETOOTH_CONNECT,
-            )
-        } else {
-            listOf(Manifest.permission.ACCESS_FINE_LOCATION)
-        }
-        return needed.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }
-    }
+    fun hasPermissions(): Boolean = BlePermissions.granted(context)
 
     /** Start advertising (and scanning if allowed). Safe to call once; call [close] to stop. */
     @SuppressLint("MissingPermission")
-    fun start() {
+    override fun start() {
         handler.post {
             if (started) return@post
             val bt = adapter
@@ -125,7 +121,7 @@ class BleTransport(
     }
 
     /** Queues the JSON frame as ordered chunks. Returns false if no link is open or the frame is invalid. */
-    fun sendJson(value: String): Boolean {
+    override fun sendJson(value: String): Boolean {
         if (!isOpen) return false
         val chunks = try {
             BleFraming.chunkJson(value, maxChunk)
@@ -140,7 +136,7 @@ class BleTransport(
     }
 
     @SuppressLint("MissingPermission")
-    fun close() {
+    override fun close() {
         handler.post {
             val wasOpen = isOpen
             started = false

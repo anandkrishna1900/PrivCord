@@ -94,6 +94,8 @@ private fun RootScreen(viewModel: AppViewModel) {
             onCreateManualOffer = viewModel::createManualOffer,
             onApplyManualAnswer = viewModel::applyManualAnswer,
             onAcceptManualOffer = viewModel::acceptManualOffer,
+            onConnectBluetooth = viewModel::connectBluetooth,
+            onBluetoothPermissionResult = viewModel::refreshBluetooth,
             onRunNuke = viewModel::runNuke,
             onRunChatSwitch = viewModel::runChatSwitch,
             killSwitchReport = killSwitchReport,

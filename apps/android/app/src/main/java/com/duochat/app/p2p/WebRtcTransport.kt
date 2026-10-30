@@ -25,7 +25,7 @@ class WebRtcTransport(
     private val iceServers: List<PeerConnection.IceServer>,
     private val forceRelay: Boolean,
     private val handlers: Handlers,
-) {
+) : LinkTransport {
     interface Handlers {
         fun onOpen()
         fun onClose()
@@ -40,7 +40,7 @@ class WebRtcTransport(
     private var iceGatherContinuation: kotlinx.coroutines.CancellableContinuation<Unit>? = null
 
     @Volatile
-    var isOpen: Boolean = false
+    override var isOpen: Boolean = false
         private set
 
     suspend fun createOffer(): String {
@@ -78,7 +78,7 @@ class WebRtcTransport(
         )
     }
 
-    fun sendJson(value: String): Boolean {
+    override fun sendJson(value: String): Boolean {
         val channel = dataChannel ?: return false
         return try {
             channel.send(
@@ -97,7 +97,7 @@ class WebRtcTransport(
      * Reads the nominated ICE candidate pair and classifies it. Returns null if
      * stats are not available yet. Never inferred from configuration.
      */
-    suspend fun connectionPath(): ConnectionPath? {
+    override suspend fun connectionPath(): ConnectionPath? {
         val pc = peerConnection ?: return null
         val report = withTimeoutOrNull(3_000) {
             suspendCancellableCoroutine<RTCStatsReport?> { continuation ->
@@ -121,7 +121,7 @@ class WebRtcTransport(
         return classifyConnectionPath(local, remote)
     }
 
-    fun close() {
+    override fun close() {
         closedByUs = true
         isOpen = false
         iceGatherContinuation?.cancel()

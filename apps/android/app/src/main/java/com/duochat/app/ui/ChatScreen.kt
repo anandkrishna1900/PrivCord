@@ -118,6 +118,8 @@ fun ChatScreen(
     onCreateManualOffer: ((Result<String>) -> Unit) -> Unit,
     onApplyManualAnswer: (String, (Result<Unit>) -> Unit) -> Unit,
     onAcceptManualOffer: ((String, (Result<String>) -> Unit) -> Unit),
+    onConnectBluetooth: ((Result<Unit>) -> Unit) -> Unit = {},
+    onBluetoothPermissionResult: () -> Unit = {},
     onRunNuke: () -> Unit = {},
     onRunChatSwitch: (Boolean, (Result<Boolean>) -> Unit) -> Unit = { _, _ -> },
     killSwitchReport: com.duochat.app.security.KillSwitchReport? = null,
@@ -268,6 +270,8 @@ fun ChatScreen(
                 settingsOpen = false
                 nukeOpen = true
             },
+            onConnectBluetooth = onConnectBluetooth,
+            onBluetoothPermissionResult = onBluetoothPermissionResult,
         )
     }
 

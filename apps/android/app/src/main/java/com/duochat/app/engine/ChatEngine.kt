@@ -1,5 +1,9 @@
 package com.duochat.app.engine
 
+import com.duochat.app.ble.BleAvailability
+import com.duochat.app.ble.BleEnvironment
+import com.duochat.app.ble.bleReconnectDelayMs
+import com.duochat.app.data.BluetoothStatus
 import com.duochat.app.data.ChatMessage
 import com.duochat.app.data.ChatState
 import com.duochat.app.data.DeliveryState
@@ -61,6 +65,8 @@ class ChatEngine(
     private val identityManager: AndroidIdentityManager,
     private val networkConfig: () -> NetworkConfig,
     private val onNotify: (ChatMessage) -> Unit,
+    /** Null where Bluetooth cannot be used at all (for example in unit tests). */
+    private val ble: BleEnvironment? = null,
 ) {
     private val _state = MutableStateFlow(ChatState(conversationId = conversationId))
     val state: StateFlow<ChatState> = _state.asStateFlow()
@@ -83,6 +89,10 @@ class ChatEngine(
     private var offerAttempt = 0
     private var manualActive = false
     private var offerTimeout: Job? = null
+    private var bleSearch: Job? = null
+    private var lastBleAt = 0L
+    private var bleAttempt = 0
+    private var bleManualAttempt = false
     private val relayed = mutableSetOf<String>()
 
     private val selfUid: String
@@ -119,6 +129,7 @@ class ChatEngine(
             updateConnection()
             startSignaling()
             startTicking()
+            refreshBluetooth()
         } catch (error: Exception) {
             if (!stopped) {
                 _state.update {
@@ -133,6 +144,7 @@ class ChatEngine(
         tickJob?.cancel()
         pathJob?.cancel()
         offerTimeout?.cancel()
+        bleSearch?.cancel()
         hub?.stop()
         hub = null
         peer?.close()
@@ -281,6 +293,9 @@ class ChatEngine(
         p2pSent.clear()
         lastReadWritten = null
         pathJob?.cancel()
+        bleSearch?.cancel()
+        bleAttempt = 0
+        lastBleAt = 0L
         _state.update {
             it.copy(
                 paired = false,
@@ -444,6 +459,7 @@ class ChatEngine(
                 if (state == P2PState.CONNECTED) detectPath()
                 if (connected) onChannelReady()
                 updateConnection()
+                refreshBluetooth()
             }
 
             override fun onNotice(message: String) {
@@ -504,7 +520,9 @@ class ChatEngine(
     private fun onChannelReady() {
         manualActive = false
         offerAttempt = 0
+        bleAttempt = 0
         offerTimeout?.cancel()
+        bleSearch?.cancel()
         p2pSent.clear()
         lastReadWritten = null
         flushUndelivered()
@@ -544,7 +562,14 @@ class ChatEngine(
             while (!stopped) {
                 delay(TICK_MS)
                 _state.update { it.copy(signaling = hub?.status() ?: SignalingStatus.IDLE) }
-                if (peer?.isReady == true) flushUndelivered() else maybeOffer()
+                dropBluetoothIfDisabled()
+                if (peer?.isReady == true) {
+                    flushUndelivered()
+                } else {
+                    maybeBluetooth()
+                    maybeOffer()
+                }
+                refreshBluetooth()
             }
         }
     }
@@ -861,6 +886,119 @@ class ChatEngine(
     }
 
     // ---------------------------------------------------------------------
+    // Bluetooth LE: works with no internet, within radio range. UNTESTED on a real radio.
+    // ---------------------------------------------------------------------
+
+    /** Re-reads what Bluetooth can do right now (permission, adapter, pairing) for the Settings row. */
+    fun refreshBluetooth() {
+        val session = peer
+        val status = when {
+            !networkConfig().bluetooth -> BluetoothStatus.DISABLED
+            ble == null -> BluetoothStatus.UNSUPPORTED
+            session?.isBluetooth == true && session.isReady -> BluetoothStatus.CONNECTED
+            session?.isBluetooth == true -> BluetoothStatus.SEARCHING
+            else -> when (ble.availability()) {
+                BleAvailability.UNSUPPORTED -> BluetoothStatus.UNSUPPORTED
+                BleAvailability.NEEDS_PERMISSION -> BluetoothStatus.NEEDS_PERMISSION
+                BleAvailability.ADAPTER_OFF -> BluetoothStatus.ADAPTER_OFF
+                BleAvailability.READY -> if (pinned?.dh == null) BluetoothStatus.NOT_PAIRED else BluetoothStatus.READY
+            }
+        }
+        if (_state.value.bluetooth != status) _state.update { it.copy(bluetooth = status) }
+    }
+
+    /**
+     * Looks for the paired friend over Bluetooth for [BLE_SEARCH_MS]. Never prompts for permissions: when they are
+     * missing it fails with a message and the UI asks. [manual] attempts report a timeout to the user.
+     */
+    suspend fun connectBluetooth(manual: Boolean = true): Result<Unit> {
+        val failure = { message: String -> Result.failure<Unit>(IllegalStateException(message)) }
+        val environment = ble ?: return failure("Bluetooth is not available in this build.")
+        val current = identity ?: return failure("Identity is not ready yet.")
+        val pin = pinned
+        val friendDh = pin?.dh ?: return failure("Add your friend first.")
+        val session = peer ?: return failure("Direct messaging is not ready.")
+        if (session.isReady || manualActive || _state.value.p2pState == P2PState.CONNECTING) return Result.success(Unit)
+        when (environment.availability()) {
+            BleAvailability.UNSUPPORTED -> return failure("This phone has no Bluetooth LE.")
+            BleAvailability.NEEDS_PERMISSION -> return failure("Bluetooth permission is needed. Allow it in Settings.")
+            BleAvailability.ADAPTER_OFF -> return failure("Bluetooth is off. Turn it on, then try again.")
+            BleAvailability.READY -> Unit
+        }
+        return try {
+            val secret = identityManager.dhAgree(friendDh)
+            bleManualAttempt = manual
+            val link = session.newBluetoothLink { handlers ->
+                environment.createLink(
+                    secret = secret,
+                    // Two phones: the lower uid scans, the higher one is found. A desktop is always the scanner.
+                    initiateAsCentral = current.uid < pin.uid,
+                    ownUid = current.uid,
+                    peerUid = pin.uid,
+                    sign = identityManager::signRaw,
+                    peerSign = pin.key,
+                    handlers = handlers,
+                )
+            }
+            link.start()
+            armBluetoothSearch()
+            refreshBluetooth()
+            Result.success(Unit)
+        } catch (error: Exception) {
+            session.close()
+            _state.update { it.copy(p2pState = P2PState.IDLE) }
+            updateConnection()
+            failure("Bluetooth could not start: ${error.message ?: error.javaClass.simpleName}")
+        }
+    }
+
+    private fun armBluetoothSearch() {
+        bleSearch?.cancel()
+        bleSearch = scope.launch {
+            delay(BLE_SEARCH_MS)
+            val session = peer
+            if (session != null && session.isBluetooth && !session.isAuthenticated) {
+                session.close()
+                _state.update {
+                    it.copy(
+                        p2pState = P2PState.IDLE,
+                        notice = if (bleManualAttempt) {
+                            "No friend found nearby over Bluetooth. Check that they have DuoChat open with Bluetooth on."
+                        } else {
+                            it.notice
+                        },
+                    )
+                }
+                updateConnection()
+                refreshBluetooth()
+            }
+        }
+    }
+
+    /** Automatic attempts with backoff, only when Bluetooth is already allowed and on (never prompts). */
+    private suspend fun maybeBluetooth() {
+        val environment = ble ?: return
+        if (!networkConfig().bluetooth || pinned?.dh == null || manualActive) return
+        if (_state.value.p2pState == P2PState.CONNECTING) return
+        if (environment.availability() != BleAvailability.READY) return
+        val now = System.currentTimeMillis()
+        if (now - lastBleAt < bleReconnectDelayMs(bleAttempt)) return
+        lastBleAt = now
+        bleAttempt += 1
+        connectBluetooth(manual = false)
+    }
+
+    /** Turning the Bluetooth setting off ends a Bluetooth link that is still up or searching. */
+    private fun dropBluetoothIfDisabled() {
+        val session = peer ?: return
+        if (networkConfig().bluetooth || !session.isBluetooth) return
+        session.close()
+        bleSearch?.cancel()
+        _state.update { it.copy(p2pState = P2PState.IDLE, p2pConnected = false, connectionPath = null) }
+        updateConnection()
+    }
+
+    // ---------------------------------------------------------------------
     // Optional store-and-forward (off by default)
     // ---------------------------------------------------------------------
 
@@ -898,5 +1036,7 @@ class ChatEngine(
         const val SIGNAL_TTL_SEC = 120
         const val MSG_TTL_SEC = 7 * 24 * 3600
         const val OFFER_TIMEOUT_MS = 40_000L
+        /** How long one Bluetooth search lasts before backing off (the desktop uses 20 s). */
+        const val BLE_SEARCH_MS = 20_000L
     }
 }

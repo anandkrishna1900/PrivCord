@@ -5,6 +5,7 @@ import {
   decodeContactCard,
   deriveIdentityFromPhrase,
   open,
+  SecureChannel,
   uidFromDh,
   verifyIdentityProof,
 } from '../src';
@@ -48,5 +49,51 @@ describe.skipIf(!existsSync(file))('artifacts produced by the Android app', () =
   it('a Nostr event signed in Kotlin passes the desktop verifier', () => {
     expect(verifyEvent(k.event)).toBe(true);
     expect(verifyEvent({ ...k.event, content: k.event.content + 'x' })).toBe(false);
+  });
+});
+
+// Written by SecureChannelTest ("export Kotlin made frames"). Kotlin plays Bob with the fixed ephemeral key and nonce
+// from docs/android-vectors.json; TypeScript plays Ann with hers and must accept, decrypt and reply.
+const scFile = new URL('../../../apps/android/app/build/interop/kotlin-securechannel.json', import.meta.url);
+
+describe.skipIf(!existsSync(scFile))('secure channel frames produced by the Android app', () => {
+  const k = existsSync(scFile) ? JSON.parse(readFileSync(scFile, 'utf8')) : {};
+  const v = JSON.parse(readFileSync(new URL('../../../docs/android-vectors.json', import.meta.url), 'utf8')).secureChannel;
+
+  async function annChannel() {
+    const ann = (await deriveIdentityFromPhrase(phrases.ann)).identity;
+    const bob = (await deriveIdentityFromPhrase(phrases.bob)).identity;
+    return SecureChannel.create({
+      ownUid: v.ann.uid,
+      peerUid: v.bob.uid,
+      signPriv: ann.signKey.privJwk,
+      peerSign: bob.signKey.pubJwk,
+      testEphemeral: { pubJwk: v.ann.ephPub, privJwk: v.ann.ephPriv },
+      testNonce: v.ann.nonce,
+    });
+  }
+
+  it('accepts the Kotlin hello (signature over the swapped uid order verifies)', async () => {
+    const ch = await annChannel();
+    await ch.accept(k.hello);
+    expect(ch.ready).toBe(true);
+  });
+
+  it('decrypts every Kotlin frame, in order, and rejects replay and tampering', async () => {
+    const ch = await annChannel();
+    await ch.accept(k.hello);
+    for (const f of k.frames) expect(JSON.stringify(await ch.decrypt(f.frame))).toBe(f.plaintext);
+    await expect(ch.decrypt(k.frames[0].frame)).rejects.toThrow(/replayed/i);
+    const ch2 = await annChannel();
+    await ch2.accept(k.hello);
+    const f = k.frames[0].frame;
+    await expect(ch2.decrypt({ ...f, ct: f.ct.slice(0, -2) + (f.ct.endsWith('AA') ? 'BB' : 'AA') })).rejects.toThrow();
+  });
+
+  it('the bytes Kotlin encrypts equal what TypeScript encrypts for the same keys (AES-GCM is deterministic)', async () => {
+    const ch = await annChannel();
+    await ch.accept(k.hello);
+    const mine = await ch.encrypt(JSON.parse(k.annReplyPlaintext));
+    expect(mine.ct).toBe(k.annReplyCt);
   });
 });

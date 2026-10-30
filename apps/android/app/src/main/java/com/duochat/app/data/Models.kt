@@ -59,6 +59,9 @@ enum class ConnectionMode {
     CONNECTION_FAILED,
 }
 
+/** What the Bluetooth link is doing, for the Settings status row. */
+enum class BluetoothStatus { DISABLED, UNSUPPORTED, NEEDS_PERMISSION, ADAPTER_OFF, NOT_PAIRED, READY, SEARCHING, CONNECTED }
+
 enum class ConnectionTone { ONLINE, DIRECT, BUSY, OFFLINE, ERROR }
 
 data class ConnectionPresentation(
@@ -73,6 +76,10 @@ data class ConnectionPresentation(
  * candidate pair (never inferred from configuration).
  */
 enum class ConnectionPath(val label: String, val detail: String) {
+    BLUETOOTH(
+        "Bluetooth, no internet",
+        "Connected over Bluetooth LE within radio range. No internet or server is involved.",
+    ),
     DIRECT_LAN(
         "Direct, same network",
         "Both devices are on the same network and talk straight to each other.",
@@ -121,6 +128,7 @@ data class ChatState(
     /** Null until the channel is open and the selected candidate pair has been read. */
     val connectionPath: ConnectionPath? = null,
     val signaling: com.duochat.app.signaling.SignalingStatus = com.duochat.app.signaling.SignalingStatus.IDLE,
+    val bluetooth: BluetoothStatus = BluetoothStatus.DISABLED,
     /** A friend's card that was pasted but not yet confirmed by the user. */
     val pendingContact: PendingContact? = null,
 )

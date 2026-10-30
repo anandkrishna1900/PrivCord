@@ -9,6 +9,8 @@ import { wordlist } from '@scure/bip39/wordlists/english.js';
 import { schnorr } from '@noble/curves/secp256k1.js';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 import {
+  SecureChannel,
+  createEcdhKeypair,
   canonicalJson,
   deriveIdentityFromPhrase,
   deriveKeyMaterial,
@@ -82,6 +84,42 @@ async function main() {
   const ann = await person(PHRASES[0]!.phrase, '');
   const bob = await person(PHRASES[2]!.phrase, '');
   const cat = await person(PHRASES[3]!.phrase, PHRASES[3]!.passphrase);
+
+  // Secure channel (Bluetooth link encryption): fixed ephemeral keys and nonces so Kotlin can reproduce the bytes.
+  const scEph = { ann: await createEcdhKeypair(), bob: await createEcdhKeypair(), cat: await createEcdhKeypair() };
+  const scNonce = { ann: toB64Url(hexToBytes('a1'.repeat(16))), bob: toB64Url(hexToBytes('b2'.repeat(16))), cat: toB64Url(hexToBytes('c3'.repeat(16))) };
+  const scMake = (me: typeof ann, other: typeof ann, key: 'ann' | 'bob' | 'cat', signer: typeof ann = me) =>
+    SecureChannel.create({
+      ownUid: me.uid,
+      peerUid: other.uid,
+      signPriv: signer.id.signKey.privJwk,
+      peerSign: other.id.signKey.pubJwk,
+      testEphemeral: scEph[key],
+      testNonce: scNonce[key],
+    });
+  const scAnn = await scMake(ann, bob, 'ann');
+  const scBob = await scMake(bob, ann, 'bob');
+  const helloAnn = await scAnn.hello();
+  const helloBob = await scBob.hello();
+  await scAnn.accept(helloBob);
+  await scBob.accept(helloAnn);
+  const scFrames: { from: string; n: number; plaintext: string; frame: unknown }[] = [];
+  for (const [who, ch, value] of [
+    ['ann', scAnn, { v: 1, kind: 'hello', uid: ann.uid, note: 'héllo ✓ 😀' }],
+    ['ann', scAnn, { v: 1, kind: 'ping', at: 1700000000123 }],
+    ['bob', scBob, { v: 1, kind: 'pong', at: 1700000000123 }],
+  ] as const) {
+    const frame = await ch.encrypt(value);
+    scFrames.push({ from: who, n: frame.n, plaintext: JSON.stringify(value), frame });
+  }
+  // An impostor (cat) signs a hello claiming to be bob.
+  const impostor = await scMake(bob, ann, 'cat', cat);
+  const secureChannel = {
+    ann: { uid: ann.uid, ephPriv: scEph.ann.privJwk, ephPub: scEph.ann.pubJwk, nonce: scNonce.ann, hello: helloAnn },
+    bob: { uid: bob.uid, ephPriv: scEph.bob.privJwk, ephPub: scEph.bob.pubJwk, nonce: scNonce.bob, hello: helloBob },
+    frames: scFrames,
+    impostorHello: await impostor.hello(),
+  };
   const cardOf = (p: Awaited<ReturnType<typeof person>>, name?: string) => ({
     v: 1 as const,
     sign: p.id.signKey.pubJwk,
@@ -183,7 +221,7 @@ async function main() {
 
   writeFileSync(
     new URL('../../../docs/android-vectors.json', import.meta.url),
-    JSON.stringify({ generatedBy: 'packages/protocol/scripts/gen-android-vectors.ts', recovery, entropy, invalidPhrases, cards, sealed, flippedWire: flipped, canonical, network, nostr, liveness, reconnect, uids: { ann: ann.uid, bob: bob.uid, cat: cat.uid }, safety, toB64Url: toB64Url(new Uint8Array([251, 255, 254])) }, null, 2) + '\n',
+    JSON.stringify({ generatedBy: 'packages/protocol/scripts/gen-android-vectors.ts', recovery, entropy, invalidPhrases, cards, sealed, flippedWire: flipped, canonical, network, nostr, secureChannel, liveness, reconnect, uids: { ann: ann.uid, bob: bob.uid, cat: cat.uid }, safety, toB64Url: toB64Url(new Uint8Array([251, 255, 254])) }, null, 2) + '\n',
   );
   console.log('wrote docs/android-vectors.json');
 }

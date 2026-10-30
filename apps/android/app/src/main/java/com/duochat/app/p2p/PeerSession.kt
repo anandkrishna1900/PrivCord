@@ -1,5 +1,7 @@
 package com.duochat.app.p2p
 
+import com.duochat.app.ble.BleTransport
+import com.duochat.app.ble.SecureBleLink
 import com.duochat.app.data.AUTH_TIMEOUT_MS
 import com.duochat.app.data.ChatMessage
 import com.duochat.app.data.ConnectionPath
@@ -24,9 +26,9 @@ import org.webrtc.PeerConnection
 import java.security.SecureRandom
 
 /**
- * One direct connection to the other person: the WebRTC data channel plus the
- * identity handshake (hello / auth_proof / auth_ok) that runs over it. Mirrors
- * the desktop engine's peer handling.
+ * One direct connection to the other person: the WebRTC data channel or the Bluetooth LE link,
+ * plus the identity handshake (hello / auth_proof / auth_ok) that runs over whichever is open.
+ * Mirrors the desktop engine's peer handling.
  */
 class PeerSession(
     private val scope: CoroutineScope,
@@ -76,7 +78,7 @@ class PeerSession(
     )
 
     private var auth = Auth()
-    private var transport: WebRtcTransport? = null
+    private var transport: LinkTransport? = null
     private var authJob: Job? = null
     private var livenessJob: Job? = null
     private val liveness = LivenessMonitor()
@@ -95,8 +97,12 @@ class PeerSession(
             isOpen &&
             (auth.trust == PeerTrust.VERIFIED || auth.trust == PeerTrust.CONFIRMED)
 
+    /** True while a WebRTC offer/answer exchange is in progress (what manual codes and signaling need). */
     val hasPendingConnection: Boolean
-        get() = transport != null
+        get() = transport is WebRtcTransport
+
+    val isBluetooth: Boolean
+        get() = transport is SecureBleLink
 
     suspend fun connectionPath(): ConnectionPath? = transport?.connectionPath()
 
@@ -109,7 +115,7 @@ class PeerSession(
     suspend fun acceptOffer(sdp: String): String = newTransport().acceptOffer(sdp)
 
     suspend fun applyAnswer(sdp: String) {
-        val current = transport ?: throw IllegalStateException("No pending connection offer.")
+        val current = transport as? WebRtcTransport ?: throw IllegalStateException("No pending connection offer.")
         current.applyAnswer(sdp)
     }
 
@@ -159,6 +165,40 @@ class PeerSession(
                 override fun onFrame(data: String) = enqueueFrame(data)
 
                 override fun onError(message: String) = listener.onNotice(message)
+            },
+        )
+        transport = created
+        return created
+    }
+
+    /**
+     * Replaces the current link with a Bluetooth one. [create] builds it with handlers bound to this session;
+     * callbacks from a link that has since been replaced are ignored so they cannot clobber the new one.
+     */
+    fun newBluetoothLink(create: (BleTransport.Handlers) -> SecureBleLink): SecureBleLink {
+        cancelTimer()
+        transport?.close()
+        frameQueue.clear()
+        auth = Auth()
+        listener.onStateChanged(P2PState.CONNECTING, false, PeerTrust.NONE, null, null)
+        var created: SecureBleLink? = null
+        created = create(
+            object : BleTransport.Handlers {
+                override fun onOpen() {
+                    if (transport === created) handleOpen()
+                }
+
+                override fun onClose() {
+                    if (transport === created) handleClose()
+                }
+
+                override fun onFrame(data: String) {
+                    if (transport === created) enqueueFrame(data)
+                }
+
+                override fun onError(message: String) {
+                    if (transport === created) listener.onNotice(message)
+                }
             },
         )
         transport = created

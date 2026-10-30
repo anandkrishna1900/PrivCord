@@ -87,9 +87,12 @@ export class SecureChannel {
     signPriv: PrivateJwk;
     /** The pinned contact's ECDSA identity key. */
     peerSign: PublicJwk;
+    /** TEST ONLY: fixed ephemeral key and nonce so other platforms can reproduce the exact bytes. */
+    testEphemeral?: EcdhKeypair;
+    testNonce?: string;
   }): Promise<SecureChannel> {
-    const eph = await createEcdhKeypair();
-    const nonce = toB64Url(randomBytes(16));
+    const eph = input.testEphemeral ?? (await createEcdhKeypair());
+    const nonce = input.testNonce ?? toB64Url(randomBytes(16));
     return new SecureChannel(input.ownUid, input.peerUid, input.signPriv, input.peerSign, eph, nonce);
   }
 
