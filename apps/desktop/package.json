@@ -32,5 +32,6 @@
     "vite": "^6.3.5",
     "vitest": "4.1.12"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "author": "anandkrishna1900 (https://github.com/anandkrishna1900)"
 }

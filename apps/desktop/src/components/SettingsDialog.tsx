@@ -652,6 +652,9 @@ export function SettingsDialog({
                 </div>
               </dl>
               <p className="muted small">
+                Created by anandkrishna1900. Open source under the Apache License 2.0.
+              </p>
+              <p className="muted small">
                 Peer connections use a challenge-response identity proof and a
                 safety number you compare with your friend. No accounts, no
                 servers, no analytics.

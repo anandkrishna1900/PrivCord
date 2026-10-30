@@ -123,8 +123,13 @@ Be skeptical of anything not in the "verified" column.
 Do not describe this app as "completely serverless". It depends on external signaling, STUN
 and, in restrictive networks, TURN infrastructure, whichever you choose.
 
-## License
+## License and credit
 
 Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). You may use, modify and
 distribute DuoChat, including commercially, under its terms. Contributions are accepted under
 the same license.
+
+**Created by [anandkrishna1900](https://github.com/anandkrishna1900).** If you use or
+redistribute this code or a work derived from it, you must keep the `NOTICE` file (or reproduce
+its attribution in your documentation or product) and the copyright notices. Please credit
+"DuoChat by anandkrishna1900".
