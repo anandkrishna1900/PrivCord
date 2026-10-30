@@ -13,3 +13,4 @@ export * from './connectivity/seal';
 export * from './connectivity/contactCard';
 export * from './connectivity/networkConfig';
 export * from './connectivity/connectionPath';
+export * from './connectivity/secureChannel';

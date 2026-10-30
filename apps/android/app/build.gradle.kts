@@ -1,3 +1,4 @@
+import java.util.Base64
 import java.util.Properties
 
 plugins {
@@ -17,13 +18,20 @@ val localProperties = Properties().apply {
 fun setting(name: String, fallback: String = ""): String =
     (localProperties.getProperty(name) ?: System.getenv(name) ?: fallback).trim()
 
+// Release signing comes only from the environment (CI secrets or your shell); nothing is committed.
+// Without it, `assembleRelease` produces an UNSIGNED apk that must not be distributed.
+val releaseKeystore: File? =
+    System.getenv("DUOCHAT_KEYSTORE_PATH")?.let { file(it) }
+        ?: System.getenv("DUOCHAT_KEYSTORE_B64")?.takeIf { it.isNotBlank() }?.let { encoded ->
+            layout.buildDirectory.file("release.keystore").get().asFile.also {
+                it.parentFile.mkdirs()
+                it.writeBytes(Base64.getMimeDecoder().decode(encoded))
+            }
+        }
+
 fun com.android.build.api.dsl.ApplicationDefaultConfig.buildConfigString(name: String, value: String) {
     val escaped = value.replace("\\", "\\\\").replace("\"", "\\\"")
     buildConfigField("String", name, "\"$escaped\"")
-}
-
-if (file("google-services.json").exists()) {
-    apply(plugin = "com.google.gms.google-services")
 }
 
 android {
@@ -37,16 +45,21 @@ android {
         versionCode = 1
         versionName = "0.1.0"
 
-        buildConfigString("FIREBASE_API_KEY", setting("firebase.apiKey"))
-        buildConfigString("FIREBASE_APPLICATION_ID", setting("firebase.applicationId"))
-        buildConfigString("FIREBASE_PROJECT_ID", setting("firebase.projectId"))
-        buildConfigString("FIREBASE_MESSAGING_SENDER_ID", setting("firebase.messagingSenderId"))
-        buildConfigString("FIREBASE_STORAGE_BUCKET", setting("firebase.storageBucket"))
         buildConfigString("CONVERSATION_ID", setting("duochat.conversationId", "duo"))
-        buildConfigString("EMULATOR_HOST", setting("duochat.emulatorHost"))
         buildConfigString("TURN_URL", setting("turn.url"))
         buildConfigString("TURN_USERNAME", setting("turn.username"))
         buildConfigString("TURN_CREDENTIAL", setting("turn.credential"))
+    }
+
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = releaseKeystore
+                storePassword = System.getenv("DUOCHAT_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("DUOCHAT_KEY_ALIAS")
+                keyPassword = System.getenv("DUOCHAT_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
@@ -54,6 +67,8 @@ android {
             isMinifyEnabled = false
         }
         release {
+            signingConfig = signingConfigs.findByName("release")
+            // Minification is off on purpose: it has not been tested on a device (WebRTC, Room, reflection).
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -105,12 +120,9 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
-    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
-    implementation("com.google.firebase:firebase-auth")
-    implementation("com.google.firebase:firebase-firestore")
-    implementation("com.google.firebase:firebase-messaging")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    // WebSocket client for the signaling relay and Nostr relays.
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
@@ -121,4 +133,6 @@ dependencies {
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 
     testImplementation("junit:junit:4.13.2")
+    // Real org.json for JVM unit tests (the android.jar one is a stub); reads docs/ble-vectors.json.
+    testImplementation("org.json:json:20240303")
 }

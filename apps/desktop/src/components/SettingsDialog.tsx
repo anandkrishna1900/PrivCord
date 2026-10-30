@@ -115,6 +115,8 @@ export function SettingsDialog({
   const [clearConfirm, setClearConfirm] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [permission, setPermission] = useState<string>('');
+  const [bleAvailable, setBleAvailable] = useState(false);
+  const [bleBusy, setBleBusy] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -156,6 +158,27 @@ export function SettingsDialog({
     };
     setCopied(await copyText(JSON.stringify(diagnostics, null, 2)));
     window.setTimeout(() => setCopied(false), 1800);
+  }
+
+  useEffect(() => {
+    if (!open || !engine) return;
+    let live = true;
+    void engine.bluetoothAvailable().then((ok) => live && setBleAvailable(ok));
+    return () => {
+      live = false;
+    };
+  }, [open, engine]);
+
+  async function connectBluetooth() {
+    if (!engine) return;
+    setBleBusy(true);
+    try {
+      await engine.connectBluetooth();
+    } catch {
+      // The engine shows the reason as a notice.
+    } finally {
+      setBleBusy(false);
+    }
   }
 
   async function requestNotifications() {
@@ -434,6 +457,17 @@ export function SettingsDialog({
                   <KeyIcon size={15} />
                   {state?.paired ? 'Connect with a code' : 'Pair with a code'}
                 </button>
+                {bleAvailable && state?.paired ? (
+                  <button
+                    type="button"
+                    className="button secondary"
+                    disabled={bleBusy || state.p2pConnected}
+                    onClick={() => void connectBluetooth()}
+                  >
+                    {bleBusy ? <LoaderIcon size={15} className="spin" /> : <LinkIcon size={15} />}
+                    {bleBusy ? 'Searching nearby…' : 'Connect over Bluetooth'}
+                  </button>
+                ) : null}
                 <button type="button" className="button ghost" onClick={() => void copyDiagnostics()}>
                   {copied ? <CheckIcon size={15} /> : <CopyIcon size={15} />}
                   {copied ? 'Diagnostics copied' : 'Copy diagnostics'}
@@ -617,6 +651,9 @@ export function SettingsDialog({
                   <dd className="mono">{state?.conversationId}</dd>
                 </div>
               </dl>
+              <p className="muted small">
+                Created by anandkrishna1900. Open source under the Apache License 2.0.
+              </p>
               <p className="muted small">
                 Peer connections use a challenge-response identity proof and a
                 safety number you compare with your friend. No accounts, no

@@ -1,23 +1,23 @@
 package com.duochat.app.security
 
 import android.content.Context
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
+import org.json.JSONObject
 import java.math.BigInteger
 import java.security.AlgorithmParameters
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
 import java.security.KeyStore
-import java.security.MessageDigest
 import java.security.PrivateKey
-import java.security.PublicKey
 import java.security.Signature
+import java.security.interfaces.ECPrivateKey
 import java.security.interfaces.ECPublicKey
 import java.security.spec.ECGenParameterSpec
 import java.security.spec.ECParameterSpec
-import java.security.spec.ECPoint
-import java.security.spec.ECPublicKeySpec
+import java.security.spec.ECPrivateKeySpec
 import java.util.UUID
+
+/** Fixed key-slot name: the key itself is the identity, there is no account to name. */
+const val LOCAL_ID = "local"
 
 data class PublicJwk(val x: String, val y: String) {
     fun thumbprintInput(): String = """{"crv":"P-256","kty":"EC","x":"$x","y":"$y"}"""
@@ -33,21 +33,36 @@ data class PublicJwk(val x: String, val y: String) {
     }
 }
 
+/**
+ * [publicJwk] is the ECDSA sign key, [dhJwk] the ECDH identity key, and
+ * [identityProof] the sign-key signature binding them. uid is the fingerprint
+ * of [dhJwk], so nobody can claim an id without holding its key.
+ */
 data class DeviceIdentity(
     val uid: String,
     val deviceId: String,
     val publicJwk: PublicJwk,
+    val dhJwk: PublicJwk,
+    val identityProof: String,
 )
 
-data class ResolvedPeerKey(
+/** The one contact whose key is pinned on this device. */
+data class PinnedPeer(
+    val uid: String,
+    val deviceId: String,
     val key: PublicJwk,
-    val source: String,
+    /** The contact's ECDH identity key; needed to seal blobs to them. Null for pins from older versions. */
+    val dh: PublicJwk? = null,
 )
 
 class AndroidIdentityManager(context: Context) {
     private val appContext = context.applicationContext
     private val prefs =
         appContext.getSharedPreferences("duochat.identity.v1", Context.MODE_PRIVATE)
+    private val crypto = LocalCrypto(appContext, LOCAL_ID)
+
+    @Volatile
+    private var signPrivate: PrivateKey? = null
 
     fun deviceId(): String {
         val existing = prefs.getString("deviceId", null)
@@ -57,126 +72,171 @@ class AndroidIdentityManager(context: Context) {
         return created
     }
 
-    fun loadOrCreate(uid: String): DeviceIdentity {
-        val alias = aliasFor(uid)
-        val keyStore = keyStore()
-        if (!keyStore.containsAlias(alias)) {
-            val generator = KeyPairGenerator.getInstance(
-                KeyProperties.KEY_ALGORITHM_EC,
-                "AndroidKeyStore",
-            )
-            val spec = KeyGenParameterSpec.Builder(
-                alias,
-                KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY,
-            )
-                .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
-                .setDigests(KeyProperties.DIGEST_SHA256)
-                .build()
-            generator.initialize(spec)
-            generator.generateKeyPair()
-        }
-        val certificate = keyStore.getCertificate(alias)
-            ?: error("Android Keystore did not return the device certificate.")
-        val publicKey = certificate.publicKey as ECPublicKey
-        val point = publicKey.w
-        val publicJwk = PublicJwk(
-            x = SignatureCodec.base64UrlEncode(normalize(point.affineX.toByteArray())),
-            y = SignatureCodec.base64UrlEncode(normalize(point.affineY.toByteArray())),
-        )
-        return DeviceIdentity(uid, deviceId(), publicJwk)
-    }
+    @Volatile
+    private var dhPrivate: PrivateKey? = null
 
-    fun sign(uid: String, challenge: String): String {
-        val key = keyStore().getKey(aliasFor(uid), null) as? PrivateKey
-            ?: error("Device signing key is unavailable.")
-        val signature = Signature.getInstance("SHA256withECDSA")
-        signature.initSign(key)
-        signature.update(challenge.toByteArray(Charsets.UTF_8))
-        val raw = SignatureCodec.derToP1363(signature.sign())
-        return SignatureCodec.base64UrlEncode(raw)
-    }
+    fun hasIdentity(): Boolean = readKey("identity.sign") != null && readKey("identity.dh") != null &&
+        !prefs.getString("identity.proof", null).isNullOrEmpty()
 
     /**
-     * Kill switch helper: delete the hardware-backed identity signing key for
-     * a uid from the Android Keystore. This is cryptographic erasure — the
-     * private key becomes unrecoverable even to the app itself.
+     * Create (or replace) the identity from the 12-word phrase. The phrase is never stored; only the
+     * derived private keys are, encrypted under a non-exportable Android Keystore AES key (the same
+     * scheme the local message store uses). Returns the uid.
      */
-    fun deleteIdentityKey(uid: String) {
-        val alias = aliasFor(uid)
-        val keystore = keyStore()
-        if (keystore.containsAlias(alias)) {
-            keystore.deleteEntry(alias)
-        }
+    @Synchronized
+    fun createFromPhrase(phrase: String, passphrase: String = ""): String {
+        val keys = RecoveryIdentity.derive(phrase, passphrase)
+        writeKey("identity.sign", StoredKey(keys.signD, keys.signPub.x, keys.signPub.y))
+        writeKey("identity.dh", StoredKey(keys.dhD, keys.dhPub.x, keys.dhPub.y))
+        prefs.edit()
+            .putString("identity.proof", EcKeys.sign(keys.signD, IdentityCodec.identityProofPayload(keys.dhPub)))
+            .apply()
+        signPrivate = null
+        dhPrivate = null
+        return keys.uid
     }
 
-    fun verify(publicJwk: PublicJwk, challenge: String, signatureBase64: String): Boolean {
-        return try {
-            val publicKey = publicKeyFrom(publicJwk)
-            val signature = Signature.getInstance("SHA256withECDSA")
-            signature.initVerify(publicKey)
-            signature.update(challenge.toByteArray(Charsets.UTF_8))
-            val bytes = SignatureCodec.signatureBytesToVerify(
-                SignatureCodec.base64UrlDecode(signatureBase64),
-            )
-            signature.verify(bytes)
-        } catch (_: Exception) {
-            false
-        }
+    /** The stored identity, or null on first run (the app then forces the 12-word phrase flow). */
+    @Synchronized
+    fun load(): DeviceIdentity? {
+        val sign = readKey("identity.sign") ?: return null
+        val dh = readKey("identity.dh") ?: return null
+        val proof = prefs.getString("identity.proof", null)
+        if (proof.isNullOrEmpty()) return null
+        signPrivate = privateKeyFrom(sign.d)
+        dhPrivate = privateKeyFrom(dh.d)
+        val dhPublic = PublicJwk(dh.x, dh.y)
+        return DeviceIdentity(IdentityCodec.uidFor(dhPublic), deviceId(), PublicJwk(sign.x, sign.y), dhPublic, proof)
     }
 
-    fun cachePeerKey(uid: String, deviceId: String, key: PublicJwk) {
-        prefs.edit().putString("peer.$uid.$deviceId", key.fingerprint()).apply()
-    }
+    /** ECDH with our identity DH key (used to open sealed blobs). */
+    fun dhAgree(peer: PublicJwk): ByteArray =
+        EcKeys.agree(dhPrivate ?: error("Identity is not loaded."), peer)
 
-    fun cachedPeerKey(uid: String, deviceId: String): PublicJwk? =
-        PublicJwk.fromFingerprint(prefs.getString("peer.$uid.$deviceId", null) ?: "")
+    /** ECDSA-SHA256 over raw bytes with our identity signing key (base64url r||s). */
+    fun signRaw(message: ByteArray): String = signBytes(message)
+
+    fun sign(challenge: String): String = signBytes(challenge.toByteArray(Charsets.UTF_8))
+
+    fun verify(publicJwk: PublicJwk, challenge: String, signatureBase64: String): Boolean =
+        IdentityCodec.verify(publicJwk, challenge.toByteArray(Charsets.UTF_8), signatureBase64)
+
+    fun verifyIdentityProof(sign: PublicJwk, dh: PublicJwk, proof: String): Boolean =
+        IdentityCodec.verifyIdentityProof(sign, dh, proof)
+
+    fun uidFor(dh: PublicJwk): String = IdentityCodec.uidFor(dh)
 
     /**
-     * Kill switch helper: remove every locally cached peer trust record for
-     * one contact (or all contacts when uid is null). Returns the number of
-     * removed pref entries.
+     * Kill switch helper: delete the identity keys. Without them the old
+     * identity can never be used again (restoring needs the recovery phrase).
+     */
+    fun deleteIdentityKey() {
+        signPrivate = null
+        dhPrivate = null
+        prefs.edit()
+            .remove("identity.sign")
+            .remove("identity.dh")
+            .remove("identity.proof")
+            .apply()
+        val keystore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        if (keystore.containsAlias("duochat-ec-$LOCAL_ID")) {
+            keystore.deleteEntry("duochat-ec-$LOCAL_ID")
+        }
+    }
+
+    /** Pin [key] as the one trusted peer; any previously pinned peer is forgotten. */
+    fun pinPeer(uid: String, deviceId: String, key: PublicJwk, dh: PublicJwk? = null) {
+        val editor = prefs.edit()
+        prefs.all.keys.filter { it.startsWith("peer.") || it.startsWith("peerdh.") }.forEach { editor.remove(it) }
+        editor.putString("peer.$uid.$deviceId", key.fingerprint())
+        if (dh != null) editor.putString("peerdh.$uid", dh.fingerprint())
+        editor.apply()
+    }
+
+    fun loadPinnedPeer(): PinnedPeer? {
+        for ((name, value) in prefs.all) {
+            if (!name.startsWith("peer.")) continue
+            val rest = name.removePrefix("peer.")
+            val dot = rest.indexOf('.')
+            if (dot <= 0 || dot == rest.lastIndex) continue
+            val key = PublicJwk.fromFingerprint(value as? String ?: "") ?: continue
+            val uid = rest.substring(0, dot)
+            val dh = prefs.getString("peerdh.$uid", null)?.let { PublicJwk.fromFingerprint(it) }
+            return PinnedPeer(uid, rest.substring(dot + 1), key, dh)
+        }
+        return null
+    }
+
+    /**
+     * Kill switch helper: remove the pinned peer (or only entries for [uid]).
+     * Returns the number of removed pref entries.
      */
     fun erasePeerKey(uid: String?): Int {
         val doomed = prefs.all.keys.filter { key ->
-            if (uid == null) key.startsWith("peer.") else key.startsWith("peer.$uid.")
+            if (uid.isNullOrEmpty()) key.startsWith("peer.") || key.startsWith("peerdh.")
+            else key.startsWith("peer.$uid.") || key == "peerdh.$uid"
         }
-        for (key in doomed) prefs.edit().remove(key).apply()
+        val editor = prefs.edit()
+        for (key in doomed) editor.remove(key)
+        editor.apply()
         return doomed.size
     }
 
     fun publicKeysEqual(first: PublicJwk?, second: PublicJwk?): Boolean =
         first != null && second != null && first.x == second.x && first.y == second.y
 
-    fun deriveSafetyNumber(first: PublicJwk, second: PublicJwk): String {
-        val a = hex(sha256(first.thumbprintInput().toByteArray(Charsets.UTF_8)))
-        val b = hex(sha256(second.thumbprintInput().toByteArray(Charsets.UTF_8)))
-        val ordered = listOf(a, b).sorted()
-        val digest = sha256("${ordered[0]}|${ordered[1]}".toByteArray(Charsets.UTF_8))
-        val groups = ArrayList<String>(6)
-        for (i in 0 until 6) {
-            val offset = i * 3
-            val raw = ((digest[offset].toInt() and 0xff) shl 16) or
-                ((digest[offset + 1].toInt() and 0xff) shl 8) or
-                (digest[offset + 2].toInt() and 0xff)
-            val value = raw % 100000
-            groups += value.toString().padStart(5, '0')
-        }
-        return groups.joinToString(" ")
+    fun deriveSafetyNumber(first: PublicJwk, second: PublicJwk): String =
+        IdentityCodec.safetyNumber(first, second)
+
+    private class StoredKey(val d: ByteArray, val x: String, val y: String)
+
+    private fun generateKey(): StoredKey {
+        val generator = KeyPairGenerator.getInstance("EC")
+        generator.initialize(ECGenParameterSpec("secp256r1"))
+        val pair = generator.generateKeyPair()
+        val point = (pair.public as ECPublicKey).w
+        return StoredKey(
+            d = normalize((pair.private as ECPrivateKey).s.toByteArray()),
+            x = SignatureCodec.base64UrlEncode(normalize(point.affineX.toByteArray())),
+            y = SignatureCodec.base64UrlEncode(normalize(point.affineY.toByteArray())),
+        )
     }
 
-    private fun aliasFor(uid: String): String = "duochat-ec-$uid"
+    private fun writeKey(name: String, key: StoredKey) {
+        val json = JSONObject()
+            .put("d", SignatureCodec.base64UrlEncode(key.d))
+            .put("x", key.x)
+            .put("y", key.y)
+        prefs.edit().putString(name, crypto.encrypt(json.toString())).apply()
+    }
 
-    private fun keyStore(): KeyStore =
-        KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+    private fun readKey(name: String): StoredKey? {
+        val stored = prefs.getString(name, null) ?: return null
+        return try {
+            val json = JSONObject(crypto.decrypt(stored))
+            StoredKey(
+                SignatureCodec.base64UrlDecode(json.getString("d")),
+                json.getString("x"),
+                json.getString("y"),
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
 
-    private fun publicKeyFrom(publicJwk: PublicJwk): PublicKey {
+    private fun privateKeyFrom(d: ByteArray): PrivateKey {
         val parameters = AlgorithmParameters.getInstance("EC").apply {
             init(ECGenParameterSpec("secp256r1"))
         }.getParameterSpec(ECParameterSpec::class.java)
-        val x = BigInteger(1, SignatureCodec.base64UrlDecode(publicJwk.x))
-        val y = BigInteger(1, SignatureCodec.base64UrlDecode(publicJwk.y))
-        val spec = ECPublicKeySpec(ECPoint(x, y), parameters)
-        return KeyFactory.getInstance("EC").generatePublic(spec)
+        return KeyFactory.getInstance("EC").generatePrivate(ECPrivateKeySpec(BigInteger(1, d), parameters))
+    }
+
+    private fun signBytes(message: ByteArray): String {
+        val key = signPrivate ?: error("Device signing key is unavailable.")
+        val signature = Signature.getInstance("SHA256withECDSA")
+        signature.initSign(key)
+        signature.update(message)
+        return SignatureCodec.base64UrlEncode(SignatureCodec.derToP1363(signature.sign()))
     }
 
     private fun normalize(value: ByteArray): ByteArray {
@@ -189,10 +249,4 @@ class AndroidIdentityManager(context: Context) {
             ByteArray(32 - trimmed.size) + trimmed
         }
     }
-
-    private fun sha256(data: ByteArray): ByteArray =
-        MessageDigest.getInstance("SHA-256").digest(data)
-
-    private fun hex(bytes: ByteArray): String =
-        bytes.joinToString("") { "%02x".format(it) }
 }

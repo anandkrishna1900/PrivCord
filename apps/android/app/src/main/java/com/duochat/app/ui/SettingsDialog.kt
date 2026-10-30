@@ -1,6 +1,11 @@
 package com.duochat.app.ui
 
+import android.content.Intent
 import android.graphics.Color as AndroidColor
+import android.net.Uri
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,10 +27,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -48,16 +52,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.duochat.app.AppConfig
+import com.duochat.app.ble.BlePermissions
 import com.duochat.app.data.ACCENTS
+import com.duochat.app.data.BluetoothStatus
 import com.duochat.app.data.AppSettings
 import com.duochat.app.data.ChatState
-import com.duochat.app.data.MessageMode
+import com.duochat.app.data.NetworkConfig
+import com.duochat.app.data.SignalingConfig
+import com.duochat.app.data.TurnServer
 import com.duochat.app.data.PeerTrust
 import com.duochat.app.data.presentConnection
 
@@ -65,26 +74,37 @@ import com.duochat.app.data.presentConnection
 fun SettingsDialog(
     state: ChatState,
     settings: AppSettings,
-    email: String,
     peerName: String,
     onDismiss: () -> Unit,
     onRequestNotifications: () -> Unit,
     onUpdateSettings: (AppSettings.() -> AppSettings) -> Unit,
-    onSetMessageMode: (MessageMode) -> Unit,
-    onChangeDisplayName: (String, (Result<Unit>) -> Unit) -> Unit,
+    onResetPairing: () -> Unit,
     onClearLocalData: ((Result<Unit>) -> Unit) -> Unit,
-    onReconnect: () -> Unit,
     onOpenManual: () -> Unit,
     onOpenNuke: () -> Unit,
-    onSignOut: () -> Unit,
+    onConnectBluetooth: ((Result<Unit>) -> Unit) -> Unit = {},
+    onBluetoothPermissionResult: () -> Unit = {},
 ) {
-    var name by remember { mutableStateOf(state.selfProfile?.displayName.orEmpty()) }
+    var nickname by remember { mutableStateOf(settings.peerNickname) }
     var nameStatus by remember { mutableStateOf<String?>(null) }
-    var savingName by remember { mutableStateOf(false) }
+    var resetConfirm by remember { mutableStateOf(false) }
+    var stunText by remember { mutableStateOf(settings.network.stun.joinToString("\n")) }
+    val firstTurn = settings.network.turn.firstOrNull()
+    var turnUrls by remember { mutableStateOf(firstTurn?.urls?.joinToString("\n").orEmpty()) }
+    var turnUser by remember { mutableStateOf(firstTurn?.username.orEmpty()) }
+    var turnSecret by remember { mutableStateOf(firstTurn?.credential.orEmpty()) }
+    var networkStatus by remember { mutableStateOf<String?>(null) }
+    var nostrText by remember {
+        mutableStateOf(
+            settings.network.signaling.filterIsInstance<SignalingConfig.Nostr>().flatMap { it.relays }.joinToString("\n"),
+        )
+    }
+    var relayText by remember {
+        mutableStateOf(settings.network.signaling.filterIsInstance<SignalingConfig.Relay>().joinToString("\n") { it.url })
+    }
     var clearConfirm by remember { mutableStateOf(false) }
     var clearStatus by remember { mutableStateOf<String?>(null) }
     var clearing by remember { mutableStateOf(false) }
-    var confirmCloudUpload by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -120,55 +140,47 @@ fun SettingsDialog(
                 )
                 Spacer(Modifier.height(16.dp))
 
-                SectionTitle("Profile")
+                SectionTitle("You & your friend")
+                Text(
+                    "There are no accounts. Your identity is a key that lives on this device; " +
+                        "your friend is the device you paired with.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    InitialsAvatar(name.ifBlank { peerName }, 52)
+                    InitialsAvatar(nickname.ifBlank { peerName }, 52)
                     Spacer(Modifier.width(12.dp))
                     Column {
                         Text(
-                            name.ifBlank { "Your name" },
+                            nickname.ifBlank { "Your friend" },
                             style = MaterialTheme.typography.titleMedium,
                         )
                         Text(
-                            email,
+                            (if (state.paired) "Paired" else "Not paired yet") + " · " +
+                                (if (state.p2pConnected) "connected now" else "not connected"),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
                 Spacer(Modifier.height(10.dp))
                 OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it.take(40) },
-                    label = { Text("Display name") },
+                    value = nickname,
+                    onValueChange = { nickname = it.take(40) },
+                    label = { Text("Nickname for your friend") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(8.dp))
                 Button(
                     onClick = {
-                        savingName = true
-                        nameStatus = null
-                        onChangeDisplayName(name) { result ->
-                            savingName = false
-                            nameStatus = result.fold(
-                                onSuccess = { "Display name saved." },
-                                onFailure = { it.message ?: "Could not save the name." },
-                            )
-                        }
+                        onUpdateSettings { copy(peerNickname = nickname.trim()) }
+                        nameStatus = "Saved on this device."
                     },
-                    enabled = !savingName && name.trim().isNotEmpty(),
+                    enabled = nickname.trim() != settings.peerNickname,
                 ) {
-                    if (savingName) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(15.dp),
-                            strokeWidth = 2.dp,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                    }
-                    Text("Save display name")
+                    Text("Save nickname")
                 }
                 nameStatus?.let {
                     Spacer(Modifier.height(6.dp))
@@ -179,8 +191,45 @@ fun SettingsDialog(
                     )
                 }
                 Spacer(Modifier.height(10.dp))
-                DetailRow("Your user ID", state.uid, monospace = true)
-                DetailRow("Conversation", state.conversationId, monospace = true)
+                DetailRow("Your ID", state.uid, monospace = true)
+                DetailRow("Friend's ID", state.peerUid ?: "—", monospace = true)
+                if (state.paired) {
+                    Spacer(Modifier.height(8.dp))
+                    if (resetConfirm) {
+                        Text(
+                            "Forgets your friend's key so a different device can be paired. " +
+                                "Messages are kept.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = {
+                                    onResetPairing()
+                                    resetConfirm = false
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.error,
+                                ),
+                            ) {
+                                Text("Yes, reset pairing")
+                            }
+                            TextButton(onClick = { resetConfirm = false }) { Text("Cancel") }
+                        }
+                    } else {
+                        OutlinedButton(onClick = { resetConfirm = true }) {
+                            Text("Reset pairing")
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(14.dp))
+                BluetoothBlock(
+                    status = state.bluetooth,
+                    onConnect = onConnectBluetooth,
+                    onPermissionResult = onBluetoothPermissionResult,
+                )
 
                 Spacer(Modifier.height(18.dp))
                 HorizontalDivider()
@@ -264,9 +313,8 @@ fun SettingsDialog(
                 }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "Push notifications are best-effort. They cannot be guaranteed during a " +
-                        "complete cloud outage, and direct messaging does not depend on them " +
-                        "while both apps are open.",
+                    "With no server there is no push service: you are notified only while the " +
+                        "app is open and a direct connection is active.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -278,80 +326,11 @@ fun SettingsDialog(
                 val presentation = presentConnection(state.connectionMode, state.queuedCount)
                 SectionTitle("Connection")
                 Text(
-                    "Message route",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ChoiceChip("Cloud", settings.messageMode == MessageMode.CLOUD) {
-                        if (
-                            settings.messageMode == MessageMode.DIRECT &&
-                            state.queuedCount > 0
-                        ) {
-                            confirmCloudUpload = true
-                        } else {
-                            onSetMessageMode(MessageMode.CLOUD)
-                        }
-                    }
-                    ChoiceChip("Direct", settings.messageMode == MessageMode.DIRECT) {
-                        confirmCloudUpload = false
-                        onSetMessageMode(MessageMode.DIRECT)
-                    }
-                }
-                Text(
-                    when (settings.messageMode) {
-                        MessageMode.CLOUD ->
-                            "Messages use the normal cloud sync path alongside the direct channel."
-                        MessageMode.DIRECT ->
-                            "Messages use only the authenticated direct channel. No message text is uploaded to the cloud."
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                if (confirmCloudUpload) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.errorContainer,
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Column(Modifier.padding(12.dp)) {
-                            Text(
-                                "Upload ${state.queuedCount} queued message" +
-                                    if (state.queuedCount == 1) "?" else "s?",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Text(
-                                "Switching to Cloud mode uploads messages that are still waiting " +
-                                    "to be delivered. Cancel to keep them local in Direct mode.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(
-                                    onClick = {
-                                        confirmCloudUpload = false
-                                        onSetMessageMode(MessageMode.CLOUD)
-                                    },
-                                ) {
-                                    Text("Switch & upload")
-                                }
-                                TextButton(onClick = { confirmCloudUpload = false }) {
-                                    Text("Cancel")
-                                }
-                            }
-                        }
-                    }
-                }
-                Spacer(Modifier.height(4.dp))
-                Text(
                     presentation.detail,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(8.dp))
-                DetailRow("Cloud sync", if (state.cloudConnected) "Connected" else "Unavailable")
                 DetailRow(
                     "Direct channel",
                     when {
@@ -361,11 +340,26 @@ fun SettingsDialog(
                         else -> "Idle"
                     },
                 )
+                // Read from the selected ICE candidate pair, never inferred from settings.
+                DetailRow(
+                    "Route",
+                    when {
+                        state.connectionPath != null -> state.connectionPath.label
+                        state.p2pConnected -> "Checking…"
+                        else -> "—"
+                    },
+                )
+                state.connectionPath?.let {
+                    Text(
+                        it.detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 DetailRow(
                     "Peer identity",
                     if (state.peerTrust == PeerTrust.NONE) "none" else state.peerTrust.name.lowercase(),
                 )
-                DetailRow("Peer key source", state.peerKeySource?.name?.lowercase() ?: "—")
                 DetailRow("Queued messages", state.queuedCount.toString())
                 DetailRow("Local storage", "Room (encrypted payloads)")
                 state.safetyNumber?.let { number ->
@@ -398,7 +392,7 @@ fun SettingsDialog(
                             Spacer(Modifier.height(4.dp))
                             Text(
                                 "Compare this with your friend over a separate channel before " +
-                                    "trusting a direct connection that is not cloud-verified.",
+                                    "trusting a new device.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -406,20 +400,170 @@ fun SettingsDialog(
                     }
                 }
                 Spacer(Modifier.height(10.dp))
+                OutlinedButton(onClick = onOpenManual) {
+                    Text(if (state.paired) "Reconnect with a code" else "Pair with a code")
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "There is no server to introduce your devices. One of you creates a code, " +
+                        "the other pastes it and sends back a reply code. Once connected, " +
+                        "messages go straight between your devices.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Spacer(Modifier.height(18.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(14.dp))
+
+                SectionTitle("Network")
+                Text(
+                    "STUN only tells your device its public address; no messages pass through " +
+                        "it. TURN relays your already end-to-end encrypted connection when no " +
+                        "direct path exists (strict NAT or firewalls). Both are optional. " +
+                        "Changes apply to the next connection.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = nostrText,
+                    onValueChange = { nostrText = it },
+                    label = { Text("Signaling: Nostr relays (finds your friend; one per line)") },
+                    minLines = 2,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = relayText,
+                    onValueChange = { relayText = it },
+                    label = { Text("Signaling: your own DuoChat relay (one per line)") },
+                    minLines = 1,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "Signaling status: ${state.signaling.name.lowercase()}. Leave both empty to use connection codes only. " +
+                        "Use wss:// addresses (Android blocks plain ws://). Signaling only carries sealed, signed " +
+                        "connection setup, never messages.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = stunText,
+                    onValueChange = { stunText = it },
+                    label = { Text("STUN servers (one per line, stun:host:port)") },
+                    minLines = 2,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = turnUrls,
+                    onValueChange = { turnUrls = it },
+                    label = { Text("TURN URLs (turn:host:port or turns:…)") },
+                    minLines = 1,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = turnUser,
+                    onValueChange = { turnUser = it },
+                    label = { Text("TURN username") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = turnSecret,
+                    onValueChange = { turnSecret = it },
+                    label = { Text("TURN credential") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                ToggleRow(
+                    "Always use the relay",
+                    "Only use TURN. Hides your IP address from your friend; needs a TURN server.",
+                    settings.network.forceRelay,
+                ) { onUpdateSettings { copy(network = network.copy(forceRelay = it)) } }
+                ToggleRow(
+                    "Store-and-forward (messages while your friend is offline)",
+                    "Sends each message, encrypted for your friend, to the relays above so it arrives when they come " +
+                        "online. Off by default. These messages have no forward secrecy.",
+                    settings.network.storeForward,
+                ) { onUpdateSettings { copy(network = network.copy(storeForward = it)) } }
+                ToggleRow(
+                    "Bluetooth (works with no internet)",
+                    "Also look for your friend over Bluetooth LE when you are close by. Experimental: wired and unit-tested, never run on real radios.",
+                    settings.network.bluetooth,
+                ) { onUpdateSettings { copy(network = network.copy(bluetooth = it)) } }
+                Spacer(Modifier.height(4.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onReconnect) {
-                        Icon(
-                            Icons.Filled.Refresh,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text("Reconnect now")
+                    Button(
+                        onClick = {
+                            val urls = NetworkConfig.parseTurnUrls(turnUrls)
+                            val hasTurnInput = turnUrls.isNotBlank() || turnUser.isNotBlank() || turnSecret.isNotBlank()
+                            val nostrLines = nostrText.split('\n', ',', ' ').map { it.trim() }.filter { it.isNotEmpty() }
+                            val relayLines = relayText.split('\n', ',', ' ').map { it.trim() }.filter { it.isNotEmpty() }
+                            val badWs = (nostrLines + relayLines).firstOrNull { !NetworkConfig.isWsUrl(it) }
+                            if (badWs != null) {
+                                networkStatus = "Not a ws:// or wss:// address: $badWs"
+                            } else if (hasTurnInput && (urls.isEmpty() || turnUser.isBlank() || turnSecret.isBlank())) {
+                                networkStatus = "TURN needs at least one turn:/turns: URL, a username and a credential."
+                            } else {
+                                val turn = if (urls.isEmpty()) {
+                                    emptyList()
+                                } else {
+                                    listOf(TurnServer(urls, turnUser.trim(), turnSecret))
+                                }
+                                onUpdateSettings {
+                                    copy(
+                                        network = network.copy(
+                                            stun = NetworkConfig.parseStunList(stunText),
+                                            turn = turn,
+                                            signaling = buildList {
+                                                if (nostrLines.isNotEmpty()) add(SignalingConfig.Nostr(nostrLines))
+                                                relayLines.forEach { add(SignalingConfig.Relay(it)) }
+                                            },
+                                        ),
+                                    )
+                                }
+                                networkStatus = "Saved. Applies to the next connection."
+                            }
+                        },
+                    ) {
+                        Text("Save network settings")
                     }
-                    OutlinedButton(onClick = onOpenManual) {
-                        Text("Manual connection")
+                    TextButton(
+                        onClick = {
+                            val defaults = AppConfig.defaultNetworkConfig()
+                            onUpdateSettings { copy(network = defaults) }
+                            stunText = defaults.stun.joinToString("\n")
+                            nostrText = defaults.signaling.filterIsInstance<SignalingConfig.Nostr>().flatMap { it.relays }.joinToString("\n")
+                            relayText = ""
+                            turnUrls = defaults.turn.firstOrNull()?.urls?.joinToString("\n").orEmpty()
+                            turnUser = defaults.turn.firstOrNull()?.username.orEmpty()
+                            turnSecret = defaults.turn.firstOrNull()?.credential.orEmpty()
+                            networkStatus = "Defaults restored."
+                        },
+                    ) {
+                        Text("Defaults")
                     }
                 }
+                networkStatus?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    "The default STUN servers are public Google and Cloudflare servers " +
+                        "(third parties). Clear the list to disable STUN; then only " +
+                        "same-network connections work.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
 
                 Spacer(Modifier.height(18.dp))
                 HorizontalDivider()
@@ -433,9 +577,9 @@ fun SettingsDialog(
                 ) {
                     Text(
                         "Local message text is encrypted at rest with AES-GCM using a key in " +
-                            "the Android Keystore. Cloud messages are protected by TLS and " +
-                            "Firestore rules, but they are not end-to-end encrypted. DuoChat " +
-                            "does not claim E2EE.",
+                            "the Android Keystore. Messages never leave your two devices: they " +
+                            "travel over an encrypted direct connection, and no server can read " +
+                            "or keep them.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(12.dp),
@@ -510,7 +654,7 @@ fun SettingsDialog(
                         )
                         Text(
                             "Permanently deletes this device's conversations, contacts, keys, " +
-                                "session state, and settings, then returns DuoChat to sign-in. " +
+                                "session state, and settings, then starts over with a new identity. " +
                                 "Requires two deliberate confirmation steps.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -549,26 +693,16 @@ fun SettingsDialog(
                 Spacer(Modifier.height(6.dp))
                 DetailRow("Version", AppConfig.APP_VERSION)
                 DetailRow("Platform", "Android · Kotlin/Compose")
+                DetailRow("Created by", "anandkrishna1900")
+                DetailRow("License", "Apache-2.0")
                 DetailRow("Conversation", state.conversationId, monospace = true)
-                DetailRow("Firebase project", AppConfig.firebaseProjectId.ifBlank { "—" }, monospace = true)
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "Cloud access is enforced by Firestore rules and a two-member allowlist. " +
-                        "Peer connections use challenge-response identity proof plus manual " +
-                        "safety-number verification when signaling is offline.",
+                    "Peer connections use a challenge-response identity proof and a safety " +
+                        "number you compare with your friend. No accounts and no analytics.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(Modifier.height(12.dp))
-                OutlinedButton(onClick = onSignOut) {
-                    Icon(
-                        Icons.Filled.Logout,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text("Sign out")
-                }
                 Spacer(Modifier.height(10.dp))
             }
         }
@@ -661,4 +795,103 @@ private fun parseColor(value: String): Color = try {
     Color(AndroidColor.parseColor(value))
 } catch (_: Exception) {
     Color(0xFF6366F1)
+}
+
+/**
+ * Bluetooth LE status and controls. Permissions are requested only from the button here, after an explanation,
+ * and a denial is handled with a pointer to the system settings. UNTESTED on a real radio.
+ */
+@Composable
+private fun BluetoothBlock(
+    status: BluetoothStatus,
+    onConnect: ((Result<Unit>) -> Unit) -> Unit,
+    onPermissionResult: () -> Unit,
+) {
+    val context = LocalContext.current
+    var rationale by remember { mutableStateOf(false) }
+    var denied by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        denied = !result.values.all { it }
+        onPermissionResult()
+    }
+
+    DetailRow(
+        "Bluetooth",
+        when (status) {
+            BluetoothStatus.DISABLED -> "Off in network settings"
+            BluetoothStatus.UNSUPPORTED -> "Not available on this phone"
+            BluetoothStatus.NEEDS_PERMISSION -> "Permission needed"
+            BluetoothStatus.ADAPTER_OFF -> "Turned off"
+            BluetoothStatus.NOT_PAIRED -> "Add your friend first"
+            BluetoothStatus.READY -> "Ready"
+            BluetoothStatus.SEARCHING -> "Searching nearby…"
+            BluetoothStatus.CONNECTED -> "Connected"
+        },
+    )
+    Text(
+        when (status) {
+            BluetoothStatus.NEEDS_PERMISSION ->
+                "DuoChat can find your paired friend over Bluetooth when you are close by, with no internet. " +
+                    "It needs the nearby-devices permission for that."
+            BluetoothStatus.ADAPTER_OFF -> "Turn Bluetooth on in the quick settings panel, then come back."
+            BluetoothStatus.CONNECTED -> "Traffic is encrypted on top of Bluetooth and never touches a server."
+            else -> "Works with the internet off, but only within radio range. Experimental: never run on real radios yet."
+        },
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(Modifier.height(8.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (status == BluetoothStatus.NEEDS_PERMISSION) {
+            Button(onClick = { rationale = true }) { Text("Allow Bluetooth") }
+            if (denied) {
+                OutlinedButton(
+                    onClick = {
+                        context.startActivity(
+                            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    },
+                ) { Text("Open app settings") }
+            }
+        } else if (status == BluetoothStatus.READY) {
+            OutlinedButton(onClick = { onConnect { result -> message = result.exceptionOrNull()?.message } }) {
+                Text("Connect over Bluetooth")
+            }
+        }
+    }
+    if (denied && status == BluetoothStatus.NEEDS_PERMISSION) {
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Permission was denied. You can allow it under Android Settings > Apps > DuoChat > Permissions.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+    message?.let {
+        Spacer(Modifier.height(4.dp))
+        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+    }
+    if (rationale) {
+        AlertDialog(
+            onDismissRequest = { rationale = false },
+            title = { Text("Allow nearby devices?") },
+            text = {
+                Text(
+                    "Bluetooth lets DuoChat find and talk to your paired friend with no internet. DuoChat only " +
+                        "connects to the one device you paired with. It never uses Bluetooth to learn your location.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        rationale = false
+                        launcher.launch(BlePermissions.required())
+                    },
+                ) { Text("Continue") }
+            },
+            dismissButton = { TextButton(onClick = { rationale = false }) { Text("Not now") } },
+        )
+    }
 }

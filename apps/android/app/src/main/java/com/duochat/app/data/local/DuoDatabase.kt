@@ -18,10 +18,8 @@ data class MessageEntity(
     val senderId: String,
     val textCipher: String,
     val clientCreatedAt: Long,
-    val serverCreatedAt: Long?,
     val transport: String,
     val deliveryState: String,
-    val syncedToCloud: Boolean,
     val readAt: Long?,
     /**
      * Scope column (database v2). Historic rows are backfilled to the legacy
@@ -66,9 +64,6 @@ interface DuoDao {
 
     @Query("UPDATE messages SET transport = :transport WHERE messageId = :messageId")
     suspend fun updateMessageTransport(messageId: String, transport: String)
-
-    @Query("UPDATE messages SET syncedToCloud = :synced WHERE messageId = :messageId")
-    suspend fun updateMessageSynced(messageId: String, synced: Boolean)
 
     @Query("UPDATE messages SET readAt = :readAt WHERE messageId = :messageId")
     suspend fun updateMessageReadAt(messageId: String, readAt: Long?)
@@ -119,7 +114,7 @@ interface DuoDao {
 
 @Database(
     entities = [MessageEntity::class, OutboxEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class DuoDatabase : RoomDatabase() {
@@ -139,6 +134,31 @@ abstract class DuoDatabase : RoomDatabase() {
                 db.execSQL(
                     "ALTER TABLE outbox ADD COLUMN conversationId TEXT NOT NULL DEFAULT 'duo'",
                 )
+            }
+        }
+
+        /**
+         * v2 → v3: drops the cloud-only columns (serverCreatedAt, syncedToCloud).
+         * SQLite on API 26–30 cannot DROP COLUMN, so the table is rebuilt.
+         */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE messages_new (" +
+                        "messageId TEXT NOT NULL, clientMessageId TEXT NOT NULL, " +
+                        "senderId TEXT NOT NULL, textCipher TEXT NOT NULL, " +
+                        "clientCreatedAt INTEGER NOT NULL, transport TEXT NOT NULL, " +
+                        "deliveryState TEXT NOT NULL, readAt INTEGER, " +
+                        "conversationId TEXT NOT NULL, PRIMARY KEY(messageId))",
+                )
+                db.execSQL(
+                    "INSERT INTO messages_new (messageId, clientMessageId, senderId, textCipher, " +
+                        "clientCreatedAt, transport, deliveryState, readAt, conversationId) " +
+                        "SELECT messageId, clientMessageId, senderId, textCipher, clientCreatedAt, " +
+                        "transport, deliveryState, readAt, conversationId FROM messages",
+                )
+                db.execSQL("DROP TABLE messages")
+                db.execSQL("ALTER TABLE messages_new RENAME TO messages")
             }
         }
     }

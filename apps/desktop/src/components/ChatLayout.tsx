@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ChatEngine, ChatState } from '../lib/engine';
 import type { AppSettings } from '../lib/settings';
 import { LOCAL_ID } from '../lib/identity';
+import { config } from '../config';
 import { Avatar } from './Avatar';
 import { ConnectionBadge } from './ConnectionBadge';
 import { Composer } from './Composer';
@@ -136,8 +137,9 @@ export function ChatLayout({
   }
 
   const peerActive = state.p2pConnected;
+  const relayed = state.path?.kind === 'relayed';
   const subline = state.p2pConnected
-    ? 'Direct connection active'
+    ? (state.path?.label ?? 'Direct connection active')
     : state.paired
       ? 'Not connected'
       : 'Not paired yet';
@@ -161,7 +163,7 @@ export function ChatLayout({
           <Avatar name={selfName} size={42} />
           <div>
             <strong>{selfName}</strong>
-            <span className="muted small">You</span>
+            <span className="muted small">This device</span>
           </div>
         </div>
 
@@ -169,7 +171,7 @@ export function ChatLayout({
           <Avatar name={peerName} size={42} online={peerActive} />
           <div>
             <strong>{peerName}</strong>
-            <span className="muted small">{subline}</span>
+            <span className={`muted small ${relayed ? 'path-relayed' : ''}`}>{subline}</span>
           </div>
         </div>
 
@@ -204,7 +206,7 @@ export function ChatLayout({
         </div>
 
         <div className="sidebar-footer">
-          <span className="muted small">v0.1.0</span>
+          <span className="muted small">v{config.appVersion}</span>
         </div>
       </aside>
 
@@ -222,7 +224,7 @@ export function ChatLayout({
             <Avatar name={peerName} size={40} online={peerActive} />
             <div>
               <h1>{peerName}</h1>
-              <p className="muted small">{subline}</p>
+              <p className={`muted small ${relayed ? 'path-relayed' : ''}`}>{subline}</p>
             </div>
           </div>
           <div className="chat-header-actions">

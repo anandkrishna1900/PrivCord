@@ -6,7 +6,7 @@ function value(name: keyof ImportMetaEnv): string {
 
 export const config = {
   conversationId: value('VITE_CONVERSATION_ID') || 'duo',
-  appVersion: '0.1.0',
+  appVersion: __APP_VERSION__,
 } as const;
 
 export function isTauri(): boolean {

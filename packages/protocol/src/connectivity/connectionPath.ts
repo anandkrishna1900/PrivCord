@@ -4,6 +4,7 @@ export type ConnectionPath =
   | { kind: 'direct-lan'; label: string; detail: string }
   | { kind: 'direct-nat'; label: string; detail: string }
   | { kind: 'relayed'; label: string; detail: string }
+  | { kind: 'bluetooth'; label: string; detail: string }
   | { kind: 'unknown'; label: string; detail: string };
 
 /** Classify the *selected* ICE candidate pair. Never inferred from configuration. */
@@ -58,3 +59,9 @@ export function selectedPairFromStats(stats: StatsLike): { local: CandidateType;
   };
   return { local: type(pair.localCandidateId), remote: type(pair.remoteCandidateId) };
 }
+
+export const BLUETOOTH_PATH: ConnectionPath = {
+  kind: 'bluetooth',
+  label: 'Bluetooth, no internet',
+  detail: 'Connected over Bluetooth LE within radio range. No internet or server is involved.',
+};

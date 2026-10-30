@@ -43,10 +43,11 @@ export function NetworkSettings({ engine, state }: { engine: ChatEngine | null; 
   );
   const [storeForward, setStoreForward] = useState(initial.storeForward);
   const [forceRelay, setForceRelay] = useState(initial.forceRelay);
+  const [bluetooth, setBluetooth] = useState(initial.bluetooth);
   const [problems, setProblems] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => setSaved(false), [stun, turnUrls, turnUser, turnPass, nostr, relays, storeForward, forceRelay]);
+  useEffect(() => setSaved(false), [stun, turnUrls, turnUser, turnPass, nostr, relays, storeForward, forceRelay, bluetooth]);
 
   function build(): { config: NetworkConfig; problems: string[] } {
     const issues: string[] = [];
@@ -72,6 +73,7 @@ export function NetworkSettings({ engine, state }: { engine: ChatEngine | null; 
       ],
       storeForward,
       forceRelay,
+      bluetooth,
     };
     return { config, problems: issues };
   }
@@ -94,6 +96,7 @@ export function NetworkSettings({ engine, state }: { engine: ChatEngine | null; 
     setRelays('');
     setStoreForward(false);
     setForceRelay(false);
+    setBluetooth(true);
   }
 
   const status = state?.signaling ?? 'idle';
@@ -139,6 +142,12 @@ export function NetworkSettings({ engine, state }: { engine: ChatEngine | null; 
         </label>
       </div>
 
+      <Toggle
+        label="Bluetooth (works with no internet)"
+        hint="Also look for your friend over Bluetooth LE when you are close by. Needs a Bluetooth-capable build and your friend within radio range."
+        checked={bluetooth}
+        onChange={setBluetooth}
+      />
       <Toggle
         label="Always relay through TURN"
         hint="Hides your IP address from your friend. Slower, and needs a TURN server."

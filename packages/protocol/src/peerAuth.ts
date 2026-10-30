@@ -41,7 +41,14 @@ export interface ReadFrame {
   at: number;
 }
 
-export type PeerControlFrame = AuthHello | AuthProof | AuthAck | AckFrame | ReadFrame;
+/** Liveness probe: lets each side notice a dead link within seconds. Answer a ping with a pong. */
+export interface PingFrame {
+  v: typeof PROTOCOL_VERSION;
+  kind: 'ping' | 'pong';
+  at: number;
+}
+
+export type PeerControlFrame = AuthHello | AuthProof | AuthAck | AckFrame | ReadFrame | PingFrame;
 
 export function randomNonce(): string {
   const bytes = new Uint8Array(24);
@@ -113,6 +120,13 @@ export function parsePeerFrame(value: unknown): PeerControlFrame | null {
           uid: value.uid,
           signature: value.signature,
         };
+      }
+      return null;
+    }
+    case 'ping':
+    case 'pong': {
+      if (typeof value.at === 'number' && Number.isFinite(value.at)) {
+        return { v: PROTOCOL_VERSION, kind: value.kind, at: value.at };
       }
       return null;
     }

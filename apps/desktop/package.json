@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "e2e": "node e2e/run.mjs"
   },
   "dependencies": {
     "@duochat/protocol": "*",
@@ -29,6 +30,8 @@
     "@vitejs/plugin-react": "^4.5.0",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
-    "vitest": "^3.2.4"
-  }
+    "vitest": "4.1.12"
+  },
+  "license": "Apache-2.0",
+  "author": "anandkrishna1900 (https://github.com/anandkrishna1900)"
 }

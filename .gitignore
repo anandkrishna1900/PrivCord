@@ -37,3 +37,5 @@ Thumbs.db
 # Editor
 .vscode/
 .idea/
+apps/desktop/e2e/last-results.json
+apps/android/.kotlin/

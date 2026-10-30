@@ -9,6 +9,7 @@ export interface PeerTransportHandlers {
 const ICE_GATHER_TIMEOUT_MS = 8_000;
 
 export class PeerTransport {
+  readonly kind = 'webrtc' as const;
   private pc: RTCPeerConnection | null = null;
   private channel: RTCDataChannel | null = null;
   private closedByUs = false;

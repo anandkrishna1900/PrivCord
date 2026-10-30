@@ -49,6 +49,9 @@ describe('peer authentication', () => {
     ).toBeNull();
     expect(parsePeerFrame({ v: 2, kind: 'hello' })).toBeNull();
     expect(parsePeerFrame({ v: 1, kind: 'ack', messageId: 'm', state: 'BOGUS', at: 1 })).toBeNull();
+    expect(parsePeerFrame({ v: 1, kind: 'ping', at: 5 })?.kind).toBe('ping');
+    expect(parsePeerFrame({ v: 1, kind: 'pong', at: 5 })?.kind).toBe('pong');
+    expect(parsePeerFrame({ v: 1, kind: 'ping' })).toBeNull();
     expect(parsePeerFrame({ v: 1, kind: 'read', lastReadMessageId: 'm', at: 1 })?.kind).toBe('read');
   });
 });

@@ -1,4 +1,3 @@
 -keep class org.webrtc.** { *; }
--keep class com.google.firebase.** { *; }
 -keep class com.google.zxing.** { *; }
 -dontwarn org.webrtc.**

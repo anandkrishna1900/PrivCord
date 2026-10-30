@@ -10,6 +10,7 @@ export function Modal({
   children,
   wide,
   footer,
+  dismissible = true,
 }: {
   open: boolean;
   onClose: () => void;
@@ -18,6 +19,8 @@ export function Modal({
   children: ReactNode;
   wide?: boolean;
   footer?: ReactNode;
+  /** False for flows that must finish (first-run identity): no close button. */
+  dismissible?: boolean;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocus = useRef<Element | null>(null);
@@ -80,14 +83,16 @@ export function Modal({
             {eyebrow ? <p className="eyebrow">{eyebrow}</p> : null}
             <h2>{title}</h2>
           </div>
-          <button
-            type="button"
-            className="icon-button subtle"
-            onClick={onClose}
-            aria-label="Close dialog"
-          >
-            <XIcon size={18} />
-          </button>
+          {dismissible ? (
+            <button
+              type="button"
+              className="icon-button subtle"
+              onClick={onClose}
+              aria-label="Close dialog"
+            >
+              <XIcon size={18} />
+            </button>
+          ) : null}
         </header>
         <div className="modal-body">{children}</div>
         {footer ? <footer className="modal-footer">{footer}</footer> : null}

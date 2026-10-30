@@ -53,23 +53,6 @@ object DuoNotifications {
         )
     }
 
-    fun showIncomingPush(
-        context: Context,
-        messageId: String,
-        senderName: String,
-        text: String,
-        settings: AppSettings,
-    ) {
-        val body = if (settings.notificationPreviews) preview(text) else "Open DuoChat to read it."
-        show(
-            context = context,
-            notificationId = messageId.hashCode(),
-            title = "New message from ${senderName.ifBlank { "your friend" }}",
-            body = body,
-            settings = settings,
-        )
-    }
-
     private fun show(
         context: Context,
         notificationId: Int,
