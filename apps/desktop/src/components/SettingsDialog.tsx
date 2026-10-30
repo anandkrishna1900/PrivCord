@@ -652,7 +652,7 @@ export function SettingsDialog({
                 </div>
               </dl>
               <p className="muted small">
-                Created by anandkrishna1900. Open source under the Apache License 2.0.
+                Created by anandkrishna1900. Licensed under the PrivCord Community &amp; Non-Commercial License (PC-NC).
               </p>
               <p className="muted small">
                 Peer connections use a challenge-response identity proof and a

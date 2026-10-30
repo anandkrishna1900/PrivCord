@@ -3,7 +3,7 @@ name = "duochat"
 version = "0.1.0"
 description = "DuoChat private two-person messenger"
 authors = ["anandkrishna1900"]
-license = "Apache-2.0"
+license-file = "../../../LICENSE"
 edition = "2021"
 rust-version = "1.77.2"
 
