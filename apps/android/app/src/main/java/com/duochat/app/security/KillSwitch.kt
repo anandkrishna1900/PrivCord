@@ -188,29 +188,31 @@ class KillSwitchExecutor(
         }
     }
 
-    fun loadReport(): KillSwitchReport? = try {
-        if (!reportFile.exists()) return null
-        val json = JSONObject(reportFile.readText())
-        val report = KillSwitchReport(
-            scope = KillSwitchScope.valueOf(json.getString("scope")),
-            mode = KillSwitchMode.valueOf(json.getString("mode")),
-            startedAt = json.getLong("startedAt"),
-            finishedAt = if (json.isNull("finishedAt")) null else json.getLong("finishedAt"),
-        )
-        val steps = json.getJSONArray("steps")
-        for (i in 0 until steps.length()) {
-            val item = steps.getJSONObject(i)
-            report.steps.add(
-                KillSwitchStepResult(
-                    stepId = item.getString("stepId"),
-                    status = StepStatus.valueOf(item.getString("status")),
-                    details = if (item.isNull("details")) null else item.getString("details"),
-                ),
+    fun loadReport(): KillSwitchReport? {
+        return try {
+            if (!reportFile.exists()) return null
+            val json = JSONObject(reportFile.readText())
+            val report = KillSwitchReport(
+                scope = KillSwitchScope.valueOf(json.getString("scope")),
+                mode = KillSwitchMode.valueOf(json.getString("mode")),
+                startedAt = json.getLong("startedAt"),
+                finishedAt = if (json.isNull("finishedAt")) null else json.getLong("finishedAt"),
             )
+            val steps = json.getJSONArray("steps")
+            for (i in 0 until steps.length()) {
+                val item = steps.getJSONObject(i)
+                report.steps.add(
+                    KillSwitchStepResult(
+                        stepId = item.getString("stepId"),
+                        status = StepStatus.valueOf(item.getString("status")),
+                        details = if (item.isNull("details")) null else item.getString("details"),
+                    ),
+                )
+            }
+            report
+        } catch (_: Exception) {
+            null
         }
-        report
-    } catch (_: Exception) {
-        null
     }
 
     fun clearReportFile() {

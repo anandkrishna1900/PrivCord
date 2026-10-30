@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -74,6 +75,7 @@ fun SettingsDialog(
     onClearLocalData: ((Result<Unit>) -> Unit) -> Unit,
     onReconnect: () -> Unit,
     onOpenManual: () -> Unit,
+    onOpenNuke: () -> Unit,
     onSignOut: () -> Unit,
 ) {
     var name by remember { mutableStateOf(state.selfProfile?.displayName.orEmpty()) }
@@ -481,6 +483,58 @@ fun SettingsDialog(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+
+                Spacer(Modifier.height(18.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(14.dp))
+
+                SectionTitle("Security")
+                Text(
+                    "Emergency deletion for this device. Deletion never touches the other " +
+                        "person's device, screenshots, exports, or external backups.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(10.dp))
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text(
+                            "Emergency Actions",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            "Permanently deletes this device's conversations, contacts, keys, " +
+                                "session state, and settings, then returns DuoChat to sign-in. " +
+                                "Requires two deliberate confirmation steps.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 6.dp),
+                        )
+                        Button(
+                            onClick = {
+                                onDismiss()
+                                onOpenNuke()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error,
+                            ),
+                        ) {
+                            Text("NUKE DUOCHAT")
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Per-conversation deletion lives in the chat menu → Security → " +
+                                "Clear Everything.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
 
                 Spacer(Modifier.height(18.dp))

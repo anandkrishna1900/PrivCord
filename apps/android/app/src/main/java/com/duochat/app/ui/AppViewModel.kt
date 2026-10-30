@@ -332,6 +332,109 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * App-wide emergency kill switch ("NUKE DUOCHAT"). Never deletes the
+     * account on the server; erases all local DuoChat data and returns the
+     * app to the sign-in (onboarding) screen. The honest report is exposed
+     * through [killSwitchReport] until acknowledged.
+     */
+    fun runNuke() {
+        val application = getApplication<Application>()
+        val user = FirebaseAuth.getInstance().currentUser
+        if (user == null) {
+            _killSwitchReport.value = null
+            return
+        }
+        viewModelScope.launch {
+            // Stop all networking before anything is erased.
+            engine?.stop()
+            try {
+                val report = killSwitchExecutor.execute(
+                    scope = com.duochat.app.security.KillSwitchScope.APPLICATION,
+                    mode = com.duochat.app.security.KillSwitchMode.LOCAL_ONLY,
+                    hooks = com.duochat.app.security.AppWideHooks(
+                        context = application,
+                        conversationId = AppConfig.conversationId,
+                        databaseProvider = { database },
+                        identityManager = identityManager,
+                        uid = user.uid,
+                    ),
+                )
+                _killSwitchReport.value = report
+            } finally {
+                // Regardless of partial failures, drop the authenticated
+                // session so the app lands on onboarding. Crypto state is
+                // erased (or reported as failed); re-signing in creates a
+                // fresh device identity.
+                FirebaseAuth.getInstance().signOut()
+                stopEngine()
+                _auth.value = if (AppConfig.firebaseReady) {
+                    AuthUiState.SignedOut
+                } else {
+                    AuthUiState.Unconfigured
+                }
+            }
+        }
+    }
+
+    /** Removes the completed kill-switch report after the user reads it. */
+    fun acknowledgeKillSwitch() {
+        killSwitchExecutor.clearReportFile()
+        _killSwitchReport.value = null
+    }
+
+    /**
+     * Per-conversation kill switch. Option A ("CLEAR LOCAL CHAT") erases this
+     * conversation's local content only. Option B additionally erases this
+     * chat's session-state on this device. Requires the erase engine paused to
+     * prevent retries from repopulating the store, then restarts fresh.
+     */
+    fun runChatSwitch(
+        withSessionState: Boolean,
+        onResult: (Result<Boolean>) -> Unit,
+    ) {
+        val application = getApplication<Application>()
+        val user = FirebaseAuth.getInstance().currentUser
+        val mode = if (withSessionState) {
+            com.duochat.app.security.KillSwitchMode.LOCAL_PLUS_SESSION_STATE
+        } else {
+            com.duochat.app.security.KillSwitchMode.LOCAL_ONLY
+        }
+        if (user == null) {
+            onResult(Result.failure(IllegalStateException("Signed out.")))
+            return
+        }
+        viewModelScope.launch {
+            // Pause all delivery paths while erasing so cloud sync or direct
+            // connections cannot repopulate the store mid-wipe.
+            stopEngine()
+            try {
+                val report = killSwitchExecutor.execute(
+                    scope = com.duochat.app.security.KillSwitchScope.CONVERSATION,
+                    mode = mode,
+                    hooks = com.duochat.app.security.ConversationHooks(
+                        conversationId = AppConfig.conversationId,
+                        databaseProvider = { database },
+                        identityManager = identityManager,
+                        uid = user.uid,
+                    ),
+                )
+                _killSwitchReport.value = report
+                val summary = com.duochat.app.security.summarizeReport(report)
+                onResult(Result.success(summary.complete))
+                // Restart the engine fresh, regardless of partial completion.
+                startEngine(user, _auth.value.let { state ->
+                    (state as? AuthUiState.SignedIn)?.peerUid ?: ""
+                }, (stateConversationIdOrNull() ?: AppConfig.conversationId))
+            } catch (error: Exception) {
+                onResult(Result.failure(error))
+            }
+        }
+    }
+
+    private fun stateConversationIdOrNull(): String? =
+        (_auth.value as? AuthUiState.SignedIn)?.conversationId
+
     override fun onCleared() {
         authListener?.let { FirebaseAuth.getInstance().removeAuthStateListener(it) }
         stopEngine()
