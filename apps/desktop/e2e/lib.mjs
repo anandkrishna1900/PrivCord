@@ -171,7 +171,7 @@ export async function pair(a, b) {
 
 export async function connected(page, ms = 90000) {
   await page.waitForFunction(
-    () => document.querySelector('.composer textarea')?.getAttribute('placeholder') === 'Write a message…',
+    () => document.querySelector('.composer textarea')?.getAttribute('placeholder')?.startsWith('Write a message…') === true,
     null,
     { timeout: ms },
   );

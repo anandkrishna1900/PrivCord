@@ -158,7 +158,7 @@ await scenario(4, 'third identity cannot connect to a paired contact; foreign/ta
   // Wait long enough for several offer/ready rounds, then check A never connected to C.
   await sleep(50000);
   const cPlaceholder = await c.page.locator('.composer textarea').getAttribute('placeholder');
-  check(cPlaceholder !== 'Write a message…', 'stranger C is not connected to A', cPlaceholder);
+  check(!cPlaceholder?.startsWith('Write a message…'), 'stranger C is not connected to A', cPlaceholder);
   await say(c.page, marker);
   await sleep(3000);
   check((await a.page.locator(`text=${marker}`).count()) === 0, 'A never received C\'s message');
@@ -303,7 +303,7 @@ await scenario(8, 'Bluetooth (simulated radio), NO internet, NO signaling: conne
     return bytes.join('');
   };
   await say(a.page, 'this-will-be-tampered');
-  await b.page.waitForFunction(() => document.querySelector('.composer textarea')?.getAttribute('placeholder') !== 'Write a message…', null, { timeout: 30000 });
+  await b.page.waitForFunction(() => document.querySelector('.composer textarea')?.getAttribute('placeholder')?.startsWith('Write a message…') !== true, null, { timeout: 30000 });
   check((await b.page.locator('text=this-will-be-tampered').count()) === 0, 'tampered message is NOT accepted');
   ctx.note('tampered chunk rejected, link dropped');
   check([...a.errors, ...b.errors].length === 0, 'no page errors', [...a.errors, ...b.errors]);
@@ -318,7 +318,7 @@ await scenario(9, 'dead-link detection: a vanished peer is noticed within ~15s',
   // possible, so we simulate a vanished peer by closing B's context abruptly and timing how fast A notices.
   const started = Date.now();
   await b.context.close();
-  await a.page.waitForFunction(() => document.querySelector('.composer textarea')?.getAttribute('placeholder') !== 'Write a message…', null, { timeout: 40000 });
+  await a.page.waitForFunction(() => document.querySelector('.composer textarea')?.getAttribute('placeholder')?.startsWith('Write a message…') !== true, null, { timeout: 40000 });
   const secs = Math.round((Date.now() - started) / 1000);
   ctx.note(`A noticed the peer was gone after ${secs}s`);
   check(secs <= 25, 'dead link noticed in <= 25s', secs);
