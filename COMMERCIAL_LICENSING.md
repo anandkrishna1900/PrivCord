@@ -73,3 +73,4 @@ All commercial use must comply with the PrivCord Community & Non-Commercial Lice
 - **Email**: [blackydog0007@gmail.com](mailto:blackydog0007@gmail.com)
 - **GitHub**: https://github.com/anandkrishna1900
 - **Official Repository**: https://github.com/anandkrishna1900/PrivCord
+
