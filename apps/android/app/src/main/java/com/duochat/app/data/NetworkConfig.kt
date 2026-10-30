@@ -3,19 +3,14 @@ package com.duochat.app.data
 import org.json.JSONArray
 import org.json.JSONObject
 
-/**
- * STUN and TURN are separate things. STUN only tells a device its public
- * address (no data passes through it). TURN relays the already end-to-end
- * encrypted stream when no direct path exists. Both are optional and editable.
- * Schema matches docs/CONNECTIVITY.md section 3.
- */
+enum class TransportMode { AUTOMATIC, BLUETOOTH_ONLY, INTERNET_ONLY }
+
 data class TurnServer(
     val urls: List<String>,
     val username: String,
     val credential: String,
 )
 
-/** How paired friends find each other again. Signaling only carries sealed blobs, never plaintext. */
 sealed class SignalingConfig {
     data class Nostr(val relays: List<String>) : SignalingConfig()
     data class Relay(val url: String) : SignalingConfig()
@@ -25,12 +20,10 @@ data class NetworkConfig(
     val stun: List<String> = DEFAULT_STUN,
     val turn: List<TurnServer> = emptyList(),
     val signaling: List<SignalingConfig> = listOf(SignalingConfig.Nostr(DEFAULT_NOSTR_RELAYS)),
-    /** Hold sealed messages on relays while the contact is offline. Off by default. */
     val storeForward: Boolean = false,
-    /** Only use TURN relay candidates (hides your IP from the peer; needs a TURN server). */
     val forceRelay: Boolean = false,
-    /** Also look for the paired friend over Bluetooth LE. */
     val bluetooth: Boolean = true,
+    val transportMode: TransportMode = TransportMode.AUTOMATIC,
 ) {
     fun toJson(): String = JSONObject()
         .put("stun", JSONArray(stun))
@@ -59,6 +52,7 @@ data class NetworkConfig(
         .put("storeForward", storeForward)
         .put("forceRelay", forceRelay)
         .put("bluetooth", bluetooth)
+        .put("transportMode", transportMode.name)
         .toString()
 
     companion object {
@@ -71,7 +65,6 @@ data class NetworkConfig(
         fun isStunUrl(value: String) = isIceUrl(value, "stun", "stuns")
         fun isTurnUrl(value: String) = isIceUrl(value, "turn", "turns")
 
-        /** Same rule as `isIceUrl` in the TypeScript protocol: `scheme:rest` with no whitespace. */
         private fun isIceUrl(value: String, vararg schemes: String): Boolean {
             val m = Regex("^([a-z]+):[^\\s]+$", RegexOption.IGNORE_CASE).find(value.trim()) ?: return false
             return m.groupValues[1].lowercase() in schemes
@@ -84,7 +77,6 @@ data class NetworkConfig(
             false
         }
 
-        /** Splits on commas/whitespace and keeps only well-formed STUN urls. */
         fun parseStunList(text: String): List<String> =
             text.split(',', '\n', ' ', ';').map { it.trim() }.filter { it.isNotEmpty() && isStunUrl(it) }
 
@@ -99,10 +91,6 @@ data class NetworkConfig(
             else (0 until array.length()).mapNotNull { (array.opt(it) as? String)?.trim() }
                 .filter { it.isNotEmpty() && it.length <= 512 }
 
-        /**
-         * Tolerant parse with the same rules as `parseNetworkConfig` in packages/protocol (checked against
-         * vectors): bad entries are dropped, garbage falls back to [fallback].
-         */
         fun fromJson(raw: String?, fallback: NetworkConfig = NetworkConfig()): NetworkConfig {
             if (raw.isNullOrBlank()) return fallback
             return try {
@@ -135,6 +123,14 @@ data class NetworkConfig(
                         }
                     }
                 } else fallback.signaling
+
+                val modeStr = json.optString("transportMode", "")
+                val mode = try {
+                    if (modeStr.isNotEmpty()) TransportMode.valueOf(modeStr) else fallback.transportMode
+                } catch (_: Exception) {
+                    fallback.transportMode
+                }
+
                 NetworkConfig(
                     stun = stun,
                     turn = turn,
@@ -142,6 +138,7 @@ data class NetworkConfig(
                     storeForward = json.opt("storeForward") == true,
                     forceRelay = json.opt("forceRelay") == true,
                     bluetooth = json.opt("bluetooth") != false,
+                    transportMode = mode,
                 )
             } catch (_: Exception) {
                 fallback

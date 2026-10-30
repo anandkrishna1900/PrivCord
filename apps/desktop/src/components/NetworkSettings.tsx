@@ -5,6 +5,7 @@ import {
   isIceUrl,
   isWsUrl,
   type NetworkConfig,
+  type TransportMode,
 } from '@duochat/protocol';
 import type { ChatEngine, ChatState } from '../lib/engine';
 import { loadNetworkConfig, saveNetworkConfig } from '../lib/network';
@@ -30,7 +31,7 @@ function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange
   );
 }
 
-/** STUN, TURN, signaling and relays are different things; each has its own box. */
+/** STUN, TURN, signaling, relays, and transport mode selector. */
 export function NetworkSettings({ engine, state }: { engine: ChatEngine | null; state: ChatState | null }) {
   const [initial] = useState(loadNetworkConfig);
   const [stun, setStun] = useState(initial.stun.join('\n'));
@@ -44,71 +45,129 @@ export function NetworkSettings({ engine, state }: { engine: ChatEngine | null; 
   const [storeForward, setStoreForward] = useState(initial.storeForward);
   const [forceRelay, setForceRelay] = useState(initial.forceRelay);
   const [bluetooth, setBluetooth] = useState(initial.bluetooth);
+  const [transportMode, setTransportMode] = useState<TransportMode>(initial.transportMode ?? 'AUTOMATIC');
   const [problems, setProblems] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => setSaved(false), [stun, turnUrls, turnUser, turnPass, nostr, relays, storeForward, forceRelay, bluetooth]);
+  useEffect(() => setSaved(false), [stun, turnUrls, turnUser, turnPass, nostr, relays, storeForward, forceRelay, bluetooth, transportMode]);
 
-  function build(): { config: NetworkConfig; problems: string[] } {
-    const issues: string[] = [];
-    const stunList = lines(stun);
-    stunList.filter((u) => !isIceUrl(u, ['stun', 'stuns'])).forEach((u) => issues.push(`Not a STUN address: ${u}`));
-    const turnList = lines(turnUrls).map((l) => l.split(',').map((u) => u.trim()).filter(Boolean));
-    turnList.flat().filter((u) => !isIceUrl(u, ['turn', 'turns'])).forEach((u) => issues.push(`Not a TURN address: ${u}`));
-    if (turnList.length > 0 && (!turnUser || !turnPass)) issues.push('TURN needs a username and password.');
+  function validate(): { config: NetworkConfig; errors: string[] } {
+    const errors: string[] = [];
+    const stunList = lines(stun).flatMap((l) => l.split(',')).map((s) => s.trim()).filter(Boolean);
+    const badStun = stunList.filter((u) => !isIceUrl(u, ['stun', 'stuns']));
+    if (badStun.length > 0) errors.push(`Invalid STUN URL: ${badStun[0]}`);
+
+    const turnList: NetworkConfig['turn'] = [];
+    const rawTurn = lines(turnUrls);
+    if (rawTurn.length > 0) {
+      if (!turnUser || !turnPass) {
+        errors.push('TURN username and password are required when TURN servers are configured.');
+      }
+      for (const line of rawTurn) {
+        const urls = line.split(',').map((u) => u.trim()).filter(Boolean);
+        const bad = urls.filter((u) => !isIceUrl(u, ['turn', 'turns']));
+        if (bad.length > 0) errors.push(`Invalid TURN URL: ${bad[0]}`);
+        if (urls.length > 0) turnList.push({ urls, username: turnUser, credential: turnPass });
+      }
+    }
+
+    const signaling: NetworkConfig['signaling'] = [];
     const nostrList = lines(nostr);
-    nostrList.filter((u) => !isWsUrl(u)).forEach((u) => issues.push(`Not a ws:// or wss:// address: ${u}`));
+    const badNostr = nostrList.filter((u) => !isWsUrl(u));
+    if (badNostr.length > 0) errors.push(`Invalid Nostr relay URL: ${badNostr[0]}`);
+    if (nostrList.length > 0) signaling.push({ kind: 'nostr', relays: nostrList });
+
     const relayList = lines(relays);
-    relayList.filter((u) => !isWsUrl(u)).forEach((u) => issues.push(`Not a ws:// or wss:// address: ${u}`));
-    if (forceRelay && turnList.length === 0) issues.push('"Always relay" needs a TURN server, otherwise nothing can connect.');
-    const config: NetworkConfig = {
-      stun: stunList.filter((u) => isIceUrl(u, ['stun', 'stuns'])),
-      turn: turnList
-        .map((urls) => urls.filter((u) => isIceUrl(u, ['turn', 'turns'])))
-        .filter((urls) => urls.length > 0)
-        .map((urls) => ({ urls, username: turnUser, credential: turnPass })),
-      signaling: [
-        ...(nostrList.length > 0 ? [{ kind: 'nostr' as const, relays: nostrList.filter(isWsUrl) }] : []),
-        ...relayList.filter(isWsUrl).map((url) => ({ kind: 'relay' as const, url })),
-      ],
-      storeForward,
-      forceRelay,
-      bluetooth,
+    const badRelays = relayList.filter((u) => !isWsUrl(u));
+    if (badRelays.length > 0) errors.push(`Invalid DuoChat relay URL: ${badRelays[0]}`);
+    for (const u of relayList) signaling.push({ kind: 'relay', url: u });
+
+    if (forceRelay && turnList.length === 0) {
+      errors.push('To force TURN relay you must configure at least one working TURN server.');
+    }
+
+    return {
+      config: {
+        stun: stunList,
+        turn: turnList,
+        signaling,
+        storeForward,
+        forceRelay,
+        bluetooth,
+        transportMode,
+      },
+      errors,
     };
-    return { config, problems: issues };
   }
 
   function save() {
-    const { config, problems: issues } = build();
-    setProblems(issues);
-    if (issues.length > 0) return;
+    const { config, errors } = validate();
+    setProblems(errors);
+    if (errors.length > 0) return;
     saveNetworkConfig(config);
-    engine?.reloadNetwork();
+    engine?.applyNetworkConfig(config);
     setSaved(true);
   }
 
   function reset() {
-    setStun(DEFAULT_NETWORK_CONFIG.stun.join('\n'));
+    const d = DEFAULT_NETWORK_CONFIG;
+    setStun(d.stun.join('\n'));
     setTurnUrls('');
     setTurnUser('');
     setTurnPass('');
-    setNostr(DEFAULT_NOSTR_RELAYS.join('\n'));
+    setNostr((d.signaling.find((s) => s.kind === 'nostr')?.relays ?? []).join('\n'));
     setRelays('');
-    setStoreForward(false);
-    setForceRelay(false);
-    setBluetooth(true);
+    setStoreForward(d.storeForward);
+    setForceRelay(d.forceRelay);
+    setBluetooth(d.bluetooth);
+    setTransportMode(d.transportMode ?? 'AUTOMATIC');
+    setProblems([]);
+    saveNetworkConfig(d);
+    engine?.applyNetworkConfig(d);
+    setSaved(true);
   }
 
   const status = state?.signaling ?? 'idle';
   return (
     <section className="settings-section">
       <header>
-        <h3>Network</h3>
+        <h3>Network & Communication Mode</h3>
         <p className="muted">
-          DuoChat has no required server. These are the optional services it can use to find your friend and
-          get through firewalls. None of them can read your messages.
+          DuoChat operates peer-to-peer without central accounts. Select your preferred transport mode below.
         </p>
       </header>
+
+      <div className="field">
+        <span>Transport Selector</span>
+        <div className="button-group" style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+          <button
+            type="button"
+            className={`button ${transportMode === 'AUTOMATIC' ? 'primary' : 'secondary'} small`}
+            onClick={() => setTransportMode('AUTOMATIC')}
+          >
+            1. Automatic (Default)
+          </button>
+          <button
+            type="button"
+            className={`button ${transportMode === 'BLUETOOTH_ONLY' ? 'primary' : 'secondary'} small`}
+            onClick={() => setTransportMode('BLUETOOTH_ONLY')}
+          >
+            2. Bluetooth Only
+          </button>
+          <button
+            type="button"
+            className={`button ${transportMode === 'INTERNET_ONLY' ? 'primary' : 'secondary'} small`}
+            onClick={() => setTransportMode('INTERNET_ONLY')}
+          >
+            3. Internet Only
+          </button>
+        </div>
+        <p className="muted small" style={{ marginTop: '4px' }}>
+          {transportMode === 'AUTOMATIC' && 'Tries direct BLE, then BLE Mesh, then WebRTC P2P, then decentralized relay outbox.'}
+          {transportMode === 'BLUETOOTH_ONLY' && 'Never touches Internet, WebRTC, TURN, or Nostr relays. Direct radio and BLE mesh only.'}
+          {transportMode === 'INTERNET_ONLY' && 'Disables Bluetooth completely; uses WebRTC P2P and configured relays.'}
+        </p>
+      </div>
 
       <label className="field">
         <span>Signaling: Nostr relays (finds your friend; decentralized, one per line)</span>
@@ -119,7 +178,7 @@ export function NetworkSettings({ engine, state }: { engine: ChatEngine | null; 
         <textarea rows={2} value={relays} onChange={(e) => setRelays(e.target.value)} placeholder="wss://my-relay.example.org" />
       </label>
       <p className="muted small">
-        Signaling status: <strong>{status}</strong>. Leave both empty to use connection codes only.
+        Signaling status: <strong>{status}</strong>.
       </p>
 
       <label className="field">
@@ -144,7 +203,7 @@ export function NetworkSettings({ engine, state }: { engine: ChatEngine | null; 
 
       <Toggle
         label="Bluetooth (works with no internet)"
-        hint="Also look for your friend over Bluetooth LE when you are close by. Needs a Bluetooth-capable build and your friend within radio range."
+        hint="Also look for your friend over Bluetooth LE when you are close by. Needs a Bluetooth-capable build."
         checked={bluetooth}
         onChange={setBluetooth}
       />
@@ -156,7 +215,7 @@ export function NetworkSettings({ engine, state }: { engine: ChatEngine | null; 
       />
       <Toggle
         label="Store-and-forward relay (messages while your friend is offline)"
-        hint="Sends each message, encrypted for your friend, to the relays above so it arrives when they come online. Off by default. No forward secrecy for these messages."
+        hint="Sends each message, encrypted for your friend, to the relays above so it arrives when they come online."
         checked={storeForward}
         onChange={setStoreForward}
       />

@@ -1,5 +1,7 @@
 import { DEFAULT_STUN_URLS } from '../constants';
 
+export type TransportMode = 'AUTOMATIC' | 'BLUETOOTH_ONLY' | 'INTERNET_ONLY';
+
 export interface TurnServer {
   urls: string[];
   username: string;
@@ -20,6 +22,8 @@ export interface NetworkConfig {
   forceRelay: boolean;
   /** Also look for the paired friend over Bluetooth LE (needs a Bluetooth-capable build). */
   bluetooth: boolean;
+  /** User-selected transport mode: AUTOMATIC (default), BLUETOOTH_ONLY, INTERNET_ONLY */
+  transportMode?: TransportMode;
 }
 
 export const DEFAULT_NOSTR_RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.primal.net'];
@@ -31,6 +35,7 @@ export const DEFAULT_NETWORK_CONFIG: NetworkConfig = {
   storeForward: false,
   forceRelay: false,
   bluetooth: true,
+  transportMode: 'AUTOMATIC',
 };
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0 && v.length <= 512;
@@ -82,6 +87,12 @@ export function parseNetworkConfig(raw: string | null | undefined): NetworkConfi
         return [];
       })
     : structuredClone(DEFAULT_NETWORK_CONFIG.signaling);
+
+  let mode: TransportMode = 'AUTOMATIC';
+  if (p.transportMode === 'BLUETOOTH_ONLY' || p.transportMode === 'INTERNET_ONLY') {
+    mode = p.transportMode;
+  }
+
   return {
     stun: Array.isArray(p.stun) ? strList(p.stun).filter((u) => isIceUrl(u, ['stun', 'stuns'])) : [...DEFAULT_STUN_URLS],
     turn,
@@ -89,6 +100,7 @@ export function parseNetworkConfig(raw: string | null | undefined): NetworkConfi
     storeForward: p.storeForward === true,
     forceRelay: p.forceRelay === true,
     bluetooth: p.bluetooth !== false,
+    transportMode: mode,
   };
 }
 
