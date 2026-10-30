@@ -1,187 +1,218 @@
 import {
-  AUTH_TIMEOUT_MS,
-  authChallenge,
-  BLUETOOTH_PATH,
-  classifyPath,
-  ecdhAgree,
-  decodeContactCard,
-  mailboxFor,
-  open as openBlob,
-  reconnectDelayMs,
-  seal,
-  selectedPairFromStats,
-  validateClientMessageId,
-  validateIncomingText,
-  isRecord,
-  type ConnectionPath,
-  type Contact,
-  type NetworkConfig,
-  type SealedBlob,
+  GroupCoordinator,
   compareMessages,
   createManualSignal,
   createOutgoingMessage,
   createPeerMessageFrame,
+  decodeContactCard,
   decodeManualSignal,
-  deriveConnectionMode,
   deriveSafetyNumber,
+  ecdhAgree,
   encodeManualSignal,
-  importPublicJwk,
-  mergeMessages,
+  isRecord,
+  mailboxFor,
+  open as openBlob,
+  parseGroupFrame,
   parsePeerFrame,
   parsePeerMessageFrame,
-  publicKeysEqual,
   randomNonce,
-  signatureFromBase64,
-  type ChatMessage,
-  type ConnectionMode,
+  reconnectDelayMs,
+  seal,
+  type ConnectionPath,
+  type ContactCard,
   type DeliveryState,
-  type ManualSignal,
-  type PairingRecord,
-  type PeerControlFrame,
+  type GroupFrame,
+  type GroupResult,
+  type NetworkConfig,
+  type SealedBlob,
 } from '@duochat/protocol';
 import {
+  contactCardOf,
   loadPairing,
-  purgePeerKeyCaches,
-  savePairing,
-  signChallenge,
   uidMatchesKeys,
   type DeviceIdentity,
 } from './identity';
 import { loadNetworkConfig, rtcConfigFor } from './network';
 import { SignalingHub, transportsFor } from './signaling/hub';
 import type { SignalingStatus, SignalingTransport } from './signaling/types';
-import { LocalStore, type OutboxRow } from './localDb';
-import { needsDelivery } from './outbox';
-import { PeerTransport } from './p2p';
+import { LocalStore, type StoredMessage } from './localDb';
+import { PeerLink, type LinkContact } from './peerLink';
 import { SecureBleLink, getBleBridge } from './bleLink';
 import type { BleBridge } from './ble';
+import { loadSettings } from './settings';
+
+/* ============================== public shapes (what the UI reads) ============================== */
 
 export type EnginePhase = 'starting' | 'ready' | 'error' | 'stopped';
-export type P2PState = 'idle' | 'connecting' | 'connected' | 'failed';
-export type PeerTrust = 'none' | 'verified' | 'unverified' | 'confirmed';
+export type Trust = 'verified' | 'introduced';
+export type ConnState = 'connected' | 'connecting' | 'offline';
+
+export interface ContactRecord {
+  uid: string;
+  card: ContactCard;
+  trust: Trust;
+  /** uid of the member who introduced them (trust = introduced). */
+  introducedBy?: string;
+  nickname?: string;
+  /** The user compared the safety number with them. */
+  checked: boolean;
+  addedAt: number;
+}
+
+export interface LastMessage {
+  text: string;
+  at: number;
+  own: boolean;
+  senderName?: string;
+}
+
+export interface ContactView {
+  uid: string;
+  name: string;
+  trust: Trust;
+  checked: boolean;
+  introducedBy?: string;
+  introducedByName?: string;
+  conn: ConnState;
+  path: ConnectionPath | null;
+  via: 'webrtc' | 'ble' | null;
+  unread: number;
+  last?: LastMessage;
+  /** Plain-language status line. */
+  status: string;
+}
+
+export interface MemberView {
+  uid: string;
+  name: string;
+  role: 'admin' | 'member';
+  isMe: boolean;
+  addedBy: string;
+  addedByName: string;
+  conn: ConnState;
+  introducedHere: boolean;
+}
+
+export interface GroupView {
+  groupId: string;
+  name: string;
+  /** `member`: active. `removed` / `left`: read-only. */
+  status: 'member' | 'removed' | 'left';
+  members: MemberView[];
+  amAdmin: boolean;
+  connected: number;
+  unread: number;
+  last?: LastMessage;
+}
+
+export interface UiMessage extends StoredMessage {
+  own: boolean;
+  senderName: string;
+  /** What the tick shows: the weakest recipient. */
+  tick: DeliveryState;
+  delivered: number;
+  total: number;
+}
 
 export interface ChatState {
   phase: EnginePhase;
   uid: string;
-  /** The other person's id: known after the first pairing, null before. */
-  peerUid: string | null;
-  conversationId: string;
-  messages: ChatMessage[];
-  connectionMode: ConnectionMode;
-  p2pState: P2PState;
-  p2pConnected: boolean;
-  peerTrust: PeerTrust;
-  safetyNumber: string | null;
-  queuedCount: number;
+  contacts: ContactView[];
+  groups: GroupView[];
+  messages: Record<string, UiMessage[]>;
+  signaling: SignalingStatus;
   storageBackend: 'sqlite' | 'browser';
+  /** Messages waiting for someone to come online. */
+  queued: number;
   error: string | null;
   notice: string | null;
-  /** True once a peer key is pinned on this device. */
-  paired: boolean;
-  /** Measured from the live connection: direct or relayed. Null when not connected. */
-  path: ConnectionPath | null;
-  signaling: SignalingStatus;
-  /** A friend's card that was pasted but not yet confirmed by the user. */
-  pendingContact: { uid: string; safetyNumber: string; name?: string } | null;
 }
 
 export interface EngineDeps {
   identity: DeviceIdentity;
-  conversationId: string;
+  /** Same string on both sides; part of the identity proof. */
+  context: string;
   store: LocalStore;
-  onNotify: (message: ChatMessage) => void;
+  /** `title` is already worded for the user ("Sam" or "Sam in Trip"). */
+  onNotify: (message: StoredMessage, title: string) => void;
 }
 
-interface PeerAuthState {
-  myNonce: string;
-  peerHello: Extract<PeerControlFrame, { kind: 'hello' }> | null;
-  proofSent: boolean;
-  proven: boolean;
-  acknowledged: boolean;
-  authenticated: boolean;
-  timer: number;
-  trust: PeerTrust;
-}
+/* ============================== internals ============================== */
 
-function freshAuth(): PeerAuthState {
-  return {
-    myNonce: '',
-    peerHello: null,
-    proofSent: false,
-    proven: false,
-    acknowledged: false,
-    authenticated: false,
-    timer: 0,
-    trust: 'none',
-  };
-}
+const TICK_MS = 2_000;
+const PING_MS = 4_000;
+const MAX_CONNECTING = 3;
+const SOFT_LINK_CAP = 30;
+const PENDING_GROUP_MS = 60_000;
+const RANK: Record<DeliveryState, number> = { QUEUED: 0, FAILED: 0, SENT: 1, DELIVERED: 2, READ: 3 };
+const maxState = (a: DeliveryState, b: DeliveryState): DeliveryState => (RANK[b] > RANK[a] ? b : a);
+const short = (uid: string) => uid.slice(0, 6);
 
-const TICK_MS = 4_000;
-/** No frame (not even a pong) for this long means the link is dead. */
-const DEAD_LINK_MS = 14_000;
+function aggregate(recipients: Record<string, DeliveryState> | undefined): DeliveryState {
+  const values = Object.values(recipients ?? {});
+  if (values.length === 0) return 'SENT';
+  return values.reduce((weakest, s) => (RANK[s] < RANK[weakest] ? s : weakest));
+}
 
 export class ChatEngine {
   private state: ChatState;
   private listeners = new Set<(state: ChatState) => void>();
-  private messages = new Map<string, ChatMessage>();
-  private outbox = new Map<string, OutboxRow>();
   private identity: DeviceIdentity;
-  private pairing: PairingRecord | null = null;
-  private peer: PeerTransport | SecureBleLink | null = null;
-  private auth = freshAuth();
-  private frameQueue: unknown[] = [];
-  private processingFrames = false;
-  private p2pSent = new Set<string>();
-  private tickTimer = 0;
-  private lastReadWritten: string | null = null;
-  private visible = false;
-  private manualExpectedKey: JsonWebKey | null = null;
-  private stopped = false;
   private network: NetworkConfig = loadNetworkConfig();
   private hub: SignalingHub | null = null;
-  private pendingCard: Contact | null = null;
-  private lastOfferAt = 0;
-  private offerAttempt = 0;
+  private contacts = new Map<string, ContactRecord>();
+  private links = new Map<string, PeerLink>();
+  private msgs = new Map<string, StoredMessage>();
+  private coord: GroupCoordinator;
+  private known = new Set<string>();
+  private pendingGroup = new Map<string, { from: string; frame: Extract<GroupFrame, { kind: 'gmsg' }>; at: number }>();
+  private seenBlobs = new Set<string>();
   private relayed = new Set<string>();
-  private lastPathAt = 0;
-  private manualActive = false;
+  private lastPing = new Map<string, number>();
+  private active: string | null = null;
+  private visible = false;
+  private timer: ReturnType<typeof setInterval> | undefined;
+  private stopped = false;
+  private ticking = false;
   private bleBridge: BleBridge | null | undefined;
-  private lastBleAt = 0;
-  private bleAttempt = 0;
-  private lastFrameAt = 0;
-  private offerTimer: ReturnType<typeof setTimeout> | undefined;
+  private bleBusy = false;
+  private bleNext = new Map<string, { at: number; attempt: number }>();
+  private groupNotes = new Map<string, 'left' | 'removed'>();
 
   constructor(private readonly deps: EngineDeps) {
     this.identity = deps.identity;
+    this.coord = new GroupCoordinator({
+      ownUid: deps.identity.uid,
+      ownCard: JSON.parse(JSON.stringify(this.ownCard())),
+      signPriv: deps.identity.privateJwk,
+      knownUids: () => this.known,
+    });
     this.state = {
       phase: 'starting',
       uid: deps.identity.uid,
-      peerUid: null,
-      conversationId: deps.conversationId,
-      messages: [],
-      connectionMode: 'OFFLINE_QUEUED',
-      p2pState: 'idle',
-      p2pConnected: false,
-      peerTrust: 'none',
-      safetyNumber: null,
-      queuedCount: 0,
+      contacts: [],
+      groups: [],
+      messages: {},
+      signaling: 'idle',
       storageBackend: deps.store.backend,
+      queued: 0,
       error: null,
       notice: null,
-      paired: false,
-      path: null,
-      signaling: 'idle',
-      pendingContact: null,
     };
   }
+
+  /* ---------------- plumbing ---------------- */
 
   getState(): ChatState {
     return this.state;
   }
 
-  /** Direct access to the local store (used by the kill switch executor). */
   get localStore(): LocalStore {
     return this.deps.store;
+  }
+
+  get identityDetails(): DeviceIdentity {
+    return this.identity;
   }
 
   subscribe(listener: (state: ChatState) => void): () => void {
@@ -190,139 +221,275 @@ export class ChatEngine {
     return () => this.listeners.delete(listener);
   }
 
-  private setState(patch: Partial<ChatState>): void {
-    this.state = { ...this.state, ...patch };
+  private ownCard(): ContactCard {
+    const text = contactCardOf(this.identity, loadSettings().displayName || undefined);
+    return decodeCardSync(text);
+  }
+
+  /** The text a friend scans or pastes to add us. */
+  myInvite(): string {
+    return contactCardOf(this.identity, loadSettings().displayName || undefined);
+  }
+
+  private emit(patch: Partial<ChatState> = {}): void {
+    this.state = { ...this.build(), ...patch, notice: patch.notice !== undefined ? patch.notice : this.state.notice, error: patch.error !== undefined ? patch.error : this.state.error };
     for (const listener of this.listeners) listener(this.state);
   }
 
-  private emitMessages(): void {
-    this.setState({
-      messages: [...this.messages.values()].sort(compareMessages),
-      queuedCount: this.outbox.size,
-      storageBackend: this.deps.store.backend,
-    });
+  clearNotice(): void {
+    this.emit({ notice: null, error: null });
   }
+
+  private notice(text: string | null): void {
+    this.emit({ notice: text });
+  }
+
+  /* ---------------- names ---------------- */
+
+  private nameOf(uid: string): string {
+    if (uid === this.identity.uid) return 'You';
+    const c = this.contacts.get(uid);
+    if (c?.nickname) return c.nickname;
+    if (c?.card.name) return c.card.name;
+    for (const g of this.coord.myGroups()) {
+      const m = g.members.get(uid);
+      if (m?.card.name) return m.card.name;
+    }
+    return `Friend ${short(uid)}`;
+  }
+
+  private conn(uid: string): ConnState {
+    const link = this.links.get(uid);
+    if (link?.ready) return 'connected';
+    return link?.state === 'connecting' ? 'connecting' : 'offline';
+  }
+
+  /* ---------------- start / stop ---------------- */
 
   async start(): Promise<void> {
     try {
       await this.deps.store.init();
       if (this.stopped) return;
-      this.pairing = loadPairing();
-      const localMessages = await this.deps.store.loadMessages();
-      this.messages = new Map(localMessages.map((message) => [message.messageId, message]));
-      try {
-        const rows = await this.deps.store.loadOutbox();
-        this.outbox = new Map(rows.map((row) => [row.messageId, row]));
-      } catch {
-        this.outbox = new Map();
-      }
+      await this.loadContacts();
+      await this.coord.load((await this.deps.store.getSecret<Record<string, unknown[]>>('groups')) ?? {});
+      const stored = await this.deps.store.loadMessages();
+      for (const m of stored) this.msgs.set(m.messageId, m);
+      await this.migrateLegacy();
       if (this.stopped) return;
-
-      this.setState({
-        phase: 'ready',
-        paired: this.pairing !== null,
-        peerUid: this.pairing?.peerUid ?? null,
-        storageBackend: this.deps.store.backend,
-        messages: [...this.messages.values()].sort(compareMessages),
-        queuedCount: this.outbox.size,
-        notice: this.deps.store.initError
-          ? `SQLite was unavailable (${this.deps.store.initError}); this browser development store is not secure.`
-          : null,
-      });
-      this.updateConnection();
       this.startSignaling();
-      this.tickTimer = window.setInterval(() => void this.tick(), TICK_MS);
+      this.timer = setInterval(() => void this.tick(), TICK_MS);
+      this.state = { ...this.state, phase: 'ready', storageBackend: this.deps.store.backend };
+      if (this.deps.store.initError) {
+        this.state.notice = `SQLite was unavailable (${this.deps.store.initError}); this browser development store is not secure.`;
+      }
+      this.emit();
+      void this.tick();
     } catch (error) {
-      if (!this.stopped) this.setState({ phase: 'error', error: errorMessage(error) });
+      if (!this.stopped) this.emit({ phase: 'error', error: errorMessage(error) });
     }
   }
 
   stop(): void {
     this.stopped = true;
-    window.clearInterval(this.tickTimer);
-    window.clearTimeout(this.auth.timer);
+    clearInterval(this.timer);
     this.hub?.stop();
     this.hub = null;
-    this.peer?.close();
-    this.peer = null;
-    this.setState({ phase: 'stopped' });
+    for (const link of this.links.values()) link.close();
+    this.state = { ...this.state, phase: 'stopped' };
+    for (const listener of this.listeners) listener(this.state);
   }
 
-  private async tick(): Promise<void> {
-    if (this.stopped) return;
-    this.setState({ signaling: this.hub?.status() ?? 'idle' });
-    if (this.p2pReady()) {
-      if (Date.now() - this.lastFrameAt > DEAD_LINK_MS) {
-        this.failPeer('Connection to your friend was lost. Reconnecting…');
-        return;
-      }
-      this.peer?.sendJson({ v: 1, kind: 'ping', at: Date.now() });
-      this.flushUndelivered();
-      if (Date.now() - this.lastPathAt > 15_000) void this.refreshPath();
-      return;
+  /* ---------------- contacts ---------------- */
+
+  private async loadContacts(): Promise<void> {
+    const saved = (await this.deps.store.getSecret<ContactRecord[]>('contacts')) ?? [];
+    for (const rec of saved) this.registerContact(rec, false);
+  }
+
+  private persistContacts(): void {
+    void this.deps.store.setSecret('contacts', [...this.contacts.values()]).catch(() => undefined);
+  }
+
+  private persistGroups(): void {
+    void this.deps.store.setSecret('groups', this.coord.export()).catch(() => undefined);
+  }
+
+  private registerContact(rec: ContactRecord, persist = true): PeerLink {
+    this.contacts.set(rec.uid, rec);
+    this.known.add(rec.uid);
+    let link = this.links.get(rec.uid);
+    if (!link) {
+      link = new PeerLink({ uid: rec.uid, sign: rec.card.sign, dh: rec.card.dh }, this.linkEnv());
+      this.links.set(rec.uid, link);
     }
-    void this.maybeBluetooth();
-    await this.maybeOffer();
+    if (persist) this.persistContacts();
+    return link;
   }
 
-  private sortedMessages(): ChatMessage[] {
-    return [...this.messages.values()].sort(compareMessages);
-  }
-
-  private async applyPeerReadThrough(messageId: string): Promise<void> {
-    const ordered = this.sortedMessages();
-    const index = ordered.findIndex((message) => message.messageId === messageId);
-    if (index < 0) return;
-    let changed = false;
-    for (let i = 0; i <= index; i += 1) {
-      const message = ordered[i];
-      if (!message || message.senderId !== this.identity.uid) continue;
-      if (message.deliveryState !== 'READ') {
-        const updated: ChatMessage = {
-          ...message,
-          deliveryState: 'READ',
-          readAt: message.readAt ?? Date.now(),
-        };
-        this.messages.set(updated.messageId, updated);
-        await this.deps.store.updateMessage(updated.messageId, {
-          deliveryState: 'READ',
-          readAt: updated.readAt,
-        });
-        await this.dropOutbox(updated.messageId);
-        changed = true;
+  /** Move a pre-groups install (one pinned peer, unlabeled messages) into the new model. */
+  private async migrateLegacy(): Promise<void> {
+    const legacy = loadPairing();
+    if (legacy?.dhJwk && !this.contacts.has(legacy.peerUid) && this.contacts.size === 0) {
+      let nickname: string | undefined;
+      try {
+        const raw = JSON.parse(localStorage.getItem('duochat.settings.v1') ?? '{}') as { peerNickname?: unknown };
+        if (typeof raw.peerNickname === 'string' && raw.peerNickname.trim()) nickname = raw.peerNickname.trim().slice(0, 40);
+      } catch {
+        // No old nickname.
       }
-    }
-    if (changed) this.emitMessages();
-  }
-
-  private async dropOutbox(messageId: string): Promise<void> {
-    if (!this.outbox.delete(messageId)) return;
-    await this.deps.store.removeOutbox(messageId).catch(() => undefined);
-  }
-
-  async send(rawText: string): Promise<{ ok: true } | { ok: false; error: string }> {
-    try {
-      const message = createOutgoingMessage({
-        senderId: this.identity.uid,
-        text: rawText,
+      this.registerContact({
+        uid: legacy.peerUid,
+        card: { v: 1, sign: legacy.publicKeyJwk, dh: legacy.dhJwk, proof: '', ...(nickname ? { name: nickname } : {}) },
+        trust: 'verified',
+        checked: true,
+        addedAt: legacy.pairedAt,
       });
-      this.messages.set(message.messageId, message);
+    }
+    const only = this.contacts.size === 1 ? [...this.contacts.keys()][0]! : null;
+    for (const m of this.msgs.values()) {
+      if (m.conversationId) continue;
+      if (!only) {
+        m.conversationId = '__legacy';
+        continue;
+      }
+      m.conversationId = only;
+      m.recipients = m.senderId === this.identity.uid ? { [only]: m.deliveryState } : undefined;
+      void this.deps.store.updateMessage(m.messageId, { conversationId: only, ...(m.recipients ? { recipients: m.recipients } : {}) });
+    }
+  }
+
+  /** Validate an invite without saving anything. */
+  async previewInvite(text: string): Promise<{ uid: string; name: string; safetyNumber: string; already: boolean }> {
+    const contact = await decodeContactCard(text);
+    if (!contact) throw new Error('That does not look like a PrivCord invite. Ask your friend to share it again.');
+    if (contact.uid === this.identity.uid) throw new Error('That is your own invite. Send it to a friend instead.');
+    return {
+      uid: contact.uid,
+      name: contact.card.name || `Friend ${short(contact.uid)}`,
+      safetyNumber: await deriveSafetyNumber(this.identity.publicJwk, contact.card.sign),
+      already: this.contacts.get(contact.uid)?.trust === 'verified',
+    };
+  }
+
+  /** Save a friend from their invite. Returns their uid so the UI can open the chat. */
+  async addContact(text: string): Promise<string> {
+    const contact = await decodeContactCard(text);
+    if (!contact) throw new Error('That does not look like a PrivCord invite. Ask your friend to share it again.');
+    if (contact.uid === this.identity.uid) throw new Error('That is your own invite. Send it to a friend instead.');
+    const existing = this.contacts.get(contact.uid);
+    const rec: ContactRecord = {
+      uid: contact.uid,
+      card: contact.card,
+      trust: 'verified',
+      introducedBy: undefined,
+      nickname: existing?.nickname,
+      checked: existing?.checked ?? false,
+      addedAt: existing?.addedAt ?? Date.now(),
+    };
+    const link = this.registerContact(rec);
+    link.lastOfferAt = 0;
+    link.offerAttempt = 0;
+    this.emit({ notice: existing ? `${this.nameOf(contact.uid)} is already in your friends.` : `${this.nameOf(contact.uid)} added. Connecting…` });
+    void this.tick();
+    return contact.uid;
+  }
+
+  setChecked(uid: string): void {
+    const rec = this.contacts.get(uid);
+    if (!rec) return;
+    rec.checked = true;
+    this.persistContacts();
+    this.emit();
+  }
+
+  async safetyNumberFor(uid: string): Promise<string> {
+    const rec = this.contacts.get(uid);
+    if (!rec) throw new Error('Unknown friend.');
+    return deriveSafetyNumber(this.identity.publicJwk, rec.card.sign);
+  }
+
+  setNickname(uid: string, name: string): void {
+    const rec = this.contacts.get(uid);
+    if (!rec) return;
+    rec.nickname = name.trim().slice(0, 40) || undefined;
+    this.persistContacts();
+    this.emit();
+  }
+
+  /** Forget a friend. Refused while they share a group with us, because the group would bring them straight back. */
+  removeContact(uid: string): void {
+    if (this.coord.myGroups().some((g) => g.members.has(uid))) {
+      throw new Error('Leave the groups you share first, then you can remove this friend.');
+    }
+    this.links.get(uid)?.close();
+    this.links.delete(uid);
+    this.contacts.delete(uid);
+    this.known.delete(uid);
+    for (const [id, m] of [...this.msgs]) if (m.conversationId === uid) this.msgs.delete(id);
+    this.persistContacts();
+    this.emit();
+  }
+
+  /* ---------------- link wiring ---------------- */
+
+  private linkEnv() {
+    return {
+      identity: this.identity,
+      context: this.deps.context,
+      rtcConfig: () => rtcConfigFor(this.network),
+      onReady: (link: PeerLink) => this.onLinkReady(link),
+      onClosed: () => this.emit(),
+      onFrame: (link: PeerLink, frame: unknown) => void this.onFrame(link, frame),
+      onChange: () => this.emit(),
+      onNotice: (text: string) => this.notice(text),
+      onProof: (link: PeerLink, hello: { publicKeyJwk: JsonWebKey; dhJwk: JsonWebKey; identityProof: string }) => {
+        const rec = this.contacts.get(link.uid);
+        if (rec && rec.card.proof !== hello.identityProof) {
+          rec.card = { ...rec.card, proof: hello.identityProof };
+          this.persistContacts();
+        }
+      },
+    };
+  }
+
+  private onLinkReady(link: PeerLink): void {
+    const uid = link.uid;
+    this.lastPing.set(uid, Date.now());
+    for (const out of this.coord.onLinkOpen(uid)) this.sendFrame(out.to, out.frame);
+    this.flush(uid);
+    if (this.active === uid && this.visible) this.markRead(uid);
+    this.emit({ notice: `${this.nameOf(uid)} is connected.` });
+  }
+
+  private sendFrame(uid: string, frame: unknown): boolean {
+    return this.links.get(uid)?.sendJson(frame) ?? false;
+  }
+
+  /* ---------------- sending ---------------- */
+
+  private recipientsOfConversation(convId: string): string[] {
+    if (this.contacts.has(convId)) return [convId];
+    return this.coord.recipients(convId);
+  }
+
+  async send(convId: string, rawText: string): Promise<{ ok: true } | { ok: false; error: string }> {
+    try {
+      const isGroup = !this.contacts.has(convId);
+      if (isGroup) {
+        const s = this.coord.state(convId);
+        if (!s || !s.members.has(this.identity.uid)) return { ok: false, error: 'You are not in this group any more.' };
+      } else if (!this.contacts.has(convId)) {
+        return { ok: false, error: 'Unknown chat.' };
+      }
+      const base = createOutgoingMessage({ senderId: this.identity.uid, text: rawText });
+      const recipients: Record<string, DeliveryState> = {};
+      for (const uid of this.recipientsOfConversation(convId)) recipients[uid] = 'QUEUED';
+      const message: StoredMessage = { ...base, conversationId: convId, recipients, deliveryState: Object.keys(recipients).length ? 'QUEUED' : 'SENT' };
+      this.msgs.set(message.messageId, message);
       await this.deps.store.putMessage(message);
-      const row: OutboxRow = {
-        messageId: message.messageId,
-        recipientId: this.state.peerUid ?? '',
-        payload: JSON.stringify(message),
-        createdAt: Date.now(),
-        attemptCount: 0,
-        lastAttemptAt: null,
-        deliveryState: 'QUEUED',
-        lastError: null,
-      };
-      this.outbox.set(row.messageId, row);
-      await this.deps.store.enqueueOutbox(row);
-      this.emitMessages();
-      void this.deliver(message.messageId);
+      for (const uid of Object.keys(recipients)) this.deliver(message, uid);
       void this.relayPending();
+      this.emit();
       return { ok: true };
     } catch (error) {
       return { ok: false, error: errorMessage(error) };
@@ -330,643 +497,261 @@ export class ChatEngine {
   }
 
   async retry(messageId: string): Promise<void> {
-    const message = this.messages.get(messageId);
-    if (!message || message.senderId !== this.identity.uid) return;
-    this.p2pSent.delete(messageId);
-    await this.deliver(messageId);
-  }
-
-  /** Send one own message over the direct channel if it is up; otherwise it stays queued. */
-  private async deliver(messageId: string): Promise<void> {
-    const message = this.messages.get(messageId);
-    if (!message || message.senderId !== this.identity.uid) return;
-    if (!needsDelivery(message.deliveryState)) return;
-    if (!this.p2pReady() || this.p2pSent.has(messageId)) return;
-    if (!this.peer?.sendJson(createPeerMessageFrame(message))) return;
-
-    this.p2pSent.add(messageId);
-    const updated: ChatMessage = { ...message, transport: 'p2p', deliveryState: 'SENT' };
-    this.messages.set(messageId, updated);
-    await this.deps.store.updateMessage(messageId, { transport: 'p2p', deliveryState: 'SENT' });
-    const row = this.outbox.get(messageId);
-    if (row) {
-      row.deliveryState = 'SENT';
-      row.lastAttemptAt = Date.now();
-      await this.deps.store.updateOutbox(messageId, {
-        deliveryState: 'SENT',
-        lastAttemptAt: row.lastAttemptAt,
-      });
+    const m = this.msgs.get(messageId);
+    if (!m || m.senderId !== this.identity.uid) return;
+    for (const uid of Object.keys(m.recipients ?? {})) {
+      this.links.get(uid)?.sent.delete(messageId);
+      this.deliver(m, uid);
     }
-    this.emitMessages();
+    this.emit();
   }
 
-  private flushUndelivered(): void {
-    for (const message of this.messages.values()) {
-      if (message.senderId === this.identity.uid && needsDelivery(message.deliveryState)) {
-        void this.deliver(message.messageId);
+  private frameFor(m: StoredMessage): unknown {
+    if (this.contacts.has(m.conversationId)) return createPeerMessageFrame(m);
+    return { v: 1, kind: 'gmsg', groupId: m.conversationId, messageId: m.messageId, text: m.text, clientCreatedAt: m.clientCreatedAt };
+  }
+
+  /** Write one message to one recipient if their channel is up. */
+  private deliver(m: StoredMessage, uid: string): void {
+    const state = m.recipients?.[uid];
+    if (!state || RANK[state] >= RANK.DELIVERED) return;
+    const link = this.links.get(uid);
+    if (!link?.ready || link.sent.has(m.messageId)) return;
+    if (!link.sendJson(this.frameFor(m))) return;
+    link.sent.add(m.messageId);
+    this.setRecipient(m, uid, 'SENT');
+  }
+
+  private setRecipient(m: StoredMessage, uid: string, state: DeliveryState): void {
+    const recipients = { ...(m.recipients ?? {}) };
+    recipients[uid] = maxState(recipients[uid] ?? 'QUEUED', state);
+    m.recipients = recipients;
+    m.deliveryState = aggregate(recipients);
+    void this.deps.store.updateMessage(m.messageId, { recipients, deliveryState: m.deliveryState }).catch(() => undefined);
+  }
+
+  /** Everything still owed to this contact, oldest first. */
+  private flush(uid: string): void {
+    const own = [...this.msgs.values()]
+      .filter((m) => m.senderId === this.identity.uid && m.recipients?.[uid] && RANK[m.recipients[uid]!] < RANK.DELIVERED)
+      .sort(compareMessages);
+    for (const m of own) this.deliver(m, uid);
+    this.emit();
+  }
+
+  /* ---------------- receiving ---------------- */
+
+  private async onFrame(link: PeerLink, raw: unknown): Promise<void> {
+    const uid = link.uid;
+    const control = parsePeerFrame(raw);
+    if (control?.kind === 'ack') {
+      const m = this.msgs.get(control.messageId);
+      if (m && m.senderId === this.identity.uid && m.recipients?.[uid]) {
+        this.setRecipient(m, uid, control.state === 'READ' ? 'READ' : 'DELIVERED');
+        this.emit();
+      }
+      return;
+    }
+    if (control?.kind === 'read') {
+      this.applyRead(uid, control.lastReadMessageId);
+      return;
+    }
+    const direct = parsePeerMessageFrame(raw);
+    if (direct) {
+      if (direct.senderId !== uid) return;
+      this.ingest({ ...direct, conversationId: uid, readAt: null }, uid, uid, this.nameOf(uid));
+      return;
+    }
+    const group = parseGroupFrame(raw);
+    if (!group) return;
+    if (group.kind === 'gmsg') {
+      await this.receiveGroupMessage(uid, group);
+    } else if (group.kind === 'relay_blob') {
+      this.relayBlob(uid, group);
+    } else {
+      await this.applyGroupResult(await this.coord.handle(uid, group), uid);
+    }
+  }
+
+  /** Store a message from `from`, acknowledge it, notify. Duplicate ids are acknowledged and ignored. */
+  private ingest(message: StoredMessage, from: string, convId: string, title: string): void {
+    const exists = this.msgs.has(message.messageId);
+    if (!exists) {
+      message.deliveryState = 'DELIVERED';
+      if (this.active === convId && this.visible) message.readAt = Date.now();
+      this.msgs.set(message.messageId, message);
+      void this.deps.store.putMessage(message).catch(() => undefined);
+      if (!(this.active === convId && this.visible)) this.deps.onNotify(message, title);
+    }
+    this.sendFrame(from, { v: 1, kind: 'ack', messageId: message.messageId, state: 'DELIVERED', at: Date.now() });
+    if (!exists && this.contacts.has(convId) && this.active === convId && this.visible) this.markRead(convId);
+    this.emit();
+  }
+
+  private async receiveGroupMessage(from: string, frame: Extract<GroupFrame, { kind: 'gmsg' }>): Promise<void> {
+    const verdict = this.coord.checkMessage(from, frame.groupId);
+    if (verdict === 'ok') {
+      const state = this.coord.state(frame.groupId)!;
+      this.ingest(
+        {
+          messageId: frame.messageId,
+          clientMessageId: frame.messageId,
+          senderId: from,
+          text: frame.text,
+          clientCreatedAt: frame.clientCreatedAt,
+          type: 'text',
+          transport: 'p2p',
+          deliveryState: 'DELIVERED',
+          readAt: null,
+          conversationId: frame.groupId,
+        },
+        from,
+        frame.groupId,
+        `${this.nameOf(from)} in ${state.name}`,
+      );
+      return;
+    }
+    // We may simply not have the roster yet: hold the message, ask for the history, retry for a minute.
+    if (this.pendingGroup.size < 200) this.pendingGroup.set(frame.messageId, { from, frame, at: Date.now() });
+    for (const out of this.coord.requestSync(from, frame.groupId)) this.sendFrame(out.to, out.frame);
+  }
+
+  private async retryPending(): Promise<void> {
+    for (const [id, p] of [...this.pendingGroup]) {
+      if (Date.now() - p.at > PENDING_GROUP_MS) {
+        this.pendingGroup.delete(id);
+        continue;
+      }
+      if (this.coord.checkMessage(p.from, p.frame.groupId) === 'ok') {
+        this.pendingGroup.delete(id);
+        await this.receiveGroupMessage(p.from, p.frame);
       }
     }
   }
 
-  private updateConnection(): void {
-    const mode = deriveConnectionMode({
-      p2pConnected: this.state.p2pConnected && this.p2pReady(),
-      connecting: this.state.p2pState === 'connecting',
-      failed: this.state.p2pState === 'failed',
-      queuedMessages: this.outbox.size,
-    });
-    this.setState({ connectionMode: mode, queuedCount: this.outbox.size });
+  private applyRead(uid: string, lastId: string): void {
+    const last = this.msgs.get(lastId);
+    if (!last || last.conversationId !== uid) return;
+    for (const m of this.msgs.values()) {
+      if (m.conversationId === uid && m.senderId === this.identity.uid && m.clientCreatedAt <= last.clientCreatedAt) {
+        this.setRecipient(m, uid, 'READ');
+      }
+    }
+    this.emit();
+  }
+
+  /* ---------------- reading state ---------------- */
+
+  openConversation(convId: string | null): void {
+    this.active = convId;
+    if (convId && this.visible) this.markRead(convId);
+    this.emit();
   }
 
   setVisible(visible: boolean): void {
     this.visible = visible;
-    if (visible) void this.markRead();
+    if (visible && this.active) this.markRead(this.active);
   }
 
-  private async markRead(): Promise<void> {
-    const ordered = this.sortedMessages();
-    const last = ordered[ordered.length - 1];
-    if (!last) return;
+  private markRead(convId: string): void {
+    let last: StoredMessage | undefined;
     let changed = false;
     const now = Date.now();
-    for (const message of ordered) {
-      if (message.senderId === this.identity.uid) continue;
-      if (message.readAt == null) {
-        const updated: ChatMessage = { ...message, readAt: now };
-        this.messages.set(message.messageId, updated);
-        await this.deps.store.updateMessage(message.messageId, { readAt: now });
+    for (const m of [...this.msgs.values()].sort(compareMessages)) {
+      if (m.conversationId !== convId || m.senderId === this.identity.uid) continue;
+      last = m;
+      if (m.readAt == null) {
+        m.readAt = now;
         changed = true;
+        void this.deps.store.updateMessage(m.messageId, { readAt: now }).catch(() => undefined);
       }
     }
-    if (changed) this.emitMessages();
-    if (this.lastReadWritten !== last.messageId && this.p2pReady()) {
-      this.lastReadWritten = last.messageId;
-      this.peer?.sendJson({
-        v: 1,
-        kind: 'read',
-        lastReadMessageId: last.messageId,
-        at: now,
+    if (last && this.contacts.has(convId)) this.sendFrame(convId, { v: 1, kind: 'read', lastReadMessageId: last.messageId, at: now });
+    if (changed) this.emit();
+  }
+
+  /* ---------------- groups ---------------- */
+
+  async createGroup(name: string, memberUids: string[]): Promise<string> {
+    const cards: ContactCard[] = [];
+    for (const uid of memberUids) {
+      const rec = this.contacts.get(uid);
+      if (!rec) throw new Error('Pick friends from your list.');
+      if (!rec.card.proof) throw new Error(`${this.nameOf(uid)} needs to connect once before being added to a group.`);
+      cards.push(rec.card);
+    }
+    const r = await this.coord.createGroup(name.trim() || 'New group', cards);
+    await this.applyGroupResult(r);
+    return r.groupId;
+  }
+
+  async addGroupMember(groupId: string, uid: string): Promise<void> {
+    const rec = this.contacts.get(uid);
+    if (!rec) throw new Error('Pick a friend from your list.');
+    if (!rec.card.proof) throw new Error(`${this.nameOf(uid)} needs to connect once before being added to a group.`);
+    await this.applyGroupResult(await this.coord.addMember(groupId, rec.card));
+  }
+
+  async removeGroupMember(groupId: string, uid: string): Promise<void> {
+    await this.applyGroupResult(await this.coord.removeMember(groupId, uid));
+  }
+
+  async leaveGroup(groupId: string): Promise<void> {
+    this.groupNotes.set(groupId, 'left');
+    await this.applyGroupResult(await this.coord.leave(groupId));
+  }
+
+  async renameGroup(groupId: string, name: string): Promise<void> {
+    await this.applyGroupResult(await this.coord.rename(groupId, name));
+  }
+
+  private async applyGroupResult(r: GroupResult, fromUid?: string): Promise<void> {
+    for (const out of r.outgoing) this.sendFrame(out.to, out.frame);
+    for (const c of r.newContacts) {
+      if (this.contacts.has(c.uid)) continue;
+      const link = this.registerContact({
+        uid: c.uid,
+        card: c.card,
+        trust: 'introduced',
+        introducedBy: c.introducedBy,
+        checked: false,
+        addedAt: Date.now(),
       });
+      link.lastOfferAt = 0;
     }
-  }
-
-  private p2pReady(): boolean {
-    return (
-      this.auth.authenticated &&
-      this.peer?.isOpen === true &&
-      (this.auth.trust === 'verified' || this.auth.trust === 'confirmed')
-    );
-  }
-
-  private newPeer(): PeerTransport {
-    this.peer?.close();
-    window.clearTimeout(this.auth.timer);
-    this.auth = freshAuth();
-    this.frameQueue = [];
-    this.p2pSent.clear();
-    const transport = new PeerTransport(rtcConfigFor(this.network), {
-      onOpen: () => this.handlePeerOpen(),
-      onClose: () => this.handlePeerClose(),
-      onFrame: (data) => this.handlePeerFrame(data),
-      onStateChange: () => undefined,
-      onError: (message) => this.setState({ notice: message }),
-    });
-    this.peer = transport;
-    this.setState({
-      p2pState: 'connecting',
-      p2pConnected: false,
-      peerTrust: 'none',
-      safetyNumber: null,
-    });
-    this.updateConnection();
-    return transport;
-  }
-
-  private handlePeerOpen(): void {
-    this.lastFrameAt = Date.now();
-    this.auth = freshAuth();
-    this.auth.myNonce = randomNonce();
-    this.frameQueue = [];
-    this.sendHello();
-    this.auth.timer = window.setTimeout(() => {
-      if (!this.auth.authenticated) {
-        this.failPeer('Peer identity verification timed out.');
-      }
-    }, AUTH_TIMEOUT_MS);
-    this.setState({ p2pState: 'connecting' });
-  }
-
-  private sendHello(): void {
-    if (!this.peer?.isOpen) return;
-    this.peer.sendJson({
-      v: 1,
-      kind: 'hello',
-      uid: this.identity.uid,
-      deviceId: this.identity.deviceId,
-      publicKeyJwk: this.identity.publicJwk,
-      dhJwk: this.identity.dhPublicJwk,
-      identityProof: this.identity.identityProof,
-      nonce: this.auth.myNonce,
-    });
-  }
-
-  private handlePeerClose(): void {
-    window.clearTimeout(this.auth.timer);
-    const wasConnected = this.auth.authenticated;
-    this.auth = freshAuth();
-    this.frameQueue = [];
-    this.p2pSent.clear();
-    this.lastReadWritten = null;
-    this.setState({
-      path: null,
-      p2pState: wasConnected ? 'failed' : 'idle',
-      p2pConnected: false,
-      peerTrust: 'none',
-      safetyNumber: null,
-      notice: wasConnected
-        ? this.hub
-          ? 'Direct connection lost. Reconnecting automatically when your friend is online.'
-          : 'Direct connection lost. Exchange a new connection code to reconnect.'
-        : this.state.notice,
-    });
-    this.updateConnection();
-  }
-
-  private handlePeerFrame(raw: string): void {
-    this.lastFrameAt = Date.now();
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      this.frameQueue.push(parsed);
-      void this.processFrameQueue();
-    } catch {
-      // Ignore malformed frames.
+    for (const groupId of r.joined) {
+      const s = this.coord.state(groupId);
+      const adder = s?.members.get(this.identity.uid)?.addedBy;
+      if (s && adder && adder !== this.identity.uid) this.notice(`${this.nameOf(adder)} added you to "${s.name}".`);
     }
-  }
-
-  private async processFrameQueue(): Promise<void> {
-    if (this.processingFrames) return;
-    this.processingFrames = true;
-    try {
-      while (this.frameQueue.length > 0) {
-        const raw = this.frameQueue.shift();
-        const control = parsePeerFrame(raw);
-        if (control) {
-          await this.handleControlFrame(control);
-          continue;
-        }
-        const message = parsePeerMessageFrame(raw);
-        if (message) {
-          if (!this.auth.authenticated) continue;
-          await this.handlePeerMessage(message);
-        }
-      }
-    } finally {
-      this.processingFrames = false;
+    for (const groupId of r.left) {
+      if (!this.groupNotes.has(groupId)) this.groupNotes.set(groupId, 'removed');
     }
-  }
-
-  private async handleControlFrame(frame: PeerControlFrame): Promise<void> {
-    switch (frame.kind) {
-      case 'hello': {
-        if (publicKeysEqual(this.identity.publicJwk, frame.publicKeyJwk)) {
-          this.failPeer('Refused a connection that claimed our own device identity.');
-          return;
-        }
-        // The account id is a fingerprint of the identity key and the keys are bound by a signature,
-        // so a peer cannot claim someone else's id.
-        if (!(await uidMatchesKeys(frame.uid, frame.dhJwk, frame.publicKeyJwk, frame.identityProof))) {
-          this.failPeer('Peer identity does not match its key.');
-          return;
-        }
-        const pinned = this.pairing;
-        if (pinned) {
-          if (
-            frame.uid !== pinned.peerUid ||
-            !publicKeysEqual(pinned.publicKeyJwk, frame.publicKeyJwk)
-          ) {
-            this.failPeer(
-              'This is not the device you paired with. Use Reset pairing in Settings to pair a different one.',
-            );
-            return;
-          }
-          this.auth.trust = 'verified';
-        } else {
-          if (
-            this.manualExpectedKey &&
-            !publicKeysEqual(this.manualExpectedKey, frame.publicKeyJwk)
-          ) {
-            this.failPeer('Peer identity key does not match the connection code.');
-            return;
-          }
-          this.auth.trust = 'unverified';
-        }
-        this.auth.peerHello = frame;
-        await this.sendProofIfReady();
-        return;
-      }
-      case 'auth_proof': {
-        const hello = this.auth.peerHello;
-        if (!hello || frame.uid !== hello.uid) {
-          this.failPeer('Peer identity proof arrived out of order.');
-          return;
-        }
-        const challenge = authChallenge({
-          conversationId: this.deps.conversationId,
-          uid: hello.uid,
-          deviceId: hello.deviceId,
-          nonceSelf: hello.nonce,
-          noncePeer: this.auth.myNonce,
-        });
-        try {
-          const key = await importPublicJwk(hello.publicKeyJwk);
-          const valid = await crypto.subtle.verify(
-            { name: 'ECDSA', hash: 'SHA-256' },
-            key,
-            signatureFromBase64(frame.signature),
-            new TextEncoder().encode(challenge),
-          );
-          if (!valid) {
-            this.failPeer('Peer identity proof is invalid.');
-            return;
-          }
-        } catch {
-          this.failPeer('Peer identity proof could not be verified.');
-          return;
-        }
-        this.auth.proven = true;
-        this.peer?.sendJson({ v: 1, kind: 'auth_ok', uid: this.identity.uid });
-        await this.finalizeAuthentication();
-        return;
-      }
-      case 'auth_ok': {
-        if (frame.uid !== this.auth.peerHello?.uid) {
-          this.failPeer('Peer acknowledgement came from the wrong account.');
-          return;
-        }
-        this.auth.acknowledged = true;
-        await this.finalizeAuthentication();
-        return;
-      }
-      case 'ack': {
-        if (!this.auth.authenticated) return;
-        const message = this.messages.get(frame.messageId);
-        if (!message || message.senderId !== this.identity.uid) return;
-        const nextState: DeliveryState = frame.state === 'READ' ? 'READ' : 'DELIVERED';
-        const updated: ChatMessage = {
-          ...message,
-          deliveryState:
-            nextState === 'READ' || message.deliveryState === 'READ' ? 'READ' : 'DELIVERED',
-          readAt: nextState === 'READ' ? frame.at : message.readAt,
-        };
-        this.messages.set(updated.messageId, updated);
-        await this.deps.store.updateMessage(updated.messageId, {
-          deliveryState: updated.deliveryState,
-          readAt: updated.readAt,
-        });
-        await this.dropOutbox(updated.messageId);
-        this.emitMessages();
-        this.updateConnection();
-        return;
-      }
-      case 'ping': {
-        if (this.auth.authenticated) this.peer?.sendJson({ v: 1, kind: 'pong', at: frame.at });
-        return;
-      }
-      case 'pong':
-        return;
-      case 'read': {
-        if (!this.auth.authenticated) return;
-        await this.applyPeerReadThrough(frame.lastReadMessageId);
-        this.updateConnection();
-        return;
-      }
-      default:
-        return;
+    if (r.changed.length > 0 || r.newContacts.length > 0) {
+      this.persistGroups();
+      await this.retryPending();
     }
+    // A message to a member we only just learned about must still reach them: nothing to do here,
+    // they were not recipients when it was written. New contacts get connected by the timer.
+    void fromUid;
+    this.emit();
+    if (r.newContacts.length > 0) void this.tick();
   }
 
-  private async sendProofIfReady(): Promise<void> {
-    if (!this.auth.peerHello || !this.peer?.isOpen) return;
-    if (this.auth.proofSent) return;
-    const challenge = authChallenge({
-      conversationId: this.deps.conversationId,
-      uid: this.identity.uid,
-      deviceId: this.identity.deviceId,
-      nonceSelf: this.auth.myNonce,
-      noncePeer: this.auth.peerHello.nonce,
-    });
-    const signature = await signChallenge(this.identity, challenge);
-    this.auth.proofSent = true;
-    this.peer?.sendJson({
-      v: 1,
-      kind: 'auth_proof',
-      uid: this.identity.uid,
-      signature,
-    });
-  }
+  /* ---------------- signaling ---------------- */
 
-  private async finalizeAuthentication(): Promise<void> {
-    const hello = this.auth.peerHello;
-    if (this.auth.authenticated || !hello || !this.auth.proven || !this.auth.acknowledged) {
-      return;
-    }
-    this.auth.authenticated = true;
-    this.lastFrameAt = Date.now();
-    this.manualActive = false;
-    window.clearTimeout(this.auth.timer);
-    const safetyNumber = await deriveSafetyNumber(
-      this.identity.publicJwk,
-      hello.publicKeyJwk,
-    ).catch(() => null);
-    const trust = this.auth.trust;
-    if (trust === 'verified' && safetyNumber) {
-      // Refresh the pinned record's last-connected time.
-      this.pairing = savePairing({
-        peerUid: hello.uid,
-        peerDeviceId: hello.deviceId,
-        publicKeyJwk: hello.publicKeyJwk,
-        dhJwk: hello.dhJwk,
-        safetyNumber,
-      });
-    }
-    this.setState({
-      safetyNumber,
-      peerUid: hello.uid,
-      peerTrust: trust,
-      p2pState: 'connected',
-      p2pConnected: trust === 'verified',
-      notice:
-        trust === 'unverified'
-          ? 'Connected. Compare the safety number with your friend, then mark it verified to start chatting.'
-          : null,
-    });
-    if (trust === 'verified') this.onChannelReady();
-    this.updateConnection();
-    void this.refreshPath();
-    this.startSignaling();
-  }
-
-  private onChannelReady(): void {
-    this.p2pSent.clear();
-    this.lastReadWritten = null;
-    this.offerAttempt = 0;
-    this.bleAttempt = 0;
-    this.flushUndelivered();
-    if (this.visible) void this.markRead();
-  }
-
-  private async handlePeerMessage(message: ChatMessage): Promise<void> {
-    if (message.senderId !== this.auth.peerHello?.uid) return;
-    // Until the safety number is confirmed the peer is not trusted: drop its
-    // messages. It resends anything unacknowledged once the channel is verified.
-    if (!this.p2pReady()) return;
-    await this.ingest(message, (ack) => this.peer?.sendJson(ack));
-  }
-
-  /** Store a message from the paired peer, acknowledge it, notify. Shared by the direct and relay paths. */
-  private async ingest(message: ChatMessage, sendAck: (ack: unknown) => void): Promise<void> {
-    const existing = this.messages.get(message.messageId);
-    const merged = existing ? mergeMessages([existing], [message])[0] : message;
-    if (!merged) return;
-    this.messages.set(merged.messageId, merged);
-    await this.deps.store.putMessage(merged);
-    this.emitMessages();
-    sendAck({
-      v: 1,
-      kind: 'ack',
-      messageId: merged.messageId,
-      state: 'DELIVERED',
-      at: Date.now(),
-    });
-    if (!existing) this.deps.onNotify(merged);
-    if (this.visible) void this.markRead();
-  }
-
-  /** The user compared the safety number: pin this peer so later connections are verified. */
-  confirmPeer(): void {
-    const hello = this.auth.peerHello;
-    if (!this.auth.authenticated || !hello || !this.state.safetyNumber) return;
-    this.auth.trust = 'confirmed';
-    this.pairing = savePairing({
-      peerUid: hello.uid,
-      peerDeviceId: hello.deviceId,
-      publicKeyJwk: hello.publicKeyJwk,
-      dhJwk: hello.dhJwk,
-      safetyNumber: this.state.safetyNumber,
-    });
-    this.setState({
-      paired: true,
-      peerUid: hello.uid,
-      peerTrust: 'confirmed',
-      p2pConnected: true,
-      notice: null,
-    });
-    this.onChannelReady();
-    this.updateConnection();
-  }
-
-  private failPeer(reason: string): void {
-    this.manualActive = false;
-    window.clearTimeout(this.auth.timer);
-    this.peer?.close();
-    this.peer = null;
-    this.auth = freshAuth();
-    this.frameQueue = [];
-    this.p2pSent.clear();
-    this.setState({
-      path: null,
-      p2pState: 'failed',
-      p2pConnected: false,
-      peerTrust: 'none',
-      safetyNumber: null,
-      notice: reason,
-    });
-    this.updateConnection();
-  }
-
-  /**
-   * A code is only accepted if its id matches its own key and, once paired, only
-   * if it comes from the paired device.
-   */
-  private async checkSignalIdentity(signal: ManualSignal): Promise<void> {
-    if (signal.fromUid === this.identity.uid) {
-      throw new Error('This code was created on this device.');
-    }
-    if (!(await uidMatchesKeys(signal.fromUid, signal.dhJwk, signal.publicKeyJwk, signal.identityProof))) {
-      throw new Error('This connection code is corrupted: its identity does not match its key.');
-    }
-    const pinned = this.pairing;
-    if (
-      pinned &&
-      (signal.fromUid !== pinned.peerUid || !publicKeysEqual(pinned.publicKeyJwk, signal.publicKeyJwk))
-    ) {
-      throw new Error(
-        'This code comes from a different device than the one you paired with. Use Reset pairing in Settings to pair a new one.',
-      );
-    }
-  }
-
-  async createManualOffer(): Promise<string> {
-    this.manualActive = true;
-    this.manualExpectedKey = null;
-    this.setState({ notice: null });
-    const transport = this.newPeer();
-    try {
-      const sdp = await transport.createOffer();
-      return encodeManualSignal(
-        createManualSignal({
-          kind: 'offer',
-          conversationId: this.deps.conversationId,
-          fromUid: this.identity.uid,
-          fromDeviceId: this.identity.deviceId,
-          publicKeyJwk: this.identity.publicJwk,
-          dhJwk: this.identity.dhPublicJwk,
-          identityProof: this.identity.identityProof,
-          sdp,
-          nonce: randomNonce(),
-        }),
-      );
-    } catch (error) {
-      transport.close();
-      this.peer = null;
-      this.setState({ p2pState: 'idle' });
-      this.updateConnection();
-      throw error;
-    }
-  }
-
-  async applyManualAnswer(code: string): Promise<void> {
-    const decoded = decodeManualSignal(code, this.deps.conversationId);
-    if (!decoded.ok) throw new Error(decoded.error);
-    if (decoded.value.kind !== 'answer') {
-      throw new Error('This code is an offer. The other user must paste your offer and send back an answer.');
-    }
-    await this.checkSignalIdentity(decoded.value);
-    if (!(this.peer instanceof PeerTransport)) throw new Error('Create an offer before pasting an answer.');
-    this.manualExpectedKey = decoded.value.publicKeyJwk;
-    await this.peer.applyAnswer(decoded.value.sdp);
-    this.setState({ p2pState: 'connecting' });
-  }
-
-  async acceptManualOffer(code: string): Promise<string> {
-    const decoded = decodeManualSignal(code, this.deps.conversationId);
-    if (!decoded.ok) throw new Error(decoded.error);
-    if (decoded.value.kind !== 'offer') {
-      throw new Error('This code is an answer. Paste the offer from the other user instead.');
-    }
-    await this.checkSignalIdentity(decoded.value);
-    this.manualActive = true;
-    this.manualExpectedKey = decoded.value.publicKeyJwk;
-    this.setState({ notice: null });
-    const transport = this.newPeer();
-    try {
-      const sdp = await transport.acceptOffer(decoded.value.sdp);
-      return encodeManualSignal(
-        createManualSignal({
-          kind: 'answer',
-          conversationId: this.deps.conversationId,
-          fromUid: this.identity.uid,
-          fromDeviceId: this.identity.deviceId,
-          publicKeyJwk: this.identity.publicJwk,
-          dhJwk: this.identity.dhPublicJwk,
-          identityProof: this.identity.identityProof,
-          sdp,
-          nonce: randomNonce(),
-        }),
-      );
-    } catch (error) {
-      transport.close();
-      this.peer = null;
-      this.setState({ p2pState: 'idle' });
-      this.updateConnection();
-      throw error;
-    }
-  }
-
-  cancelManual(): void {
-    this.manualActive = false;
-    this.manualExpectedKey = null;
-    this.peer?.close();
-    this.peer = null;
-    this.auth = freshAuth();
-    this.p2pSent.clear();
-    this.setState({
-      p2pState: 'idle',
-      p2pConnected: false,
-      peerTrust: 'none',
-      safetyNumber: null,
-    });
-    this.updateConnection();
-  }
-
-
-  /* ------------------------------------------------------------------ */
-  /* Contacts: exchange public cards, compare the safety number, pin     */
-  /* ------------------------------------------------------------------ */
-
-  /** Validate a pasted contact card and show its safety number. Nothing is saved yet. */
-  async previewContact(text: string): Promise<void> {
-    const contact = await decodeContactCard(text);
-    if (!contact) throw new Error('This is not a valid DuoChat contact card.');
-    if (contact.uid === this.identity.uid) throw new Error('This is your own contact card.');
-    if (this.pairing && this.pairing.peerUid !== contact.uid) {
-      throw new Error('You are already paired with someone else. Reset pairing in Settings first.');
-    }
-    const safetyNumber = await deriveSafetyNumber(this.identity.publicJwk, contact.card.sign);
-    this.pendingCard = contact;
-    this.setState({ pendingContact: { uid: contact.uid, safetyNumber, name: contact.card.name } });
-  }
-
-  /** The user compared the safety number over a separate channel: pin the contact. */
-  confirmContact(): void {
-    const contact = this.pendingCard;
-    const pending = this.state.pendingContact;
-    if (!contact || !pending) return;
-    this.pairing = savePairing({
-      peerUid: contact.uid,
-      peerDeviceId: 'card',
-      publicKeyJwk: contact.card.sign,
-      dhJwk: contact.card.dh,
-      safetyNumber: pending.safetyNumber,
-    });
-    this.pendingCard = null;
-    this.offerAttempt = 0;
-    this.lastOfferAt = 0;
-    this.setState({
-      paired: true,
-      peerUid: contact.uid,
-      pendingContact: null,
-      notice: this.hub || this.network.signaling.length > 0
-        ? 'Friend saved. Connecting automatically whenever you are both online.'
-        : 'Friend saved. No signaling is configured, so connect with a code (Settings > Network).',
-    });
-    this.startSignaling(true);
-  }
-
-  cancelContact(): void {
-    this.pendingCard = null;
-    this.setState({ pendingContact: null });
-  }
-
-  /* ------------------------------------------------------------------ */
-  /* Signaling: find the paired friend again without typing codes        */
-  /* ------------------------------------------------------------------ */
-
-  /** Apply changed STUN/TURN/signaling settings. */
   reloadNetwork(): void {
     this.network = loadNetworkConfig();
     this.startSignaling(true);
-    this.setState({ notice: 'Network settings applied. They take effect on the next connection.' });
+    this.notice('Network settings applied. They take effect on the next connection.');
   }
 
   private startSignaling(force = false): void {
-    if (this.stopped) return;
-    if (this.hub && !force) return;
+    if (this.stopped || (this.hub && !force)) return;
     this.hub?.stop();
     this.hub = null;
-    const pinned = this.pairing;
-    if (!pinned?.dhJwk || this.network.signaling.length === 0) {
-      this.setState({ signaling: 'idle' });
+    if (this.network.signaling.length === 0) {
+      this.emit({ signaling: 'idle' });
       return;
     }
     const hub = new SignalingHub(transportsFor(this.network));
@@ -974,337 +759,461 @@ export class ChatEngine {
     void mailboxFor(this.identity.uid).then((mailbox) => {
       if (this.hub !== hub || this.stopped) return;
       hub.start(mailbox, (blob, id, via) => void this.handleBlob(blob, id, via));
-      // Tell the paired friend we are online so they can offer straight away.
-      this.offerAttempt = 0;
-      this.lastOfferAt = 0;
     });
-    this.setState({ signaling: hub.status() });
   }
 
-  private async sealToPeer(payload: unknown): Promise<{ blob: SealedBlob; mailbox: string } | null> {
-    const pinned = this.pairing;
-    if (!pinned?.dhJwk) return null;
+  private async sealTo(uid: string, payload: unknown): Promise<{ blob: SealedBlob; mailbox: string } | null> {
+    const rec = this.contacts.get(uid);
+    if (!rec) return null;
     const blob = await seal({
       payload,
       fromUid: this.identity.uid,
-      toUid: pinned.peerUid,
-      toDh: pinned.dhJwk,
+      toUid: uid,
+      toDh: rec.card.dh,
       signPriv: this.identity.privateJwk,
     });
-    return { blob, mailbox: await mailboxFor(pinned.peerUid) };
+    return { blob, mailbox: await mailboxFor(uid) };
   }
 
-  private async putToPeer(payload: unknown, kind: 'sig' | 'msg', ttlSec: number): Promise<void> {
-    const sealed = await this.sealToPeer(payload);
-    if (!sealed || !this.hub) throw new Error('No signaling is available.');
-    await this.hub.put(sealed.mailbox, sealed.blob, { kind, ttlSec });
+  /** Send a sealed payload to a contact: through signaling if we have it, else through a mutual contact. */
+  private async putTo(uid: string, payload: unknown, kind: 'sig' | 'msg', ttlSec: number): Promise<void> {
+    const sealed = await this.sealTo(uid, payload);
+    if (!sealed) throw new Error('Unknown friend.');
+    let sent = false;
+    if (this.hub && this.hub.status() === 'online') {
+      try {
+        await this.hub.put(sealed.mailbox, sealed.blob, { kind, ttlSec });
+        sent = true;
+      } catch {
+        // fall through to the mutual-contact path
+      }
+    }
+    if (kind === 'sig' && !sent) sent = this.forwardVia(uid, sealed.blob);
+    if (!sent) throw new Error('No way to reach them right now.');
   }
 
-  private async handleBlob(blob: SealedBlob, id: string, via: SignalingTransport): Promise<void> {
-    const pinned = this.pairing;
-    if (!pinned) return;
+  /** Ask up to two connected contacts to hand a sealed blob to `uid` (signaling without the internet). */
+  private forwardVia(uid: string, blob: SealedBlob): boolean {
+    let n = 0;
+    for (const link of this.links.values()) {
+      if (link.uid === uid || !link.ready) continue;
+      if (link.sendJson({ v: 1, kind: 'relay_blob', blob, hops: 1 })) n += 1;
+      if (n >= 2) break;
+    }
+    return n > 0;
+  }
+
+  private relayBlob(from: string, frame: Extract<GroupFrame, { kind: 'relay_blob' }>): void {
+    if (frame.blob.to === this.identity.uid) {
+      void this.handleBlob(frame.blob, '', null);
+      return;
+    }
+    const target = this.links.get(frame.blob.to);
+    if (target?.ready && frame.hops < 2 && target.uid !== from) target.sendJson({ ...frame, hops: frame.hops + 1 });
+  }
+
+  private async handleBlob(blob: SealedBlob, id: string, via: SignalingTransport | null): Promise<void> {
+    if (this.seenBlobs.has(blob.sig)) return;
+    this.seenBlobs.add(blob.sig);
+    if (this.seenBlobs.size > 4000) this.seenBlobs.delete(this.seenBlobs.values().next().value as string);
+    const rec = this.contacts.get(blob.from);
+    const link = this.links.get(blob.from);
+    if (!rec || !link) return;
     const payload = await openBlob({
       blob,
       ownUid: this.identity.uid,
       ownDhPriv: this.identity.dhPrivateJwk,
-      senderSign: pinned.publicKeyJwk,
-      senderUid: pinned.peerUid,
+      senderSign: rec.card.sign,
+      senderUid: rec.uid,
     });
     if (!isRecord(payload)) return;
     try {
       switch (payload.t) {
-        case 'ready': {
-          if (this.isInitiator()) this.lastOfferAt = 0;
+        case 'ready':
+          if (link.isInitiator()) link.lastOfferAt = 0;
           return;
-        }
         case 'offer': {
-          if (this.isInitiator() || this.manualActive || this.p2pReady()) return;
-          if (typeof payload.sdp !== 'string') return;
-          const transport = this.newPeer();
-          const answer = await transport.acceptOffer(payload.sdp);
-          await this.putToPeer({ t: 'answer', sdp: answer }, 'sig', 120);
-          this.armOfferTimeout(transport);
+          if (link.isInitiator() || link.manual || link.ready || typeof payload.sdp !== 'string') return;
+          const answer = await link.acceptOffer(payload.sdp);
+          await this.putTo(rec.uid, { t: 'answer', sdp: answer }, 'sig', 120);
           return;
         }
-        case 'answer': {
-          if (!this.isInitiator() || !(this.peer instanceof PeerTransport) || this.p2pReady() || typeof payload.sdp !== 'string') return;
-          await this.peer.applyAnswer(payload.sdp);
+        case 'answer':
+          if (link.isInitiator() && typeof payload.sdp === 'string') await link.applyAnswer(payload.sdp);
           return;
-        }
         case 'msg': {
-          if (
-            !validateClientMessageId(payload.id) ||
-            !validateIncomingText(payload.text) ||
-            typeof payload.at !== 'number' ||
-            !Number.isFinite(payload.at)
-          ) {
-            return;
+          if (typeof payload.id !== 'string' || typeof payload.text !== 'string' || typeof payload.at !== 'number') return;
+          const gid = typeof payload.g === 'string' ? payload.g : null;
+          if (gid) {
+            const frame = parseGroupFrame({ v: 1, kind: 'gmsg', groupId: gid, messageId: payload.id, text: payload.text, clientCreatedAt: payload.at });
+            if (frame?.kind === 'gmsg') await this.receiveGroupMessage(rec.uid, frame);
+          } else {
+            const frame = parsePeerMessageFrame({ v: 1, kind: 'message', messageId: payload.id, clientMessageId: payload.id, senderId: rec.uid, text: payload.text, clientCreatedAt: payload.at });
+            if (frame) this.ingest({ ...frame, transport: 'relay', conversationId: rec.uid, readAt: null }, rec.uid, rec.uid, this.nameOf(rec.uid));
           }
-          const message: ChatMessage = {
-            messageId: payload.id,
-            clientMessageId: payload.id,
-            senderId: pinned.peerUid,
-            text: payload.text,
-            clientCreatedAt: payload.at,
-            type: 'text',
-            transport: 'relay',
-            deliveryState: 'DELIVERED',
-            readAt: null,
-          };
-          await this.ingest(message, () => {
-            void this.putToPeer({ t: 'ack', id: payload.id }, 'msg', 7 * 24 * 3600).catch(() => undefined);
-          });
-          this.hub?.remove(via, await mailboxFor(this.identity.uid), id);
+          if (id) via?.remove(await mailboxFor(this.identity.uid), id);
+          // The relay path has no ack frame: confirm by sealed ack so the sender sees "delivered".
+          void this.putTo(rec.uid, { t: 'ack', id: payload.id }, 'msg', 7 * 24 * 3600).catch(() => undefined);
           return;
         }
         case 'ack': {
-          const message = typeof payload.id === 'string' ? this.messages.get(payload.id) : undefined;
-          if (!message || message.senderId !== this.identity.uid) return;
-          const updated: ChatMessage = {
-            ...message,
-            deliveryState: message.deliveryState === 'READ' ? 'READ' : 'DELIVERED',
-          };
-          this.messages.set(updated.messageId, updated);
-          await this.deps.store.updateMessage(updated.messageId, { deliveryState: updated.deliveryState });
-          await this.dropOutbox(updated.messageId);
-          this.emitMessages();
-          this.updateConnection();
-          this.hub?.remove(via, await mailboxFor(this.identity.uid), id);
+          const m = typeof payload.id === 'string' ? this.msgs.get(payload.id) : undefined;
+          if (m && m.senderId === this.identity.uid && m.recipients?.[rec.uid]) {
+            this.setRecipient(m, rec.uid, 'DELIVERED');
+            this.emit();
+          }
+          if (id) via?.remove(await mailboxFor(this.identity.uid), id);
           return;
         }
         default:
           return;
       }
     } catch (error) {
-      this.setState({ notice: `Signaling failed: ${errorMessage(error)}` });
+      this.notice(`Could not reach ${this.nameOf(rec.uid)}: ${errorMessage(error)}`);
     }
   }
 
-  private armOfferTimeout(transport: PeerTransport): void {
-    clearTimeout(this.offerTimer);
-    this.offerTimer = setTimeout(() => {
-      if (this.peer === transport && !this.auth.authenticated && !this.manualActive) {
-        transport.close();
-        this.peer = null;
-        this.setState({ p2pState: 'failed', notice: 'Could not reach your friend. Retrying…' });
-        this.updateConnection();
-      }
-    }, 40_000);
+  /* ---------------- the connection timer ---------------- */
+
+  private connectingCount(): number {
+    let n = 0;
+    for (const l of this.links.values()) if (l.busy) n += 1;
+    return n;
   }
 
-  private isInitiator(): boolean {
-    return this.pairing !== null && this.identity.uid < this.pairing.peerUid;
-  }
-
-  /** Reconnect to a paired friend automatically, backing off between attempts. */
-  private async maybeOffer(): Promise<void> {
-    const pinned = this.pairing;
-    if (!pinned?.dhJwk || !this.hub || this.hub.status() !== 'online' || this.manualActive) {
-      void this.relayPending();
-      return;
-    }
-    void this.relayPending();
-    const now = Date.now();
-    if (this.state.p2pState === 'connecting') return;
-    if (now - this.lastOfferAt < reconnectDelayMs(this.offerAttempt)) return;
-    this.lastOfferAt = now;
-    this.offerAttempt += 1;
+  private async tick(): Promise<void> {
+    if (this.stopped || this.ticking) return;
+    this.ticking = true;
     try {
-      if (!this.isInitiator()) {
-        await this.putToPeer({ t: 'ready' }, 'sig', 120);
-        return;
+      const now = Date.now();
+      let live = 0;
+      for (const link of this.links.values()) if (link.ready) live += 1;
+      for (const link of [...this.links.values()]) {
+        if (link.ready) {
+          if (now - (this.lastPing.get(link.uid) ?? 0) >= PING_MS) {
+            this.lastPing.set(link.uid, now);
+            link.beat(now);
+          } else if (now - link.lastFrameAt > 14_000) {
+            link.beat(now);
+          }
+          this.flush(link.uid);
+          continue;
+        }
+        if (link.manual) continue;
+        if (this.hub?.status() !== 'online') continue;
+        if (link.state === 'connecting' && link.transport) continue;
+        if (now - link.lastOfferAt < reconnectDelayMs(link.offerAttempt)) continue;
+        if (live + this.connectingCount() >= SOFT_LINK_CAP) continue;
+        if (link.isInitiator() && this.connectingCount() >= MAX_CONNECTING) continue;
+        link.lastOfferAt = now;
+        link.offerAttempt += 1;
+        try {
+          if (!link.isInitiator()) {
+            await this.putTo(link.uid, { t: 'ready' }, 'sig', 120);
+          } else {
+            const sdp = await link.createOffer();
+            await this.putTo(link.uid, { t: 'offer', sdp }, 'sig', 120);
+          }
+        } catch {
+          if (link.transport && !link.ready) link.close();
+        }
       }
-      const transport = this.newPeer();
-      const sdp = await transport.createOffer();
-      await this.putToPeer({ t: 'offer', sdp }, 'sig', 120);
-      this.armOfferTimeout(transport);
-    } catch (error) {
-      this.peer?.close();
-      this.peer = null;
-      this.setState({ p2pState: 'idle', notice: `Could not reach signaling: ${errorMessage(error)}` });
+      void this.maybeBluetooth();
+      void this.relayPending();
+      await this.retryPending();
+      this.emit({ signaling: this.hub?.status() ?? 'idle' });
+    } finally {
+      this.ticking = false;
     }
   }
 
-  /* ------------------------------------------------------------------ */
-  /* Optional store-and-forward (off by default)                         */
-  /* ------------------------------------------------------------------ */
+  /* ---------------- store-and-forward (off by default) ---------------- */
 
   private async relayPending(): Promise<void> {
-    if (!this.network.storeForward || !this.hub || !this.pairing?.dhJwk || this.p2pReady()) return;
-    if (this.hub.status() !== 'online') return;
-    for (const message of this.sortedMessages()) {
-      if (message.senderId !== this.identity.uid || !needsDelivery(message.deliveryState)) continue;
-      if (this.relayed.has(message.messageId)) continue;
-      this.relayed.add(message.messageId);
-      try {
-        await this.putToPeer(
-          { t: 'msg', id: message.messageId, text: message.text, at: message.clientCreatedAt },
-          'msg',
-          7 * 24 * 3600,
-        );
-        const updated: ChatMessage = { ...message, transport: 'relay', deliveryState: 'SENT' };
-        this.messages.set(message.messageId, updated);
-        await this.deps.store.updateMessage(message.messageId, { transport: 'relay', deliveryState: 'SENT' });
-        this.emitMessages();
-      } catch {
-        this.relayed.delete(message.messageId);
+    if (!this.network.storeForward || !this.hub || this.hub.status() !== 'online') return;
+    for (const m of [...this.msgs.values()].sort(compareMessages)) {
+      if (m.senderId !== this.identity.uid) continue;
+      for (const [uid, state] of Object.entries(m.recipients ?? {})) {
+        if (RANK[state] >= RANK.DELIVERED || this.links.get(uid)?.ready) continue;
+        const key = `${m.messageId}|${uid}`;
+        if (this.relayed.has(key)) continue;
+        this.relayed.add(key);
+        try {
+          await this.putTo(uid, { t: 'msg', id: m.messageId, text: m.text, at: m.clientCreatedAt, ...(this.contacts.has(m.conversationId) ? {} : { g: m.conversationId }) }, 'msg', 7 * 24 * 3600);
+          this.setRecipient(m, uid, 'SENT');
+        } catch {
+          this.relayed.delete(key);
+        }
       }
     }
+    this.emit();
   }
 
-  /* ------------------------------------------------------------------ */
-  /* What path is the connection really using?                           */
-  /* ------------------------------------------------------------------ */
+  /* ---------------- Bluetooth ---------------- */
 
-  private async refreshPath(): Promise<void> {
-    this.lastPathAt = Date.now();
-    if (this.peer instanceof SecureBleLink) {
-      if (this.p2pReady()) this.setState({ path: BLUETOOTH_PATH });
-      return;
-    }
-    const stats = await this.peer?.getStats();
-    if (!stats || !this.p2pReady()) return;
-    const pair = selectedPairFromStats(stats);
-    this.setState({ path: pair ? classifyPath(pair.local, pair.remote) : classifyPath('unknown', 'unknown') });
-  }
-
-  /* ------------------------------------------------------------------ */
-  /* Bluetooth LE: works with no internet, within radio range            */
-  /* ------------------------------------------------------------------ */
-
-  /** True when this build can use Bluetooth (Tauri desktop with an adapter, or a test radio). */
   async bluetoothAvailable(): Promise<boolean> {
     if (this.bleBridge === undefined) this.bleBridge = await getBleBridge();
     return this.bleBridge !== null;
   }
 
-  /** Look for the paired friend over Bluetooth. Resolves once connected or when the scan ends. */
-  async connectBluetooth(): Promise<void> {
-    const pinned = this.pairing;
-    if (!pinned?.dhJwk) throw new Error('Add your friend first.');
-    if (this.p2pReady() || this.manualActive) return;
-    if (!(await this.bluetoothAvailable()) || !this.bleBridge) {
-      throw new Error('Bluetooth is not available in this build or on this computer.');
-    }
-    const secret = await ecdhAgree(this.identity.dhPrivateJwk, pinned.dhJwk);
-    this.peer?.close();
-    window.clearTimeout(this.auth.timer);
-    this.auth = freshAuth();
-    this.frameQueue = [];
-    this.p2pSent.clear();
-    const link = new SecureBleLink(
-      this.bleBridge,
-      { ownUid: this.identity.uid, peerUid: pinned.peerUid, signPriv: this.identity.privateJwk, peerSign: pinned.publicKeyJwk },
-      {
-        onOpen: () => this.handlePeerOpen(),
-        onClose: () => this.handlePeerClose(),
-        onFrame: (data) => this.handlePeerFrame(data),
-        onError: (message) => this.setState({ notice: message }),
-      },
-    );
-    this.peer = link;
-    this.setState({ p2pState: 'connecting', p2pConnected: false, peerTrust: 'none', safetyNumber: null });
-    this.updateConnection();
+  /** Search for one friend over Bluetooth (works with no internet, within radio range). */
+  async connectBluetooth(uid: string): Promise<void> {
+    const rec = this.contacts.get(uid);
+    const link = this.links.get(uid);
+    if (!rec || !link) throw new Error('Add your friend first.');
+    if (link.ready || link.manual) return;
+    if (!(await this.bluetoothAvailable()) || !this.bleBridge) throw new Error('Bluetooth is not available in this build or on this computer.');
+    if (this.bleBusy) throw new Error('Already searching over Bluetooth.');
+    this.bleBusy = true;
+    const bridge = this.bleBridge;
     try {
-      await link.connect(secret);
+      const secret = await ecdhAgree(this.identity.dhPrivateJwk, rec.card.dh);
+      const ble = link.adoptBle(
+        (handlers) =>
+          new SecureBleLink(
+            bridge,
+            { ownUid: this.identity.uid, peerUid: uid, signPriv: this.identity.privateJwk, peerSign: rec.card.sign },
+            handlers,
+          ),
+      );
+      try {
+        await ble.connect(secret);
+      } catch (error) {
+        link.close();
+        throw error;
+      }
+    } finally {
+      this.bleBusy = false;
+    }
+  }
+
+  private async maybeBluetooth(): Promise<void> {
+    if (!this.network.bluetooth || this.bleBusy || this.bleBridge === null) return;
+    const now = Date.now();
+    for (const link of this.links.values()) {
+      if (link.ready || link.manual || link.state === 'connecting') continue;
+      const next = this.bleNext.get(link.uid) ?? { at: 0, attempt: 0 };
+      if (now < next.at) continue;
+      this.bleNext.set(link.uid, { at: now + reconnectDelayMs(next.attempt, { baseMs: 15_000, maxMs: 120_000 }), attempt: next.attempt + 1 });
+      try {
+        await this.connectBluetooth(link.uid);
+      } catch {
+        // not in range / not available: the next attempt backs off further
+      }
+      return; // one search at a time
+    }
+  }
+
+  /* ---------------- manual connection codes (Advanced) ---------------- */
+
+  private manualLink(uid: string): PeerLink {
+    const link = this.links.get(uid);
+    if (!link) throw new Error('Add this friend first.');
+    return link;
+  }
+
+  async createManualOffer(uid: string): Promise<string> {
+    const link = this.manualLink(uid);
+    link.manual = true;
+    try {
+      const sdp = await link.createOffer();
+      return this.encodeManual('offer', sdp);
     } catch (error) {
-      if (this.peer === link) this.peer = null;
-      link.close();
-      this.setState({ p2pState: 'idle', notice: `Bluetooth: ${errorMessage(error)}` });
-      this.updateConnection();
+      link.manual = false;
       throw error;
     }
   }
 
-  /** Quietly try Bluetooth now and then while not connected; backs off like internet reconnects. */
-  private async maybeBluetooth(): Promise<void> {
-    if (!this.network.bluetooth || !this.pairing?.dhJwk || this.manualActive || this.state.p2pState === 'connecting') return;
-    if (this.bleBridge === null) return;
-    const now = Date.now();
-    if (now - this.lastBleAt < reconnectDelayMs(this.bleAttempt, { baseMs: 15_000, maxMs: 120_000 })) return;
-    this.lastBleAt = now;
-    this.bleAttempt += 1;
+  async applyManualAnswer(code: string): Promise<void> {
+    const decoded = decodeManualSignal(code, this.deps.context);
+    if (!decoded.ok) throw new Error(decoded.error);
+    if (decoded.value.kind !== 'answer') throw new Error('That is an offer. Paste it on your friend\'s device and send back the reply.');
+    const link = await this.manualTarget(decoded.value);
+    await link.applyAnswer(decoded.value.sdp);
+  }
+
+  async acceptManualOffer(code: string): Promise<string> {
+    const decoded = decodeManualSignal(code, this.deps.context);
+    if (!decoded.ok) throw new Error(decoded.error);
+    if (decoded.value.kind !== 'offer') throw new Error('That is a reply. Paste the offer from your friend instead.');
+    const link = await this.manualTarget(decoded.value);
+    link.manual = true;
     try {
-      await this.connectBluetooth();
-    } catch {
-      // Not in range / not available: the next attempt backs off further.
+      return this.encodeManual('answer', await link.acceptOffer(decoded.value.sdp));
+    } catch (error) {
+      link.manual = false;
+      throw error;
     }
   }
 
-  get identityDetails(): DeviceIdentity {
-    return this.identity;
+  private async manualTarget(signal: { fromUid: string; dhJwk: JsonWebKey; publicKeyJwk: JsonWebKey; identityProof: string }): Promise<PeerLink> {
+    if (signal.fromUid === this.identity.uid) throw new Error('That code was made on this device.');
+    if (!(await uidMatchesKeys(signal.fromUid, signal.dhJwk, signal.publicKeyJwk, signal.identityProof))) {
+      throw new Error('That code is damaged: its identity does not match its key.');
+    }
+    const link = this.links.get(signal.fromUid);
+    if (!link) throw new Error('That code is from someone who is not in your friends yet. Add them with their invite first.');
+    return link;
   }
 
-  clearNotice(): void {
-    this.setState({ notice: null, error: null });
+  private encodeManual(kind: 'offer' | 'answer', sdp: string): string {
+    return encodeManualSignal(
+      createManualSignal({
+        kind,
+        conversationId: this.deps.context,
+        fromUid: this.identity.uid,
+        fromDeviceId: this.identity.deviceId,
+        publicKeyJwk: this.identity.publicJwk,
+        dhJwk: this.identity.dhPublicJwk,
+        identityProof: this.identity.identityProof,
+        sdp,
+        nonce: randomNonce(),
+      }),
+    );
   }
+
+  cancelManual(): void {
+    for (const link of this.links.values()) {
+      if (link.manual) {
+        link.manual = false;
+        if (!link.ready) link.close();
+      }
+    }
+  }
+
+  /* ---------------- local data (kill switch + settings) ---------------- */
 
   async clearLocalData(): Promise<void> {
     await this.deps.store.clearAll();
-    this.messages.clear();
-    this.outbox.clear();
-    this.lastReadWritten = null;
-    this.p2pSent.clear();
-    this.emitMessages();
-    this.setState({ notice: 'Local messages and the send queue were cleared.' });
+    this.msgs.clear();
+    this.pendingGroup.clear();
+    this.relayed.clear();
+    this.contacts.clear();
+    this.known.clear();
+    for (const link of this.links.values()) link.close();
+    this.links.clear();
+    await this.coord.load({});
+    this.emit({ notice: 'Everything on this device was cleared.' });
   }
 
-  /**
-   * Per-conversation kill switch (Option A "CLEAR LOCAL CHAT"): erase every
-   * local message, queued message, and delivery record for this conversation.
-   */
+  /** Erase every message, keep friends and groups. */
   async clearLocalChat(): Promise<void> {
-    this.messages.clear();
-    this.outbox.clear();
-    this.lastReadWritten = null;
-    this.p2pSent.clear();
+    this.msgs.clear();
+    this.pendingGroup.clear();
+    this.relayed.clear();
     await this.deps.store.clearMessages();
-    this.emitMessages();
-    this.updateConnection();
+    this.emit();
   }
 
-  /**
-   * Per-conversation kill switch (Option B "DELETE CHAT AND LOCAL SESSION
-   * STATE", used together with clearLocalChat): forget the pinned peer and
-   * tear down the authenticated direct channel, so any future conversation
-   * requires a fresh identity handshake.
-   */
-  eraseLocalChatSession(): Promise<void> | void {
-    this.peer?.close();
-    this.peer = null;
-    this.auth = freshAuth();
-    this.frameQueue = [];
-    this.p2pSent.clear();
-    this.lastReadWritten = null;
-    this.manualExpectedKey = null;
-    this.pairing = null;
+  /** Forget every friend and group and close all connections (used by the emergency wipe). */
+  eraseLocalChatSession(): void {
+    for (const link of this.links.values()) link.close();
+    this.links.clear();
+    this.contacts.clear();
+    this.known.clear();
     this.hub?.stop();
     this.hub = null;
-    this.setState({
-      path: null,
-      signaling: 'idle',
-      pendingContact: null,
-      paired: false,
-      peerUid: null,
-      p2pState: 'idle',
-      p2pConnected: false,
-      peerTrust: 'none',
-      safetyNumber: null,
-      notice: 'Local chat erased. Sending again requires a new identity handshake.',
-    });
-    this.updateConnection();
+    void this.coord.load({});
+    this.emit({ notice: 'Friends and groups were erased from this device.' });
   }
 
-  /** Forget the pinned peer so a different device can be paired. Messages are kept. */
-  resetPairing(): void {
-    purgePeerKeyCaches();
-    this.eraseLocalChatSession();
-    this.setState({ notice: 'Pairing reset. Connect again to pair a device.' });
+  /* ---------------- view model ---------------- */
+
+  private last(convId: string): LastMessage | undefined {
+    let best: StoredMessage | undefined;
+    for (const m of this.msgs.values()) if (m.conversationId === convId && (!best || compareMessages(best, m) < 0)) best = m;
+    return best
+      ? { text: best.text, at: best.clientCreatedAt, own: best.senderId === this.identity.uid, senderName: this.nameOf(best.senderId) }
+      : undefined;
+  }
+
+  private unread(convId: string): number {
+    let n = 0;
+    for (const m of this.msgs.values()) if (m.conversationId === convId && m.senderId !== this.identity.uid && m.readAt == null) n += 1;
+    return n;
+  }
+
+  private statusFor(uid: string): string {
+    const link = this.links.get(uid);
+    const name = this.nameOf(uid);
+    if (link?.ready) return link.path ? `Connected · ${link.path.label}` : 'Connected';
+    if (link?.state === 'connecting') return 'Connecting…';
+    if (this.hub?.status() === 'online') return `Waiting for ${name} to come online`;
+    return this.network.signaling.length === 0 ? 'Not connected · no connection service is set up' : 'Not connected';
+  }
+
+  private build(): ChatState {
+    const me = this.identity.uid;
+    const contacts: ContactView[] = [...this.contacts.values()].map((c) => {
+      const link = this.links.get(c.uid);
+      return {
+        uid: c.uid,
+        name: this.nameOf(c.uid),
+        trust: c.trust,
+        checked: c.checked,
+        introducedBy: c.introducedBy,
+        introducedByName: c.introducedBy ? this.nameOf(c.introducedBy) : undefined,
+        conn: this.conn(c.uid),
+        path: link?.path ?? null,
+        via: link?.ready ? link.kind : null,
+        unread: this.unread(c.uid),
+        last: this.last(c.uid),
+        status: this.statusFor(c.uid),
+      };
+    });
+    const groups: GroupView[] = [];
+    for (const groupId of this.coord.groupIds()) {
+      const s = this.coord.state(groupId);
+      if (!s) continue;
+      const isMember = s.members.has(me);
+      const members: MemberView[] = [...s.members.values()].map((m) => ({
+        uid: m.uid,
+        name: this.nameOf(m.uid),
+        role: m.role,
+        isMe: m.uid === me,
+        addedBy: m.addedBy,
+        addedByName: this.nameOf(m.addedBy),
+        conn: m.uid === me ? 'connected' : this.conn(m.uid),
+        introducedHere: !!this.contacts.get(m.uid)?.introducedBy && this.contacts.get(m.uid)?.introducedBy === m.addedBy,
+      }));
+      groups.push({
+        groupId,
+        name: s.name,
+        status: isMember ? 'member' : (this.groupNotes.get(groupId) ?? 'removed'),
+        members,
+        amAdmin: s.members.get(me)?.role === 'admin',
+        connected: members.filter((m) => !m.isMe && m.conn === 'connected').length,
+        unread: this.unread(groupId),
+        last: this.last(groupId),
+      });
+    }
+    const messages: Record<string, UiMessage[]> = {};
+    let queued = 0;
+    for (const m of [...this.msgs.values()].sort(compareMessages)) {
+      const own = m.senderId === me;
+      const states = Object.values(m.recipients ?? {});
+      if (own) queued += states.filter((s) => RANK[s] < RANK.DELIVERED).length;
+      (messages[m.conversationId] ??= []).push({
+        ...m,
+        own,
+        senderName: this.nameOf(m.senderId),
+        tick: own ? aggregate(m.recipients) : m.deliveryState,
+        delivered: states.filter((s) => RANK[s] >= RANK.DELIVERED).length,
+        total: states.length,
+      });
+    }
+    return { ...this.state, contacts, groups, messages, queued, storageBackend: this.deps.store.backend, signaling: this.hub?.status() ?? 'idle' };
   }
 }
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === 'string') return error;
-  return 'Unknown error';
+  return 'Something went wrong.';
+}
+
+/** `decodeContactCard` is async only for the proof check; our own card is known-good, so read it directly. */
+function decodeCardSync(text: string): ContactCard {
+  const json = atob(text.slice('DUOID1:'.length).replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil((text.length - 7) / 4) * 4, '='));
+  return JSON.parse(new TextDecoder().decode(Uint8Array.from(json, (c) => c.charCodeAt(0)))) as ContactCard;
 }

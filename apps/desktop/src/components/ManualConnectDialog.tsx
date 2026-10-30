@@ -20,11 +20,14 @@ export function ManualConnectDialog({
   onClose,
   engine,
   state,
+  uid,
 }: {
   open: boolean;
   onClose: () => void;
   engine: ChatEngine | null;
   state: ChatState | null;
+  /** The friend to connect to. */
+  uid: string;
 }) {
   const [mode, setMode] = useState<Mode>(null);
   const [offerCode, setOfferCode] = useState('');
@@ -49,8 +52,7 @@ export function ManualConnectDialog({
     setCopied(null);
   }, [open]);
 
-  const connected = state?.p2pConnected === true;
-  const verifying = Boolean(state?.safetyNumber) && state?.peerTrust === 'unverified';
+  const connected = state?.contacts.find((c) => c.uid === uid)?.conn === 'connected';
 
   function close() {
     if (!connected && engine) engine.cancelManual();
@@ -80,7 +82,7 @@ export function ManualConnectDialog({
     setBusy(true);
     setError(null);
     try {
-      setOfferCode(await engine.createManualOffer());
+      setOfferCode(await engine.createManualOffer(uid));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not create a code.');
     } finally {
@@ -120,7 +122,7 @@ export function ManualConnectDialog({
       open={open}
       onClose={close}
       eyebrow="Direct connection"
-      title="Connect to your friend"
+      title="Connect without internet"
       wide
     >
       <div className="manual-intro">
@@ -144,29 +146,6 @@ export function ManualConnectDialog({
               Messages now travel straight between your devices. If the
               connection drops, exchange a new code to reconnect.
             </p>
-          </div>
-        </div>
-      ) : verifying ? (
-        <div className="verify-panel">
-          <ShieldIcon size={22} />
-          <h3>Compare the safety number</h3>
-          <p className="muted">
-            Read these groups to your friend over a separate channel. Confirm
-            only if every group matches on both devices.
-          </p>
-          <code className="safety-number selectable">{state?.safetyNumber}</code>
-          <div className="button-row">
-            <button
-              type="button"
-              className="button primary"
-              onClick={() => engine?.confirmPeer()}
-            >
-              <ShieldIcon size={16} />
-              Safety number matches
-            </button>
-            <button type="button" className="button ghost" onClick={close}>
-              Cancel connection
-            </button>
           </div>
         </div>
       ) : mode === null ? (
