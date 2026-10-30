@@ -1,4 +1,5 @@
 import type { ContactCard } from '../connectivity/contactCard';
+import { MAX_GROUP_MEMBERS } from '../constants';
 import {
   cardIsValid,
   eventIdMatches,
@@ -187,6 +188,8 @@ export class GroupLog {
       if (!author || !(await this.verifySig(e, author.card))) continue;
       if (e.type === 'add') {
         if (!(await cardIsValid(e.card, e.target!))) continue;
+        // Hard size limit. The fold order is deterministic, so every replica drops the same overflow adds.
+        if (!state.members.has(e.target!) && state.members.size >= MAX_GROUP_MEMBERS) continue;
         if (!state.members.has(e.target!)) {
           state.members.set(e.target!, { uid: e.target!, card: e.card!, role: 'member', addedBy: e.actor });
         }

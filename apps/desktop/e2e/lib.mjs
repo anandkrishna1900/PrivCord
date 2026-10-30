@@ -210,7 +210,7 @@ export async function newGroup(page, name, friendNames) {
   await page.waitForSelector(`.chat-header h2:has-text("${name}")`);
 }
 
-async function openGroupDetails(page) {
+export async function openGroupDetails(page) {
   await page.click('button[aria-label="More"]');
   await page.click('[role="menuitem"]:has-text("Group details")');
   await page.waitForSelector('.member-list');
@@ -368,4 +368,35 @@ export async function installBleSim(devs) {
   sim.text = () =>
     sim.log.map((c) => Buffer.from(c.hex.match(/../g).map((h) => parseInt(h, 16))).toString('latin1')).join('');
   return sim;
+}
+
+/** Settings > Security: the "stay group-only" privacy switch. */
+export async function setGroupOnly(page, on) {
+  await page.click('button[aria-label="Settings"]');
+  await page.click('.tab:has-text("Security")');
+  const sw = page.locator('button[role="switch"][aria-label^="Stay group-only"]');
+  if ((await sw.getAttribute('aria-checked')) !== String(on)) await sw.click();
+  await page.waitForFunction((v) => document.querySelector('button[role="switch"][aria-label^="Stay group-only"]')?.getAttribute('aria-checked') === String(v), on);
+  await page.keyboard.press('Escape');
+}
+
+/** From group details: open the direct chat with a member (only possible once verified). */
+export async function messageMember(page, name) {
+  await openGroupDetails(page);
+  await page.locator('.member-row', { hasText: name }).locator('button:has-text("Message")').click();
+  await page.waitForSelector(`.chat-header h2:has-text("${name}")`);
+}
+
+export async function sendFile(page, { name, mime, buffer }) {
+  await page.setInputFiles('input[type=file]', { name, mimeType: mime, buffer });
+}
+
+/** Click Save on the file bubble that mentions `name` and return the downloaded bytes. */
+export async function saveFile(page, name) {
+  const [download] = await Promise.all([
+    page.waitForEvent('download', { timeout: 30000 }),
+    page.locator('.file-bubble', { hasText: name }).first().locator('button[aria-label^="Save"]').click(),
+  ]);
+  const p = await download.path();
+  return { bytes: (await import('node:fs')).readFileSync(p), suggested: download.suggestedFilename() };
 }

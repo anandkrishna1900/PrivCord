@@ -3,6 +3,9 @@ import { secretGet, secretSet } from './secureStore';
 export interface TextCipher {
   encrypt(text: string): Promise<string>;
   decrypt(payload: string): Promise<string>;
+  /** Files at rest: output is 12-byte IV followed by AES-GCM ciphertext. */
+  encryptBytes(bytes: Uint8Array): Promise<Uint8Array<ArrayBuffer>>;
+  decryptBytes(payload: Uint8Array): Promise<Uint8Array<ArrayBuffer>>;
 }
 
 const PREFIX = 'enc1.';
@@ -37,6 +40,19 @@ export async function createTextCipher(uid: string): Promise<TextCipher> {
   );
 
   return {
+    async encryptBytes(bytes: Uint8Array): Promise<Uint8Array<ArrayBuffer>> {
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, bytes as Uint8Array<ArrayBuffer>));
+      const out = new Uint8Array(12 + ct.length);
+      out.set(iv, 0);
+      out.set(ct, 12);
+      return out;
+    },
+    async decryptBytes(payload: Uint8Array): Promise<Uint8Array<ArrayBuffer>> {
+      if (payload.length < 29) throw new Error('Malformed encrypted file.');
+      const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: payload.slice(0, 12) }, key, payload.slice(12));
+      return new Uint8Array(pt);
+    },
     async encrypt(text: string): Promise<string> {
       if (!text) return text;
       const iv = crypto.getRandomValues(new Uint8Array(12));

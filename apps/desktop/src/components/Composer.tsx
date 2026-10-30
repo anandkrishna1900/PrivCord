@@ -1,16 +1,25 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
 import { MAX_TEXT_LENGTH, countCodePoints } from '@duochat/protocol';
-import { SendIcon } from './Icons';
+import { PaperclipIcon, SendIcon, XIcon } from './Icons';
 
 export function Composer({
   onSend,
   disabled,
   placeholder,
+  reply,
+  onCancelReply,
+  onSendFile,
 }: {
   onSend: (text: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  onSendFile: (file: File) => Promise<{ ok: true } | { ok: false; error: string }>;
   disabled: boolean;
   placeholder: string;
+  reply: { name: string; preview: string } | null;
+  onCancelReply: () => void;
 }) {
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -56,10 +65,62 @@ export function Composer({
       event.preventDefault();
       void send();
     }
+    if (event.key === 'Escape' && reply) onCancelReply();
+  }
+
+  async function sendFiles(files: File[]) {
+    if (disabled || uploading || files.length === 0) return;
+    setUploading(true);
+    try {
+      // One at a time: each goes to every recipient before the next starts.
+      for (const file of files.slice(0, 5)) {
+        const result = await onSendFile(file);
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+      }
+      setError(null);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function onPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+    const files = Array.from(event.clipboardData.files);
+    if (files.length > 0) {
+      event.preventDefault();
+      void sendFiles(files);
+    }
+  }
+
+  function onDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setDragging(false);
+    void sendFiles(Array.from(event.dataTransfer.files));
   }
 
   return (
-    <div className="composer-wrapper">
+    <div
+      className={`composer-wrapper ${dragging ? 'dragging' : ''}`}
+      onDragOver={(event) => {
+        event.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={onDrop}
+    >
+      {reply ? (
+        <div className="reply-bar">
+          <div className="reply-bar-text">
+            <strong>Replying to {reply.name}</strong>
+            <span className="muted small">{reply.preview}</span>
+          </div>
+          <button type="button" className="icon-button subtle" aria-label="Cancel reply" onClick={onCancelReply}>
+            <XIcon size={15} />
+          </button>
+        </div>
+      ) : null}
       {error ? (
         <div className="composer-error" role="alert">
           {error}
@@ -67,6 +128,28 @@ export function Composer({
       ) : null}
 
       <div className={`composer ${overLimit ? 'over-limit' : ''}`}>
+        <input
+          ref={fileInput}
+          type="file"
+          multiple
+          hidden
+          aria-label="Choose files to send"
+          onChange={(event) => {
+            const files = Array.from(event.target.files ?? []);
+            event.target.value = '';
+            void sendFiles(files);
+          }}
+        />
+        <button
+          type="button"
+          className="icon-button attach-button"
+          onClick={() => fileInput.current?.click()}
+          disabled={disabled || uploading}
+          aria-label="Send a file"
+          title="Send a file (up to 8 MB)"
+        >
+          <PaperclipIcon size={18} />
+        </button>
         <textarea
           ref={textareaRef}
           value={text}
@@ -75,6 +158,7 @@ export function Composer({
             if (error) setError(null);
           }}
           onKeyDown={handleKeyDown}
+          onPaste={onPaste}
           placeholder={placeholder}
           disabled={disabled}
           rows={1}

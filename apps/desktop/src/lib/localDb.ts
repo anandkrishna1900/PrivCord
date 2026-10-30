@@ -1,5 +1,5 @@
 import Database from '@tauri-apps/plugin-sql';
-import type { ChatMessage, DeliveryState } from '@duochat/protocol';
+import type { ChatMessage, DeliveryState, ReplyRef } from '@duochat/protocol';
 import { isTauri } from '../config';
 import type { TextCipher } from './encryption';
 
@@ -15,7 +15,16 @@ export interface OutboxRow {
 }
 
 /** A message plus where it belongs and how each recipient is doing (one entry for a direct chat). */
+export interface FileMeta {
+  name: string;
+  mime: string;
+  size: number;
+  sha256: string;
+}
+
 export interface StoredMessage extends ChatMessage {
+  /** Present when `type` is 'file'. The bytes live in the file store under the message id. */
+  file?: FileMeta;
   /** Contact uid for a direct chat, group id for a group chat. */
   conversationId: string;
   /** Delivery state per recipient uid. `deliveryState` is the weakest of these. */
@@ -34,6 +43,8 @@ interface MessageRow {
   read_at: number | null;
   conversation_id?: string;
   recips?: string | null;
+  /** Encrypted JSON: reply reference and file description. */
+  extra_cipher?: string | null;
 }
 
 interface OutboxDbRow {
@@ -55,6 +66,8 @@ interface BrowserState {
 
 const BROWSER_KEY = 'duochat.dev-store.v1';
 const MAX_MESSAGES = 2000;
+const FILES_DB = 'privcord-files';
+const FILES_STORE = 'files';
 
 function emptyBrowserState(): BrowserState {
   return { messages: [], outbox: [], meta: {} };
@@ -80,7 +93,7 @@ function rowToMessage(row: MessageRow): Omit<StoredMessage, 'text'> & {
     clientMessageId: row.client_message_id,
     senderId: row.sender_id,
     clientCreatedAt: row.client_created_at,
-    type: 'text',
+    type: row.message_type === 'file' ? 'file' : 'text',
     transport: row.transport === 'relay' ? 'relay' : 'p2p',
     deliveryState: row.delivery_state as DeliveryState,
     readAt: row.read_at,
@@ -124,11 +137,12 @@ export class LocalStore {
             delivery_state TEXT NOT NULL,
             read_at INTEGER,
             conversation_id TEXT NOT NULL DEFAULT '',
-            recips TEXT
+            recips TEXT,
+            extra_cipher TEXT
           )
         `);
         // Databases created by older versions lack these columns: add them (errors mean "already there").
-        for (const column of ["conversation_id TEXT NOT NULL DEFAULT ''", 'recips TEXT']) {
+        for (const column of ["conversation_id TEXT NOT NULL DEFAULT ''", 'recips TEXT', 'extra_cipher TEXT']) {
           try {
             await this.sql.execute(`ALTER TABLE messages ADD COLUMN ${column}`);
           } catch {
@@ -208,10 +222,16 @@ export class LocalStore {
     for (const row of rows) {
       const base = rowToMessage(row);
       const { textCipher, ...rest } = base;
+      let extra: { replyTo?: ReplyRef; file?: FileMeta } = {};
       try {
-        messages.push({ ...rest, text: await this.decrypt(textCipher) });
+        if (row.extra_cipher) extra = JSON.parse(await this.decrypt(row.extra_cipher)) as typeof extra;
       } catch {
-        messages.push({ ...rest, text: '[unable to decrypt locally stored message]' });
+        extra = {};
+      }
+      try {
+        messages.push({ ...rest, ...extra, text: await this.decrypt(textCipher) });
+      } catch {
+        messages.push({ ...rest, ...extra, text: '[unable to decrypt locally stored message]' });
       }
     }
     return messages;
@@ -230,6 +250,10 @@ export class LocalStore {
       transport: message.transport,
       delivery_state: message.deliveryState,
       read_at: message.readAt ?? null,
+      extra_cipher:
+        message.replyTo || message.file
+          ? await this.encrypt(JSON.stringify({ replyTo: message.replyTo, file: message.file }))
+          : null,
     };
   }
 
@@ -239,15 +263,16 @@ export class LocalStore {
       await this.sql.execute(
         `INSERT INTO messages (
           message_id, client_message_id, sender_id, text_cipher, client_created_at,
-          message_type, transport, delivery_state, read_at, conversation_id, recips
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+          message_type, transport, delivery_state, read_at, conversation_id, recips, extra_cipher
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
         ON CONFLICT(message_id) DO UPDATE SET
           text_cipher = excluded.text_cipher,
           transport = excluded.transport,
           delivery_state = excluded.delivery_state,
           read_at = excluded.read_at,
           conversation_id = excluded.conversation_id,
-          recips = excluded.recips`,
+          recips = excluded.recips,
+          extra_cipher = excluded.extra_cipher`,
         [
           row.message_id,
           row.client_message_id,
@@ -260,6 +285,7 @@ export class LocalStore {
           row.read_at,
           row.conversation_id ?? '',
           row.recips ?? null,
+          row.extra_cipher ?? null,
         ],
       );
       return;
@@ -481,9 +507,11 @@ export class LocalStore {
       await this.sql.execute(`DELETE FROM messages`);
       await this.sql.execute(`DELETE FROM outbox`);
       await this.sql.execute(`DELETE FROM meta`);
+      await this.clearFiles();
       return;
     }
     this.writeBrowser(emptyBrowserState());
+    await this.clearFiles();
   }
 
   /**
@@ -495,12 +523,14 @@ export class LocalStore {
     if (this.sql) {
       await this.sql.execute(`DELETE FROM messages`);
       await this.sql.execute(`DELETE FROM outbox`);
+      await this.clearFiles();
       return;
     }
     const state = this.readBrowser();
     state.messages = [];
     state.outbox = [];
     this.writeBrowser(state);
+    await this.clearFiles();
   }
 
   /**
@@ -513,8 +543,59 @@ export class LocalStore {
       await this.sql.execute(`DROP TABLE IF EXISTS messages`);
       await this.sql.execute(`DROP TABLE IF EXISTS outbox`);
       await this.sql.execute(`DROP TABLE IF EXISTS meta`);
+      await this.clearFiles();
       return;
     }
     this.writeBrowser(emptyBrowserState());
+    await this.clearFiles();
+  }
+
+  /* ---------------- files (IndexedDB, encrypted with the same local key) ---------------- */
+
+  private filesDb: Promise<IDBDatabase> | null = null;
+
+  private openFiles(): Promise<IDBDatabase> {
+    this.filesDb ??= new Promise((resolve, reject) => {
+      const req = indexedDB.open(FILES_DB, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(FILES_STORE);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error ?? new Error('Could not open the file store.'));
+    });
+    return this.filesDb;
+  }
+
+  private async fileTx<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+    const db = await this.openFiles();
+    return new Promise<T>((resolve, reject) => {
+      const tx = db.transaction(FILES_STORE, mode);
+      const req = run(tx.objectStore(FILES_STORE));
+      tx.oncomplete = () => resolve(req.result);
+      tx.onerror = () => reject(tx.error ?? new Error('File store error.'));
+      tx.onabort = () => reject(tx.error ?? new Error('File store error.'));
+    });
+  }
+
+  async putFile(messageId: string, bytes: Uint8Array): Promise<void> {
+    if (!this.cipher) throw new Error('Local store cipher is not initialized.');
+    const sealed = await this.cipher.encryptBytes(bytes);
+    await this.fileTx('readwrite', (s) => s.put(sealed, messageId));
+  }
+
+  async getFile(messageId: string): Promise<Uint8Array | null> {
+    if (!this.cipher) throw new Error('Local store cipher is not initialized.');
+    const sealed = await this.fileTx<Uint8Array | undefined>('readonly', (s) => s.get(messageId));
+    return sealed ? this.cipher.decryptBytes(sealed) : null;
+  }
+
+  async deleteFile(messageId: string): Promise<void> {
+    await this.fileTx('readwrite', (s) => s.delete(messageId));
+  }
+
+  async clearFiles(): Promise<void> {
+    try {
+      await this.fileTx('readwrite', (s) => s.clear());
+    } catch {
+      // No IndexedDB (or never opened): nothing to clear.
+    }
   }
 }

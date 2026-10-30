@@ -31,6 +31,28 @@ A creates a group with B (A and B met). B adds C (B and C met).
    runs and passes because both sides pinned the keys. No QR, no code, no manual step.
 4. Result: a full mesh. Everyone ends up linked to everyone in the group.
 
+### Size limit
+A group has at most `MAX_GROUP_MEMBERS = 10` members including the creator. The roster fold ignores an
+`add` that would exceed it, in the same deterministic order on every replica, so concurrent adds still
+converge. Authoring refuses early ("This group is full"), as does creating a group of 11.
+
+### Group-only privacy opt-out
+By default people you meet through a group can message you directly (that is the introduction). Each
+user has a setting **"Stay group-only with people I meet in groups"** (off by default). Rules:
+
+* A direct chat with an `introduced` contact exists only if **neither** side has the setting on.
+  `canDirect(uid) = trust == verified || (!myGroupOnly && peer != groupOnly)`.
+* Contacts you paired yourselves (swapped invites, `trust = verified`) are never affected, so two people
+  can always pair manually to chat directly even if one of them stays group-only.
+* Group messages, replies, files and the group roster are unaffected: the pairwise link still exists
+  (it carries the group's messages), only direct chat is off.
+* Each side sends `privacy {groupOnly}` after authentication and whenever the setting changes, so both
+  UIs hide the direct chat without a failed send. Receiving enforces it regardless: a direct `message`
+  or `file_offer` from an introduced contact while *we* are group-only is refused with
+  `declined (direct_not_accepted)`.
+* Group-only people are not offered when adding members to another group, so their identity is not
+  spread through you. Safety-number checks (`setChecked`) are separate and do not change any of this.
+
 ## 3. Wire frames (over an authenticated pairwise channel; see `parseGroupFrame`)
 
 | Frame | Meaning |
@@ -41,7 +63,19 @@ A creates a group with B (A and B met). B adds C (B and C met).
 | `gmsg {groupId, messageId, text, clientCreatedAt}` | A group chat message. Sender identity = the channel's authenticated peer. |
 | `relay_blob {blob, hops<=2}` | Pass a sealed signaling blob to another contact we are linked to (introduction without internet). |
 
-Existing direct-chat frames (`message`, `ack`, `read`, `ping`, `pong`) are unchanged. Acks work for
+Existing direct-chat frames (`message`, `ack`, `read`, `ping`, `pong`) are unchanged except that
+`message` and `gmsg` accept an optional `replyTo {id, author, preview<=120}`. New frames:
+
+| Frame | Meaning |
+|---|---|
+| `declined {messageId, reason}` | The receiver refused (`direct_not_accepted`, `too_large`, `bad_file`, `busy`). |
+| `file_offer {messageId, groupId?, name, mime, size<=8 MiB, sha256, clientCreatedAt, replyTo?}` | Starts a file transfer. |
+| `file_chunk {messageId, index, data}` | 12 KiB of the file, base64url, strictly in order. |
+
+Files: sent to each recipient over the already-authenticated WebRTC link (not Bluetooth, not the relay),
+paused while the channel's send buffer is full. The receiver checks size, order and SHA-256 and then
+sends the normal `ack`. At most 2 incoming transfers per peer; a stalled one is dropped after 30 s.
+Names are sanitised, MIME types are validated, and only PNG/JPEG/GIF/WebP are previewed. Acks work for
 group messages too (`messageId` is globally unique).
 
 ## 4. What every engine must do
@@ -81,7 +115,7 @@ group messages too (`messageId` is globally unique).
 * Introduced people show a small "Introduced by NAME" line and a "Verify" action.
 * Chat header: name, one status line in plain words, one "..." menu (details, verify, mute,
   clear chat). Dangerous actions (wipe) live in Settings > Security only.
-* Remove anything that does not work yet (attachments were a text stub and are removed).
+* Remove anything that does not work yet. Each bubble has a Reply button; the composer has a paperclip (also drag and drop, paste).
 * Settings: Profile, Connection (status + "Advanced" collapsed: STUN/TURN/relays/Bluetooth),
   Security (recovery phrase restore, wipe), About.
 

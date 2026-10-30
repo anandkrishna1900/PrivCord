@@ -110,6 +110,11 @@ export class PeerLink {
     return this.env.identity.uid < this.contact.uid;
   }
 
+  /** Wait until it is fine to write more (WebRTC only; other links never need to wait). */
+  waitWritable(): Promise<boolean> {
+    return this.transport instanceof PeerTransport ? this.transport.drain() : Promise.resolve(true);
+  }
+
   sendJson(value: unknown): boolean {
     return this.ready ? (this.transport?.sendJson(value) ?? false) : false;
   }

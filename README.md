@@ -12,8 +12,14 @@ Bluetooth.
 
 - **Add a friend in seconds.** Show your invite (QR or text), scan or paste theirs. That is the whole setup.
 - **Chat one-to-one** with end-to-end encryption. Messages go straight from device to device.
-- **Make groups.** Create a group, add friends, and anyone in the group can add more people.
+- **Reply** to any message. The quote shows for everyone, in chats and groups.
+- **Send files up to 8 MB** (photos show inline). They go straight to the other device, free, with no
+  upload to anyone's server.
+- **Make groups of up to 10.** Create a group, add friends, and anyone in the group can add more people.
   If you add Ben and Ben adds Cat, you and Cat connect automatically. No codes to swap.
+- **Stay private in groups.** Turn on *Stay group-only* (Settings > Security) and people you only meet
+  through a group can talk to you in the group but cannot message you directly. If either of you has it
+  on, you can still pair by swapping invites.
 - **Keep working when things go wrong.** Messages you send while someone is offline wait and are sent
   when you reconnect. Connections recover on their own.
 - **Use Bluetooth with no internet** (needs a phone on one side; see the status table below).
@@ -94,7 +100,7 @@ the Tauri build (`npm run tauri:dev`, needs Rust) for the real thing. Run your o
 | Windows installer | Built by CI | Run on a clean machine; signing |
 | Relay | Automated tests | Docker image, production TLS |
 
-Not available: file or photo attachments, push notifications, and a multi-hop Bluetooth mesh
+Not available: push notifications, files over Bluetooth, and a multi-hop Bluetooth mesh
 ([docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md)).
 
 ## License and credit

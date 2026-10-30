@@ -232,6 +232,15 @@ export function SettingsDialog({
 
         {section === 'security' ? (
           <section className="settings-section">
+            <Toggle
+              label="Stay group-only with people I meet in groups"
+              description="You still read and reply in the groups you share, but nobody you only know through a group can message you directly, and you cannot message them, unless you swap invites yourselves. It applies to people you meet from now on and to the ones you already have."
+              checked={settings.groupOnly}
+              onChange={(value) => {
+                updateSettings({ groupOnly: value });
+                engine?.setGroupOnly(value);
+              }}
+            />
             <div className="card-box">
               <div className="card-title">
                 <KeyIcon size={18} />

@@ -1,7 +1,8 @@
 import type { ContactCard } from '../connectivity/contactCard';
 import { validateBlob, type SealedBlob } from '../connectivity/seal';
 import type { PrivateJwk } from '../e2ee';
-import { validateClientMessageId, validateIncomingText } from '../message';
+import { MAX_GROUP_MEMBERS } from '../constants';
+import { validateClientMessageId, validateIncomingText, validateReply, type ReplyRef } from '../message';
 import { isGroupEventShape, signGroupEvent, type GroupEvent } from './events';
 import { GroupLog, type GroupState } from './log';
 
@@ -23,6 +24,7 @@ export interface GroupMessageFrame {
   messageId: string;
   text: string;
   clientCreatedAt: number;
+  replyTo?: ReplyRef;
 }
 /** Ask a mutual contact to pass a sealed blob on to someone we cannot reach directly (signaling without internet). */
 export interface RelayBlobFrame { v: 1; kind: 'relay_blob'; blob: SealedBlob; hops: number }
@@ -49,7 +51,8 @@ export function parseGroupFrame(value: unknown): GroupFrame | null {
         : null;
     case 'gmsg':
       return typeof f.groupId === 'string' && validateClientMessageId(f.messageId) && validateIncomingText(f.text) &&
-        typeof f.clientCreatedAt === 'number' && Number.isFinite(f.clientCreatedAt) && f.clientCreatedAt > 0
+        typeof f.clientCreatedAt === 'number' && Number.isFinite(f.clientCreatedAt) && f.clientCreatedAt > 0 &&
+        (f.replyTo === undefined || validateReply(f.replyTo))
         ? (f as unknown as GroupMessageFrame)
         : null;
     case 'relay_blob':
@@ -154,6 +157,10 @@ export class GroupCoordinator {
     const log = new GroupLog(create.groupId);
     this.logs.set(create.groupId, log);
     await log.add(create);
+    if (initialMembers.length + 1 > MAX_GROUP_MEMBERS) {
+      this.logs.delete(create.groupId);
+      throw new Error(`A group can have at most ${MAX_GROUP_MEMBERS} members, including you.`);
+    }
     const result = emptyResult();
     result.changed.push(create.groupId);
     result.joined.push(create.groupId);
@@ -199,6 +206,9 @@ export class GroupCoordinator {
   async addMember(groupId: string, card: ContactCard): Promise<GroupResult> {
     const uid = await uidOf(card);
     if (this.isMember(groupId, uid)) throw new Error('Already in this group.');
+    if ((this.state(groupId)?.members.size ?? 0) >= MAX_GROUP_MEMBERS) {
+      throw new Error(`This group is full (${MAX_GROUP_MEMBERS} members is the limit).`);
+    }
     return (await this.author(groupId, { type: 'add', target: uid, card })).result;
   }
 

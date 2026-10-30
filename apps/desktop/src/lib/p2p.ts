@@ -64,6 +64,31 @@ export class PeerTransport {
     return this.pc ? this.pc.getStats() : null;
   }
 
+  /**
+   * Resolves true once the channel's send buffer has room, false if the channel closed or stalled.
+   * Without this a big file would pile up in memory instead of flowing at the link's speed.
+   */
+  async drain(highWater = 1_000_000, timeoutMs = 20_000): Promise<boolean> {
+    const channel = this.channel;
+    if (!channel) return false;
+    if (channel.readyState !== 'open') return false;
+    if (channel.bufferedAmount <= highWater) return true;
+    channel.bufferedAmountLowThreshold = highWater / 4;
+    return new Promise<boolean>((resolve) => {
+      const done = (ok: boolean) => {
+        window.clearTimeout(timer);
+        channel.removeEventListener('bufferedamountlow', onLow);
+        channel.removeEventListener('close', onClose);
+        resolve(ok);
+      };
+      const onLow = () => done(channel.readyState === 'open');
+      const onClose = () => done(false);
+      const timer = window.setTimeout(() => done(false), timeoutMs);
+      channel.addEventListener('bufferedamountlow', onLow);
+      channel.addEventListener('close', onClose);
+    });
+  }
+
   sendJson(value: unknown): boolean {
     if (!this.channel || this.channel.readyState !== 'open') return false;
     try {

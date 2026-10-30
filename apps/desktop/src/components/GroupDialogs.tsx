@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ChatEngine, ChatState, ContactView, GroupView } from '../lib/engine';
 import { Modal } from './Modal';
 import { Avatar } from './Avatar';
+import { MAX_GROUP_MEMBERS } from '@duochat/protocol';
 import { CheckIcon, LogOutIcon, UserIcon } from './Icons';
 
 function errorText(caught: unknown): string {
@@ -12,10 +13,13 @@ function FriendPicker({
   friends,
   picked,
   onToggle,
+  max,
 }: {
   friends: ContactView[];
   picked: Set<string>;
   onToggle: (uid: string) => void;
+  /** How many more can be picked. */
+  max: number;
 }) {
   if (friends.length === 0) return <p className="muted small">No friends to choose from yet.</p>;
   return (
@@ -23,7 +27,12 @@ function FriendPicker({
       {friends.map((friend) => (
         <li key={friend.uid}>
           <label className="pick-row">
-            <input type="checkbox" checked={picked.has(friend.uid)} onChange={() => onToggle(friend.uid)} />
+            <input
+              type="checkbox"
+              checked={picked.has(friend.uid)}
+              disabled={!picked.has(friend.uid) && picked.size >= max}
+              onChange={() => onToggle(friend.uid)}
+            />
             <Avatar name={friend.name} size={32} />
             <span>{friend.name}</span>
           </label>
@@ -107,9 +116,10 @@ export function NewGroupDialog({
       </label>
       <div className="field">
         <span>Add friends</span>
-        <FriendPicker friends={state.contacts} picked={picked} onToggle={toggle} />
+        <FriendPicker friends={state.contacts.filter((c) => c.direct)} picked={picked} onToggle={toggle} max={MAX_GROUP_MEMBERS - 1} />
         <p className="muted small">
-          Anyone you add can add their own friends. Everyone is connected to everyone automatically.
+          Up to {MAX_GROUP_MEMBERS} people per group, including you. Anyone you add can add their own friends, and
+          everyone is connected automatically.
         </p>
       </div>
       {error ? (
@@ -128,6 +138,7 @@ export function GroupDetailsDialog({
   state,
   group,
   onVerify,
+  onMessage,
 }: {
   open: boolean;
   onClose: () => void;
@@ -135,6 +146,7 @@ export function GroupDetailsDialog({
   state: ChatState;
   group: GroupView | null;
   onVerify: (uid: string) => void;
+  onMessage: (uid: string) => void;
 }) {
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -155,7 +167,8 @@ export function GroupDetailsDialog({
   if (!group) return null;
   const active = group.status === 'member';
   const memberIds = new Set(group.members.map((m) => m.uid));
-  const addable = state.contacts.filter((c) => !memberIds.has(c.uid));
+  const addable = state.contacts.filter((c) => c.direct && !memberIds.has(c.uid));
+  const room = Math.max(0, group.maxMembers - group.members.length);
 
   async function run(task: () => Promise<void>) {
     setError(null);
@@ -181,7 +194,9 @@ export function GroupDetailsDialog({
           </button>
         </div>
       ) : null}
-      <h3 className="section-title">{group.members.length} members</h3>
+      <h3 className="section-title">
+        {group.members.length} of {group.maxMembers} members
+      </h3>
       <ul className="member-list">
         {group.members.map((member) => (
           <li key={member.uid} className="member-row">
@@ -198,9 +213,18 @@ export function GroupDetailsDialog({
                 {!member.isMe && member.conn !== 'connected' ? ' · not connected yet' : ''}
               </span>
             </div>
-            {!member.isMe && member.introducedHere ? (
-              <button type="button" className="button ghost small" onClick={() => onVerify(member.uid)}>
-                Verify
+            {!member.isMe && !member.canMessage ? (
+              <span className="chip" title="You can talk in this group. One of you stays group-only, so there is no direct chat unless you swap invites.">
+                Group only
+              </span>
+            ) : null}
+            {!member.isMe ? (
+              <button
+                type="button"
+                className="button ghost small"
+                onClick={() => (member.canMessage ? onMessage(member.uid) : onVerify(member.uid))}
+              >
+                {member.canMessage ? 'Message' : 'Details'}
               </button>
             ) : null}
             {active && group.amAdmin && !member.isMe ? (
@@ -220,7 +244,7 @@ export function GroupDetailsDialog({
         adding ? (
           <div className="field">
             <span>Add from your friends</span>
-            <FriendPicker friends={addable} picked={picked} onToggle={toggle} />
+            <FriendPicker friends={addable} picked={picked} onToggle={toggle} max={room} />
             <div className="button-row">
               <button
                 type="button"
@@ -244,11 +268,17 @@ export function GroupDetailsDialog({
           </div>
         ) : (
           <div className="button-row">
-            <button type="button" className="button secondary" disabled={addable.length === 0} onClick={() => setAdding(true)}>
+            <button type="button" className="button secondary" disabled={addable.length === 0 || group.full} onClick={() => setAdding(true)}>
               <UserIcon size={16} />
               Add member
             </button>
-            {addable.length === 0 ? <span className="muted small">All your friends are already here.</span> : null}
+            {group.full ? (
+              <span className="muted small">This group is full ({group.maxMembers} people is the limit).</span>
+            ) : addable.length === 0 ? (
+              <span className="muted small">
+                {state.contacts.some((c) => !c.direct) ? 'Group-only people cannot be added from here.' : 'All your friends are already here.'}
+              </span>
+            ) : null}
           </div>
         )
       ) : (

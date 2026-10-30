@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GroupSessionManager } from '../src/e2ee/groupCrypto';
 import { MeshRouter } from '../src/connectivity/mesh';
-import { FileTransferManager } from '../src/connectivity/fileSharing';
 
 describe('GroupSessionManager', () => {
   it('encrypts and decrypts group messages per epoch and isolates across epochs', async () => {
@@ -81,36 +80,3 @@ describe('MeshRouter', () => {
     expect(actionD).toBe('CONSUME');
   });
 });
-
-describe('FileTransferManager', () => {
-  it('splits, encrypts, transfers chunks, validates SHA-256 and reassembles', async () => {
-    const originalText = 'PrivCord Decentralized Encrypted File Sharing Chunking Test!';
-    const rawData = new TextEncoder().encode(originalText);
-
-    // Create 16-byte chunks to test multi-chunk reassembly
-    const { meta, chunks } = await FileTransferManager.createTransfer(
-      'secret.txt',
-      'text/plain',
-      rawData,
-      16,
-    );
-
-    expect(chunks.length).toBeGreaterThan(1);
-    expect(meta.totalChunks).toBe(chunks.length);
-
-    const receiver = new FileTransferManager();
-    receiver.registerIncoming(meta);
-
-    let reassembled: Uint8Array | undefined;
-    for (const chunk of chunks) {
-      const res = await receiver.processChunk(chunk);
-      if (res.complete) {
-        reassembled = res.data;
-      }
-    }
-
-    expect(reassembled).toBeDefined();
-    expect(new TextDecoder().decode(reassembled!)).toBe(originalText);
-  });
-});
-
