@@ -1,7 +1,7 @@
 [package]
 name = "duochat"
 version = "0.1.0"
-description = "DuoChat private two-person messenger"
+description = "PrivCord private messenger"
 authors = ["anandkrishna1900"]
 license-file = "../../../LICENSE"
 edition = "2021"
