@@ -11,6 +11,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -24,11 +25,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.duochat.app.data.EnginePhase
 import com.duochat.app.data.local.ContactEntity
 import com.duochat.app.data.local.GroupEntity
+import com.duochat.app.data.local.GroupMemberEntity
 import com.duochat.app.ui.AppViewModel
 import com.duochat.app.ui.ChatScreen
 import com.duochat.app.ui.ContactDialog
 import com.duochat.app.ui.DuoChatTheme
 import com.duochat.app.ui.FatalScreen
+import com.duochat.app.ui.GroupScreen
 import com.duochat.app.ui.HomeScreen
 import com.duochat.app.ui.LoadingScreen
 import com.duochat.app.ui.OnboardingScreen
@@ -54,6 +57,12 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private sealed class Screen {
+    object Home : Screen()
+    object Chat : Screen()
+    data class Group(val entity: GroupEntity) : Screen()
+}
+
 @Composable
 private fun RootScreen(viewModel: AppViewModel) {
     val chat by viewModel.chat.collectAsStateWithLifecycle()
@@ -62,10 +71,19 @@ private fun RootScreen(viewModel: AppViewModel) {
     val contacts by viewModel.contacts.collectAsStateWithLifecycle()
     val groups by viewModel.groups.collectAsStateWithLifecycle()
 
-    var activeConversationTitle by remember { mutableStateOf<String?>(null) }
-    var inChatScreen by remember { mutableStateOf(false) }
+    var screen by remember { mutableStateOf<Screen>(Screen.Home) }
+    var activeChatTitle by remember { mutableStateOf<String?>(null) }
     var settingsOpenFromHome by remember { mutableStateOf(false) }
     var pairingOpenFromHome by remember { mutableStateOf(false) }
+
+    // Members for the active group screen
+    var groupMembers by remember { mutableStateOf<List<GroupMemberEntity>>(emptyList()) }
+    val activeGroup = (screen as? Screen.Group)?.entity
+    LaunchedEffect(activeGroup?.groupId) {
+        if (activeGroup != null) {
+            viewModel.loadGroupMembers(activeGroup.groupId) { groupMembers = it }
+        }
+    }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -92,23 +110,78 @@ private fun RootScreen(viewModel: AppViewModel) {
             onRetry = viewModel::startEngine,
         )
 
-        !inChatScreen -> {
+        screen is Screen.Group -> {
+            val grp = (screen as Screen.Group).entity
+            BackHandler { screen = Screen.Home }
+            GroupScreen(
+                group = grp,
+                members = groupMembers,
+                contacts = contacts,
+                myUid = state.uid,
+                onBack = { screen = Screen.Home },
+                onAddMember = { contact, onResult ->
+                    viewModel.addGroupMember(grp.groupId, contact) { result ->
+                        if (result.isSuccess) {
+                            viewModel.loadGroupMembers(grp.groupId) { groupMembers = it }
+                        }
+                        onResult(result)
+                    }
+                },
+                onRemoveMember = { uid ->
+                    viewModel.removeGroupMember(grp.groupId, uid)
+                    viewModel.loadGroupMembers(grp.groupId) { groupMembers = it }
+                },
+            )
+        }
+
+        screen is Screen.Chat -> {
+            BackHandler { screen = Screen.Home }
+            ChatScreen(
+                state = state,
+                settings = settings,
+                conversationTitle = activeChatTitle,
+                onBack = { screen = Screen.Home },
+                onSend = viewModel::send,
+                onRetry = viewModel::retry,
+                onClearNotice = viewModel::clearNotice,
+                onConfirmPeer = viewModel::confirmPeer,
+                onOwnCard = viewModel::ownCard,
+                onPreviewContact = viewModel::previewContact,
+                onConfirmContact = viewModel::confirmContact,
+                onCancelContact = viewModel::cancelContact,
+                onCancelManual = viewModel::cancelManual,
+                onResetPairing = viewModel::resetPairing,
+                onClearLocalData = viewModel::clearLocalData,
+                onUpdateSettings = viewModel::updateSettings,
+                onCreateManualOffer = viewModel::createManualOffer,
+                onApplyManualAnswer = viewModel::applyManualAnswer,
+                onAcceptManualOffer = viewModel::acceptManualOffer,
+                onConnectBluetooth = viewModel::connectBluetooth,
+                onBluetoothPermissionResult = viewModel::refreshBluetooth,
+                onRunNuke = viewModel::runNuke,
+                onRunChatSwitch = viewModel::runChatSwitch,
+                killSwitchReport = killSwitchReport,
+                onAcknowledgeKillSwitch = viewModel::acknowledgeKillSwitch,
+            )
+        }
+
+        else -> {
+            // Home screen
             HomeScreen(
                 state = state,
                 settings = settings,
                 contacts = contacts,
                 groups = groups,
                 onSelectContact = { contact ->
-                    activeConversationTitle = contact.name
-                    inChatScreen = true
+                    activeChatTitle = contact.name
+                    screen = Screen.Chat
                 },
                 onSelectGroup = { group ->
-                    activeConversationTitle = group.name
-                    inChatScreen = true
+                    screen = Screen.Group(group)
                 },
                 onOpenDefaultChat = {
-                    activeConversationTitle = null
-                    inChatScreen = true
+                    activeChatTitle = null
+                    screen = Screen.Chat
                 },
                 onAddContact = viewModel::addContact,
                 onCreateGroup = viewModel::createGroup,
@@ -148,40 +221,6 @@ private fun RootScreen(viewModel: AppViewModel) {
                     onDismiss = { pairingOpenFromHome = false },
                 )
             }
-        }
-
-        else -> {
-            BackHandler {
-                inChatScreen = false
-            }
-
-            ChatScreen(
-                state = state,
-                settings = settings,
-                conversationTitle = activeConversationTitle,
-                onBack = { inChatScreen = false },
-                onSend = viewModel::send,
-                onRetry = viewModel::retry,
-                onClearNotice = viewModel::clearNotice,
-                onConfirmPeer = viewModel::confirmPeer,
-                onOwnCard = viewModel::ownCard,
-                onPreviewContact = viewModel::previewContact,
-                onConfirmContact = viewModel::confirmContact,
-                onCancelContact = viewModel::cancelContact,
-                onCancelManual = viewModel::cancelManual,
-                onResetPairing = viewModel::resetPairing,
-                onClearLocalData = viewModel::clearLocalData,
-                onUpdateSettings = viewModel::updateSettings,
-                onCreateManualOffer = viewModel::createManualOffer,
-                onApplyManualAnswer = viewModel::applyManualAnswer,
-                onAcceptManualOffer = viewModel::acceptManualOffer,
-                onConnectBluetooth = viewModel::connectBluetooth,
-                onBluetoothPermissionResult = viewModel::refreshBluetooth,
-                onRunNuke = viewModel::runNuke,
-                onRunChatSwitch = viewModel::runChatSwitch,
-                killSwitchReport = killSwitchReport,
-                onAcknowledgeKillSwitch = viewModel::acknowledgeKillSwitch,
-            )
         }
     }
 }
