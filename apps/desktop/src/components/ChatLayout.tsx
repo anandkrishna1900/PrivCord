@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
-import type { User } from 'firebase/auth';
 import type { ChatEngine, ChatState } from '../lib/engine';
 import type { AppSettings } from '../lib/settings';
-import { formatLastSeen } from '../lib/format';
+import { LOCAL_ID } from '../lib/identity';
 import { Avatar } from './Avatar';
 import { ConnectionBadge } from './ConnectionBadge';
 import { Composer } from './Composer';
@@ -19,27 +18,23 @@ import {
   LinkIcon,
   LoaderIcon,
   LockIcon,
-  LogOutIcon,
+  RefreshIcon,
   SettingsIcon,
   ShieldIcon,
   XIcon,
 } from './Icons';
 
 export function ChatLayout({
-  user,
   state,
   engine,
   settings,
   updateSettings,
-  onSignOut,
   fatal,
 }: {
-  user: User;
   state: ChatState | null;
   engine: ChatEngine | null;
   settings: AppSettings;
   updateSettings: (patch: Partial<AppSettings>) => void;
-  onSignOut: () => Promise<void>;
   fatal: string | null;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -52,8 +47,8 @@ export function ChatLayout({
   const [dismissed, setDismissed] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const peerName = state?.peerProfile?.displayName ?? 'Your friend';
-  const selfName = state?.selfProfile?.displayName ?? user.displayName ?? user.email ?? 'You';
+  const peerName = settings.peerNickname || 'Your friend';
+  const selfName = 'You';
 
   useEffect(() => {
     document.title = `${peerName} · DuoChat`;
@@ -95,9 +90,9 @@ export function ChatLayout({
           <p className="eyebrow">Startup failed</p>
           <h1>DuoChat could not initialize</h1>
           <p className="muted">{fatal}</p>
-          <button type="button" className="button secondary" onClick={() => void onSignOut()}>
-            <LogOutIcon size={16} />
-            Sign out
+          <button type="button" className="button secondary" onClick={() => window.location.reload()}>
+            <RefreshIcon size={16} />
+            Reload
           </button>
         </section>
       </main>
@@ -128,28 +123,23 @@ export function ChatLayout({
           <p className="eyebrow">Conversation unavailable</p>
           <h1>DuoChat could not start</h1>
           <p className="muted">{state.error ?? 'Unknown startup error.'}</p>
-          <button type="button" className="button secondary" onClick={() => void onSignOut()}>
-            <LogOutIcon size={16} />
-            Sign out
+          <button type="button" className="button secondary" onClick={() => window.location.reload()}>
+            <RefreshIcon size={16} />
+            Reload
           </button>
         </section>
       </main>
     );
   }
 
-  const peerActive =
-    state.p2pConnected ||
-    (state.cloudConnected &&
-      state.peerProfile?.lastSeenAt != null &&
-      Date.now() - state.peerProfile.lastSeenAt < 150_000);
+  const peerActive = state.p2pConnected;
   const subline = state.p2pConnected
     ? 'Direct connection active'
-    : peerActive
-      ? 'Active now'
-      : formatLastSeen(state.peerProfile?.lastSeenAt ?? null);
+    : state.paired
+      ? 'Not connected'
+      : 'Not paired yet';
   const noticeVisible = state.notice && state.notice !== dismissed;
   const errorVisible = state.error;
-  const directMode = settings.messageMode === 'direct';
 
   return (
     <div className={`app-shell ${sidebarOpen ? 'sidebar-open' : ''}`}>
@@ -188,7 +178,7 @@ export function ChatLayout({
           <button type="button" className="sidebar-button" onClick={() => openSettings('connection')}>
             <LinkIcon size={17} />
             Connection
-            <span className={`nav-dot tone-${state.cloudConnected ? 'online' : state.p2pConnected ? 'direct' : 'offline'}`} />
+            <span className={`nav-dot tone-${state.p2pConnected ? 'direct' : 'offline'}`} />
           </button>
           <button type="button" className="sidebar-button" onClick={() => openSettings('profile')}>
             <SettingsIcon size={17} />
@@ -212,15 +202,6 @@ export function ChatLayout({
 
         <div className="sidebar-footer">
           <span className="muted small">v0.1.0</span>
-          <button
-            type="button"
-            className="icon-button subtle"
-            onClick={() => void onSignOut()}
-            aria-label="Sign out"
-            title="Sign out"
-          >
-            <LogOutIcon size={16} />
-          </button>
         </div>
       </aside>
 
@@ -242,16 +223,6 @@ export function ChatLayout({
             </div>
           </div>
           <div className="chat-header-actions">
-            <span
-              className={`mode-pill ${directMode ? 'direct' : ''}`}
-              title={
-                directMode
-                  ? 'Direct mode: no cloud message upload'
-                  : 'Cloud mode: messages sync through the cloud'
-              }
-            >
-              {directMode ? 'Direct' : 'Cloud'}
-            </span>
             <button
               type="button"
               className="connection-button"
@@ -327,8 +298,8 @@ export function ChatLayout({
           <div className="banner warning" role="alert">
             <ShieldIcon size={16} />
             <span>
-              A direct channel is open but its identity is not cloud-verified.
-              Compare the safety number before sending.
+              A direct channel is open but this device is not verified yet.
+              Compare the safety number with your friend, then confirm it.
             </span>
             <button type="button" className="button small secondary" onClick={openManual}>
               Verify
@@ -351,12 +322,9 @@ export function ChatLayout({
           messages={state.messages}
           selfUid={state.uid}
           peerName={peerName}
-          hasOlder={state.hasOlder}
-          loadingOlder={state.loadingOlder}
-          onLoadOlder={() => void engine?.loadOlder()}
           onRetry={(messageId) => void engine?.retry(messageId)}
           peerDirect={state.p2pConnected}
-          directMode={directMode}
+          paired={state.paired}
         />
 
         <Composer
@@ -364,9 +332,7 @@ export function ChatLayout({
             engine?.send(text) ?? Promise.resolve({ ok: false as const, error: 'Not ready.' })
           }
           disabled={state.phase !== 'ready'}
-          connected={directMode ? state.p2pConnected : state.cloudConnected || state.p2pConnected}
-          queued={directMode ? !state.p2pConnected : !state.cloudConnected && !state.p2pConnected}
-          directMode={directMode}
+          connected={state.p2pConnected}
         />
       </main>
 
@@ -376,10 +342,8 @@ export function ChatLayout({
         initialSection={settingsSection}
         engine={engine}
         state={state}
-        email={user.email ?? ''}
         settings={settings}
         updateSettings={updateSettings}
-        onSignOut={onSignOut}
         onOpenManual={openManual}
         onOpenNuke={() => setNukeOpen(true)}
         onOpenRecovery={(mode) => {
@@ -399,12 +363,11 @@ export function ChatLayout({
         open={nukeOpen}
         onClose={() => setNukeOpen(false)}
         engine={engine}
-        uid={user.uid}
+        uid={LOCAL_ID}
         peerUid={state?.peerUid ?? ''}
         onFinished={async () => {
-          // Wipe finished: drop the session so the app lands on the very
-          // first identity screen.
-          await onSignOut();
+          // Wipe finished: reload so the app starts over with a fresh identity.
+          window.location.reload();
         }}
       />
 
@@ -412,14 +375,14 @@ export function ChatLayout({
         open={clearChatOpen}
         onClose={() => setClearChatOpen(false)}
         engine={engine}
-        uid={user.uid}
+        uid={LOCAL_ID}
         peerUid={state?.peerUid ?? ''}
       />
 
       <RecoveryDialog
         open={recoveryOpen}
         onClose={() => setRecoveryOpen(false)}
-        uid={user.uid}
+        uid={LOCAL_ID}
         mode={recoveryMode}
       />
     </div>

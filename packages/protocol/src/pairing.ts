@@ -154,9 +154,6 @@ export function reconnectDelayMs(
   return Math.min(max, base * 2 ** bounded);
 }
 
-export function canAutoReconnect(
-  state: PairingStoreState,
-  messageMode: 'cloud' | 'direct',
-): boolean {
-  return messageMode === 'direct' && state.autoReconnect;
+export function canAutoReconnect(state: PairingStoreState): boolean {
+  return state.record !== null && state.autoReconnect;
 }

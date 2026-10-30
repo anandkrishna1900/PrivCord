@@ -3,9 +3,7 @@ import {
   MAX_TEXT_LENGTH,
   createOutgoingMessage,
   createPeerMessageFrame,
-  fromCloudMessage,
   parsePeerMessageFrame,
-  toCloudMessagePayload,
   validateOutgoingText,
 } from '../src';
 
@@ -32,7 +30,6 @@ describe('message validation', () => {
     const message = createOutgoingMessage({ senderId: sender, text: 'hi', now: 1000 });
     expect(message.messageId).toBe(message.clientMessageId);
     expect(message.deliveryState).toBe('QUEUED');
-    expect(message.syncedToCloud).toBe(false);
     expect(message.clientCreatedAt).toBe(1000);
   });
 
@@ -43,65 +40,18 @@ describe('message validation', () => {
   });
 });
 
-describe('cloud payloads', () => {
-  it('round-trips a message through the cloud representation', () => {
-    const message = createOutgoingMessage({
-      senderId: sender,
-      text: 'cloud hello',
-      now: 2000,
-    });
-    const payload = toCloudMessagePayload(message);
-    const decoded = fromCloudMessage(message.messageId, {
-      ...payload,
-      createdAt: { toMillis: () => 2500 },
-    });
-    expect(decoded.ok).toBe(true);
-    if (!decoded.ok) return;
-    expect(decoded.value.text).toBe('cloud hello');
-    expect(decoded.value.syncedToCloud).toBe(true);
-    expect(decoded.value.serverCreatedAt).toBe(2500);
-  });
-
-  it('rejects a mismatched document id and bad fields', () => {
-    expect(
-      fromCloudMessage('a', {
-        messageId: 'b',
-        senderId: sender,
-        text: 'x',
-        type: 'text',
-        clientMessageId: 'b',
-        clientCreatedAt: 1,
-        transport: 'cloud',
-      }).ok,
-    ).toBe(false);
-    expect(
-      fromCloudMessage('a', {
-        messageId: 'a',
-        senderId: sender,
-        text: '',
-        type: 'text',
-        clientMessageId: 'a',
-        clientCreatedAt: 1,
-        transport: 'cloud',
-      }).ok,
-    ).toBe(false);
-  });
-});
-
 describe('peer frames', () => {
   it('round-trips a text frame', () => {
     const message = createOutgoingMessage({
       senderId: sender,
       text: 'direct',
       now: 3000,
-      transport: 'p2p',
     });
     const parsed = parsePeerMessageFrame(
       JSON.parse(JSON.stringify(createPeerMessageFrame(message))),
     );
     expect(parsed?.text).toBe('direct');
     expect(parsed?.transport).toBe('p2p');
-    expect(parsed?.syncedToCloud).toBe(false);
   });
 
   it('drops malformed or spoofed frames', () => {

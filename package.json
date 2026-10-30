@@ -2,7 +2,7 @@
   "name": "duochat",
   "version": "0.1.0",
   "private": true,
-  "description": "DuoChat — private cloud + peer-to-peer messaging for exactly two people",
+  "description": "DuoChat \u2014 private two-person messenger: end-to-end encrypted, direct WebRTC, no accounts",
   "workspaces": [
     "packages/protocol",
     "apps/desktop"
@@ -13,19 +13,12 @@
     "tauri:dev": "npm --workspace @duochat/desktop run tauri:dev",
     "tauri:build": "npm --workspace @duochat/desktop run tauri:build",
     "test": "npm --workspace @duochat/protocol run test && npm --workspace @duochat/desktop run test",
-    "typecheck": "npm --workspace @duochat/protocol run typecheck && npm --workspace @duochat/desktop run typecheck",
-    "test:rules": "npm --prefix firebase/rules-tests test"
+    "typecheck": "npm --workspace @duochat/protocol run typecheck && npm --workspace @duochat/desktop run typecheck"
   },
   "engines": {
     "node": ">=20"
   },
   "allowScripts": {
-    "esbuild@0.25.12": true,
-    "@firebase/util@1.12.1": true,
-    "protobufjs@7.6.6": true,
-    "@firebase/util@1.15.3": true
-  },
-  "devDependencies": {
-    "firebase-admin": "^14.5.0"
+    "esbuild@0.25.12": true
   }
 }

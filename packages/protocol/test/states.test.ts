@@ -2,45 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { deriveConnectionMode, presentConnection } from '../src';
 
 describe('connection modes', () => {
-  it('derives all combined modes', () => {
-    expect(
-      deriveConnectionMode({ cloudConnected: true, p2pConnected: true }),
-    ).toBe('CLOUD_AND_P2P_CONNECTED');
-    expect(
-      deriveConnectionMode({ cloudConnected: true, p2pConnected: false }),
-    ).toBe('CLOUD_CONNECTED');
-    expect(
-      deriveConnectionMode({ cloudConnected: false, p2pConnected: true }),
-    ).toBe('P2P_CONNECTED');
-    expect(
-      deriveConnectionMode({ cloudConnected: false, p2pConnected: false }),
-    ).toBe('OFFLINE_QUEUED');
-    expect(
-      deriveConnectionMode({
-        cloudConnected: false,
-        p2pConnected: false,
-        connecting: true,
-      }),
-    ).toBe('CONNECTING');
-    expect(
-      deriveConnectionMode({
-        cloudConnected: false,
-        p2pConnected: false,
-        reconnecting: true,
-      }),
-    ).toBe('RECONNECTING');
-    expect(
-      deriveConnectionMode({
-        cloudConnected: false,
-        p2pConnected: false,
-        failed: true,
-      }),
-    ).toBe('CONNECTION_FAILED');
+  it('derives every mode', () => {
+    expect(deriveConnectionMode({ p2pConnected: true })).toBe('P2P_CONNECTED');
+    expect(deriveConnectionMode({ p2pConnected: false })).toBe('OFFLINE_QUEUED');
+    expect(deriveConnectionMode({ p2pConnected: false, connecting: true })).toBe('CONNECTING');
+    expect(deriveConnectionMode({ p2pConnected: false, reconnecting: true })).toBe('RECONNECTING');
+    expect(deriveConnectionMode({ p2pConnected: false, failed: true })).toBe('CONNECTION_FAILED');
   });
 
-  it('describes direct-only operation honestly', () => {
+  it('describes direct operation honestly', () => {
     const presentation = presentConnection('P2P_CONNECTED');
-    expect(presentation.detail).toMatch(/cloud sync is unavailable/i);
+    expect(presentation.detail).toMatch(/never touch a server/i);
     expect(presentation.tone).toBe('direct');
   });
 

@@ -33,19 +33,18 @@ describe('merge and dedupe', () => {
     expect(merged).toHaveLength(2);
   });
 
-  it('promotes delivery state and cloud sync without duplicating', () => {
+  it('promotes delivery state without duplicating', () => {
     const local = msg('a', 1, 'SENT');
-    const cloud = { ...msg('a', 1, 'DELIVERED'), syncedToCloud: true };
-    const merged = mergeMessages([local], [cloud]);
+    const incoming = msg('a', 1, 'DELIVERED');
+    const merged = mergeMessages([local], [incoming]);
     expect(merged).toHaveLength(1);
     expect(merged[0]?.deliveryState).toBe('DELIVERED');
-    expect(merged[0]?.syncedToCloud).toBe(true);
   });
 
   it('never regresses a read receipt', () => {
     const local = { ...msg('a', 1, 'READ'), readAt: 99 };
-    const cloud = { ...msg('a', 1, 'DELIVERED'), syncedToCloud: true };
-    const merged = mergeMessages([local], [cloud]);
+    const incoming = msg('a', 1, 'DELIVERED');
+    const merged = mergeMessages([local], [incoming]);
     expect(merged[0]?.deliveryState).toBe('READ');
     expect(merged[0]?.readAt).toBe(99);
   });

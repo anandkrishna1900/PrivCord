@@ -20,11 +20,9 @@ interface MessageRow {
   sender_id: string;
   text_cipher: string;
   client_created_at: number;
-  server_created_at: number | null;
   message_type: string;
   transport: string;
   delivery_state: string;
-  synced_to_cloud: number;
   read_at: number | null;
 }
 
@@ -60,11 +58,9 @@ function rowToMessage(row: MessageRow): Omit<ChatMessage, 'text'> & {
     clientMessageId: row.client_message_id,
     senderId: row.sender_id,
     clientCreatedAt: row.client_created_at,
-    serverCreatedAt: row.server_created_at,
     type: 'text',
-    transport: row.transport === 'p2p' ? 'p2p' : 'cloud',
+    transport: 'p2p',
     deliveryState: row.delivery_state as DeliveryState,
-    syncedToCloud: row.synced_to_cloud === 1,
     readAt: row.read_at,
     textCipher: row.text_cipher,
   };
@@ -101,11 +97,9 @@ export class LocalStore {
             sender_id TEXT NOT NULL,
             text_cipher TEXT NOT NULL,
             client_created_at INTEGER NOT NULL,
-            server_created_at INTEGER,
             message_type TEXT NOT NULL,
             transport TEXT NOT NULL,
             delivery_state TEXT NOT NULL,
-            synced_to_cloud INTEGER NOT NULL DEFAULT 0,
             read_at INTEGER
           )
         `);
@@ -198,11 +192,9 @@ export class LocalStore {
       sender_id: message.senderId,
       text_cipher: await this.encrypt(message.text),
       client_created_at: message.clientCreatedAt,
-      server_created_at: message.serverCreatedAt ?? null,
       message_type: message.type,
       transport: message.transport,
       delivery_state: message.deliveryState,
-      synced_to_cloud: message.syncedToCloud ? 1 : 0,
       read_at: message.readAt ?? null,
     };
   }
@@ -213,14 +205,12 @@ export class LocalStore {
       await this.sql.execute(
         `INSERT INTO messages (
           message_id, client_message_id, sender_id, text_cipher, client_created_at,
-          server_created_at, message_type, transport, delivery_state, synced_to_cloud, read_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+          message_type, transport, delivery_state, read_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
         ON CONFLICT(message_id) DO UPDATE SET
           text_cipher = excluded.text_cipher,
-          server_created_at = excluded.server_created_at,
           transport = excluded.transport,
           delivery_state = excluded.delivery_state,
-          synced_to_cloud = excluded.synced_to_cloud,
           read_at = excluded.read_at`,
         [
           row.message_id,
@@ -228,11 +218,9 @@ export class LocalStore {
           row.sender_id,
           row.text_cipher,
           row.client_created_at,
-          row.server_created_at,
           row.message_type,
           row.transport,
           row.delivery_state,
-          row.synced_to_cloud,
           row.read_at,
         ],
       );
@@ -254,9 +242,7 @@ export class LocalStore {
     messageId: string,
     patch: {
       deliveryState?: DeliveryState;
-      transport?: 'cloud' | 'p2p';
-      syncedToCloud?: boolean;
-      serverCreatedAt?: number | null;
+      transport?: 'p2p';
       readAt?: number | null;
     },
   ): Promise<void> {
@@ -270,10 +256,6 @@ export class LocalStore {
       if (patch.deliveryState !== undefined)
         add('delivery_state', patch.deliveryState);
       if (patch.transport !== undefined) add('transport', patch.transport);
-      if (patch.syncedToCloud !== undefined)
-        add('synced_to_cloud', patch.syncedToCloud ? 1 : 0);
-      if (patch.serverCreatedAt !== undefined)
-        add('server_created_at', patch.serverCreatedAt);
       if (patch.readAt !== undefined) add('read_at', patch.readAt);
       if (assignments.length === 0) return;
       values.push(messageId);
@@ -288,10 +270,6 @@ export class LocalStore {
     if (!row) return;
     if (patch.deliveryState !== undefined) row.delivery_state = patch.deliveryState;
     if (patch.transport !== undefined) row.transport = patch.transport;
-    if (patch.syncedToCloud !== undefined)
-      row.synced_to_cloud = patch.syncedToCloud ? 1 : 0;
-    if (patch.serverCreatedAt !== undefined)
-      row.server_created_at = patch.serverCreatedAt;
     if (patch.readAt !== undefined) row.read_at = patch.readAt;
     this.writeBrowser(state);
   }

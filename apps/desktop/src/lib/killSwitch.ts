@@ -57,7 +57,7 @@ export interface DesktopKillSwitchDeps extends KillSwitchTargets {
   deleteSecret(key: string): Promise<void>;
   /** webview key/value storage, localStorage in this app. */
   webStorage: WebStorageLike;
-  /** Close direct channels, signaling, timers. */
+  /** Close direct channels and timers. */
   stopNetworking(): void;
   /** Option A content erase for the conversation (engine + store). */
   clearChatContent(): Promise<void>;
@@ -105,7 +105,7 @@ export function createAppKillSwitchExecutor(
           ctx.stopNetworking();
           return {
             status: 'erased',
-            details: 'Direct channels closed, signaling stopped, sync timers cancelled. (No Bluetooth transport exists on the desktop app.)',
+            details: 'Direct channels closed and timers cancelled. (No Bluetooth transport exists on the desktop app.)',
           };
         }
         case 'services.stop': {
@@ -131,7 +131,7 @@ export function createAppKillSwitchExecutor(
           );
           return {
             status: 'erased',
-            details: 'Local trust records deleted. Profiles live in the cloud account and are outside local deletion.',
+            details: 'Local trust records (the pinned peer key) deleted.',
           };
         }
         case 'attachments.erase': {

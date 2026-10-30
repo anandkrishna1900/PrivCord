@@ -6,14 +6,10 @@ export function Composer({
   onSend,
   disabled,
   connected,
-  queued,
-  directMode,
 }: {
   onSend: (text: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   disabled: boolean;
   connected: boolean;
-  queued: boolean;
-  directMode: boolean;
 }) {
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -81,11 +77,7 @@ export function Composer({
           placeholder={
             connected
               ? 'Write a message…'
-              : directMode
-                ? 'Write a message — it stays local until a direct channel is ready…'
-                : queued
-                  ? 'Write a message — it will queue until a connection returns…'
-                  : 'Reconnecting…'
+              : 'Write a message — it is sent when you connect…'
           }
           rows={1}
           maxLength={MAX_TEXT_LENGTH + 200}
@@ -111,9 +103,7 @@ export function Composer({
         </div>
       </div>
       <p className="composer-hint">
-        {directMode
-          ? 'Enter sends · Shift + Enter adds a line · Direct mode never uploads message text to the cloud'
-          : 'Enter sends · Shift + Enter adds a line · Messages stay on this device until transport accepts them'}
+        Enter sends · Shift + Enter adds a line · Messages go straight to your friend and are never uploaded
       </p>
     </div>
   );

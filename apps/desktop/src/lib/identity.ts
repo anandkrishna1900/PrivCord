@@ -1,6 +1,14 @@
-import { signatureToBase64, type ChatMessage } from '@duochat/protocol';
+import {
+  createPairingRecord,
+  isPairingRecord,
+  signatureToBase64,
+  type ChatMessage,
+  type PairingRecord,
+} from '@duochat/protocol';
 import { secretGet, secretSet } from './secureStore';
-import { fetchPeerDeviceKey } from './cloud';
+
+/** Fixed suffix for per-install secrets (the key itself defines who we are). */
+export const LOCAL_ID = 'local';
 
 export interface DeviceIdentity {
   uid: string;
@@ -20,9 +28,21 @@ export function localDeviceId(): string {
   return id;
 }
 
-export async function loadOrCreateIdentity(uid: string): Promise<DeviceIdentity> {
+/** Stable account id: a SHA-256 fingerprint of the public key. Nothing to register or sign in to. */
+export async function uidFromPublicJwk(jwk: JsonWebKey): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(`${jwk.x ?? ''}.${jwk.y ?? ''}`),
+  );
+  const hex = [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+  return `u${hex.slice(0, 32)}`;
+}
+
+export async function loadOrCreateIdentity(): Promise<DeviceIdentity> {
   const deviceId = localDeviceId();
-  const secretKey = `ec-private-${uid}`;
+  const secretKey = `ec-private-${LOCAL_ID}`;
   let privateJwk: JsonWebKey | null = null;
   const stored = await secretGet(secretKey);
   if (stored) {
@@ -48,7 +68,7 @@ export async function loadOrCreateIdentity(uid: string): Promise<DeviceIdentity>
     x: privateJwk.x,
     y: privateJwk.y,
   };
-  return { uid, deviceId, privateJwk, publicJwk };
+  return { uid: await uidFromPublicJwk(publicJwk), deviceId, privateJwk, publicJwk };
 }
 
 export async function signChallenge(
@@ -72,47 +92,35 @@ export async function signChallenge(
 
 const peerKeyCachePrefix = 'duochat.peer-key.';
 
-export function cachePeerDeviceKey(
-  uid: string,
-  deviceId: string,
-  jwk: JsonWebKey,
-): void {
-  localStorage.setItem(
-    `${peerKeyCachePrefix}${uid}.${deviceId}`,
-    JSON.stringify({ kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y }),
-  );
-}
-
-export function cachedPeerDeviceKey(
-  uid: string,
-  deviceId: string,
-): JsonWebKey | null {
-  const raw = localStorage.getItem(`${peerKeyCachePrefix}${uid}.${deviceId}`);
-  if (!raw) return null;
-  try {
-    const value = JSON.parse(raw) as JsonWebKey;
-    if (typeof value.x === 'string' && typeof value.y === 'string') return value;
-  } catch {
-    // Fall through to null.
+/** The one pinned peer (this app is exactly two people), or null before first pairing. */
+export function loadPairing(): PairingRecord | null {
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    if (!key?.startsWith(peerKeyCachePrefix)) continue;
+    try {
+      const value: unknown = JSON.parse(localStorage.getItem(key) ?? '');
+      if (isPairingRecord(value)) return value;
+    } catch {
+      // Ignore unreadable entries.
+    }
   }
   return null;
 }
 
-export async function resolvePeerDeviceKey(
-  uid: string,
-  deviceId: string,
-): Promise<{ key: JsonWebKey; source: 'cloud' | 'cache' } | null> {
-  try {
-    const key = await fetchPeerDeviceKey(uid, deviceId);
-    if (key) {
-      cachePeerDeviceKey(uid, deviceId, key);
-      return { key, source: 'cloud' };
-    }
-  } catch {
-    // Offline: fall back to the last verified key.
-  }
-  const cached = cachedPeerDeviceKey(uid, deviceId);
-  return cached ? { key: cached, source: 'cache' } : null;
+export function savePairing(input: {
+  peerUid: string;
+  peerDeviceId: string;
+  publicKeyJwk: JsonWebKey;
+  safetyNumber: string;
+}): PairingRecord {
+  const previous = loadPairing();
+  const record = createPairingRecord({ ...input, previous });
+  purgePeerKeyCaches();
+  localStorage.setItem(
+    `${peerKeyCachePrefix}${record.peerUid}.${record.peerDeviceId}`,
+    JSON.stringify(record),
+  );
+  return record;
 }
 
 export function isOwnMessage(message: ChatMessage, uid: string): boolean {

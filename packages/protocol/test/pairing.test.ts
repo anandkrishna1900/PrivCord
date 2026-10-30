@@ -52,7 +52,7 @@ describe('pairing records', () => {
     ).toEqual(EMPTY_PAIRING_STATE);
   });
 
-  it('only persists cloud-verified or user-confirmed peers', () => {
+  it('only persists verified or user-confirmed peers', () => {
     expect(shouldPersistPairing('verified')).toBe(true);
     expect(shouldPersistPairing('confirmed')).toBe(true);
     expect(shouldPersistPairing('unverified')).toBe(false);
@@ -109,9 +109,9 @@ describe('pairing status and reconnect backoff', () => {
     expect(reconnectDelayMs(2, { baseMs: 1_000, maxMs: 2_500 })).toBe(2_500);
   });
 
-  it('only auto-reconnects in direct mode when enabled', () => {
-    expect(canAutoReconnect({ record, autoReconnect: true }, 'direct')).toBe(true);
-    expect(canAutoReconnect({ record, autoReconnect: false }, 'direct')).toBe(false);
-    expect(canAutoReconnect({ record, autoReconnect: true }, 'cloud')).toBe(false);
+  it('only auto-reconnects with a saved peer when enabled', () => {
+    expect(canAutoReconnect({ record, autoReconnect: true })).toBe(true);
+    expect(canAutoReconnect({ record, autoReconnect: false })).toBe(false);
+    expect(canAutoReconnect({ record: null, autoReconnect: true })).toBe(false);
   });
 });
