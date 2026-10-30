@@ -298,7 +298,7 @@ export function ChatLayout({
             ) : null}
 
             <MessageList
-              key={current ? (person ? person.uid : group!.groupId) : 'none'}
+              convId={selected ?? ''}
               messages={messages}
               isGroup={group !== null}
               empty={

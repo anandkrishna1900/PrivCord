@@ -1,10 +1,6 @@
 package com.duochat.app.ui
 
-import android.Manifest
-import android.os.Build
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -32,44 +28,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.PersonAdd
-import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.WifiOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
-import android.graphics.BitmapFactory
-import androidx.compose.foundation.Image
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Image as ImageIcon
-import androidx.compose.material.icons.filled.InsertDriveFile
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
-import com.duochat.app.data.local.ContactEntity
-import com.duochat.app.data.local.GroupEntity
-
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -102,16 +74,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.duochat.app.data.AppSettings
 import com.duochat.app.data.ChatMessage
 import com.duochat.app.data.ChatState
-import com.duochat.app.data.ConnectionTone
+import com.duochat.app.data.ContactTrust
+import com.duochat.app.data.ContactView
 import com.duochat.app.data.DeliveryState
+import com.duochat.app.data.EnginePhase
+import com.duochat.app.data.GroupView
+import com.duochat.app.data.LinkStatus
 import com.duochat.app.data.MAX_TEXT_LENGTH
-import com.duochat.app.data.P2PState
-import com.duochat.app.data.PeerTrust
 import com.duochat.app.data.countCodePoints
-import com.duochat.app.data.presentConnection
 import java.text.SimpleDateFormat
 import java.time.Instant
 import java.time.LocalDate
@@ -120,275 +92,149 @@ import java.time.format.DateTimeFormatter
 import java.util.Date
 import java.util.Locale
 
+/**
+ * One conversation: a friend or a group. The header shows the name, one status line and a single overflow menu.
+ * Dangerous actions (erase everything) are not here; they live in Settings > Security.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
     state: ChatState,
-    settings: AppSettings,
+    conversationId: String,
+    muted: Boolean,
+    onBack: () -> Unit,
     onSend: (String, (Result<Unit>) -> Unit) -> Unit,
     onRetry: (String) -> Unit,
     onClearNotice: () -> Unit,
-    onConfirmPeer: () -> Unit,
-    onOwnCard: () -> String,
-    onPreviewContact: (String) -> Result<Unit>,
-    onConfirmContact: () -> Unit,
-    onCancelContact: () -> Unit,
-    onCancelManual: () -> Unit,
-    onResetPairing: () -> Unit,
-    onClearLocalData: ((Result<Unit>) -> Unit) -> Unit,
-    onUpdateSettings: (AppSettings.() -> AppSettings) -> Unit,
-    onCreateManualOffer: ((Result<String>) -> Unit) -> Unit,
-    onApplyManualAnswer: (String, (Result<Unit>) -> Unit) -> Unit,
-    onAcceptManualOffer: ((String, (Result<String>) -> Unit) -> Unit),
-    onConnectBluetooth: ((Result<Unit>) -> Unit) -> Unit = {},
-    onBluetoothPermissionResult: () -> Unit = {},
-    onRunNuke: () -> Unit = {},
-    onRunChatSwitch: (Boolean, (Result<Boolean>) -> Unit) -> Unit = { _, _ -> },
-    conversationTitle: String? = null,
-    onBack: (() -> Unit)? = null,
-    killSwitchReport: com.duochat.app.security.KillSwitchReport? = null,
-    onAcknowledgeKillSwitch: () -> Unit = {},
+    onOpenDetails: () -> Unit,
+    onVerify: () -> Unit,
+    onToggleMute: () -> Unit,
+    onClearChat: () -> Unit,
+    onConnectBluetooth: () -> Unit,
 ) {
-    var settingsOpen by remember { mutableStateOf(false) }
-    var manualOpen by remember { mutableStateOf(false) }
-    var contactOpen by remember { mutableStateOf(false) }
-    var nukeOpen by remember { mutableStateOf(false) }
-    var clearChatOpen by remember { mutableStateOf(false) }
-    val notificationPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        if (granted) onUpdateSettings { copy(notificationsEnabled = true) }
-    }
+    val friend: ContactView? = state.contacts.firstOrNull { it.uid == conversationId }
+    val group: GroupView? = state.groups.firstOrNull { it.groupId == conversationId }
+    val title = friend?.name ?: group?.name ?: "Chat"
+    val messages = state.messages[conversationId].orEmpty()
+    val canWrite = state.phase == EnginePhase.READY && (friend != null || group?.iAmMember == true)
+    var menuOpen by remember { mutableStateOf(false) }
+    var clearConfirm by remember { mutableStateOf(false) }
 
-    val requestNotifications = {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-        } else {
-            onUpdateSettings { copy(notificationsEnabled = true) }
+    val status = when {
+        friend != null -> when (friend.link) {
+            LinkStatus.CONNECTED -> friend.path?.let { "Connected · ${it.label}" } ?: "Connected"
+            LinkStatus.CONNECTING -> "Connecting…"
+            LinkStatus.OFFLINE -> "Waiting for ${friend.name}"
         }
-    }
-
-    val peerName = conversationTitle ?: settings.peerNickname.ifBlank { "Your friend" }
-    val peerActive = state.p2pConnected
-    val subline = when {
-        state.p2pConnected -> "Direct connection active"
-        state.paired -> "Not connected"
-        else -> "Not paired yet"
+        group != null -> group.exitNote ?: "${group.members.size} members · ${group.connectedCount} connected"
+        else -> ""
     }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+                navigationIcon = {
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                },
                 title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        InitialsAvatar(peerName, 38, online = peerActive)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable(onClick = onOpenDetails),
+                    ) {
+                        InitialsAvatar(title, 38, online = friend?.link == LinkStatus.CONNECTED || (group?.connectedCount ?: 0) > 0)
                         Spacer(Modifier.width(10.dp))
                         Column {
+                            Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
-                                peerName,
-                                style = MaterialTheme.typography.titleMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                subline,
+                                status,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
                 },
                 actions = {
-                    IconButton(onClick = { contactOpen = true }) {
-                        Icon(Icons.Filled.PersonAdd, contentDescription = "Add your friend")
-                    }
-                    IconButton(onClick = { manualOpen = true }) {
-                        Icon(Icons.Filled.Key, contentDescription = "Connect with a code")
-                    }
-                    IconButton(onClick = { settingsOpen = true }) {
-                        Icon(Icons.Filled.Settings, contentDescription = "Settings")
-                    }
-                    IconButton(onClick = { clearChatOpen = true }) {
-                        Icon(Icons.Filled.DeleteForever, contentDescription = "Clear Everything")
+                    Box {
+                        IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More") }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text(if (group != null) "Group details" else "Friend details") },
+                                onClick = { menuOpen = false; onOpenDetails() },
+                            )
+                            if (friend != null && !friend.checked) {
+                                DropdownMenuItem(text = { Text("Check it's really them") }, onClick = { menuOpen = false; onVerify() })
+                            }
+                            DropdownMenuItem(
+                                text = { Text(if (muted) "Unmute notifications" else "Mute notifications") },
+                                onClick = { menuOpen = false; onToggleMute() },
+                            )
+                            if (friend != null && friend.link != LinkStatus.CONNECTED) {
+                                DropdownMenuItem(
+                                    text = { Text("Connect over Bluetooth") },
+                                    onClick = { menuOpen = false; onConnectBluetooth() },
+                                )
+                            }
+                            DropdownMenuItem(text = { Text("Clear this chat") }, onClick = { menuOpen = false; clearConfirm = true })
+                        }
                     }
                 },
             )
         },
         bottomBar = {
-            Composer(
-                enabled = state.phase == com.duochat.app.data.EnginePhase.READY,
-                connected = state.p2pConnected,
-                modifier = Modifier.navigationBarsPadding().imePadding(),
-                onSend = onSend,
-            )
+            if (canWrite) {
+                Composer(
+                    connected = friend?.link == LinkStatus.CONNECTED || (group?.connectedCount ?: 0) > 0,
+                    modifier = Modifier.navigationBarsPadding().imePadding(),
+                    onSend = { text, done -> onSend(text, done) },
+                )
+            } else if (group != null) {
+                Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
+                    Text(
+                        (group.exitNote ?: "You cannot write here") + ". You can still read this chat.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    )
+                }
+            }
         },
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-        ) {
-            ConnectionSummary(state)
-            state.error?.let { message ->
-                Banner(
-                    icon = Icons.Filled.ErrorOutline,
-                    text = message,
-                    container = MaterialTheme.colorScheme.errorContainer,
-                    content = MaterialTheme.colorScheme.onErrorContainer,
-                    onDismiss = onClearNotice,
-                )
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            state.error?.let { Banner(Icons.Filled.ErrorOutline, it, MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.onErrorContainer, onDismiss = onClearNotice) }
+            state.notice?.let {
+                Banner(Icons.Filled.Shield, it, MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer, onDismiss = onClearNotice)
             }
-            state.notice?.let { message ->
+            if (friend != null && friend.trust == ContactTrust.INTRODUCED && !friend.checked) {
                 Banner(
-                    icon = Icons.Filled.Link,
-                    text = message,
-                    container = MaterialTheme.colorScheme.primaryContainer,
-                    content = MaterialTheme.colorScheme.onPrimaryContainer,
-                    onDismiss = onClearNotice,
-                )
-            }
-            if (state.p2pState == P2PState.CONNECTED && state.peerTrust == PeerTrust.UNVERIFIED) {
-                Banner(
-                    icon = Icons.Filled.Shield,
-                    text = "A direct channel is open but this device is not verified yet. " +
-                        "Compare the safety number with your friend, then confirm it.",
-                    container = MaterialTheme.colorScheme.surfaceVariant,
-                    content = MaterialTheme.colorScheme.onSurfaceVariant,
-                    actionLabel = "Verify",
-                    onAction = {
-                        manualOpen = true
-                    },
+                    Icons.Filled.Shield,
+                    "Introduced by ${friend.introducedByName ?: "a group member"}. You can check it's really ${friend.name}.",
+                    MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant,
+                    actionLabel = "Verify", onAction = onVerify,
                 )
             }
             MessageList(
-                state = state,
+                messages = messages,
                 selfUid = state.uid,
-                peerName = peerName,
+                isGroup = group != null,
+                nameOf = { uid -> group?.members?.firstOrNull { it.uid == uid }?.name ?: friend?.name ?: "Member" },
                 onRetry = onRetry,
                 modifier = Modifier.weight(1f),
             )
         }
     }
 
-    if (settingsOpen) {
-        SettingsDialog(
-            state = state,
-            settings = settings,
-            peerName = peerName,
-            onDismiss = { settingsOpen = false },
-            onRequestNotifications = requestNotifications,
-            onUpdateSettings = onUpdateSettings,
-            onResetPairing = onResetPairing,
-            onClearLocalData = onClearLocalData,
-            onOpenManual = {
-                settingsOpen = false
-                manualOpen = true
-            },
-            onOpenNuke = {
-                settingsOpen = false
-                nukeOpen = true
-            },
-            onConnectBluetooth = onConnectBluetooth,
-            onBluetoothPermissionResult = onBluetoothPermissionResult,
-        )
-    }
-
-    if (contactOpen) {
-        ContactDialog(
-            state = state,
-            ownCard = onOwnCard,
-            onPreview = onPreviewContact,
-            onConfirm = onConfirmContact,
-            onCancel = onCancelContact,
-            onDismiss = { contactOpen = false },
-        )
-    }
-
-    if (manualOpen) {
-        ManualConnectDialog(
-            state = state,
-            onDismiss = {
-                if (!state.p2pConnected) onCancelManual()
-                manualOpen = false
-            },
-            onConfirmPeer = onConfirmPeer,
-            onCreateOffer = onCreateManualOffer,
-            onApplyAnswer = onApplyManualAnswer,
-            onAcceptOffer = onAcceptManualOffer,
-        )
-    }
-
-    if (nukeOpen) {
-        NukeDialog(
-            onDismiss = { nukeOpen = false },
-            onRun = { onRunNuke() },
-            report = killSwitchReport,
-            onDone = {
-                nukeOpen = false
-                onAcknowledgeKillSwitch()
-            },
-        )
-    }
-
-    if (clearChatOpen) {
-        ClearChatDialog(
-            onDismiss = { clearChatOpen = false },
-            onRun = { mode ->
-                onRunChatSwitch(mode == DeleteChatMode.CLEAR_AND_SESSION) {
-                    // completion handler
-                }
-            },
-            report = killSwitchReport,
-            onDone = {
-                clearChatOpen = false
-                onAcknowledgeKillSwitch()
-            },
-        )
-    }
-}
-
-@Composable
-private fun ConnectionSummary(state: ChatState) {
-    val presentation = presentConnection(state.connectionMode, state.queuedCount)
-    val toneColor = when (presentation.tone) {
-        ConnectionTone.ONLINE -> MaterialTheme.colorScheme.primary
-        ConnectionTone.DIRECT -> Color(0xFF0D9488)
-        ConnectionTone.BUSY -> Color(0xFFD97706)
-        ConnectionTone.OFFLINE -> MaterialTheme.colorScheme.onSurfaceVariant
-        ConnectionTone.ERROR -> MaterialTheme.colorScheme.error
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(toneColor),
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            presentation.label,
-            style = MaterialTheme.typography.labelSmall,
-            color = toneColor,
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            // The real route, read from the selected ICE candidate pair.
-            state.connectionPath?.label ?: presentation.detail,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+    if (clearConfirm) {
+        AlertDialog(
+            onDismissRequest = { clearConfirm = false },
+            title = { Text("Clear this chat?") },
+            text = { Text("The messages are deleted from this phone only. $title keeps their copy.") },
+            confirmButton = { TextButton(onClick = { clearConfirm = false; onClearChat() }) { Text("Clear") } },
+            dismissButton = { TextButton(onClick = { clearConfirm = false }) { Text("Cancel") } },
         )
     }
 }
@@ -404,23 +250,11 @@ private fun Banner(
     onAction: (() -> Unit)? = null,
 ) {
     Surface(color = container, modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Row(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(17.dp))
             Spacer(Modifier.width(9.dp))
-            Text(
-                text,
-                style = MaterialTheme.typography.bodySmall,
-                color = content,
-                modifier = Modifier.weight(1f),
-            )
-            if (actionLabel != null && onAction != null) {
-                TextButton(onClick = onAction) {
-                    Text(actionLabel, color = content)
-                }
-            }
+            Text(text, style = MaterialTheme.typography.bodySmall, color = content, modifier = Modifier.weight(1f))
+            if (actionLabel != null && onAction != null) TextButton(onClick = onAction) { Text(actionLabel, color = content) }
             if (onDismiss != null) {
                 IconButton(onClick = onDismiss, modifier = Modifier.size(30.dp)) {
                     Icon(Icons.Filled.Close, contentDescription = "Dismiss", tint = content)
@@ -432,49 +266,33 @@ private fun Banner(
 
 @Composable
 private fun MessageList(
-    state: ChatState,
+    messages: List<ChatMessage>,
     selfUid: String,
-    peerName: String,
+    isGroup: Boolean,
+    nameOf: (String) -> String,
     onRetry: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val messages = state.messages
     val listState = rememberLazyListState()
     val lastId = messages.lastOrNull()?.messageId
     LaunchedEffect(lastId) {
-        if (messages.isNotEmpty()) {
-            val target = messages.lastIndex
-            if (target >= 0) listState.animateScrollToItem(target)
-        }
+        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
 
     if (messages.isEmpty()) {
-        Box(
-            modifier = modifier.fillMaxWidth().padding(24.dp),
-            contentAlignment = Alignment.Center,
-        ) {
+        Box(modifier = modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                ) {
+                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
                     Icon(
-                        Icons.Filled.Shield,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(18.dp).size(30.dp),
+                        Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(18.dp).size(28.dp),
                     )
                 }
                 Spacer(Modifier.height(14.dp))
+                Text("No messages yet", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(6.dp))
                 Text(
-                    "Your private conversation starts here",
-                    style = MaterialTheme.typography.titleMedium,
-                    textAlign = TextAlign.Center,
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Messages are stored only on this device and sent straight to your friend " +
-                        "over an encrypted direct connection. No account, no server.",
+                    "Messages here are end-to-end encrypted and kept only on your phones.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -494,18 +312,16 @@ private fun MessageList(
             val day = formatDay(message.clientCreatedAt)
             val previous = messages.getOrNull(index - 1)
             val showDay = previous == null || formatDay(previous.clientCreatedAt) != day
-            val grouped = previous != null &&
-                !showDay &&
-                previous.senderId == message.senderId &&
+            val grouped = previous != null && !showDay && previous.senderId == message.senderId &&
                 message.clientCreatedAt - previous.clientCreatedAt < 4 * 60_000
             Column {
-                if (showDay) {
-                    DaySeparator(day)
-                }
+                if (showDay) DaySeparator(day)
+                val own = message.senderId == selfUid
                 MessageBubble(
                     message = message,
-                    own = message.senderId == selfUid,
-                    peerName = peerName,
+                    own = own,
+                    senderName = if (own) "You" else nameOf(message.senderId),
+                    showName = isGroup && !own && !grouped,
                     showAvatar = !grouped,
                     grouped = grouped,
                     onRetry = onRetry,
@@ -517,18 +333,10 @@ private fun MessageList(
 
 @Composable
 private fun DaySeparator(label: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-        horizontalArrangement = Arrangement.Center,
-    ) {
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            shape = RoundedCornerShape(20.dp),
-        ) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.Center) {
+        Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(20.dp)) {
             Text(
-                label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
             )
         }
@@ -540,7 +348,8 @@ private fun DaySeparator(label: String) {
 private fun MessageBubble(
     message: ChatMessage,
     own: Boolean,
-    peerName: String,
+    senderName: String,
+    showName: Boolean,
     showAvatar: Boolean,
     grouped: Boolean,
     onRetry: (String) -> Unit,
@@ -554,116 +363,46 @@ private fun MessageBubble(
         horizontalArrangement = if (own) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.Bottom,
     ) {
-        if (!own) {
-            Box(Modifier.width(30.dp)) {
-                if (showAvatar) InitialsAvatar(peerName, 26)
-            }
+        if (!own && showName) {
+            // Group chats: a small avatar next to the first message of a run.
+            Box(Modifier.width(30.dp)) { if (showAvatar) InitialsAvatar(senderName, 26) }
+        } else if (!own) {
+            Spacer(Modifier.width(30.dp))
         }
         Box {
             Surface(
-                color = if (own) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.surfaceVariant
-                },
+                color = if (own) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                 shape = RoundedCornerShape(
-                    topStart = 18.dp,
-                    topEnd = 18.dp,
+                    topStart = 18.dp, topEnd = 18.dp,
                     bottomStart = if (own || grouped) 18.dp else 4.dp,
                     bottomEnd = if (!own || grouped) 18.dp else 4.dp,
                 ),
-                modifier = Modifier
-                    .widthIn(max = 310.dp)
-                    .combinedClickable(
-                        onClick = {},
-                        onLongClick = { menuOpen = true },
-                    ),
+                modifier = Modifier.widthIn(max = 310.dp).combinedClickable(onClick = {}, onLongClick = { menuOpen = true }),
             ) {
                 Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                    val attachMatch = remember(message.text) {
-                        Regex("""^\[Attachment: ([^:]+):([^\]]+)\]$""").find(message.text.trim())
-                    }
-                    if (attachMatch != null) {
-                        val attachType = attachMatch.groupValues[1] // e.g. "image"
-                        val attachId = attachMatch.groupValues[2]   // e.g. "1000103850"
-                        val isImage = attachType == "image"
-                        // Try to load as a content URI thumbnail
-                        val context2 = LocalContext.current
-                        val bmp = remember(attachId) {
-                            runCatching {
-                                val uri = android.net.Uri.parse("content://media/external/images/media/$attachId")
-                                context2.contentResolver.openInputStream(uri)?.use { stream ->
-                                    android.graphics.BitmapFactory.decodeStream(stream)
-                                }
-                            }.getOrNull()
-                        }
-                        Surface(
-                            color = if (own) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                                    else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(12.dp),
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(8.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                            ) {
-                                if (isImage && bmp != null) {
-                                    androidx.compose.foundation.Image(
-                                        bitmap = bmp.asImageBitmap(),
-                                        contentDescription = "Image attachment",
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .widthIn(max = 260.dp)
-                                            .clip(RoundedCornerShape(10.dp)),
-                                        contentScale = androidx.compose.ui.layout.ContentScale.FillWidth,
-                                    )
-                                } else {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.padding(4.dp),
-                                    ) {
-                                        Icon(
-                                            if (isImage) Icons.Filled.ImageIcon else Icons.Filled.InsertDriveFile,
-                                            contentDescription = null,
-                                            tint = if (own) MaterialTheme.colorScheme.onPrimary
-                                                   else MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(28.dp),
-                                        )
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(
-                                            if (isImage) "Image #$attachId" else "$attachType: $attachId",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = if (own) MaterialTheme.colorScheme.onPrimary
-                                                    else MaterialTheme.colorScheme.onSurface,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    } else {
+                    if (showName) {
                         Text(
-                            text = message.text,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = if (own) {
-                                MaterialTheme.colorScheme.onPrimary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
+                            senderName, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold,
+                            color = Color.hsl(avatarHue(senderName).toFloat(), 0.6f, 0.62f),
                         )
                     }
+                    Text(
+                        text = message.text,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (own) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     Spacer(Modifier.height(3.dp))
-                    Row(
-                        modifier = Modifier.align(Alignment.End),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            formatTime(message.clientCreatedAt),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (own) {
-                                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f)
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                            },
-                        )
+                    Row(modifier = Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically) {
+                        val subtle = if (own) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f)
+                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                        if (own && message.totalRecipients > 0 && message.deliveredTo < message.totalRecipients) {
+                            Text(
+                                "Delivered to ${message.deliveredTo} of ${message.totalRecipients}",
+                                style = MaterialTheme.typography.labelSmall, color = subtle,
+                            )
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        Text(formatTime(message.clientCreatedAt), style = MaterialTheme.typography.labelSmall, color = subtle)
                         if (own) {
                             Spacer(Modifier.width(4.dp))
                             DeliveryIndicator(message.deliveryState) { onRetry(message.messageId) }
@@ -671,19 +410,10 @@ private fun MessageBubble(
                     }
                 }
             }
-            DropdownMenu(
-                expanded = menuOpen,
-                onDismissRequest = { menuOpen = false },
-            ) {
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 DropdownMenuItem(
                     text = { Text("Copy message") },
-                    leadingIcon = {
-                        Icon(
-                            Icons.Filled.ContentCopy,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    },
+                    leadingIcon = { Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp)) },
                     onClick = {
                         clipboard.setText(AnnotatedString(message.text))
                         menuOpen = false
@@ -700,45 +430,18 @@ private fun DeliveryIndicator(state: DeliveryState, onRetry: () -> Unit) {
     val color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
     when (state) {
         DeliveryState.FAILED -> Icon(
-            Icons.Filled.ErrorOutline,
-            contentDescription = "Delivery failed. Tap to retry.",
-            tint = MaterialTheme.colorScheme.error,
-            modifier = Modifier.size(15.dp).clickable(onClick = onRetry),
+            Icons.Filled.ErrorOutline, contentDescription = "Not delivered. Tap to retry.",
+            tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(15.dp).clickable(onClick = onRetry),
         )
-
-        DeliveryState.QUEUED -> Icon(
-            Icons.Filled.Schedule,
-            contentDescription = "Queued locally",
-            tint = color,
-            modifier = Modifier.size(14.dp),
-        )
-
-        DeliveryState.SENT -> Icon(
-            Icons.Filled.Check,
-            contentDescription = "Accepted by transport",
-            tint = color,
-            modifier = Modifier.size(14.dp),
-        )
-
-        DeliveryState.DELIVERED -> Icon(
-            Icons.Filled.DoneAll,
-            contentDescription = "Delivered",
-            tint = color,
-            modifier = Modifier.size(15.dp),
-        )
-
-        DeliveryState.READ -> Icon(
-            Icons.Filled.DoneAll,
-            contentDescription = "Read",
-            tint = MaterialTheme.colorScheme.onPrimary,
-            modifier = Modifier.size(15.dp),
-        )
+        DeliveryState.QUEUED -> Icon(Icons.Filled.Schedule, contentDescription = "Waiting to send", tint = color, modifier = Modifier.size(14.dp))
+        DeliveryState.SENT -> Icon(Icons.Filled.Check, contentDescription = "Sent", tint = color, modifier = Modifier.size(14.dp))
+        DeliveryState.DELIVERED -> Icon(Icons.Filled.DoneAll, contentDescription = "Delivered", tint = color, modifier = Modifier.size(15.dp))
+        DeliveryState.READ -> Icon(Icons.Filled.DoneAll, contentDescription = "Read", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(15.dp))
     }
 }
 
 @Composable
 private fun Composer(
-    enabled: Boolean,
     connected: Boolean,
     modifier: Modifier = Modifier,
     onSend: (String, (Result<Unit>) -> Unit) -> Unit,
@@ -748,56 +451,23 @@ private fun Composer(
     var sending by remember { mutableStateOf(false) }
     val length = countCodePoints(text)
     val overLimit = length > MAX_TEXT_LENGTH
+    val canSend = !sending && text.trim().isNotEmpty() && !overLimit
 
     fun send() {
-        if (!enabled || sending || text.trim().isEmpty() || overLimit) return
-        val snapshot = text
+        if (!canSend) return
         sending = true
-        onSend(snapshot) { result ->
+        onSend(text) { result ->
             sending = false
-            result.onSuccess {
-                text = ""
-                error = null
-            }.onFailure {
-                error = it.message ?: "Message could not be queued."
-            }
+            result.onSuccess { text = ""; error = null }.onFailure { error = it.message ?: "Message could not be queued." }
         }
     }
 
-    Surface(
-        modifier = modifier,
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 3.dp,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-        ) {
+    Surface(modifier = modifier, color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp) {
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
             error?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(bottom = 6.dp),
-                )
-            }
-            val fileLauncher = rememberLauncherForActivityResult(
-                contract = ActivityResultContracts.GetContent(),
-            ) { uri ->
-                if (uri != null) {
-                    onSend("[Attachment: " + (uri.lastPathSegment ?: "file") + "]") {}
-                }
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 6.dp))
             }
             Row(verticalAlignment = Alignment.Bottom) {
-                IconButton(
-                    onClick = { fileLauncher.launch("*/*") },
-                    enabled = enabled,
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Text("📎", style = MaterialTheme.typography.titleMedium)
-                }
-                Spacer(Modifier.width(4.dp))
                 OutlinedTextField(
                     value = text,
                     onValueChange = {
@@ -807,16 +477,7 @@ private fun Composer(
                         }
                     },
                     modifier = Modifier.weight(1f),
-                    enabled = enabled,
-                    placeholder = {
-                        Text(
-                            if (connected) {
-                                "Write a message…"
-                            } else {
-                                "Write a message — it is sent when you connect…"
-                            },
-                        )
-                    },
+                    placeholder = { Text(if (connected) "Message" else "Message (sent when you connect)") },
                     maxLines = 5,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { send() }),
@@ -825,56 +486,28 @@ private fun Composer(
                 Spacer(Modifier.width(8.dp))
                 IconButton(
                     onClick = { send() },
-                    enabled = enabled && !sending && text.trim().isNotEmpty() && !overLimit,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (enabled && text.trim().isNotEmpty()) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.surfaceVariant
-                            },
-                        ),
+                    enabled = canSend,
+                    modifier = Modifier.size(48.dp).clip(CircleShape).background(
+                        if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                    ),
                 ) {
                     if (sending) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                        )
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                     } else {
                         Icon(
-                            Icons.Filled.Send,
-                            contentDescription = "Send message",
-                            tint = if (enabled && text.trim().isNotEmpty()) {
-                                MaterialTheme.colorScheme.onPrimary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
+                            Icons.AutoMirrored.Filled.Send, contentDescription = "Send message",
+                            tint = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
+            if (length > MAX_TEXT_LENGTH - 400) {
                 Text(
-                    "Messages go straight to your friend and are never uploaded",
+                    "$length / $MAX_TEXT_LENGTH",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (overLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.align(Alignment.End).padding(top = 4.dp),
                 )
-                if (length > MAX_TEXT_LENGTH - 400) {
-                    Text(
-                        "$length / $MAX_TEXT_LENGTH",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (overLimit) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
-                }
             }
         }
     }
@@ -885,32 +518,21 @@ fun InitialsAvatar(name: String, size: Int, online: Boolean = false) {
     val hue = avatarHue(name.ifBlank { "duochat" })
     Box(contentAlignment = Alignment.BottomEnd) {
         Box(
-            modifier = Modifier
-                .size(size.dp)
-                .clip(CircleShape)
-                .background(Color.hsl(hue.toFloat(), 0.55f, 0.45f)),
+            modifier = Modifier.size(size.dp).clip(CircleShape).background(Color.hsl(hue.toFloat(), 0.55f, 0.45f)),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                initials(name),
-                color = Color.White,
-                fontSize = (size * 0.34f).sp,
-                fontWeight = FontWeight.SemiBold,
-            )
+            Text(initials(name), color = Color.White, fontSize = (size * 0.34f).sp, fontWeight = FontWeight.SemiBold)
         }
         if (online) {
             Box(
-                Modifier
-                    .size((size * 0.28f).dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary),
+                Modifier.size((size * 0.28f).dp).clip(CircleShape).background(Color(0xFF22C55E))
+                    .padding(1.dp),
             )
         }
     }
 }
 
-fun formatTime(timestamp: Long): String =
-    SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(timestamp))
+fun formatTime(timestamp: Long): String = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(timestamp))
 
 fun formatDay(timestamp: Long): String {
     val zone = ZoneId.systemDefault()
@@ -923,24 +545,11 @@ fun formatDay(timestamp: Long): String {
     }
 }
 
-fun formatLastSeen(timestamp: Long?): String {
-    if (timestamp == null) return "Last seen unavailable"
-    val delta = System.currentTimeMillis() - timestamp
-    return when {
-        delta < 90_000 -> "Active recently"
-        delta < 3_600_000 -> "Last seen ${maxOf(1, (delta / 60_000).toInt())}m ago"
-        delta < 86_400_000 -> "Last seen ${maxOf(1, (delta / 3_600_000).toInt())}h ago"
-        else -> "Last seen " + SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(timestamp))
-    }
-}
-
 fun initials(name: String): String {
     val parts = name.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
     if (parts.isEmpty()) return "?"
     if (parts.size == 1) return parts[0].take(2).uppercase(Locale.getDefault())
-    return (
-        parts.first().take(1) + parts.last().take(1)
-        ).uppercase(Locale.getDefault())
+    return (parts.first().take(1) + parts.last().take(1)).uppercase(Locale.getDefault())
 }
 
 fun avatarHue(seed: String): Int {

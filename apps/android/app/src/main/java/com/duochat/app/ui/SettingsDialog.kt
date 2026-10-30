@@ -67,27 +67,22 @@ import com.duochat.app.data.ChatState
 import com.duochat.app.data.NetworkConfig
 import com.duochat.app.data.SignalingConfig
 import com.duochat.app.data.TurnServer
-import com.duochat.app.data.PeerTrust
-import com.duochat.app.data.presentConnection
 
 @Composable
 fun SettingsDialog(
     state: ChatState,
     settings: AppSettings,
-    peerName: String,
     onDismiss: () -> Unit,
     onRequestNotifications: () -> Unit,
     onUpdateSettings: (AppSettings.() -> AppSettings) -> Unit,
-    onResetPairing: () -> Unit,
     onClearLocalData: ((Result<Unit>) -> Unit) -> Unit,
     onOpenManual: () -> Unit,
     onOpenNuke: () -> Unit,
-    onConnectBluetooth: ((Result<Unit>) -> Unit) -> Unit = {},
     onBluetoothPermissionResult: () -> Unit = {},
 ) {
-    var nickname by remember { mutableStateOf(settings.peerNickname) }
+    var displayName by remember { mutableStateOf(settings.displayName) }
     var nameStatus by remember { mutableStateOf<String?>(null) }
-    var resetConfirm by remember { mutableStateOf(false) }
+    var advanced by remember { mutableStateOf(false) }
     var stunText by remember { mutableStateOf(settings.network.stun.joinToString("\n")) }
     val firstTurn = settings.network.turn.firstOrNull()
     var turnUrls by remember { mutableStateOf(firstTurn?.urls?.joinToString("\n").orEmpty()) }
@@ -140,102 +135,41 @@ fun SettingsDialog(
                 )
                 Spacer(Modifier.height(16.dp))
 
-                SectionTitle("You & your friend")
+                SectionTitle("Profile")
                 Text(
-                    "There are no accounts. Your identity is a key that lives on this device; " +
-                        "your friend is the device you paired with.",
+                    "There are no accounts. Your identity is a key that lives on this phone. " +
+                        "Friends see this name on your invite and in groups.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(10.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    InitialsAvatar(nickname.ifBlank { peerName }, 52)
-                    Spacer(Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            nickname.ifBlank { "Your friend" },
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                        Text(
-                            (if (state.paired) "Paired" else "Not paired yet") + " · " +
-                                (if (state.p2pConnected) "connected now" else "not connected"),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                Spacer(Modifier.height(10.dp))
                 OutlinedTextField(
-                    value = nickname,
-                    onValueChange = { nickname = it.take(40) },
-                    label = { Text("Nickname for your friend") },
+                    value = displayName,
+                    onValueChange = { displayName = it.take(40) },
+                    label = { Text("Your name") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(8.dp))
                 Button(
                     onClick = {
-                        onUpdateSettings { copy(peerNickname = nickname.trim()) }
-                        nameStatus = "Saved on this device."
+                        onUpdateSettings { copy(displayName = displayName.trim()) }
+                        nameStatus = "Saved. New invites and groups use this name."
                     },
-                    enabled = nickname.trim() != settings.peerNickname,
+                    enabled = displayName.trim() != settings.displayName,
                 ) {
-                    Text("Save nickname")
+                    Text("Save name")
                 }
                 nameStatus?.let {
                     Spacer(Modifier.height(6.dp))
-                    Text(
-                        it,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Spacer(Modifier.height(10.dp))
-                DetailRow("Your ID", state.uid, monospace = true)
-                DetailRow("Friend's ID", state.peerUid ?: "—", monospace = true)
-                if (state.paired) {
-                    Spacer(Modifier.height(8.dp))
-                    if (resetConfirm) {
-                        Text(
-                            "Forgets your friend's key so a different device can be paired. " +
-                                "Messages are kept.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(
-                                onClick = {
-                                    onResetPairing()
-                                    resetConfirm = false
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.error,
-                                ),
-                            ) {
-                                Text("Yes, reset pairing")
-                            }
-                            TextButton(onClick = { resetConfirm = false }) { Text("Cancel") }
-                        }
-                    } else {
-                        OutlinedButton(onClick = { resetConfirm = true }) {
-                            Text("Reset pairing")
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(14.dp))
-                BluetoothBlock(
-                    status = state.bluetooth,
-                    onConnect = onConnectBluetooth,
-                    onPermissionResult = onBluetoothPermissionResult,
-                )
 
                 Spacer(Modifier.height(18.dp))
                 HorizontalDivider()
                 Spacer(Modifier.height(14.dp))
 
-                SectionTitle("Appearance")
+SectionTitle("Appearance")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ChoiceChip("System", settings.theme == "system") {
                         onUpdateSettings { copy(theme = "system") }
@@ -323,85 +257,30 @@ fun SettingsDialog(
                 HorizontalDivider()
                 Spacer(Modifier.height(14.dp))
 
-                val presentation = presentConnection(state.connectionMode, state.queuedCount)
                 SectionTitle("Connection")
                 Text(
-                    presentation.detail,
+                    "Friends reconnect automatically whenever you are both online. Nothing here needs changing for that to work.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(8.dp))
-                DetailRow(
-                    "Direct channel",
-                    when {
-                        state.p2pConnected -> "Connected"
-                        state.p2pState == com.duochat.app.data.P2PState.CONNECTING -> "Negotiating"
-                        state.p2pState == com.duochat.app.data.P2PState.FAILED -> "Failed"
-                        else -> "Idle"
-                    },
+                DetailRow("Friends connected now", "${state.linkCount} of ${state.contacts.size}")
+                DetailRow("Messages waiting to send", state.queuedCount.toString())
+                DetailRow("Your ID", state.uid.take(16) + "…", monospace = true)
+                Text(
+                    "Most phones can stay connected to about 30 friends at once; beyond that the rest connect when others drop.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                // Read from the selected ICE candidate pair, never inferred from settings.
-                DetailRow(
-                    "Route",
-                    when {
-                        state.connectionPath != null -> state.connectionPath.label
-                        state.p2pConnected -> "Checking…"
-                        else -> "—"
-                    },
-                )
-                state.connectionPath?.let {
-                    Text(
-                        it.detail,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = { advanced = !advanced }) {
+                    Text(if (advanced) "Hide advanced options" else "Advanced options")
                 }
-                DetailRow(
-                    "Peer identity",
-                    if (state.peerTrust == PeerTrust.NONE) "none" else state.peerTrust.name.lowercase(),
-                )
-                DetailRow("Queued messages", state.queuedCount.toString())
-                DetailRow("Local storage", "Room (encrypted payloads)")
-                state.safetyNumber?.let { number ->
-                    Spacer(Modifier.height(10.dp))
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Column(Modifier.padding(12.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    Icons.Filled.Shield,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(15.dp),
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    "Safety number",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                            }
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                number,
-                                fontFamily = FontFamily.Monospace,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                "Compare this with your friend over a separate channel before " +
-                                    "trusting a new device.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
+                if (advanced) {
+                    Spacer(Modifier.height(8.dp))
                 Spacer(Modifier.height(10.dp))
                 OutlinedButton(onClick = onOpenManual) {
-                    Text(if (state.paired) "Reconnect with a code" else "Pair with a code")
+                    Text("Connect with a code (no internet)")
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(
@@ -412,11 +291,14 @@ fun SettingsDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                Spacer(Modifier.height(18.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(14.dp))
 
-                SectionTitle("Communication Mode")
+                    Spacer(Modifier.height(14.dp))
+                    BluetoothBlock(
+                        status = state.bluetooth,
+                        onPermissionResult = onBluetoothPermissionResult,
+                    )
+                    Spacer(Modifier.height(14.dp))
+                    SectionTitle("Communication Mode")
                 Text("Select how DuoChat connects to peers:", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(4.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -579,27 +461,19 @@ fun SettingsDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                }
 
                 Spacer(Modifier.height(18.dp))
                 HorizontalDivider()
                 Spacer(Modifier.height(14.dp))
 
-                SectionTitle("Privacy & local data")
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        "Local message text is encrypted at rest with AES-GCM using a key in " +
-                            "the Android Keystore. Messages never leave your two devices: they " +
-                            "travel over an encrypted direct connection, and no server can read " +
-                            "or keep them.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(12.dp),
-                    )
-                }
+SectionTitle("Security")
+                Text(
+                    "Messages are encrypted on this phone with a key in the Android Keystore and travel straight between " +
+                        "phones; no server can read or keep them. Deleting here never touches your friends' phones.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 Spacer(Modifier.height(10.dp))
                 if (clearConfirm) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -624,7 +498,7 @@ fun SettingsDialog(
                                 )
                                 Spacer(Modifier.width(8.dp))
                             }
-                            Text("Yes, clear local data")
+                            Text("Yes, clear all messages")
                         }
                         TextButton(onClick = { clearConfirm = false }) {
                             Text("Cancel")
@@ -632,7 +506,7 @@ fun SettingsDialog(
                     }
                 } else {
                     OutlinedButton(onClick = { clearConfirm = true }) {
-                        Text("Clear local cache")
+                        Text("Clear all messages")
                     }
                 }
                 clearStatus?.let {
@@ -643,34 +517,17 @@ fun SettingsDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-
-                Spacer(Modifier.height(18.dp))
-                HorizontalDivider()
                 Spacer(Modifier.height(14.dp))
-
-                SectionTitle("Security")
-                Text(
-                    "Emergency deletion for this device. Deletion never touches the other " +
-                        "person's device, screenshots, exports, or external backups.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(10.dp))
                 Surface(
                     color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f),
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(Modifier.padding(14.dp)) {
+                        Text("Erase everything", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                         Text(
-                            "Emergency Actions",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            "Permanently deletes this device's conversations, contacts, keys, " +
-                                "session state, and settings, then starts over with a new identity. " +
-                                "Requires two deliberate confirmation steps.",
+                            "Permanently deletes your chats, friends, groups, keys and settings from this phone and starts over " +
+                                "with a new identity. You will be asked to confirm twice.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = 6.dp),
@@ -680,19 +537,10 @@ fun SettingsDialog(
                                 onDismiss()
                                 onOpenNuke()
                             },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.error,
-                            ),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                         ) {
-                            Text("NUKE DUOCHAT")
+                            Text("Erase everything")
                         }
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            "Per-conversation deletion lives in the chat menu → Security → " +
-                                "Clear Everything.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
                     }
                 }
 
@@ -700,9 +548,9 @@ fun SettingsDialog(
                 HorizontalDivider()
                 Spacer(Modifier.height(14.dp))
 
-                SectionTitle("About DuoChat")
+SectionTitle("About DuoChat")
                 Text(
-                    "Private messaging for exactly two people.",
+                    "Private messaging for friends and groups, with no accounts and no server.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Spacer(Modifier.height(6.dp))
@@ -710,11 +558,10 @@ fun SettingsDialog(
                 DetailRow("Platform", "Android · Kotlin/Compose")
                 DetailRow("Created by", "anandkrishna1900")
                 DetailRow("License", "PC-NC (non-commercial)")
-                DetailRow("Conversation", state.conversationId, monospace = true)
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "Peer connections use a challenge-response identity proof and a safety " +
-                        "number you compare with your friend. No accounts and no analytics.",
+                    "Connections use a challenge-response identity proof, and you can compare a safety " +
+                        "number with a friend. No accounts and no analytics.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -819,7 +666,6 @@ private fun parseColor(value: String): Color = try {
 @Composable
 private fun BluetoothBlock(
     status: BluetoothStatus,
-    onConnect: ((Result<Unit>) -> Unit) -> Unit,
     onPermissionResult: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -838,7 +684,7 @@ private fun BluetoothBlock(
             BluetoothStatus.UNSUPPORTED -> "Not available on this phone"
             BluetoothStatus.NEEDS_PERMISSION -> "Permission needed"
             BluetoothStatus.ADAPTER_OFF -> "Turned off"
-            BluetoothStatus.NOT_PAIRED -> "Add your friend first"
+            BluetoothStatus.NOT_PAIRED -> "Add a friend first"
             BluetoothStatus.READY -> "Ready"
             BluetoothStatus.SEARCHING -> "Searching nearby…"
             BluetoothStatus.CONNECTED -> "Connected"
@@ -847,11 +693,11 @@ private fun BluetoothBlock(
     Text(
         when (status) {
             BluetoothStatus.NEEDS_PERMISSION ->
-                "DuoChat can find your paired friend over Bluetooth when you are close by, with no internet. " +
+                "DuoChat can find your friends over Bluetooth when you are close by, with no internet. " +
                     "It needs the nearby-devices permission for that."
             BluetoothStatus.ADAPTER_OFF -> "Turn Bluetooth on in the quick settings panel, then come back."
             BluetoothStatus.CONNECTED -> "Traffic is encrypted on top of Bluetooth and never touches a server."
-            else -> "Works with the internet off, but only within radio range. Experimental: never run on real radios yet."
+            else -> "Works with the internet off, but only within radio range. To use it, open a friend's chat menu and choose Connect over Bluetooth. Experimental: not tested on real radios."
         },
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -869,10 +715,6 @@ private fun BluetoothBlock(
                         )
                     },
                 ) { Text("Open app settings") }
-            }
-        } else if (status == BluetoothStatus.READY) {
-            OutlinedButton(onClick = { onConnect { result -> message = result.exceptionOrNull()?.message } }) {
-                Text("Connect over Bluetooth")
             }
         }
     }
@@ -894,8 +736,8 @@ private fun BluetoothBlock(
             title = { Text("Allow nearby devices?") },
             text = {
                 Text(
-                    "Bluetooth lets DuoChat find and talk to your paired friend with no internet. DuoChat only " +
-                        "connects to the one device you paired with. It never uses Bluetooth to learn your location.",
+                    "Bluetooth lets DuoChat find and talk to your friends with no internet. DuoChat only " +
+                        "connects to people you added. It never uses Bluetooth to learn your location.",
                 )
             },
             confirmButton = {

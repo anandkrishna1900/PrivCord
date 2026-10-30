@@ -283,6 +283,22 @@ describe('introductions (A adds B, B adds C: A and C connect without any code sh
     for (const n of [nA, nB, nC]) expect(roster(await GroupLog.fromJSON(created.groupId, n.coord.export()[created.groupId]!))).toBe([a!.uid, b!.uid, c!.uid].sort().join(','));
   });
 
+  it('a group created while the link was down reaches the new member when the link opens', async () => {
+    const [a, b] = await Promise.all(['A', 'B'].map(person));
+    const net = new Net();
+    const nA = net.add(new Node(a!));
+    const nB = net.add(new Node(b!));
+    nA.pin(b!); nB.pin(a!);
+    // Created while B is unreachable: nothing could be pushed, B has no group at all.
+    net.setOnline(nB, false);
+    await net.run(nA, await nA.coord.createGroup('Trip', [b!.card]));
+    expect(nB.coord.myGroups().length).toBe(0);
+    net.setOnline(nB, true);
+    await net.reconcile(); // the link opens: B's empty summary tells A to push the whole group
+    expect(nB.coord.myGroups().length).toBe(1);
+    expect(nB.coord.myGroups()[0]!.members.has(a!.uid)).toBe(true);
+  });
+
   it('a member added while another is offline catches up on reconnect', async () => {
     const [a, b, c] = await Promise.all(['A', 'B', 'C'].map(person));
     const net = new Net();

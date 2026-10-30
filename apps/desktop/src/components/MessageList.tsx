@@ -58,11 +58,13 @@ function DeliveryIndicator({
 }
 
 export function MessageList({
+  convId,
   messages,
   isGroup,
   empty,
   onRetry,
 }: {
+  convId: string;
   messages: UiMessage[];
   isGroup: boolean;
   empty: string;
@@ -81,6 +83,11 @@ export function MessageList({
   }
 
   useEffect(() => {
+    didInitialScroll.current = false;
+    lastIdRef.current = undefined;
+  }, [convId]);
+
+  useEffect(() => {
     const element = scrollRef.current;
     if (!element) return;
     const last = messages[messages.length - 1];
@@ -90,7 +97,7 @@ export function MessageList({
       element.scrollTop = element.scrollHeight;
       didInitialScroll.current = true;
     }
-  }, [messages]);
+  }, [messages, convId]);
 
   function onScroll() {
     const element = scrollRef.current;

@@ -355,7 +355,7 @@ await scenario(10, 'A-B-C introduction: A adds B, B adds C to a group; A and C c
   await A.page.waitForSelector('.chat-row:has-text("Cat")', { timeout: 60000 });
   await C.page.waitForSelector('.chat-row:has-text("Ann")', { timeout: 60000 });
   await openChat(A.page, 'Cat');
-  check(/Introduced by Ben/.test(await A.page.locator('.banner').first().innerText()), 'A sees "Introduced by Ben"');
+  check((await A.page.locator('.banner:has-text("Introduced by Ben")').count()) === 1, 'A sees "Introduced by Ben"');
   await connected(A.page, 120000);
   ctx.note(`A <-> C direct link up ${Math.round((Date.now() - t0) / 1000)}s after the add (no invite, no code)`);
   await say(A.page, 'hello Cat, no code needed');
@@ -369,7 +369,7 @@ await scenario(10, 'A-B-C introduction: A adds B, B adds C to a group; A and C c
   await A.page.waitForSelector('text=group hi from Cat', { timeout: 30000 });
   await openChat(B.page, 'Trip');
   await B.page.waitForSelector('text=group hi from Cat', { timeout: 30000 });
-  check(JSON.stringify((await memberNames(A.page)).sort()) === JSON.stringify(['Ann', 'Ben', 'Cat']), 'A sees all three members', await memberNames(A.page));
+  check(JSON.stringify((await memberNames(A.page)).sort()) === JSON.stringify(['Ben', 'Cat', 'You']), 'A sees all three members', await memberNames(A.page));
   const errs = [...A.errors, ...B.errors, ...C.errors];
   check(errs.length === 0, 'no page errors', errs);
 });

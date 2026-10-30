@@ -14,7 +14,6 @@ import androidx.core.content.ContextCompat
 import com.duochat.app.MainActivity
 import com.duochat.app.R
 import com.duochat.app.data.AppSettings
-import com.duochat.app.data.ChatMessage
 
 object DuoNotifications {
     const val CHANNEL_ID = "messages"
@@ -33,21 +32,12 @@ object DuoNotifications {
         manager.createNotificationChannel(channel)
     }
 
-    fun showIncoming(
-        context: Context,
-        message: ChatMessage,
-        senderName: String,
-        settings: AppSettings,
-    ) {
-        val body = if (settings.notificationPreviews) {
-            preview(message.text)
-        } else {
-            "Open DuoChat to read it."
-        }
+    fun showNotice(context: Context, notice: com.duochat.app.engine.IncomingNotice, settings: AppSettings) {
+        val body = if (notice.isMessage && !settings.notificationPreviews) "Open DuoChat to read it." else preview(notice.body)
         show(
             context = context,
-            notificationId = message.messageId.hashCode(),
-            title = "New message from ${senderName.ifBlank { "your friend" }}",
+            notificationId = notice.id.hashCode(),
+            title = notice.title,
             body = body,
             settings = settings,
         )

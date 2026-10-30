@@ -7,39 +7,55 @@ import com.duochat.app.ble.bluetoothStatusFor
 import com.duochat.app.data.BluetoothStatus
 import com.duochat.app.data.ChatMessage
 import com.duochat.app.data.ChatState
+import com.duochat.app.data.ChatSummary
+import com.duochat.app.data.ContactTrust
+import com.duochat.app.data.ContactView
+import com.duochat.app.data.ConnectionPath
 import com.duochat.app.data.DeliveryState
 import com.duochat.app.data.EnginePhase
-import com.duochat.app.data.NetworkConfig
+import com.duochat.app.data.GroupView
+import com.duochat.app.data.LinkStatus
+import com.duochat.app.data.MAX_LINKS
+import com.duochat.app.data.MAX_TEXT_LENGTH
+import com.duochat.app.data.ManualState
+import com.duochat.app.data.MemberView
 import com.duochat.app.data.MessageStore
+import com.duochat.app.data.NetworkConfig
 import com.duochat.app.data.OutboxRow
 import com.duochat.app.data.P2PState
 import com.duochat.app.data.PeerTrust
-import com.duochat.app.data.PendingContact
 import com.duochat.app.data.TransportKind
-import com.duochat.app.data.MAX_TEXT_LENGTH
 import com.duochat.app.data.compareMessages
 import com.duochat.app.data.countCodePoints
-import com.duochat.app.data.isValidClientMessageId
 import com.duochat.app.data.createOutgoingMessage
-import com.duochat.app.data.deriveConnectionMode
+import com.duochat.app.data.isValidClientMessageId
+import com.duochat.app.data.local.ContactEntity
 import com.duochat.app.data.needsDelivery
+import com.duochat.app.groups.GroupCoordinator
+import com.duochat.app.groups.GroupEvent
+import com.duochat.app.groups.GroupException
+import com.duochat.app.groups.GroupFrame
+import com.duochat.app.groups.GroupResult
+import com.duochat.app.groups.MAX_RELAY_HOPS
+import com.duochat.app.groups.MessageVerdict
+import com.duochat.app.groups.OutgoingFrame
+import com.duochat.app.groups.parseGroupFrame
 import com.duochat.app.p2p.ManualSignal
 import com.duochat.app.p2p.ManualSignalCodec
 import com.duochat.app.p2p.PeerSession
 import com.duochat.app.p2p.iceServers
 import com.duochat.app.security.AndroidIdentityManager
+import com.duochat.app.security.Contact
 import com.duochat.app.security.ContactCard
 import com.duochat.app.security.ContactCards
-import com.duochat.app.security.Contact
 import com.duochat.app.security.DeviceIdentity
-import com.duochat.app.security.Seal
-import com.duochat.app.security.SealedBlob
 import com.duochat.app.security.PinnedPeer
 import com.duochat.app.security.PublicJwk
+import com.duochat.app.security.Seal
+import com.duochat.app.security.SealedBlob
 import com.duochat.app.signaling.SignalingHub
 import com.duochat.app.signaling.SignalingStatus
 import com.duochat.app.signaling.SignalingTransport
-import com.duochat.app.signaling.reconnectDelayMs
 import com.duochat.app.signaling.transportsFor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -52,52 +68,101 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.security.SecureRandom
 
+/** Something the user should hear about while the app is in the background. */
+class IncomingNotice(val id: String, val conversationId: String, val title: String, val body: String, val isMessage: Boolean = true)
+
 /**
- * Chat engine: no accounts, no required server. Messages travel over the WebRTC data channel to the
- * one pinned peer; anything unsent stays queued (encrypted at rest) and is sent when the channel
- * opens. Paired friends reconnect automatically through the configured signaling (sealed offers and
- * answers), and an optional store-and-forward relay can hold sealed messages for an offline friend.
- * Mirrors apps/desktop/src/lib/engine.ts.
+ * Chat engine for many contacts and groups. No accounts, no required server.
+ *
+ * * One authenticated link per contact (WebRTC data channel, or Bluetooth LE). Unsent messages stay queued per
+ *   recipient (encrypted at rest) and go out when that contact's link opens.
+ * * One signaling hub for the whole app: our mailbox receives sealed blobs, each opened with the pinned key of
+ *   the contact named in `blob.from`. When no signaling is reachable a sealed blob can be passed on by a mutual
+ *   contact (`relay_blob`), which is how two people who only share a friend still find each other.
+ * * Groups are signed event logs (see [GroupCoordinator]); a group message is sent to every member over that
+ *   member's own link. People brought in by a member are pinned as "introduced" and connected automatically.
+ *
+ * Everything runs on [scope] (the main thread); callbacks from other threads hop onto it first.
  */
 class ChatEngine(
     private val scope: CoroutineScope,
-    private val conversationId: String,
+    /** Fixed id mixed into the identity handshake (kept for compatibility with older installs and the desktop). */
+    private val handshakeId: String,
     private val store: MessageStore,
     private val identityManager: AndroidIdentityManager,
     private val networkConfig: () -> NetworkConfig,
-    private val onNotify: (ChatMessage) -> Unit,
+    private val ownName: () -> String,
+    private val legacyNickname: () -> String,
+    private val isMuted: (String) -> Boolean,
+    private val onNotify: (IncomingNotice) -> Unit,
     /** Null where Bluetooth cannot be used at all (for example in unit tests). */
     private val ble: BleEnvironment? = null,
 ) {
-    private val _state = MutableStateFlow(ChatState(conversationId = conversationId))
+    private val _state = MutableStateFlow(ChatState())
     val state: StateFlow<ChatState> = _state.asStateFlow()
 
+    /** A saved friend (or someone introduced to us). Keys are pinned from [card]. */
+    private class Friend(
+        val uid: String,
+        var name: String,
+        var card: ContactCard,
+        var trust: ContactTrust,
+        var introducedBy: String?,
+        /** When the safety numbers were compared (or confirmed in the manual flow); null if never. */
+        var checkedAt: Long?,
+        val createdAt: Long,
+    ) {
+        val checked: Boolean get() = checkedAt != null
+    }
+
+    /** Which friend a [PeerSession] belongs to; null while a manual connection is not saved yet. */
+    private class Binding(var uid: String?)
+
+    private inner class Link(val binding: Binding, var session: PeerSession) {
+        var p2pState = P2PState.IDLE
+        var ready = false
+        var trust = PeerTrust.NONE
+        var path: ConnectionPath? = null
+        var lastOfferAt = 0L
+        var attempt = 0
+        var offerTimeout: Job? = null
+        var pathJob: Job? = null
+        val sent = mutableSetOf<String>()
+        var lastReadWritten: String? = null
+        var lastBleAt = 0L
+        var bleAttempt = 0
+        var lastInfoAt = 0L
+        val relayWindow = ArrayDeque<Long>()
+    }
+
+    private val friends = linkedMapOf<String, Friend>()
+    private val links = HashMap<String, Link>()
     private val messages = linkedMapOf<String, ChatMessage>()
     private val outbox = linkedMapOf<String, OutboxRow>()
-    private val p2pSent = mutableSetOf<String>()
+    private val pendingGroup = PendingGroupBuffer<ChatMessage>()
+    private val seenBlobs = SeenSet()
+    private val savedGroups = mutableSetOf<String>()
 
     private var identity: DeviceIdentity? = null
-    private var pinned: PinnedPeer? = null
-    private var peer: PeerSession? = null
+    private var coordinator: GroupCoordinator? = null
     private var stopped = false
-    private var visible = false
-    private var lastReadWritten: String? = null
+    private var appVisible = false
+    private var openChat: String? = null
     private var tickJob: Job? = null
-    private var pathJob: Job? = null
     private var hub: SignalingHub? = null
-    private var pendingCard: Contact? = null
-    private var lastOfferAt = 0L
-    private var offerAttempt = 0
-    private var manualActive = false
-    private var offerTimeout: Job? = null
+    private var manualLink: Link? = null
     private var bleSearch: Job? = null
-    private var lastBleAt = 0L
-    private var bleAttempt = 0
+    private var bleUid: String? = null
     private var bleManualAttempt = false
     private val relayed = mutableSetOf<String>()
+    private var notice: String? = null
 
     private val selfUid: String
         get() = identity?.uid.orEmpty()
+
+    // ---------------------------------------------------------------------
+    // Lifecycle
+    // ---------------------------------------------------------------------
 
     suspend fun start() {
         try {
@@ -108,34 +173,24 @@ class ChatEngine(
                 return
             }
             identity = loadedIdentity
-            pinned = identityManager.loadPinnedPeer()
-
+            for (row in store.loadContacts()) friends[row.uid] = friendFrom(row)
+            migrateLegacyPeer(loadedIdentity)
             store.loadMessages().forEach { messages[it.messageId] = it }
-            runCatching { store.loadOutbox() }.getOrDefault(emptyList()).forEach { row ->
-                outbox[row.messageId] = row
-            }
+            runCatching { store.loadOutbox() }.getOrDefault(emptyList()).forEach { outbox[it.key] = it }
+            rebuildCoordinator()
+            coordinator?.load(runCatching { store.loadGroupLogs() }.getOrDefault(emptyMap()))
+            savedGroups += coordinator?.groupIds().orEmpty()
+            repairOutbox()
             if (stopped) return
-
-            _state.update {
-                it.copy(
-                    phase = EnginePhase.READY,
-                    uid = loadedIdentity.uid,
-                    peerUid = pinned?.uid,
-                    paired = pinned != null,
-                    messages = sortedMessages(),
-                    queuedCount = outbox.size,
-                )
-            }
-            peer = buildPeerSession(loadedIdentity)
-            updateConnection()
+            _state.update { it.copy(phase = EnginePhase.READY, uid = loadedIdentity.uid) }
+            for (uid in friends.keys) ensureLink(uid)
+            emit()
             startSignaling()
             startTicking()
             refreshBluetooth()
         } catch (error: Exception) {
             if (!stopped) {
-                _state.update {
-                    it.copy(phase = EnginePhase.ERROR, error = error.message ?: "Startup failed.")
-                }
+                _state.update { it.copy(phase = EnginePhase.ERROR, error = error.message ?: "Startup failed.") }
             }
         }
     }
@@ -143,52 +198,373 @@ class ChatEngine(
     fun stop() {
         stopped = true
         tickJob?.cancel()
-        pathJob?.cancel()
-        offerTimeout?.cancel()
         bleSearch?.cancel()
         hub?.stop()
         hub = null
-        peer?.close()
-        peer = null
+        for (link in links.values) closeLink(link)
+        links.clear()
+        manualLink?.session?.close()
+        manualLink = null
         _state.update { it.copy(phase = EnginePhase.STOPPED) }
     }
 
+    /** The app is in the foreground (used to decide about notifications). */
     fun setVisible(isVisible: Boolean) {
-        visible = isVisible
-        if (isVisible) scope.launch { markRead() }
+        appVisible = isVisible
+        openChat?.let { id -> if (isVisible) scope.launch { markRead(id) } }
+    }
+
+    /** The conversation on screen (null on the home list). */
+    fun setOpenChat(conversationId: String?) {
+        openChat = conversationId
+        if (conversationId != null) scope.launch { markRead(conversationId) }
     }
 
     fun clearNotice() {
+        notice = null
         _state.update { it.copy(notice = null, error = null) }
     }
 
-    fun confirmPeer() {
-        peer?.confirmPeer()
+    private fun say(text: String) {
+        notice = text
+        _state.update { it.copy(notice = text) }
     }
 
-    suspend fun send(rawText: String): Result<Unit> {
-        if (identity == null) {
-            return Result.failure(IllegalStateException("Identity is not ready yet."))
+    private fun friendFrom(row: ContactEntity): Friend {
+        val card = ContactCard(
+            PublicJwk(row.signPubX, row.signPubY), PublicJwk(row.dhPubX, row.dhPubY), row.identityProof, row.cardName,
+        )
+        return Friend(row.uid, row.name, card, ContactTrust.fromWire(row.trust), row.introducedBy, row.verifiedAt, row.createdAt)
+    }
+
+    private fun entityFrom(friend: Friend): ContactEntity {
+        val identityKey = identity?.publicJwk
+        return ContactEntity(
+            uid = friend.uid,
+            name = friend.name,
+            signPubX = friend.card.sign.x,
+            signPubY = friend.card.sign.y,
+            dhPubX = friend.card.dh.x,
+            dhPubY = friend.card.dh.y,
+            identityProof = friend.card.proof,
+            safetyNumber = if (friend.trust == ContactTrust.INTRODUCED) "introduced" else
+                runCatching { identityManager.deriveSafetyNumber(identityKey!!, friend.card.sign) }.getOrDefault(""),
+            verifiedAt = friend.checkedAt,
+            createdAt = friend.createdAt,
+            trust = friend.trust.wire,
+            introducedBy = friend.introducedBy,
+            cardName = friend.card.name,
+        )
+    }
+
+    /**
+     * The single-friend version pinned one peer in preferences and kept every message under one fixed
+     * conversation id. Turn that peer into a saved friend and move its messages, once.
+     */
+    private suspend fun migrateLegacyPeer(current: DeviceIdentity) {
+        val legacy = identityManager.loadPinnedPeer() ?: return
+        val dh = legacy.dh
+        if (dh != null && legacy.uid != current.uid && friends[legacy.uid] == null) {
+            val nickname = legacyNickname().ifBlank { "Friend ${legacy.uid.take(4)}" }
+            // The pinned record never kept the identity proof; it is learned from the next handshake.
+            val friend = Friend(legacy.uid, nickname, ContactCard(legacy.key, dh, "", null), ContactTrust.VERIFIED, null, null, System.currentTimeMillis())
+            friends[legacy.uid] = friend
+            store.putContact(entityFrom(friend))
         }
+        if (friends.containsKey(legacy.uid)) {
+            store.adoptLegacyConversation(legacy.uid)
+            identityManager.erasePeerKey(null)
+        }
+    }
+
+    /**
+     * Queue rows saved by the single-friend version have no recipient: they belong to the friend of their chat.
+     * Rows whose message is gone or already delivered are dropped.
+     */
+    private suspend fun repairOutbox() {
+        for (row in outbox.values.toList()) {
+            val message = messages[row.messageId]
+            val done = message == null || message.deliveryState == DeliveryState.DELIVERED || message.deliveryState == DeliveryState.READ
+            if (done) {
+                outbox.remove(row.key)
+                store.removeOutbox(row.messageId, row.recipientId)
+            } else if (row.recipientId.isEmpty()) {
+                outbox.remove(row.key)
+                store.removeOutbox(row.messageId, "")
+                val target = message!!.conversationId
+                if (friends.containsKey(target)) {
+                    val fixed = row.copy(recipientId = target)
+                    outbox[fixed.key] = fixed
+                    store.enqueueOutbox(fixed, target)
+                }
+            }
+        }
+    }
+
+    private fun rebuildCoordinator() {
+        val current = identity ?: return
+        val saved = coordinator?.export().orEmpty()
+        val name = ownName().trim().ifEmpty { null }
+        val own = ContactCard(current.publicJwk, current.dhJwk, current.identityProof, name?.take(40))
+        coordinator = GroupCoordinator(
+            current.uid, own, { identityManager.signRaw(it) }, { friends.keys },
+        ).also { it.load(saved) }
+    }
+
+    /** The name friends see changed: new groups carry the new name. */
+    fun onOwnNameChanged() {
+        if (identity != null) rebuildCoordinator()
+    }
+
+    // ---------------------------------------------------------------------
+    // Names
+    // ---------------------------------------------------------------------
+
+    private fun nameOf(uid: String): String {
+        if (uid == selfUid) return "You"
+        friends[uid]?.let { return it.name }
+        coordinator?.myGroups()?.forEach { g -> g.members[uid]?.card?.name?.let { return it } }
+        return "Member ${uid.take(4)}"
+    }
+
+    // ---------------------------------------------------------------------
+    // Friends
+    // ---------------------------------------------------------------------
+
+    fun ownCard(): String {
+        val current = identity ?: throw IllegalStateException("Identity is not ready.")
+        return ContactCards.encode(ContactCard(current.publicJwk, current.dhJwk, current.identityProof, ownName().ifBlank { null }))
+    }
+
+    /** Save the friend whose invite was scanned or pasted. Returns their uid. */
+    suspend fun addFriend(text: String): Result<String> = runCatching {
+        val current = identity ?: throw IllegalStateException("Identity is not ready.")
+        val contact: Contact = ContactCards.decode(text) ?: throw IllegalArgumentException("That is not a valid invite. Ask your friend to share it again.")
+        if (contact.uid == current.uid) throw IllegalArgumentException("That is your own invite. Send it to a friend instead.")
+        val existing = friends[contact.uid]
+        if (existing != null) {
+            if (!identityManager.publicKeysEqual(existing.card.sign, contact.card.sign)) {
+                throw IllegalArgumentException("This invite does not match ${existing.name}'s saved identity.")
+            }
+            existing.card = contact.card
+            existing.trust = ContactTrust.VERIFIED
+            store.putContact(entityFrom(existing))
+            say("${existing.name} is already in your list.")
+        } else {
+            val friend = Friend(
+                contact.uid, contact.card.name ?: "Friend ${contact.uid.take(4)}", contact.card,
+                ContactTrust.VERIFIED, null, null, System.currentTimeMillis(),
+            )
+            friends[friend.uid] = friend
+            store.putContact(entityFrom(friend))
+            ensureLink(friend.uid)
+            startSignaling(force = hub == null)
+            say("${friend.name} was added. Connecting automatically whenever you are both online.")
+        }
+        emit()
+        contact.uid
+    }
+
+    /** "Check it's really them": the safety numbers matched. */
+    suspend fun markChecked(uid: String) {
+        val friend = friends[uid] ?: return
+        friend.trust = ContactTrust.VERIFIED
+        friend.checkedAt = System.currentTimeMillis()
+        store.putContact(entityFrom(friend))
+        emit()
+    }
+
+    suspend fun renameFriend(uid: String, name: String) {
+        val friend = friends[uid] ?: return
+        val clean = name.trim().take(40)
+        if (clean.isEmpty()) return
+        friend.name = clean
+        store.renameContact(uid, clean)
+        emit()
+    }
+
+    /** Why a friend cannot be removed right now, or null. */
+    fun removeBlocker(uid: String): String? {
+        val shared = coordinator?.myGroups()?.firstOrNull { it.members.containsKey(uid) }
+        return if (shared != null) "${nameOf(uid)} is in the group \"${shared.name}\" with you. Leave that group first." else null
+    }
+
+    suspend fun removeFriend(uid: String): Result<Unit> {
+        removeBlocker(uid)?.let { return Result.failure(IllegalStateException(it)) }
+        links.remove(uid)?.let { closeLink(it) }
+        friends.remove(uid)
+        store.deleteContact(uid)
+        clearConversationData(uid)
+        emit()
+        return Result.success(Unit)
+    }
+
+    // ---------------------------------------------------------------------
+    // Groups
+    // ---------------------------------------------------------------------
+
+    private fun cardOfFriend(uid: String): ContactCard {
+        val friend = friends[uid] ?: throw IllegalArgumentException("Unknown friend.")
+        if (friend.card.proof.isEmpty()) {
+            throw IllegalStateException("${friend.name} has to connect with you once before they can join a group.")
+        }
+        return friend.card
+    }
+
+    suspend fun createGroup(name: String, memberUids: List<String>): Result<String> = runCatching {
+        val coordinator = coordinator ?: throw IllegalStateException("Identity is not ready.")
+        val clean = name.trim()
+        if (clean.isEmpty()) throw IllegalArgumentException("Give the group a name.")
+        val cards = memberUids.distinct().map { cardOfFriend(it) }
+        val created = coordinator.createGroup(clean, cards)
+        applyGroupResult(created.result, null)
+        say("Group \"$clean\" created.")
+        created.groupId
+    }
+
+    suspend fun addToGroup(groupId: String, uids: List<String>): Result<Unit> = runCatching {
+        val coordinator = coordinator ?: throw IllegalStateException("Identity is not ready.")
+        for (uid in uids.distinct()) {
+            val card = cardOfFriend(uid)
+            try {
+                applyGroupResult(coordinator.addMember(groupId, card), null)
+            } catch (e: GroupException) {
+                throw IllegalStateException(e.message)
+            }
+        }
+    }
+
+    suspend fun removeFromGroup(groupId: String, uid: String): Result<Unit> = runCatching {
+        applyGroupResult((coordinator ?: throw IllegalStateException("Not ready.")).removeMember(groupId, uid), null)
+    }.mapError()
+
+    suspend fun leaveGroup(groupId: String): Result<Unit> = runCatching {
+        applyGroupResult((coordinator ?: throw IllegalStateException("Not ready.")).leave(groupId), null)
+    }.mapError()
+
+    suspend fun renameGroup(groupId: String, name: String): Result<Unit> = runCatching {
+        if (name.isBlank()) throw IllegalArgumentException("Give the group a name.")
+        applyGroupResult((coordinator ?: throw IllegalStateException("Not ready.")).rename(groupId, name), null)
+    }.mapError()
+
+    private fun <T> Result<T>.mapError(): Result<T> =
+        if (isFailure && exceptionOrNull() is GroupException) Result.failure(IllegalStateException(exceptionOrNull()!!.message)) else this
+
+    /**
+     * Apply what the group core decided: persist logs, deliver frames to the links that are up (sync repairs
+     * the rest), meet new members, wake up held messages.
+     */
+    private suspend fun applyGroupResult(result: GroupResult, from: String?) {
+        val coordinator = coordinator ?: return
+        for (groupId in result.changed.distinct()) {
+            coordinator.exportGroup(groupId)?.let {
+                store.saveGroupLog(groupId, it)
+                savedGroups += groupId
+            }
+        }
+        for (gone in savedGroups - coordinator.groupIds().toSet()) {
+            store.deleteGroupLog(gone)
+            savedGroups -= gone
+        }
+        for (c in result.newContacts) introduce(c.card, c.uid, c.introducedBy, c.groupId)
+        for (out in result.outgoing) sendFrame(out)
+        for (groupId in result.joined.distinct()) {
+            val state = coordinator.state(groupId) ?: continue
+            val adder = state.members[selfUid]?.addedBy
+            if (adder != null && adder != selfUid) {
+                val text = "${nameOf(adder)} added you to \"${state.name}\"."
+                say(text)
+                if (!isMuted(groupId)) onNotify(IncomingNotice("join-$groupId", groupId, state.name, text, isMessage = false))
+            }
+        }
+        for (groupId in result.changed.distinct()) pruneOutbox(groupId)
+        releasePending()
+        emit()
+    }
+
+    /** A member we have no contact for: pin their card as "introduced" and start connecting. */
+    private suspend fun introduce(card: ContactCard, uid: String, addedBy: String, groupId: String) {
+        if (friends.containsKey(uid) || uid == selfUid) return
+        // The creator's own entry says "added by themselves"; for us the useful name is whoever brought us in.
+        val introducer = if (addedBy == uid) {
+            coordinator?.state(groupId)?.members?.get(selfUid)?.addedBy ?: addedBy
+        } else {
+            addedBy
+        }
+        val friend = Friend(
+            uid, card.name ?: "Member ${uid.take(4)}", card, ContactTrust.INTRODUCED,
+            introducer.takeIf { it != selfUid }, null, System.currentTimeMillis(),
+        )
+        friends[uid] = friend
+        store.putContact(entityFrom(friend))
+        ensureLink(uid)
+        startSignaling(force = hub == null)
+    }
+
+    /** Rows for people who are no longer in a group would wait forever; drop them and shrink the message's audience. */
+    private suspend fun pruneOutbox(groupId: String) {
+        val coordinator = coordinator ?: return
+        val state = coordinator.state(groupId)
+        val members = state?.members?.keys.orEmpty()
+        val iAmIn = state?.members?.containsKey(selfUid) == true
+        val removed = HashMap<String, Int>()
+        for (row in outbox.values.toList()) {
+            val message = messages[row.messageId] ?: continue
+            if (message.conversationId != groupId) continue
+            if (row.recipientId !in members || !iAmIn) {
+                outbox.remove(row.key)
+                store.removeOutbox(row.messageId, row.recipientId)
+                removed[row.messageId] = (removed[row.messageId] ?: 0) + 1
+            }
+        }
+        for ((messageId, count) in removed) {
+            val message = messages[messageId] ?: continue
+            val total = maxOf(0, message.totalRecipients - count)
+            messages[messageId] = message.copy(totalRecipients = total)
+            store.updateRecipients(messageId, total)
+            refreshGroupMessage(messageId)
+        }
+    }
+
+    private suspend fun releasePending() {
+        val coordinator = coordinator ?: return
+        val ready = pendingGroup.release(System.currentTimeMillis()) { groupId, from ->
+            coordinator.checkMessage(from, groupId) == MessageVerdict.OK
+        }
+        for ((_, from, message) in ready) acceptGroupMessage(from, message)
+    }
+
+    // ---------------------------------------------------------------------
+    // Sending
+    // ---------------------------------------------------------------------
+
+    suspend fun send(conversationId: String, rawText: String): Result<Unit> {
+        if (identity == null) return Result.failure(IllegalStateException("Identity is not ready yet."))
         return try {
-            val message = createOutgoingMessage(selfUid, rawText)
+            val coordinator = coordinator ?: throw IllegalStateException("Identity is not ready yet.")
+            val isGroup = coordinator.state(conversationId) != null
+            val recipients: List<String> = if (isGroup) {
+                if (!coordinator.isMember(conversationId, selfUid)) throw IllegalStateException("You are no longer in this group.")
+                coordinator.recipients(conversationId).also {
+                    if (it.isEmpty()) throw IllegalStateException("Add someone to this group first.")
+                }
+            } else {
+                if (!friends.containsKey(conversationId)) throw IllegalStateException("This friend is no longer in your list.")
+                listOf(conversationId)
+            }
+            val base = createOutgoingMessage(selfUid, rawText)
+            val message = base.copy(conversationId = conversationId, totalRecipients = if (isGroup) recipients.size else 0)
             messages[message.messageId] = message
             store.putMessage(message)
-            val row = OutboxRow(
-                messageId = message.messageId,
-                recipientId = _state.value.peerUid.orEmpty(),
-                payload = message.messageId,
-                createdAt = System.currentTimeMillis(),
-                attemptCount = 0,
-                lastAttemptAt = null,
-                deliveryState = DeliveryState.QUEUED,
-                lastError = null,
-            )
-            outbox[row.messageId] = row
-            store.enqueueOutbox(row)
-            emitMessages()
+            val now = System.currentTimeMillis()
+            for (uid in recipients) {
+                val row = OutboxRow(message.messageId, uid, message.messageId, now, 0, null, DeliveryState.QUEUED, null)
+                outbox[row.key] = row
+                store.enqueueOutbox(row, conversationId)
+            }
+            emit()
             scope.launch {
-                deliver(message.messageId)
+                for (uid in recipients) deliverTo(uid)
                 relayPending()
             }
             Result.success(Unit)
@@ -200,429 +576,279 @@ class ChatEngine(
     suspend fun retry(messageId: String) {
         val message = messages[messageId] ?: return
         if (message.senderId != selfUid) return
-        p2pSent.remove(messageId)
-        deliver(messageId)
+        for (row in outbox.values.filter { it.messageId == messageId }) {
+            links[row.recipientId]?.sent?.remove(messageId)
+            deliverTo(row.recipientId)
+        }
     }
 
-    /** Sends one own message over the direct channel if it is up; otherwise it stays queued. */
-    private suspend fun deliver(messageId: String) {
-        val message = messages[messageId] ?: return
-        if (message.senderId != selfUid || !needsDelivery(message.deliveryState)) return
-        val session = peer ?: return
-        if (!session.isReady || messageId in p2pSent) return
-        val frame = JSONObject()
-            .put("v", 1)
-            .put("kind", "message")
-            .put("messageId", message.messageId)
-            .put("clientMessageId", message.clientMessageId)
-            .put("senderId", message.senderId)
-            .put("text", message.text)
-            .put("clientCreatedAt", message.clientCreatedAt)
-        if (!session.sendJson(frame)) return
-
-        p2pSent += messageId
-        messages[messageId] = message.copy(
-            transport = TransportKind.P2P,
-            deliveryState = DeliveryState.SENT,
-        )
-        store.updateMessage(messageId, deliveryState = DeliveryState.SENT, transport = TransportKind.P2P)
-        outbox[messageId]?.let { row ->
+    /** Sends everything queued for [uid] over their link if it is up; otherwise it stays queued. */
+    private suspend fun deliverTo(uid: String) {
+        val link = links[uid] ?: return
+        val session = link.session
+        if (!session.isReady) return
+        val coordinator = coordinator
+        for (row in outbox.values.filter { it.recipientId == uid }.sortedBy { it.createdAt }) {
+            val message = messages[row.messageId] ?: continue
+            if (message.senderId != selfUid || row.messageId in link.sent) continue
+            val isGroup = coordinator?.state(message.conversationId) != null
+            val frame = if (isGroup) {
+                if (coordinator?.isMember(message.conversationId, uid) != true) continue
+                GroupFrame.Message(message.conversationId, message.messageId, message.text, message.clientCreatedAt).toJson()
+            } else {
+                JSONObject().put("v", 1).put("kind", "message")
+                    .put("messageId", message.messageId).put("clientMessageId", message.clientMessageId)
+                    .put("senderId", message.senderId).put("text", message.text)
+                    .put("clientCreatedAt", message.clientCreatedAt)
+            }
+            if (!session.sendJson(frame)) return
+            link.sent += row.messageId
             val now = System.currentTimeMillis()
-            outbox[messageId] = row.copy(deliveryState = DeliveryState.SENT, lastAttemptAt = now)
-            store.updateOutboxDelivery(messageId, DeliveryState.SENT, now)
+            outbox[row.key] = row.copy(deliveryState = DeliveryState.SENT, lastAttemptAt = now)
+            store.updateOutboxDelivery(row, DeliveryState.SENT, now)
+            if (isGroup) refreshGroupMessage(message.messageId) else setDirectState(message, DeliveryState.SENT, TransportKind.P2P)
         }
-        emitMessages()
+        emit()
+    }
+
+    private suspend fun setDirectState(message: ChatMessage, state: DeliveryState, transport: TransportKind? = null) {
+        val current = messages[message.messageId] ?: return
+        if (rank(current.deliveryState) >= rank(state) && transport == null) return
+        val updated = current.copy(deliveryState = if (rank(current.deliveryState) > rank(state)) current.deliveryState else state, transport = transport ?: current.transport)
+        messages[updated.messageId] = updated
+        store.updateMessage(updated.messageId, deliveryState = updated.deliveryState, transport = updated.transport)
+    }
+
+    private fun rank(state: DeliveryState) = when (state) {
+        DeliveryState.QUEUED -> 0
+        DeliveryState.FAILED -> 0
+        DeliveryState.SENT -> 1
+        DeliveryState.DELIVERED -> 2
+        DeliveryState.READ -> 3
+    }
+
+    /** A group message shows one tick: the weakest recipient. The detail is "Delivered to 3 of 5". */
+    private suspend fun refreshGroupMessage(messageId: String) {
+        val message = messages[messageId] ?: return
+        val rows = outbox.values.filter { it.messageId == messageId }
+        val state = when {
+            rows.isEmpty() -> DeliveryState.DELIVERED
+            rows.any { it.deliveryState == DeliveryState.SENT } -> DeliveryState.SENT
+            else -> DeliveryState.QUEUED
+        }
+        val total = message.totalRecipients
+        val (delivered, _) = groupDeliveryDetail(total, rows.size)
+        val updated = message.copy(deliveryState = state, deliveredTo = delivered)
+        messages[messageId] = updated
+        if (state != message.deliveryState) store.updateMessage(messageId, deliveryState = state)
     }
 
     private fun flushUndelivered() {
-        for (message in messages.values.toList()) {
-            if (message.senderId == selfUid && needsDelivery(message.deliveryState)) {
-                scope.launch { deliver(message.messageId) }
-            }
-        }
+        val recipients = outbox.values.map { it.recipientId }.toSet()
+        for (uid in recipients) if (links[uid]?.session?.isReady == true) scope.launch { deliverTo(uid) }
+    }
+
+    // ---------------------------------------------------------------------
+    // Clearing
+    // ---------------------------------------------------------------------
+
+    private suspend fun clearConversationData(conversationId: String) {
+        store.clearConversation(conversationId)
+        messages.values.removeAll { it.conversationId == conversationId }
+        outbox.values.removeAll { row -> row.messageId !in messages }
+    }
+
+    suspend fun clearChat(conversationId: String) {
+        clearConversationData(conversationId)
+        links[conversationId]?.lastReadWritten = null
+        emit()
+        say("The chat was cleared on this phone.")
     }
 
     suspend fun clearLocalData() {
         store.clearAll()
         messages.clear()
         outbox.clear()
-        p2pSent.clear()
-        lastReadWritten = null
-        emitMessages()
-        _state.update { it.copy(notice = "Local messages and the send queue were cleared.") }
+        links.values.forEach { it.sent.clear(); it.lastReadWritten = null }
+        emit()
+        say("All messages and the send queue were cleared on this phone.")
     }
 
-    /**
-     * Per-conversation kill switch (Option A "CLEAR LOCAL CHAT"): erase this
-     * chat's local content only. Identity keys and settings are untouched.
-     */
-    suspend fun clearLocalChat() {
-        store.clearConversation()
-        messages.clear()
-        outbox.clear()
-        p2pSent.clear()
-        lastReadWritten = null
-        emitMessages()
-        _state.update { it.copy(notice = "This chat was cleared locally.") }
+    // ---------------------------------------------------------------------
+    // Links
+    // ---------------------------------------------------------------------
+
+    private fun ensureLink(uid: String): Link {
+        links[uid]?.let { return it }
+        val binding = Binding(uid)
+        val link = Link(binding, newSession(binding))
+        links[uid] = link
+        return link
     }
 
-    /**
-     * Per-conversation kill switch (Option B extra "DELETE CHAT AND LOCAL
-     * SESSION STATE"): closes the authenticated channel and forgets the pinned
-     * peer, so a new identity handshake is required before sending again.
-     */
-    suspend fun eraseLocalChatSession() {
-        identityManager.erasePeerKey(null)
-        resetConnection("Local chat erased. Sending again requires a new identity handshake.")
+    private fun pinnedFor(binding: Binding): PinnedPeer? {
+        val friend = binding.uid?.let { friends[it] } ?: return null
+        return PinnedPeer(friend.uid, "card", friend.card.sign, friend.card.dh)
     }
 
-    /** Forgets the pinned peer so a different device can be paired. Messages are kept. */
-    fun resetPairing() {
-        identityManager.erasePeerKey(null)
-        resetConnection("Pairing reset. Connect again to pair a device.")
-    }
-
-    private fun resetConnection(notice: String) {
-        peer?.close()
-        pinned = null
-        pendingCard = null
-        manualActive = false
-        hub?.stop()
-        hub = null
-        offerTimeout?.cancel()
-        relayed.clear()
-        p2pSent.clear()
-        lastReadWritten = null
-        pathJob?.cancel()
-        bleSearch?.cancel()
-        bleAttempt = 0
-        lastBleAt = 0L
-        _state.update {
-            it.copy(
-                paired = false,
-                peerUid = null,
-                pendingContact = null,
-                signaling = SignalingStatus.IDLE,
-                p2pState = P2PState.IDLE,
-                p2pConnected = false,
-                peerTrust = PeerTrust.NONE,
-                safetyNumber = null,
-                connectionPath = null,
-                notice = notice,
-            )
-        }
-        updateConnection()
-    }
-
-    /**
-     * A code is only accepted if its id matches its own key (via the identity
-     * proof) and, once paired, only if it comes from the paired device.
-     */
-    private fun checkSignalIdentity(signal: ManualSignal) {
-        if (signal.fromUid == selfUid) {
-            throw IllegalArgumentException("This code was created on this device.")
-        }
-        if (!identityManager.verifyIdentityProof(signal.publicKeyJwk, signal.dhJwk, signal.identityProof)) {
-            throw IllegalArgumentException(
-                "This connection code is corrupted: its identity proof is invalid.",
-            )
-        }
-        if (identityManager.uidFor(signal.dhJwk) != signal.fromUid) {
-            throw IllegalArgumentException(
-                "This connection code is corrupted: its identity does not match its key.",
-            )
-        }
-        val pin = pinned
-        if (pin != null &&
-            (signal.fromUid != pin.uid || !identityManager.publicKeysEqual(pin.key, signal.publicKeyJwk))
-        ) {
-            throw IllegalArgumentException(
-                "This code comes from a different device than the one you paired with. " +
-                    "Use Reset pairing in Settings to pair a new one.",
-            )
-        }
-    }
-
-    private fun localSignal(kind: String, sdp: String, currentIdentity: DeviceIdentity) =
-        ManualSignal(
-            kind = kind,
-            conversationId = conversationId,
-            fromUid = currentIdentity.uid,
-            fromDeviceId = currentIdentity.deviceId,
-            publicKeyJwk = currentIdentity.publicJwk,
-            dhJwk = currentIdentity.dhJwk,
-            identityProof = currentIdentity.identityProof,
-            sdp = sdp,
-            nonce = randomNonce(),
-            createdAt = System.currentTimeMillis(),
-        )
-
-    suspend fun createManualOffer(): String {
-        val currentIdentity = identity ?: throw IllegalStateException("Identity is not ready.")
-        val session = peer ?: throw IllegalStateException("Direct messaging is not ready.")
-        manualActive = true
-        _state.update { it.copy(notice = null) }
-        session.setExpectedPeerKey(null)
-        return try {
-            ManualSignalCodec.encode(localSignal("offer", session.createOffer(), currentIdentity))
-        } catch (error: Exception) {
-            session.close()
-            throw error
-        }
-    }
-
-    suspend fun applyManualAnswer(code: String) {
-        val decoded = ManualSignalCodec.decode(code, conversationId)
-        if (decoded.kind != "answer") {
-            throw IllegalArgumentException(
-                "This code is an offer. The other user must paste your offer and send back an answer.",
-            )
-        }
-        checkSignalIdentity(decoded)
-        val session = peer ?: throw IllegalStateException("Direct messaging is not ready.")
-        if (!session.hasPendingConnection) {
-            throw IllegalStateException("Create an offer before pasting an answer.")
-        }
-        session.setExpectedPeerKey(decoded.publicKeyJwk)
-        session.applyAnswer(decoded.sdp)
-        _state.update { it.copy(p2pState = P2PState.CONNECTING) }
-    }
-
-    suspend fun acceptManualOffer(code: String): String {
-        val currentIdentity = identity ?: throw IllegalStateException("Identity is not ready.")
-        val decoded = ManualSignalCodec.decode(code, conversationId)
-        if (decoded.kind != "offer") {
-            throw IllegalArgumentException(
-                "This code is an answer. Paste the offer from the other user instead.",
-            )
-        }
-        checkSignalIdentity(decoded)
-        _state.update { it.copy(notice = null) }
-        val session = peer ?: throw IllegalStateException("Direct messaging is not ready.")
-        manualActive = true
-        session.setExpectedPeerKey(decoded.publicKeyJwk)
-        return try {
-            ManualSignalCodec.encode(
-                localSignal("answer", session.acceptOffer(decoded.sdp), currentIdentity),
-            )
-        } catch (error: Exception) {
-            session.close()
-            throw error
-        }
-    }
-
-    fun cancelManual() {
-        manualActive = false
-        peer?.setExpectedPeerKey(null)
-        peer?.close()
-        pathJob?.cancel()
-        _state.update {
-            it.copy(
-                p2pState = P2PState.IDLE,
-                p2pConnected = false,
-                peerTrust = PeerTrust.NONE,
-                safetyNumber = null,
-                connectionPath = null,
-            )
-        }
-        updateConnection()
-    }
-
-    private fun buildPeerSession(currentIdentity: DeviceIdentity): PeerSession = PeerSession(
+    private fun newSession(binding: Binding): PeerSession = PeerSession(
         scope = scope,
-        conversationId = conversationId,
-        selfUid = currentIdentity.uid,
+        conversationId = handshakeId,
+        selfUid = selfUid,
         identityManager = identityManager,
         identity = { identity },
-        pinned = { pinned },
-        pinPeer = { uid, deviceId, key, dh -> pin(uid, deviceId, key, dh) },
+        pinned = { pinnedFor(binding) },
+        pinPeer = { uid, _, _, _ -> scope.launch { onPinRequested(binding, uid) } },
         iceServers = { networkConfig().iceServers() },
         forceRelay = { networkConfig().forceRelay },
-        listener = object : PeerSession.Listener {
-            override fun onStateChanged(
-                state: P2PState,
-                connected: Boolean,
-                trust: PeerTrust,
-                safetyNumber: String?,
-                peerUid: String?,
-            ) {
-                _state.update {
-                    it.copy(
-                        p2pState = state,
-                        p2pConnected = connected,
-                        peerTrust = trust,
-                        safetyNumber = safetyNumber,
-                        peerUid = peerUid ?: pinned?.uid,
-                        paired = pinned != null,
-                        connectionPath = if (state == P2PState.CONNECTED) it.connectionPath else null,
-                    )
-                }
-                if (state == P2PState.CONNECTED) detectPath()
-                if (connected) onChannelReady()
-                updateConnection()
-                refreshBluetooth()
+        listener = object : com.duochat.app.p2p.PeerSession.Listener {
+            override fun onStateChanged(state: P2PState, connected: Boolean, trust: PeerTrust, safetyNumber: String?, peerUid: String?) {
+                scope.launch { onLinkState(binding, state, connected, trust, safetyNumber) }
             }
 
             override fun onNotice(message: String) {
-                _state.update { it.copy(notice = message) }
+                scope.launch { say(message) }
             }
 
             override fun onFailure(message: String) {
-                _state.update {
-                    it.copy(
-                        p2pState = P2PState.FAILED,
-                        p2pConnected = false,
-                        peerTrust = PeerTrust.NONE,
-                        safetyNumber = null,
-                        connectionPath = null,
-                        notice = message,
-                    )
+                scope.launch {
+                    say(message)
+                    onLinkState(binding, P2PState.FAILED, false, PeerTrust.NONE, null)
                 }
-                updateConnection()
             }
 
             override fun onPeerMessage(message: ChatMessage) {
-                scope.launch { handlePeerMessage(message) }
+                scope.launch { binding.uid?.let { handleDirectMessage(it, message) } }
             }
 
             override fun onAck(messageId: String, state: DeliveryState, at: Long) {
-                scope.launch { handleAck(messageId, state, at) }
+                scope.launch { binding.uid?.let { handleAck(it, messageId, state, at) } }
             }
 
             override fun onRead(lastReadMessageId: String) {
-                scope.launch { applyPeerReadThrough(lastReadMessageId) }
+                scope.launch { binding.uid?.let { applyPeerReadThrough(it, lastReadMessageId) } }
+            }
+
+            override fun onFrame(frame: JSONObject) {
+                scope.launch { binding.uid?.let { handleFrame(it, frame) } }
             }
         },
     )
 
-    private fun pin(uid: String, deviceId: String, key: PublicJwk, dh: PublicJwk) {
-        identityManager.pinPeer(uid, deviceId, key, dh)
-        val firstTime = pinned == null
-        pinned = PinnedPeer(uid, deviceId, key, dh)
-        _state.update { it.copy(paired = true, peerUid = uid) }
-        if (firstTime) startSignaling(force = true)
+    private fun closeLink(link: Link) {
+        link.offerTimeout?.cancel()
+        link.pathJob?.cancel()
+        link.session.close()
+        link.p2pState = P2PState.IDLE
+        link.ready = false
+        link.path = null
+        link.sent.clear()
+    }
+
+    private fun linkOf(binding: Binding): Link? = binding.uid?.let { links[it] } ?: manualLink?.takeIf { it.binding === binding }
+
+    private suspend fun onLinkState(binding: Binding, state: P2PState, connected: Boolean, trust: PeerTrust, safetyNumber: String?) {
+        val link = linkOf(binding) ?: return
+        val wasReady = link.ready
+        link.ready = connected
+        link.p2pState = state
+        link.trust = trust
+        if (link.binding.uid == null) {
+            _state.update {
+                it.copy(manual = ManualState(state, connected, trust, safetyNumber))
+            }
+        } else {
+            if (state != P2PState.CONNECTED) link.path = null
+            if (state == P2PState.CONNECTED) detectPath(link)
+            if (connected && !wasReady) onChannelReady(link.binding.uid!!)
+            if (!connected) link.sent.clear()
+            refreshBluetooth()
+        }
+        emit()
     }
 
     /** Reads the real route (host / srflx / relay) once the channel is up; retries while stats settle. */
-    private fun detectPath() {
-        pathJob?.cancel()
-        pathJob = scope.launch {
+    private fun detectPath(link: Link) {
+        link.pathJob?.cancel()
+        link.pathJob = scope.launch {
             for (attempt in 1..5) {
                 delay(400L * attempt)
-                val path = peer?.connectionPath()
+                val path = link.session.connectionPath()
                 if (path != null) {
-                    _state.update { it.copy(connectionPath = path) }
+                    link.path = path
+                    emit()
                     return@launch
                 }
             }
         }
     }
 
-    private fun onChannelReady() {
-        manualActive = false
-        offerAttempt = 0
-        bleAttempt = 0
-        offerTimeout?.cancel()
-        bleSearch?.cancel()
-        p2pSent.clear()
-        lastReadWritten = null
-        flushUndelivered()
-        if (visible) scope.launch { markRead() }
-    }
-
-    private suspend fun applyPeerReadThrough(messageId: String) {
-        val ordered = sortedMessages()
-        val index = ordered.indexOfFirst { it.messageId == messageId }
-        if (index < 0) return
-        var changed = false
-        val now = System.currentTimeMillis()
-        for (i in 0..index) {
-            val message = ordered[i]
-            if (message.senderId != selfUid || message.deliveryState == DeliveryState.READ) continue
-            val updated = message.copy(deliveryState = DeliveryState.READ, readAt = message.readAt ?: now)
-            messages[updated.messageId] = updated
-            store.updateMessage(
-                updated.messageId,
-                deliveryState = DeliveryState.READ,
-                readAt = updated.readAt,
-                setReadAt = true,
-            )
-            dropOutbox(updated.messageId)
-            changed = true
+    /** The link to [uid] is authenticated: learn missing identity data, sync groups, send what is queued. */
+    private suspend fun onChannelReady(uid: String) {
+        val link = links[uid] ?: return
+        link.attempt = 0
+        link.bleAttempt = 0
+        link.offerTimeout?.cancel()
+        link.sent.clear()
+        link.lastReadWritten = null
+        if (bleUid == uid) bleSearch?.cancel()
+        val friend = friends[uid]
+        val peerCard = link.session.peerCard()
+        if (friend != null && peerCard != null && friend.card.proof.isEmpty()) {
+            // Friends migrated from the single-friend version have no identity proof yet; the handshake just verified it.
+            friend.card = peerCard.copy(name = friend.card.name)
+            store.setContactProof(uid, peerCard.proof)
         }
-        if (changed) emitMessages()
+        coordinator?.onLinkOpen(uid)?.forEach { sendFrame(it) }
+        deliverTo(uid)
+        if (openChat == uid && appVisible) markRead(uid)
     }
 
-    private suspend fun dropOutbox(messageId: String) {
-        if (outbox.remove(messageId) != null) runCatching { store.removeOutbox(messageId) }
+    /** Called for the manual flow (user confirmed a safety number) and when a verified reconnect refreshes the pin. */
+    private suspend fun onPinRequested(binding: Binding, uid: String) {
+        if (binding.uid != null) return // a saved friend reconnecting: nothing to change
+        val pairing = manualLink?.takeIf { it.binding === binding } ?: return
+        val card = pairing.session.peerCard() ?: return
+        if (uid == selfUid) return
+        val friend = friends[uid] ?: Friend(
+            uid, "Friend ${uid.take(4)}", card, ContactTrust.VERIFIED, null, null, System.currentTimeMillis(),
+        ).also { friends[uid] = it }
+        friend.card = card.copy(name = friend.card.name)
+        friend.trust = ContactTrust.VERIFIED
+        friend.checkedAt = System.currentTimeMillis()
+        store.putContact(entityFrom(friend))
+        // The session that just proved itself becomes this friend's link.
+        links.remove(uid)?.let { closeLink(it) }
+        binding.uid = uid
+        manualLink = null
+        links[uid] = pairing
+        _state.update { it.copy(manual = ManualState()) }
+        startSignaling(force = true)
+        say("${friend.name} was added.")
+        emit()
     }
 
-    private fun startTicking() {
-        tickJob?.cancel()
-        tickJob = scope.launch {
-            while (!stopped) {
-                delay(TICK_MS)
-                _state.update { it.copy(signaling = hub?.status() ?: SignalingStatus.IDLE) }
-                dropBluetoothIfDisabled()
-                if (peer?.isReady == true) {
-                    flushUndelivered()
-                } else {
-                    maybeBluetooth()
-                    maybeOffer()
-                }
-                refreshBluetooth()
-            }
-        }
+    /** The user compared the safety number of a manual connection. */
+    fun confirmManual() {
+        manualLink?.session?.confirmPeer()
     }
 
-    private fun updateConnection() {
-        val connected = peer?.isReady == true
-        val mode = deriveConnectionMode(
-            p2pConnected = connected,
-            connecting = _state.value.p2pState == P2PState.CONNECTING,
-            reconnecting = false,
-            failed = _state.value.p2pState == P2PState.FAILED,
-        )
-        _state.update { it.copy(connectionMode = mode, queuedCount = outbox.size) }
+    // ---------------------------------------------------------------------
+    // Incoming messages and frames
+    // ---------------------------------------------------------------------
+
+    private suspend fun handleDirectMessage(uid: String, message: ChatMessage) {
+        val link = links[uid] ?: return
+        if (!link.session.isReady || message.senderId != uid || !friends.containsKey(uid)) return
+        ingest(message.copy(conversationId = uid), uid) { ack -> link.session.sendJson(ack) }
     }
 
-    private suspend fun markRead() {
-        val ordered = sortedMessages()
-        val last = ordered.lastOrNull() ?: return
-        var changed = false
-        val now = System.currentTimeMillis()
-        for (message in ordered) {
-            if (message.senderId == selfUid || message.readAt != null) continue
-            messages[message.messageId] = message.copy(readAt = now)
-            store.updateMessage(message.messageId, readAt = now, setReadAt = true)
-            changed = true
-        }
-        if (changed) emitMessages()
-        val session = peer
-        if (lastReadWritten != last.messageId && session?.isReady == true) {
-            lastReadWritten = last.messageId
-            session.sendJson(
-                JSONObject()
-                    .put("v", 1)
-                    .put("kind", "read")
-                    .put("lastReadMessageId", last.messageId)
-                    .put("at", now),
-            )
-        }
-    }
-
-    private suspend fun handlePeerMessage(message: ChatMessage) {
-        val session = peer ?: return
-        if (!session.isReady || message.senderId == selfUid) return
-        ingest(message) { ack -> session.sendJson(ack) }
-    }
-
-    /** Store a message from the paired friend, acknowledge it, notify. Shared by the direct and relay paths. */
-    private suspend fun ingest(message: ChatMessage, sendAck: (JSONObject) -> Unit) {
+    /** Store a message from a friend, acknowledge it, notify. Shared by the direct, group and relay paths. */
+    private suspend fun ingest(message: ChatMessage, fromUid: String, sendAck: (JSONObject) -> Unit) {
         val existing = messages[message.messageId]
         val merged = if (existing != null) {
             existing.copy(
-                deliveryState = highestDelivery(existing.deliveryState, message.deliveryState),
+                deliveryState = if (rank(existing.deliveryState) >= rank(message.deliveryState)) existing.deliveryState else message.deliveryState,
                 readAt = existing.readAt ?: message.readAt,
             )
         } else {
@@ -630,181 +856,249 @@ class ChatEngine(
         }
         messages[merged.messageId] = merged
         store.putMessage(merged)
-        emitMessages()
         sendAck(
-            JSONObject()
-                .put("v", 1)
-                .put("kind", "ack")
-                .put("messageId", merged.messageId)
-                .put("state", "DELIVERED")
-                .put("at", System.currentTimeMillis()),
+            JSONObject().put("v", 1).put("kind", "ack").put("messageId", merged.messageId)
+                .put("state", "DELIVERED").put("at", System.currentTimeMillis()),
         )
-        if (existing == null) onNotify(merged)
-        if (visible) markRead()
+        emit()
+        if (existing == null) notifyIncoming(merged, fromUid)
+        if (openChat == merged.conversationId && appVisible) markRead(merged.conversationId)
     }
 
-    private suspend fun handleAck(messageId: String, state: DeliveryState, at: Long) {
+    private fun notifyIncoming(message: ChatMessage, fromUid: String) {
+        if (isMuted(message.conversationId)) return
+        if (appVisible && openChat == message.conversationId) return
+        val group = coordinator?.state(message.conversationId)
+        val title = if (group != null) group.name else nameOf(fromUid)
+        val body = if (group != null) "${nameOf(fromUid)}: ${message.text}" else message.text
+        onNotify(IncomingNotice(message.messageId, message.conversationId, title, body))
+    }
+
+    private suspend fun handleFrame(fromUid: String, frame: JSONObject) {
+        if (!friends.containsKey(fromUid)) return
+        val parsed = parseGroupFrame(frame) ?: return
+        val coordinator = coordinator ?: return
+        when (parsed) {
+            is GroupFrame.Message -> {
+                val message = ChatMessage(
+                    messageId = parsed.messageId, clientMessageId = parsed.messageId, senderId = fromUid, text = parsed.text,
+                    clientCreatedAt = parsed.clientCreatedAt, transport = TransportKind.P2P,
+                    deliveryState = DeliveryState.DELIVERED, conversationId = parsed.groupId,
+                )
+                if (messages.containsKey(message.messageId)) {
+                    // Duplicate (resend after a lost ack): just acknowledge again.
+                    links[fromUid]?.session?.sendJson(
+                        JSONObject().put("v", 1).put("kind", "ack").put("messageId", message.messageId)
+                            .put("state", "DELIVERED").put("at", System.currentTimeMillis()),
+                    )
+                    return
+                }
+                when (coordinator.checkMessage(fromUid, parsed.groupId)) {
+                    MessageVerdict.OK -> acceptGroupMessage(fromUid, message)
+                    else -> {
+                        // We may just be behind: hold it for up to 60 s and ask the sender for the group's history.
+                        if (pendingGroup.hold(parsed.groupId, fromUid, message, System.currentTimeMillis())) {
+                            coordinator.requestSync(fromUid, parsed.groupId).forEach { sendFrame(it) }
+                        }
+                    }
+                }
+            }
+            is GroupFrame.RelayBlob -> handleRelay(fromUid, parsed)
+            else -> applyGroupResult(coordinator.handle(fromUid, parsed), fromUid)
+        }
+    }
+
+    private suspend fun acceptGroupMessage(fromUid: String, message: ChatMessage) {
+        val link = links[fromUid] ?: return
+        ingest(message, fromUid) { ack -> link.session.sendJson(ack) }
+    }
+
+    private suspend fun handleAck(uid: String, messageId: String, state: DeliveryState, at: Long) {
         val message = messages[messageId] ?: return
         if (message.senderId != selfUid) return
-        val next = if (state == DeliveryState.READ || message.deliveryState == DeliveryState.READ) {
-            DeliveryState.READ
+        val row = outbox.remove("$messageId|$uid")
+        if (row != null) store.removeOutbox(messageId, uid)
+        if (coordinator?.state(message.conversationId) != null) {
+            refreshGroupMessage(messageId)
         } else {
-            DeliveryState.DELIVERED
+            val next = if (state == DeliveryState.READ || message.deliveryState == DeliveryState.READ) DeliveryState.READ else DeliveryState.DELIVERED
+            val updated = message.copy(deliveryState = next, readAt = if (state == DeliveryState.READ) at else message.readAt)
+            messages[messageId] = updated
+            store.updateMessage(messageId, deliveryState = updated.deliveryState, readAt = updated.readAt, setReadAt = updated.readAt != null)
         }
-        val updated = message.copy(
-            deliveryState = next,
-            readAt = if (state == DeliveryState.READ) at else message.readAt,
-        )
-        messages[messageId] = updated
-        store.updateMessage(
-            messageId,
-            deliveryState = updated.deliveryState,
-            readAt = updated.readAt,
-            setReadAt = updated.readAt != null,
-        )
-        dropOutbox(messageId)
-        emitMessages()
-        updateConnection()
+        emit()
     }
 
-    private fun highestDelivery(first: DeliveryState, second: DeliveryState): DeliveryState {
-        if (first == DeliveryState.FAILED && second == DeliveryState.FAILED) return DeliveryState.FAILED
-        if (first == DeliveryState.FAILED) return second
-        if (second == DeliveryState.FAILED) return first
-        val rank = mapOf(
-            DeliveryState.QUEUED to 0,
-            DeliveryState.SENT to 1,
-            DeliveryState.DELIVERED to 2,
-            DeliveryState.READ to 3,
-        )
-        return if ((rank[first] ?: 0) >= (rank[second] ?: 0)) first else second
-    }
-
-    private fun sortedMessages(): List<ChatMessage> =
-        messages.values.sortedWith { first, second -> compareMessages(first, second) }
-
-    private fun emitMessages() {
-        _state.update { it.copy(messages = sortedMessages(), queuedCount = outbox.size) }
-    }
-
-
-    // ---------------------------------------------------------------------
-    // Contacts: exchange public cards, compare the safety number, pin
-    // ---------------------------------------------------------------------
-
-    fun ownCard(name: String? = null): String {
-        val current = identity ?: throw IllegalStateException("Identity is not ready.")
-        return ContactCards.encode(ContactCard(current.publicJwk, current.dhJwk, current.identityProof, name?.ifBlank { null }))
-    }
-
-    /** Validate a pasted contact card and show its safety number. Nothing is saved yet. */
-    fun previewContact(text: String) {
-        val current = identity ?: throw IllegalStateException("Identity is not ready.")
-        val contact = ContactCards.decode(text) ?: throw IllegalArgumentException("This is not a valid DuoChat contact card.")
-        if (contact.uid == current.uid) throw IllegalArgumentException("This is your own contact card.")
-        val pin = pinned
-        if (pin != null && pin.uid != contact.uid) {
-            throw IllegalArgumentException("You are already paired with someone else. Reset pairing in Settings first.")
+    private suspend fun applyPeerReadThrough(uid: String, messageId: String) {
+        val ordered = conversation(uid)
+        val index = ordered.indexOfFirst { it.messageId == messageId }
+        if (index < 0) return
+        val now = System.currentTimeMillis()
+        var changed = false
+        for (i in 0..index) {
+            val message = ordered[i]
+            if (message.senderId != selfUid || message.deliveryState == DeliveryState.READ) continue
+            val updated = message.copy(deliveryState = DeliveryState.READ, readAt = message.readAt ?: now)
+            messages[updated.messageId] = updated
+            store.updateMessage(updated.messageId, deliveryState = DeliveryState.READ, readAt = updated.readAt, setReadAt = true)
+            if (outbox.remove("${updated.messageId}|$uid") != null) store.removeOutbox(updated.messageId, uid)
+            changed = true
         }
-        val safety = identityManager.deriveSafetyNumber(current.publicJwk, contact.card.sign)
-        pendingCard = contact
-        _state.update { it.copy(pendingContact = PendingContact(contact.uid, safety, contact.card.name)) }
+        if (changed) emit()
     }
 
-    /** The user compared the safety number over a separate channel: pin the contact. */
-    fun confirmContact() {
-        val contact = pendingCard ?: return
-        pin(contact.uid, "card", contact.card.sign, contact.card.dh)
-        pendingCard = null
-        offerAttempt = 0
-        lastOfferAt = 0
-        val signalingOn = networkConfig().signaling.isNotEmpty()
-        _state.update {
-            it.copy(
-                pendingContact = null,
-                notice = if (signalingOn) "Friend saved. Connecting automatically whenever you are both online."
-                else "Friend saved. No signaling is configured, so connect with a code (Settings > Network).",
-            )
+    private suspend fun markRead(conversationId: String) {
+        val ordered = conversation(conversationId)
+        val last = ordered.lastOrNull { it.senderId != selfUid } ?: return
+        val now = System.currentTimeMillis()
+        var changed = false
+        for (message in ordered) {
+            if (message.senderId == selfUid || message.readAt != null) continue
+            messages[message.messageId] = message.copy(readAt = now)
+            store.updateMessage(message.messageId, readAt = now, setReadAt = true)
+            changed = true
         }
-        startSignaling(force = true)
+        if (changed) emit()
+        val link = links[conversationId] // read receipts are for direct chats only
+        if (link != null && link.lastReadWritten != last.messageId && link.session.isReady) {
+            link.lastReadWritten = last.messageId
+            link.session.sendJson(JSONObject().put("v", 1).put("kind", "read").put("lastReadMessageId", last.messageId).put("at", now))
+        }
     }
 
-    fun cancelContact() {
-        pendingCard = null
-        _state.update { it.copy(pendingContact = null) }
+    private fun conversation(id: String): List<ChatMessage> =
+        messages.values.filter { it.conversationId == id }.sortedWith { a, b -> compareMessages(a, b) }
+
+    private fun sendFrame(out: OutgoingFrame) {
+        val link = links[out.to] ?: return
+        if (link.session.isReady) link.session.sendJson(out.frame.toJson())
     }
 
     // ---------------------------------------------------------------------
-    // Signaling: find the paired friend again without typing codes
+    // Signaling: find friends again without typing codes
     // ---------------------------------------------------------------------
 
     /** Apply changed STUN/TURN/signaling settings; they take effect on the next connection. */
     fun reloadNetwork() {
         startSignaling(force = true)
-        _state.update { it.copy(notice = "Network settings applied. They take effect on the next connection.") }
+        say("Network settings applied. They take effect on the next connection.")
     }
 
     /** The device gained a network: reconnect the signaling sockets now instead of waiting out the backoff. */
     fun onNetworkAvailable() {
         if (stopped || identity == null) return
-        offerAttempt = 0
-        lastOfferAt = 0
+        for (link in links.values) {
+            link.attempt = 0
+            link.lastOfferAt = 0
+        }
         if (hub?.status() != SignalingStatus.ONLINE) startSignaling(force = true)
     }
 
     private fun startSignaling(force: Boolean = false) {
-        if (stopped) return
+        if (stopped || identity == null) return
         if (hub != null && !force) return
         hub?.stop()
         hub = null
-        val pin = pinned
         val config = networkConfig()
-        if (pin?.dh == null || config.signaling.isEmpty()) {
+        if (friends.isEmpty() || config.signaling.isEmpty()) {
             _state.update { it.copy(signaling = SignalingStatus.IDLE) }
             return
         }
         val created = SignalingHub(transportsFor(config, scope))
         hub = created
         created.start(Seal.mailboxFor(selfUid)) { blob, id, via -> scope.launch { handleBlob(blob, id, via) } }
-        offerAttempt = 0
-        lastOfferAt = 0
+        for (link in links.values) {
+            link.attempt = 0
+            link.lastOfferAt = 0
+        }
         _state.update { it.copy(signaling = created.status()) }
     }
 
-    private fun sealToPeer(payload: JSONObject): Pair<SealedBlob, String>? {
-        val pin = pinned ?: return null
-        val dh = pin.dh ?: return null
-        val blob = Seal.seal(payload, selfUid, pin.uid, dh) { identityManager.signRaw(it) }
-        return blob to Seal.mailboxFor(pin.uid)
+    private fun sealTo(friend: Friend, payload: JSONObject): SealedBlob =
+        Seal.seal(payload, selfUid, friend.uid, friend.card.dh) { identityManager.signRaw(it) }
+
+    /**
+     * Send a sealed payload to a friend through the signaling hub. If signaling is unreachable, or the last attempts
+     * got nowhere, also hand the blob to mutual friends who are linked to us so they can pass it on.
+     */
+    private suspend fun putToFriend(uid: String, payload: JSONObject, kind: String, ttlSec: Int) {
+        val friend = friends[uid] ?: throw IllegalStateException("Unknown friend.")
+        val blob = sealTo(friend, payload)
+        val current = hub
+        var delivered = false
+        var failure: Exception? = null
+        if (current != null && current.status() == SignalingStatus.ONLINE) {
+            try {
+                current.put(Seal.mailboxFor(uid), blob, kind, ttlSec)
+                delivered = true
+            } catch (e: Exception) {
+                failure = e
+            }
+        }
+        val struggling = (links[uid]?.attempt ?: 0) >= 2
+        if (kind == "sig" && (!delivered || struggling)) {
+            if (relayThroughLinks(blob, uid, 0, exclude = null)) delivered = true
+        }
+        if (!delivered) throw failure ?: IllegalStateException("No signaling is available.")
     }
 
-    private suspend fun putToPeer(payload: JSONObject, kind: String, ttlSec: Int) {
-        val (blob, mailbox) = sealToPeer(payload) ?: throw IllegalStateException("No signaling is available.")
-        (hub ?: throw IllegalStateException("No signaling is available.")).put(mailbox, blob, kind, ttlSec)
+    /** Pass a sealed blob to up to three linked friends, preferring people who share a group with [target]. */
+    private fun relayThroughLinks(blob: SealedBlob, target: String, hops: Int, exclude: String?): Boolean {
+        val ready = links.filter { (uid, link) -> uid != target && uid != exclude && link.session.isReady }.keys
+        if (ready.isEmpty()) return false
+        val coordinator = coordinator
+        val shared = ready.filter { uid ->
+            coordinator?.myGroups()?.any { it.members.containsKey(uid) && it.members.containsKey(target) } == true
+        }
+        val chosen = (shared + (ready - shared.toSet())).take(3)
+        val frame = GroupFrame.RelayBlob(blob.toJson(), hops).toJson()
+        var sent = false
+        for (uid in chosen) if (links[uid]?.session?.sendJson(frame) == true) sent = true
+        return sent
     }
 
-    private fun isInitiator(): Boolean = pinned?.let { selfUid < it.uid } == true
+    private suspend fun handleRelay(fromUid: String, frame: GroupFrame.RelayBlob) {
+        val link = links[fromUid] ?: return
+        // A friend may relay a handful of blobs per minute; more is spam.
+        val now = System.currentTimeMillis()
+        while (link.relayWindow.isNotEmpty() && now - link.relayWindow.first() > 60_000L) link.relayWindow.removeFirst()
+        if (link.relayWindow.size >= MAX_RELAYS_PER_MINUTE) return
+        link.relayWindow.addLast(now)
+        val blob = sealedBlobFromJson(frame.blob) ?: return
+        if (!seenBlobs.firstTime(blob.sig)) return
+        if (blob.to == selfUid) {
+            handleBlob(blob, "", null)
+            return
+        }
+        if (frame.hops >= MAX_RELAY_HOPS) return
+        val target = links[blob.to]
+        if (target != null && target.session.isReady) {
+            target.session.sendJson(GroupFrame.RelayBlob(frame.blob, frame.hops + 1).toJson())
+        } else {
+            relayThroughLinks(blob, blob.to, frame.hops + 1, exclude = fromUid)
+        }
+    }
 
-    private suspend fun handleBlob(blob: SealedBlob, id: String, via: SignalingTransport) {
-        val pin = pinned ?: return
-        val payload = Seal.open(blob, selfUid, identityManager::dhAgree, pin.key, pin.uid) ?: return
+    private suspend fun handleBlob(blob: SealedBlob, id: String, via: SignalingTransport?) {
+        val friend = friends[blob.from] ?: return
+        val payload = Seal.open(blob, selfUid, identityManager::dhAgree, friend.card.sign, friend.uid) ?: return
+        val link = ensureLink(friend.uid)
         try {
             when (payload.optString("t")) {
-                "ready" -> if (isInitiator()) lastOfferAt = 0
+                "ready" -> if (isInitiator(selfUid, friend.uid)) link.lastOfferAt = 0
                 "offer" -> {
-                    val session = peer ?: return
                     val sdp = payload.optString("sdp")
-                    if (isInitiator() || manualActive || session.isReady || sdp.isEmpty()) return
-                    session.setExpectedPeerKey(null)
-                    val answer = session.acceptOffer(sdp)
-                    putToPeer(JSONObject().put("t", "answer").put("sdp", answer), "sig", SIGNAL_TTL_SEC)
-                    armOfferTimeout()
+                    if (isInitiator(selfUid, friend.uid) || link.session.isReady || sdp.isEmpty()) return
+                    if (!LinkScheduler.acceptIncoming(links.values.count { it.session.isReady })) return
+                    link.session.setExpectedPeerKey(null)
+                    val answer = link.session.acceptOffer(sdp)
+                    putToFriend(friend.uid, JSONObject().put("t", "answer").put("sdp", answer), "sig", SIGNAL_TTL_SEC)
+                    armOfferTimeout(friend.uid)
                 }
                 "answer" -> {
-                    val session = peer ?: return
                     val sdp = payload.optString("sdp")
-                    if (!isInitiator() || !session.hasPendingConnection || session.isReady || sdp.isEmpty()) return
-                    session.applyAnswer(sdp)
+                    if (!isInitiator(selfUid, friend.uid) || !link.session.hasPendingConnection || link.session.isReady || sdp.isEmpty()) return
+                    link.session.applyAnswer(sdp)
                 }
                 "msg" -> {
                     val messageId = payload.optString("id")
@@ -817,105 +1111,206 @@ class ChatEngine(
                     }
                     ingest(
                         ChatMessage(
-                            messageId = messageId,
-                            clientMessageId = messageId,
-                            senderId = pin.uid,
-                            text = text,
-                            clientCreatedAt = at,
-                            transport = TransportKind.RELAY,
-                            deliveryState = DeliveryState.DELIVERED,
+                            messageId = messageId, clientMessageId = messageId, senderId = friend.uid, text = text,
+                            clientCreatedAt = at, transport = TransportKind.RELAY, deliveryState = DeliveryState.DELIVERED,
+                            conversationId = friend.uid,
                         ),
+                        friend.uid,
                     ) {
                         scope.launch {
-                            runCatching { putToPeer(JSONObject().put("t", "ack").put("id", messageId), "msg", MSG_TTL_SEC) }
+                            runCatching { putToFriend(friend.uid, JSONObject().put("t", "ack").put("id", messageId), "msg", MSG_TTL_SEC) }
                         }
                     }
-                    hub?.remove(via, Seal.mailboxFor(selfUid), id)
+                    if (via != null) hub?.remove(via, Seal.mailboxFor(selfUid), id)
                 }
                 "ack" -> {
                     val messageId = payload.optString("id")
                     val message = messages[messageId] ?: return
                     if (message.senderId != selfUid) return
-                    handleAck(messageId, DeliveryState.DELIVERED, System.currentTimeMillis())
-                    hub?.remove(via, Seal.mailboxFor(selfUid), id)
+                    handleAck(friend.uid, messageId, DeliveryState.DELIVERED, System.currentTimeMillis())
+                    if (via != null) hub?.remove(via, Seal.mailboxFor(selfUid), id)
                 }
             }
         } catch (error: Exception) {
-            _state.update { it.copy(notice = "Signaling failed: ${error.message ?: "unknown error"}") }
+            say("Could not reach ${friend.name} yet. Retrying...")
         }
     }
 
-    private fun armOfferTimeout() {
-        offerTimeout?.cancel()
-        offerTimeout = scope.launch {
+    private fun armOfferTimeout(uid: String) {
+        val link = links[uid] ?: return
+        link.offerTimeout?.cancel()
+        link.offerTimeout = scope.launch {
             delay(OFFER_TIMEOUT_MS)
-            val session = peer
-            if (session != null && !session.isReady && !manualActive) {
-                session.close()
-                _state.update { it.copy(p2pState = P2PState.FAILED, notice = "Could not reach your friend. Retrying...") }
-                updateConnection()
+            if (!link.session.isReady && !link.session.isBluetooth) {
+                closeLink(link)
+                link.p2pState = P2PState.FAILED
+                emit()
             }
         }
     }
 
-    /** Reconnect to a paired friend automatically, backing off between attempts (5 s doubling to 120 s). */
-    private suspend fun maybeOffer() {
-        val pin = pinned
-        val current = hub
-        relayPending()
-        if (pin?.dh == null || current == null || current.status() != SignalingStatus.ONLINE || manualActive) return
-        val session = peer ?: return
-        val now = System.currentTimeMillis()
-        if (_state.value.p2pState == P2PState.CONNECTING) return
-        if (now - lastOfferAt < reconnectDelayMs(offerAttempt)) return
-        lastOfferAt = now
-        offerAttempt += 1
-        try {
-            if (!isInitiator()) {
-                // Tell the friend we are online so they can offer straight away.
-                putToPeer(JSONObject().put("t", "ready"), "sig", SIGNAL_TTL_SEC)
-                return
+    // ---------------------------------------------------------------------
+    // Ticking: reconnect, flush, liveness is per link inside PeerSession
+    // ---------------------------------------------------------------------
+
+    private fun startTicking() {
+        tickJob?.cancel()
+        tickJob = scope.launch {
+            while (!stopped) {
+                delay(TICK_MS)
+                _state.update { it.copy(signaling = hub?.status() ?: SignalingStatus.IDLE) }
+                dropBluetoothIfDisabled()
+                pendingGroup.expire(System.currentTimeMillis())
+                flushUndelivered()
+                connectDueLinks()
+                maybeBluetooth()
+                relayPending()
+                refreshBluetooth()
+                emit()
             }
-            session.setExpectedPeerKey(null)
-            val sdp = session.createOffer()
-            putToPeer(JSONObject().put("t", "offer").put("sdp", sdp), "sig", SIGNAL_TTL_SEC)
-            armOfferTimeout()
-        } catch (error: Exception) {
-            session.close()
-            _state.update { it.copy(p2pState = P2PState.IDLE, notice = "Could not reach signaling: ${error.message ?: "unknown error"}") }
         }
+    }
+
+    /** Reach out to friends we are not linked to: at most [com.duochat.app.data.MAX_CONNECTING] at once, each with its own backoff. */
+    private suspend fun connectDueLinks() {
+        val current = hub
+        val hubOnline = current != null && current.status() == SignalingStatus.ONLINE
+        val canRelay = links.values.any { it.session.isReady }
+        if (!hubOnline && !canRelay) return
+        val infos = links.map { (uid, link) ->
+            LinkInfo(
+                uid, link.session.isReady,
+                link.p2pState == P2PState.CONNECTING || link.session.isBluetooth && link.session.isOpen && !link.session.isReady,
+                link.lastOfferAt, link.attempt, dialable = friends.containsKey(uid),
+            )
+        }
+        val now = System.currentTimeMillis()
+        for (uid in LinkScheduler.due(infos, now)) {
+            val link = links[uid] ?: continue
+            link.lastOfferAt = now
+            link.attempt += 1
+            try {
+                if (!isInitiator(selfUid, uid)) {
+                    // Tell the friend we are online so they can offer straight away.
+                    putToFriend(uid, JSONObject().put("t", "ready"), "sig", SIGNAL_TTL_SEC)
+                    continue
+                }
+                link.session.setExpectedPeerKey(null)
+                val sdp = link.session.createOffer()
+                putToFriend(uid, JSONObject().put("t", "offer").put("sdp", sdp), "sig", SIGNAL_TTL_SEC)
+                armOfferTimeout(uid)
+            } catch (error: Exception) {
+                closeLink(link)
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Manual connection codes (Advanced): pair without any signaling
+    // ---------------------------------------------------------------------
+
+    private fun checkSignalIdentity(signal: ManualSignal) {
+        if (signal.fromUid == selfUid) throw IllegalArgumentException("This code was created on this device.")
+        if (!identityManager.verifyIdentityProof(signal.publicKeyJwk, signal.dhJwk, signal.identityProof)) {
+            throw IllegalArgumentException("This connection code is corrupted: its identity proof is invalid.")
+        }
+        if (identityManager.uidFor(signal.dhJwk) != signal.fromUid) {
+            throw IllegalArgumentException("This connection code is corrupted: its identity does not match its key.")
+        }
+        val known = friends[signal.fromUid]
+        if (known != null && !identityManager.publicKeysEqual(known.card.sign, signal.publicKeyJwk)) {
+            throw IllegalArgumentException("This code comes from a different device than the one you saved as ${known.name}.")
+        }
+    }
+
+    private fun localSignal(kind: String, sdp: String, current: DeviceIdentity) = ManualSignal(
+        kind = kind, conversationId = handshakeId, fromUid = current.uid, fromDeviceId = current.deviceId,
+        publicKeyJwk = current.publicJwk, dhJwk = current.dhJwk, identityProof = current.identityProof,
+        sdp = sdp, nonce = randomNonce(), createdAt = System.currentTimeMillis(),
+    )
+
+    /** The pairing slot: a session that is not tied to a saved friend until its safety number is confirmed. */
+    private fun pairingLink(replace: Boolean): Link {
+        val existing = manualLink
+        if (existing != null && !replace) return existing
+        existing?.session?.close()
+        val binding = Binding(null)
+        return Link(binding, newSession(binding)).also { manualLink = it }
+    }
+
+    suspend fun createManualOffer(): String {
+        val current = identity ?: throw IllegalStateException("Identity is not ready.")
+        val pairing = pairingLink(replace = true)
+        pairing.session.setExpectedPeerKey(null)
+        return try {
+            ManualSignalCodec.encode(localSignal("offer", pairing.session.createOffer(), current))
+        } catch (error: Exception) {
+            pairing.session.close()
+            throw error
+        }
+    }
+
+    suspend fun applyManualAnswer(code: String) {
+        val decoded = ManualSignalCodec.decode(code, handshakeId)
+        if (decoded.kind != "answer") throw IllegalArgumentException("This code is an offer. The other user must paste your offer and send back an answer.")
+        checkSignalIdentity(decoded)
+        val pairing = manualLink ?: throw IllegalStateException("Create an offer before pasting an answer.")
+        if (!pairing.session.hasPendingConnection) throw IllegalStateException("Create an offer before pasting an answer.")
+        pairing.session.setExpectedPeerKey(decoded.publicKeyJwk)
+        pairing.session.applyAnswer(decoded.sdp)
+    }
+
+    suspend fun acceptManualOffer(code: String): String {
+        val current = identity ?: throw IllegalStateException("Identity is not ready.")
+        val decoded = ManualSignalCodec.decode(code, handshakeId)
+        if (decoded.kind != "offer") throw IllegalArgumentException("This code is an answer. Paste the offer from the other user instead.")
+        checkSignalIdentity(decoded)
+        val pairing = pairingLink(replace = true)
+        pairing.session.setExpectedPeerKey(decoded.publicKeyJwk)
+        return try {
+            ManualSignalCodec.encode(localSignal("answer", pairing.session.acceptOffer(decoded.sdp), current))
+        } catch (error: Exception) {
+            pairing.session.close()
+            throw error
+        }
+    }
+
+    fun cancelManual() {
+        manualLink?.session?.close()
+        manualLink = null
+        _state.update { it.copy(manual = ManualState()) }
     }
 
     // ---------------------------------------------------------------------
     // Bluetooth LE: works with no internet, within radio range. UNTESTED on a real radio.
     // ---------------------------------------------------------------------
 
-    /** Re-reads what Bluetooth can do right now (permission, adapter, pairing) for the Settings row. */
     fun refreshBluetooth() {
-        val session = peer
+        val bleLink = bleUid?.let { links[it] }?.takeIf { it.session.isBluetooth }
+        val any = links.values.firstOrNull { it.session.isBluetooth }
         val status = bluetoothStatusFor(
             enabledInSettings = networkConfig().bluetooth,
             hasEnvironment = ble != null,
-            linkIsBluetooth = session?.isBluetooth == true,
-            linkReady = session?.isReady == true,
+            linkIsBluetooth = (bleLink ?: any) != null,
+            linkReady = (bleLink ?: any)?.session?.isReady == true,
             availability = ble?.availability(),
-            paired = pinned?.dh != null,
+            paired = friends.isNotEmpty(),
         )
         if (_state.value.bluetooth != status) _state.update { it.copy(bluetooth = status) }
     }
 
     /**
-     * Looks for the paired friend over Bluetooth for [BLE_SEARCH_MS]. Never prompts for permissions: when they are
-     * missing it fails with a message and the UI asks. [manual] attempts report a timeout to the user.
+     * Looks for [uid] over Bluetooth for [BLE_SEARCH_MS]. Only one Bluetooth search or link at a time (the radio
+     * code was written for one). Never prompts for permissions: when missing it fails with a message and the UI asks.
      */
-    suspend fun connectBluetooth(manual: Boolean = true): Result<Unit> {
+    suspend fun connectBluetooth(uid: String, manual: Boolean = true): Result<Unit> {
         val failure = { message: String -> Result.failure<Unit>(IllegalStateException(message)) }
         val environment = ble ?: return failure("Bluetooth is not available in this build.")
         val current = identity ?: return failure("Identity is not ready yet.")
-        val pin = pinned
-        val friendDh = pin?.dh ?: return failure("Add your friend first.")
-        val session = peer ?: return failure("Direct messaging is not ready.")
-        if (session.isReady || manualActive || _state.value.p2pState == P2PState.CONNECTING) return Result.success(Unit)
+        val friend = friends[uid] ?: return failure("Add your friend first.")
+        val link = ensureLink(uid)
+        if (link.session.isReady) return Result.success(Unit)
+        if (bleUid != null && bleUid != uid && links[bleUid]?.session?.isBluetooth == true) return failure("Bluetooth is already in use for another friend.")
         when (environment.availability()) {
             BleAvailability.UNSUPPORTED -> return failure("This phone has no Bluetooth LE.")
             BleAvailability.NEEDS_PERMISSION -> return failure("Bluetooth permission is needed. Allow it in Settings.")
@@ -923,102 +1318,183 @@ class ChatEngine(
             BleAvailability.READY -> Unit
         }
         return try {
-            val secret = identityManager.dhAgree(friendDh)
+            val secret = identityManager.dhAgree(friend.card.dh)
             bleManualAttempt = manual
-            val link = session.newBluetoothLink { handlers ->
+            bleUid = uid
+            val created = link.session.newBluetoothLink { handlers ->
                 environment.createLink(
                     secret = secret,
                     // Two phones: the lower uid scans, the higher one is found. A desktop is always the scanner.
-                    initiateAsCentral = current.uid < pin.uid,
+                    initiateAsCentral = current.uid < uid,
                     ownUid = current.uid,
-                    peerUid = pin.uid,
+                    peerUid = uid,
                     sign = identityManager::signRaw,
-                    peerSign = pin.key,
+                    peerSign = friend.card.sign,
                     handlers = handlers,
                 )
             }
-            link.start()
-            armBluetoothSearch()
+            created.start()
+            armBluetoothSearch(uid)
             refreshBluetooth()
             Result.success(Unit)
         } catch (error: Exception) {
-            session.close()
-            _state.update { it.copy(p2pState = P2PState.IDLE) }
-            updateConnection()
+            closeLink(link)
+            bleUid = null
             failure("Bluetooth could not start: ${error.message ?: error.javaClass.simpleName}")
         }
     }
 
-    private fun armBluetoothSearch() {
+    private fun armBluetoothSearch(uid: String) {
         bleSearch?.cancel()
         bleSearch = scope.launch {
             delay(BLE_SEARCH_MS)
-            val session = peer
-            if (session != null && session.isBluetooth && !session.isAuthenticated) {
-                session.close()
-                _state.update {
-                    it.copy(
-                        p2pState = P2PState.IDLE,
-                        notice = if (bleManualAttempt) {
-                            "No friend found nearby over Bluetooth. Check that they have DuoChat open with Bluetooth on."
-                        } else {
-                            it.notice
-                        },
-                    )
-                }
-                updateConnection()
+            val link = links[uid]
+            if (link != null && link.session.isBluetooth && !link.session.isAuthenticated) {
+                closeLink(link)
+                bleUid = null
+                say(if (bleManualAttempt) "No friend found nearby over Bluetooth. Check that they have DuoChat open with Bluetooth on." else notice.orEmpty())
+                emit()
                 refreshBluetooth()
             }
         }
     }
 
-    /** Automatic attempts with backoff, only when Bluetooth is already allowed and on (never prompts). */
+    /** Automatic attempts with backoff, round-robin over friends, only when Bluetooth is already allowed and on. */
     private suspend fun maybeBluetooth() {
         val environment = ble ?: return
-        if (!networkConfig().bluetooth || pinned?.dh == null || manualActive) return
-        if (_state.value.p2pState == P2PState.CONNECTING) return
+        if (!networkConfig().bluetooth || friends.isEmpty()) return
+        if (links.values.any { it.session.isBluetooth }) return
         if (environment.availability() != BleAvailability.READY) return
         val now = System.currentTimeMillis()
-        if (now - lastBleAt < bleReconnectDelayMs(bleAttempt)) return
-        lastBleAt = now
-        bleAttempt += 1
-        connectBluetooth(manual = false)
+        val target = links.entries
+            .filter { !it.value.session.isReady && it.value.p2pState != P2PState.CONNECTING && friends.containsKey(it.key) }
+            .filter { now - it.value.lastBleAt >= bleReconnectDelayMs(it.value.bleAttempt) }
+            .minByOrNull { it.value.lastBleAt } ?: return
+        target.value.lastBleAt = now
+        target.value.bleAttempt += 1
+        connectBluetooth(target.key, manual = false)
     }
 
-    /** Turning the Bluetooth setting off ends a Bluetooth link that is still up or searching. */
     private fun dropBluetoothIfDisabled() {
-        val session = peer ?: return
-        if (networkConfig().bluetooth || !session.isBluetooth) return
-        session.close()
+        if (networkConfig().bluetooth) return
+        for (link in links.values) {
+            if (link.session.isBluetooth) closeLink(link)
+        }
         bleSearch?.cancel()
-        _state.update { it.copy(p2pState = P2PState.IDLE, p2pConnected = false, connectionPath = null) }
-        updateConnection()
+        bleUid = null
     }
 
     // ---------------------------------------------------------------------
-    // Optional store-and-forward (off by default)
+    // Optional store-and-forward (off by default; direct chats only)
     // ---------------------------------------------------------------------
 
     private suspend fun relayPending() {
         val current = hub ?: return
-        if (!networkConfig().storeForward || pinned?.dh == null || peer?.isReady == true) return
-        if (current.status() != SignalingStatus.ONLINE) return
-        for (message in sortedMessages()) {
+        if (!networkConfig().storeForward || current.status() != SignalingStatus.ONLINE) return
+        for (row in outbox.values.toList()) {
+            val message = messages[row.messageId] ?: continue
             if (message.senderId != selfUid || !needsDelivery(message.deliveryState)) continue
-            if (!relayed.add(message.messageId)) continue
+            if (coordinator?.state(message.conversationId) != null) continue
+            if (links[row.recipientId]?.session?.isReady == true) continue
+            if (!relayed.add(row.key)) continue
             try {
-                putToPeer(
-                    JSONObject().put("t", "msg").put("id", message.messageId).put("text", message.text)
-                        .put("at", message.clientCreatedAt),
-                    "msg",
-                    MSG_TTL_SEC,
+                putToFriend(
+                    row.recipientId,
+                    JSONObject().put("t", "msg").put("id", message.messageId).put("text", message.text).put("at", message.clientCreatedAt),
+                    "msg", MSG_TTL_SEC,
                 )
                 messages[message.messageId] = message.copy(transport = TransportKind.RELAY, deliveryState = DeliveryState.SENT)
                 store.updateMessage(message.messageId, deliveryState = DeliveryState.SENT, transport = TransportKind.RELAY)
-                emitMessages()
+                emit()
             } catch (_: Exception) {
-                relayed.remove(message.messageId)
+                relayed.remove(row.key)
             }
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Presentation
+    // ---------------------------------------------------------------------
+
+    private fun linkStatus(uid: String): LinkStatus {
+        val link = links[uid] ?: return LinkStatus.OFFLINE
+        return when {
+            link.session.isReady -> LinkStatus.CONNECTED
+            link.p2pState == P2PState.CONNECTING -> LinkStatus.CONNECTING
+            else -> LinkStatus.OFFLINE
+        }
+    }
+
+    private fun emit() {
+        val current = identity ?: return
+        val coordinator = coordinator
+        val byConversation = messages.values.groupBy { it.conversationId }
+            .mapValues { (_, list) -> list.sortedWith { a, b -> compareMessages(a, b) } }
+        val pendingByMessage = outbox.values.groupingBy { it.messageId }.eachCount()
+        val shaped = byConversation.mapValues { (_, list) ->
+            list.map { m ->
+                if (m.totalRecipients > 0 && m.senderId == selfUid) {
+                    m.copy(deliveredTo = groupDeliveryDetail(m.totalRecipients, pendingByMessage[m.messageId] ?: 0).first)
+                } else m
+            }
+        }
+        val contacts = friends.values.sortedBy { it.name.lowercase() }.map { f ->
+            ContactView(
+                f.uid, f.name, f.trust, f.introducedBy?.let { nameOf(it) }, f.checked, linkStatus(f.uid),
+                links[f.uid]?.path.takeIf { linkStatus(f.uid) == LinkStatus.CONNECTED },
+                runCatching { identityManager.deriveSafetyNumber(current.publicJwk, f.card.sign) }.getOrDefault(""),
+            )
+        }
+        val groups = coordinator?.groupIds().orEmpty().mapNotNull { id ->
+            val s = coordinator?.state(id) ?: return@mapNotNull null
+            val iAmMember = s.members.containsKey(current.uid)
+            val everLeft = !iAmMember
+            val members = s.members.values.map { m ->
+                MemberView(
+                    m.uid, nameOf(m.uid), m.uid == current.uid, m.role == "admin",
+                    if (m.addedBy == m.uid) null else nameOf(m.addedBy),
+                    friends[m.uid]?.trust, if (m.uid == current.uid) null else linkStatus(m.uid),
+                )
+            }.sortedWith(compareBy({ !it.isMe }, { !it.isAdmin }, { it.name.lowercase() }))
+            val removedBySomeoneElse = everLeft && coordinator?.let { c ->
+                c.exportGroup(id)?.any { e -> e.optString("type") == "remove" && e.optString("target") == current.uid && e.optString("actor") != current.uid } == true
+            } == true
+            GroupView(
+                id, s.name, members, iAmMember, s.members[current.uid]?.role == "admin",
+                if (iAmMember) null else if (removedBySomeoneElse) "You were removed" else "You left",
+                members.count { it.link == LinkStatus.CONNECTED },
+            )
+        }.sortedBy { it.name.lowercase() }
+        val summaries = ArrayList<ChatSummary>()
+        for (c in contacts) {
+            val list = shaped[c.uid].orEmpty()
+            summaries += ChatSummary(
+                c.uid, false, c.name, list.lastOrNull()?.text, list.lastOrNull()?.clientCreatedAt ?: c.uid.let { friends[it]?.createdAt ?: 0L },
+                list.count { it.senderId != selfUid && it.readAt == null }, c.link,
+                when (c.link) {
+                    LinkStatus.CONNECTED -> "Connected"
+                    LinkStatus.CONNECTING -> "Connecting…"
+                    LinkStatus.OFFLINE -> "Waiting for ${c.name}"
+                },
+            )
+        }
+        for (g in groups) {
+            val list = shaped[g.groupId].orEmpty()
+            val others = g.members.count { !it.isMe }
+            summaries += ChatSummary(
+                g.groupId, true, g.name, list.lastOrNull()?.let { m -> (if (m.senderId == selfUid) "You" else nameOf(m.senderId)) + ": " + m.text },
+                list.lastOrNull()?.clientCreatedAt ?: 0L, list.count { it.senderId != selfUid && it.readAt == null },
+                if (g.connectedCount > 0) LinkStatus.CONNECTED else if (others == 0) LinkStatus.OFFLINE else LinkStatus.OFFLINE,
+                g.exitNote ?: "${g.members.size} members" + if (others > 0) " · ${g.connectedCount} connected" else "",
+            )
+        }
+        summaries.sortByDescending { it.lastAt }
+        _state.update {
+            it.copy(
+                contacts = contacts, groups = groups, chats = summaries, messages = shaped,
+                queuedCount = outbox.size, linkCount = links.values.count { l -> l.session.isReady },
+                notice = notice ?: it.notice,
+            )
         }
     }
 
@@ -1033,7 +1509,19 @@ class ChatEngine(
         const val SIGNAL_TTL_SEC = 120
         const val MSG_TTL_SEC = 7 * 24 * 3600
         const val OFFER_TIMEOUT_MS = 40_000L
+        const val MAX_RELAYS_PER_MINUTE = 40
+
         /** How long one Bluetooth search lasts before backing off (the desktop uses 20 s). */
         const val BLE_SEARCH_MS = 20_000L
     }
+}
+
+/** A sealed blob from JSON that already passed `parseGroupFrame`'s shape check. */
+internal fun sealedBlobFromJson(json: JSONObject): SealedBlob? = try {
+    SealedBlob(
+        json.getString("to"), json.getString("from"), json.getJSONObject("epk"),
+        json.getString("iv"), json.getString("ct"), json.getString("sig"),
+    )
+} catch (_: Exception) {
+    null
 }

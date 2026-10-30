@@ -9,7 +9,13 @@ import { GroupLog, type GroupState } from './log';
 
 export interface GroupPushFrame { v: 1; kind: 'group_push'; event: GroupEvent }
 export interface GroupEventsFrame { v: 1; kind: 'group_events'; events: GroupEvent[] }
-export interface GroupHaveFrame { v: 1; kind: 'group_have'; groups: { groupId: string; ids: string[] }[] }
+export interface GroupHaveFrame {
+  v: 1;
+  kind: 'group_have';
+  groups: { groupId: string; ids: string[] }[];
+  /** Sent when a link opens: `groups` is everything the sender has, so groups missing from it are unknown to them. */
+  full?: true;
+}
 export interface GroupMessageFrame {
   v: 1;
   kind: 'gmsg';
@@ -219,7 +225,8 @@ export class GroupCoordinator {
         groups.push({ groupId, ids: log.ids() });
       }
     }
-    return groups.length > 0 ? [{ to: peerUid, frame: { v: 1, kind: 'group_have', groups } }] : [];
+    // Always sent, even when empty: the peer pushes us the groups we do not have yet (see `handle`).
+    return [{ to: peerUid, frame: { v: 1, kind: 'group_have', groups, full: true } }];
   }
 
   /* ---- receiving ---- */
@@ -242,6 +249,14 @@ export class GroupCoordinator {
         const mine = new Set(log.ids());
         if (g.ids.some((id) => !mine.has(id))) {
           result.outgoing.push({ to: fromUid, frame: { v: 1, kind: 'group_have', groups: [{ groupId: g.groupId, ids: log.ids() }] } });
+        }
+      }
+      if (frame.full === true) {
+        // They listed everything they have: any group of ours they belong to but did not list is new to them.
+        const listed = new Set(frame.groups.map((g) => g.groupId));
+        for (const [groupId, log] of this.logs) {
+          if (listed.has(groupId) || !log.state()?.members.has(fromUid)) continue;
+          result.outgoing.push(...this.chunk(fromUid, log.missingFor([])));
         }
       }
     }

@@ -110,6 +110,8 @@ class MessageStore(
 
     suspend fun removeOutbox(messageId: String, recipientId: String) = dao.removeOutbox("$messageId|$recipientId")
 
+    suspend fun updateRecipients(messageId: String, total: Int) = dao.updateMessageRecipients(messageId, total)
+
     /** Messages and queue rows saved by the single-friend version belong to the friend that was paired then. */
     suspend fun adoptLegacyConversation(contactUid: String) {
         dao.moveMessages(MessageEntity.LEGACY_CONVERSATION_ID, contactUid)

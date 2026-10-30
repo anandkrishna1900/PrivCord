@@ -67,6 +67,8 @@ data class ContactEntity(
     val trust: String = "verified",
     /** For introduced contacts: the uid of the member who added them to the group. */
     val introducedBy: String? = null,
+    /** The name inside their own card (`name` is what we call them and stays private). */
+    val cardName: String? = null,
 )
 
 /** A group is its signed event log; the whole log (encrypted at rest) is rewritten when it changes. */
@@ -311,6 +313,7 @@ abstract class DuoDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE outbox_new RENAME TO outbox")
                 db.execSQL("ALTER TABLE contacts ADD COLUMN trust TEXT NOT NULL DEFAULT 'verified'")
                 db.execSQL("ALTER TABLE contacts ADD COLUMN introducedBy TEXT")
+                db.execSQL("ALTER TABLE contacts ADD COLUMN cardName TEXT")
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS group_logs (" +
                         "groupId TEXT NOT NULL PRIMARY KEY, eventsCipher TEXT NOT NULL, updatedAt INTEGER NOT NULL)",
