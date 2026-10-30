@@ -51,6 +51,7 @@ import androidx.compose.material3.DropdownMenu
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Person
@@ -143,12 +144,8 @@ fun ChatScreen(
     onBluetoothPermissionResult: () -> Unit = {},
     onRunNuke: () -> Unit = {},
     onRunChatSwitch: (Boolean, (Result<Boolean>) -> Unit) -> Unit = { _, _ -> },
-    contacts: List<ContactEntity> = emptyList(),
-    groups: List<GroupEntity> = emptyList(),
-    onAddContact: (String, String, (Result<Unit>) -> Unit) -> Unit = { _, _, _ -> },
-    onCreateGroup: (String, (Result<Unit>) -> Unit) -> Unit = { _, _ -> },
-    onRemoveContact: (String) -> Unit = {},
-    onRemoveGroup: (String) -> Unit = {},
+    conversationTitle: String? = null,
+    onBack: (() -> Unit)? = null,
     killSwitchReport: com.duochat.app.security.KillSwitchReport? = null,
     onAcknowledgeKillSwitch: () -> Unit = {},
 ) {
@@ -157,9 +154,6 @@ fun ChatScreen(
     var contactOpen by remember { mutableStateOf(false) }
     var nukeOpen by remember { mutableStateOf(false) }
     var clearChatOpen by remember { mutableStateOf(false) }
-    var homeHubOpen by remember { mutableStateOf(false) }
-    var currentConversationTitle by remember { mutableStateOf<String?>(null) }
-
     val notificationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -174,7 +168,7 @@ fun ChatScreen(
         }
     }
 
-    val peerName = currentConversationTitle ?: settings.peerNickname.ifBlank { "Your friend" }
+    val peerName = conversationTitle ?: settings.peerNickname.ifBlank { "Your friend" }
     val peerActive = state.p2pConnected
     val subline = when {
         state.p2pConnected -> "Direct connection active"
@@ -279,20 +273,6 @@ fun ChatScreen(
                 modifier = Modifier.weight(1f),
             )
         }
-    }
-
-    if (homeHubOpen) {
-        HomeHubBottomSheet(
-            contacts = contacts,
-            groups = groups,
-            currentTitle = currentConversationTitle,
-            onSelectConversation = { currentConversationTitle = it },
-            onAddContact = onAddContact,
-            onCreateGroup = onCreateGroup,
-            onRemoveContact = onRemoveContact,
-            onRemoveGroup = onRemoveGroup,
-            onDismiss = { homeHubOpen = false },
-        )
     }
 
     if (settingsOpen) {
@@ -906,337 +886,4 @@ fun avatarHue(seed: String): Int {
     var hash = 0
     for (char in seed) hash = (hash * 31 + char.code) % 360
     return hash
-}
-
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun HomeHubBottomSheet(
-    contacts: List<ContactEntity>,
-    groups: List<GroupEntity>,
-    currentTitle: String?,
-    onSelectConversation: (String) -> Unit,
-    onAddContact: (String, String, (Result<Unit>) -> Unit) -> Unit,
-    onCreateGroup: (String, (Result<Unit>) -> Unit) -> Unit,
-    onRemoveContact: (String) -> Unit,
-    onRemoveGroup: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var selectedTab by remember { mutableStateOf(0) }
-    var showNewContactDialog by remember { mutableStateOf(false) }
-    var showNewGroupDialog by remember { mutableStateOf(false) }
-
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "PrivCord Hub",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                )
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.Filled.Close, contentDescription = "Close")
-                }
-            }
-
-            TabRow(
-                selectedTabIndex = selectedTab,
-                containerColor = MaterialTheme.colorScheme.surface,
-            ) {
-                Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = { Text("Direct Contacts (" + contacts.size + ")") },
-                    icon = { Icon(Icons.Filled.Person, contentDescription = null) },
-                )
-                Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    text = { Text("Group Chats (" + groups.size + ")") },
-                    icon = { Icon(Icons.Filled.Group, contentDescription = null) },
-                )
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            if (selectedTab == 0) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "Your Contacts",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    TextButton(onClick = { showNewContactDialog = true }) {
-                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Add Contact")
-                    }
-                }
-
-                if (contacts.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 32.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            "No contacts added yet.\nTap '+ Add Contact' or pair using a contact card.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(280.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        itemsIndexed(contacts) { _, contact ->
-                            Card(
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (currentTitle == contact.name) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        onSelectConversation(contact.name)
-                                        onDismiss()
-                                    },
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        InitialsAvatar(contact.name, 36)
-                                        Spacer(Modifier.width(10.dp))
-                                        Column {
-                                            Text(
-                                                contact.name,
-                                                style = MaterialTheme.typography.titleSmall,
-                                                fontWeight = FontWeight.Bold,
-                                            )
-                                            Text(
-                                                "ID: " + contact.uid.take(12) + "…",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
-                                    }
-                                    IconButton(onClick = { onRemoveContact(contact.uid) }) {
-                                        Icon(
-                                            Icons.Filled.Delete,
-                                            contentDescription = "Delete contact",
-                                            tint = MaterialTheme.colorScheme.error,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "Your Groups",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    TextButton(onClick = { showNewGroupDialog = true }) {
-                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Create Group")
-                    }
-                }
-
-                if (groups.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 32.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            "No group chats yet.\nTap '+ Create Group' to start a decentralized group.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(280.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        itemsIndexed(groups) { _, group ->
-                            Card(
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (currentTitle == group.name) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        onSelectConversation(group.name)
-                                        onDismiss()
-                                    },
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        InitialsAvatar(group.name, 36)
-                                        Spacer(Modifier.width(10.dp))
-                                        Column {
-                                            Text(
-                                                group.name,
-                                                style = MaterialTheme.typography.titleSmall,
-                                                fontWeight = FontWeight.Bold,
-                                            )
-                                            Text(
-                                                "Epoch " + group.currentEpoch + " • Decentralized",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
-                                    }
-                                    IconButton(onClick = { onRemoveGroup(group.groupId) }) {
-                                        Icon(
-                                            Icons.Filled.Delete,
-                                            contentDescription = "Delete group",
-                                            tint = MaterialTheme.colorScheme.error,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-        }
-    }
-
-    if (showNewContactDialog) {
-        var nameInput by remember { mutableStateOf("") }
-        var uidInput by remember { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = { showNewContactDialog = false },
-            title = { Text("Add New Contact") },
-            text = {
-                Column {
-                    OutlinedTextField(
-                        value = nameInput,
-                        onValueChange = { nameInput = it },
-                        label = { Text("Contact Name") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = uidInput,
-                        onValueChange = { uidInput = it },
-                        label = { Text("Peer ID / Public Key") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        if (nameInput.isNotBlank()) {
-                            val id = uidInput.ifBlank { java.util.UUID.randomUUID().toString() }
-                            onAddContact(nameInput.trim(), id.trim()) {}
-                            showNewContactDialog = false
-                        }
-                    },
-                    enabled = nameInput.isNotBlank(),
-                ) {
-                    Text("Add")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showNewContactDialog = false }) {
-                    Text("Cancel")
-                }
-            },
-        )
-    }
-
-    if (showNewGroupDialog) {
-        var groupNameInput by remember { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = { showNewGroupDialog = false },
-            title = { Text("Create Group Chat") },
-            text = {
-                Column {
-                    Text(
-                        "Groups use decentralized epoch key rotation for end-to-end encryption.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = groupNameInput,
-                        onValueChange = { groupNameInput = it },
-                        label = { Text("Group Name") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        if (groupNameInput.isNotBlank()) {
-                            onCreateGroup(groupNameInput.trim()) {}
-                            showNewGroupDialog = false
-                        }
-                    },
-                    enabled = groupNameInput.isNotBlank(),
-                ) {
-                    Text("Create")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showNewGroupDialog = false }) {
-                    Text("Cancel")
-                }
-            },
-        )
-    }
 }
