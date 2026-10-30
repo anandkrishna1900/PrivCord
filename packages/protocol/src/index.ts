@@ -18,3 +18,6 @@ export * from './connectivity/secureChannel';
 export * from './connectivity/mesh';
 export * from './connectivity/fileSharing';
 export * from './e2ee/groupCrypto';
+export * from './groups/events';
+export * from './groups/log';
+export * from './groups/coordinator';
