@@ -19,6 +19,7 @@ export function Composer({
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const sendingRef = useRef(false);
 
   const length = countCodePoints(text);
   const overLimit = length > MAX_TEXT_LENGTH;
@@ -43,11 +44,13 @@ export function Composer({
   }
 
   async function send() {
-    if (!text.trim() || overLimit) return;
+    if (!text.trim() || overLimit || sendingRef.current) return;
+    sendingRef.current = true;
     setSending(true);
     try {
       await submit();
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   }

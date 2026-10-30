@@ -247,6 +247,7 @@ export class ChatEngine {
         });
       }
 
+      if (this.stopped) return;
       const localMessages = await this.deps.store.loadMessages();
       this.messages = new Map(localMessages.map((message) => [message.messageId, message]));
       this.knownIds = new Set(this.messages.keys());
@@ -257,6 +258,7 @@ export class ChatEngine {
         this.outbox = new Map();
       }
 
+      if (this.stopped) return;
       this.setState({
         phase: 'ready',
         selfProfile: ownProfile,
@@ -275,7 +277,7 @@ export class ChatEngine {
       this.tickTimer = window.setInterval(() => void this.tick(), TICK_MS);
       void this.touchPresence();
     } catch (error) {
-      this.setState({ phase: 'error', error: errorMessage(error) });
+      if (!this.stopped) this.setState({ phase: 'error', error: errorMessage(error) });
     }
   }
 
@@ -1032,14 +1034,11 @@ export class ChatEngine {
           if (resolved.source === 'cloud') {
             cachePeerDeviceKey(this.deps.peerUid, frame.deviceId, frame.publicKeyJwk);
           }
-        } else if (
-          origin === 'manual' &&
-          this.manualExpectedKey &&
-          publicKeysEqual(this.manualExpectedKey, frame.publicKeyJwk)
-        ) {
-          this.auth.trust = 'unverified';
-          this.peerKeySource = 'manual';
         } else if (origin === 'manual') {
+          if (this.manualExpectedKey && !publicKeysEqual(this.manualExpectedKey, frame.publicKeyJwk)) {
+            this.failPeer('Peer identity key does not match the connection code.');
+            return;
+          }
           this.auth.trust = 'unverified';
           this.peerKeySource = 'manual';
         } else {
@@ -1098,7 +1097,7 @@ export class ChatEngine {
       case 'ack': {
         if (!this.auth.authenticated) return;
         const message = this.messages.get(frame.messageId);
-        if (!message) return;
+        if (!message || message.senderId !== this.deps.uid) return;
         const nextState: DeliveryState =
           frame.state === 'READ' ? 'READ' : 'DELIVERED';
         const updated: ChatMessage = {

@@ -79,6 +79,7 @@ export function MessageList({
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
   const didInitialScroll = useRef(false);
+  const lastIdRef = useRef<string>();
   const [copyStatus, setCopyStatus] = useState<'copied' | 'failed' | null>(null);
 
   async function handleCopy(text: string) {
@@ -90,11 +91,14 @@ export function MessageList({
   useEffect(() => {
     const element = scrollRef.current;
     if (!element) return;
-    if (!didInitialScroll.current || atBottomRef.current) {
+    const last = messages[messages.length - 1];
+    const sentNew = last?.senderId === selfUid && last.messageId !== lastIdRef.current;
+    lastIdRef.current = last?.messageId;
+    if (!didInitialScroll.current || atBottomRef.current || sentNew) {
       element.scrollTop = element.scrollHeight;
       didInitialScroll.current = true;
     }
-  }, [messages]);
+  }, [messages, selfUid]);
 
   function onScroll() {
     const element = scrollRef.current;
