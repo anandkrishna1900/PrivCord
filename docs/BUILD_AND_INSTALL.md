@@ -48,3 +48,4 @@ npm install
 node server.js
 ```
 The relay listens on port `8787` by default (`ws://0.0.0.0:8787`).
+
