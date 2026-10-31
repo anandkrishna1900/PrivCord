@@ -66,7 +66,7 @@ export function ChatLayout({
   const [dialog, setDialog] = useState<
     null | 'settings' | 'add' | 'group' | 'channels' | 'details' | 'manual' | 'nuke' | 'clear' | 'recovery'
   >(null);
-  const [settingsSection] = useState<SettingsSection>('profile');
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('profile');
   const [manualUid, setManualUid] = useState('');
   const [verifyUid, setVerifyUid] = useState<string | null>(null);
   const [replying, setReplying] = useState<UiMessage | null>(null);
@@ -361,6 +361,21 @@ export function ChatLayout({
                 <button type="button" className="icon-button subtle" aria-label="Dismiss" onClick={() => engine?.clearNotice()}>
                   <XIcon size={15} />
                 </button>
+              </div>
+            ) : null}
+            {person?.diagnosis ? (
+              <div className="banner info" role="status" data-testid="diagnosis">
+                <span>{person.diagnosis.message}</span>
+                {person.diagnosis.actions.includes('enable-store-forward') ? (
+                  <button type="button" className="btn small" onClick={() => void engine?.enableStoreForward()}>
+                    Deliver via relays
+                  </button>
+                ) : null}
+                {person.diagnosis.actions.some((a) => a === 'add-turn' || a === 'open-connection-settings') ? (
+                  <button type="button" className="btn small" onClick={() => { setSettingsSection('connection'); setDialog('settings'); }}>
+                    Connection settings
+                  </button>
+                ) : null}
               </div>
             ) : null}
             {channel ? (

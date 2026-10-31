@@ -333,7 +333,7 @@ class PeerSession(
             "read" -> if (auth.authenticated) handleRead(frame)
             "message" -> if (auth.authenticated) handlePeerMessage(frame)
             "gmsg", "group_push", "group_events", "group_have", "relay_blob",
-            "declined", "file_offer", "file_chunk", "privacy",
+            "declined", "file_offer", "file_chunk", "privacy", "delete", "react",
             -> if (isReady) listener.onFrame(frame)
         }
     }
@@ -507,6 +507,7 @@ class PeerSession(
         if (text.trim().isEmpty() || countCodePoints(text) > MAX_TEXT_LENGTH) return
         if (clientCreatedAt <= 0) return
         val replyTo = if (frame.has("replyTo")) ReplyRef.fromJson(frame.opt("replyTo")) ?: return else null
+        val ttl = try { com.duochat.app.data.parseTtl(frame) } catch (_: IllegalArgumentException) { return }
         listener.onPeerMessage(
             ChatMessage(
                 messageId = messageId,
@@ -518,6 +519,7 @@ class PeerSession(
                 deliveryState = DeliveryState.DELIVERED,
                 readAt = null,
                 replyTo = replyTo,
+                ttlSec = ttl,
             ),
         )
     }

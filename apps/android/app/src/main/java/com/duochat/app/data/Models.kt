@@ -44,6 +44,13 @@ data class ChatMessage(
     val file: FileMeta? = null,
     /** Channel messages: the sender's self-chosen name plus a short id (they are not in our contacts). */
     val senderName: String? = null,
+    /** Disappearing messages: lifetime in seconds as set by the sender, and when this phone removes it (ms). */
+    val ttlSec: Int? = null,
+    val expiresAt: Long? = null,
+    /** Deleted for everyone: only a tombstone is kept. */
+    val deleted: Boolean = false,
+    /** Who reacted with what (uid to emoji). */
+    val reactions: Map<String, String> = emptyMap(),
 )
 
 /** One message waiting for one recipient. */
@@ -223,6 +230,8 @@ data class ChatState(
     val channels: List<ChannelView> = emptyList(),
     /** Phones currently linked over the Bluetooth mesh (0 when the mesh is off). */
     val meshLinks: Int = 0,
+    /** Disappearing-message timer per conversation, in seconds (absent = off). */
+    val disappearing: Map<String, Int> = emptyMap(),
 )
 
 /** A public channel we have joined. */

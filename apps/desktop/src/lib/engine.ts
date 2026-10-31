@@ -1,5 +1,7 @@
 import {
   CHANNEL_TTL_SEC,
+  diagnoseConnection,
+  type Diagnosis,
   deleteFrame,
   parseDeleteFrame,
   parseReactFrame,
@@ -73,7 +75,7 @@ import {
   uidMatchesKeys,
   type DeviceIdentity,
 } from './identity';
-import { loadNetworkConfig, rtcConfigFor } from './network';
+import { loadNetworkConfig, rtcConfigFor, saveNetworkConfig } from './network';
 import { SignalingHub, transportsFor } from './signaling/hub';
 import type { SignalingStatus, SignalingTransport } from './signaling/types';
 import { LocalStore, type FileMeta, type StoredMessage } from './localDb';
@@ -122,6 +124,8 @@ export interface ContactView {
   last?: LastMessage;
   /** Plain-language status line. */
   status: string;
+  /** Why it is not connecting, in plain words, once it has been tried a few times. */
+  diagnosis?: Diagnosis;
   /** Appears in the chat list and can be messaged. Group-only people do not until verified. */
   direct: boolean;
 }
@@ -1042,6 +1046,7 @@ export class ChatEngine {
   private onLinkReady(link: PeerLink): void {
     const uid = link.uid;
     this.lastPing.set(uid, Date.now());
+    link.heardAt = 0;
     link.sendJson({ v: 1, kind: 'privacy', groupOnly: this.groupOnly });
     for (const out of this.coord.onLinkOpen(uid)) this.sendFrame(out.to, out.frame);
     this.flush(uid);
@@ -1748,15 +1753,18 @@ export class ChatEngine {
     try {
       switch (payload.t) {
         case 'ready':
+          link.heardAt = Date.now();
           if (link.isInitiator()) link.lastOfferAt = 0;
           return;
         case 'offer': {
+          link.heardAt = Date.now();
           if (link.isInitiator() || link.manual || link.ready || typeof payload.sdp !== 'string') return;
           const answer = await link.acceptOffer(payload.sdp);
           await this.putTo(rec.uid, { t: 'answer', sdp: answer }, 'sig', 120);
           return;
         }
         case 'answer':
+          link.heardAt = Date.now();
           if (link.isInitiator() && typeof payload.sdp === 'string') await link.applyAnswer(payload.sdp);
           return;
         case 'msg': {
@@ -2058,6 +2066,30 @@ export class ChatEngine {
     return n;
   }
 
+  private diagnosisOf(uid: string, link: PeerLink): { diagnosis?: Diagnosis } {
+    const status = this.hub?.status() ?? 'idle';
+    const d = diagnoseConnection(
+      {
+        signaling: status === 'online' || status === 'connecting' || status === 'error' ? status : 'idle',
+        attempts: link.offerAttempt,
+        sawPeerReply: link.heardAt > 0,
+        localCandidates: link.lastCandidates,
+        iceState: link.iceState,
+        hasTurn: this.network.turn.length > 0,
+        storeForward: this.network.storeForward,
+      },
+      this.nameOf(uid),
+    );
+    return d ? { diagnosis: d } : {};
+  }
+
+  /** One tap fallback from the "not connecting" banner: messages also go through the relays (sealed, 7 days). */
+  enableStoreForward(): void {
+    this.network = { ...this.network, storeForward: true };
+    saveNetworkConfig(this.network);
+    this.emit({ notice: 'Store-and-forward is on. Messages now also travel (encrypted) through the relays, so they arrive even when a direct link is not possible.' });
+  }
+
   private statusFor(uid: string): string {
     const link = this.links.get(uid);
     const name = this.nameOf(uid);
@@ -2084,6 +2116,7 @@ export class ChatEngine {
         unread: this.unread(c.uid),
         last: this.last(c.uid),
         status: this.statusFor(c.uid),
+        ...(link && !link.ready && !link.manual ? this.diagnosisOf(c.uid, link) : {}),
         direct: this.canDirect(c.uid),
       };
     });

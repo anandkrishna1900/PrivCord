@@ -1,3 +1,5 @@
+import { countSdpCandidates } from '@duochat/protocol';
+
 export interface PeerTransportHandlers {
   onOpen: () => void;
   onClose: () => void;
@@ -6,13 +8,18 @@ export interface PeerTransportHandlers {
   onError: (message: string) => void;
 }
 
-const ICE_GATHER_TIMEOUT_MS = 8_000;
+// Slow mobile networks can need several seconds to hear back from a STUN server.
+const ICE_GATHER_TIMEOUT_MS = 12_000;
 
 export class PeerTransport {
   readonly kind = 'webrtc' as const;
   private pc: RTCPeerConnection | null = null;
   private channel: RTCDataChannel | null = null;
   private closedByUs = false;
+  /** Address kinds this side found while preparing the connection (host, srflx = via STUN, relay = TURN). */
+  candidates: { host: number; srflx: number; relay: number } | null = null;
+  /** WebRTC's own view of the connection attempt. */
+  iceState: string | null = null;
 
   constructor(
     private readonly rtcConfig: RTCConfiguration,
@@ -38,6 +45,7 @@ export class PeerTransport {
     await waitForIceGathering(pc);
     const sdp = pc.localDescription?.sdp;
     if (!sdp) throw new Error('Failed to create a connection offer.');
+    this.candidates = countSdpCandidates(sdp);
     return sdp;
   }
 
@@ -51,6 +59,7 @@ export class PeerTransport {
     await waitForIceGathering(pc);
     const sdp = pc.localDescription?.sdp;
     if (!sdp) throw new Error('Failed to create a connection answer.');
+    this.candidates = countSdpCandidates(sdp);
     return sdp;
   }
 
@@ -129,6 +138,9 @@ export class PeerTransport {
   private createPeerConnection(): RTCPeerConnection {
     const pc = new RTCPeerConnection(this.rtcConfig);
     this.pc = pc;
+    pc.oniceconnectionstatechange = () => {
+      this.iceState = pc.iceConnectionState;
+    };
     pc.onconnectionstatechange = () => {
       this.handlers.onStateChange(pc.connectionState);
       if (

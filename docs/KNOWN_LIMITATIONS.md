@@ -79,3 +79,12 @@ Local kill switch activation operates strictly within the local device boundary:
   File saving from the packaged desktop app has only been exercised in the browser suite.
 - No push notifications (there is no server to send them).
 - The Bluetooth mesh exists on Android only and has never run on real radios; Windows cannot join it ([details](CHANNELS_AND_MESH.md)).
+
+## Connecting across cities or mobile networks (e.g. Kerala to Kolkata)
+
+Distance does not matter, the networks do. A direct link needs both phones to find a path to each other:
+
+- Most Indian mobile data (Jio, Airtel, Vi) sits behind carrier-grade NAT. STUN alone often cannot punch through two of these at once. A **TURN relay** is the fix.
+- The app now shows a plain-language banner in the chat saying which case you are in, with a one-tap **Deliver via relays** button (store-and-forward) so messages still arrive while a direct link is impossible.
+- To get calls and live links across any two networks, add a TURN server under Settings > Connection. Run your own with coturn on a small VPS (`turnserver -a -u user:pass -r example.org --no-tls --no-dtls` for a quick test; use TLS in production). The relay only sees encrypted traffic.
+- Not verified on real carrier networks from the development environment; the diagnosis logic is unit-tested, the field behaviour is not.

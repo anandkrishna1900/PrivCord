@@ -10,6 +10,10 @@ import {
   FILE_CHUNK_BYTES,
   deriveIdentityFromPhrase,
   deriveInvite,
+  sealBackup,
+  reactFrame,
+  deleteFrame,
+  summarizeReactions,
   deriveChannel,
   sealChannelMessage,
   makeMeshPacket,
@@ -74,6 +78,10 @@ const chan = await deriveChannel('general');
 const chanBlob = await sealChannelMessage({ channel: chan, text: 'hello from the channel', at: 1_700_000_000_123, card: inviterCard, uid: inviterUid, signPriv: inviter.signKey.privJwk });
 const channelNames = ['#General', '  general  ', 'Lagos Traffic!!', 'кофе', '###', 'x'.repeat(100)];
 
+// An encrypted backup made by TypeScript: Kotlin must open it with the same passphrase.
+const backupData = { v: 1, uid: 'uid-backup', contacts: [{ uid: 'u1', name: 'Ann' }], messages: ['hello backup'] };
+const backupText = await sealBackup(backupData, 'correct horse battery');
+
 writeFileSync(
   new URL('../../../docs/file-vectors.json', import.meta.url),
   JSON.stringify(
@@ -85,6 +93,8 @@ writeFileSync(
       reply: { frame: createPeerMessageFrame(reply), preview: makeReplyRef(original).preview },
       privacy,
       channel: { name: 'general', mailbox: chan.mailbox, tag: chan.tag, uid: inviterUid, text: 'hello from the channel', at: 1_700_000_000_123, blob: chanBlob, packet: makeMeshPacket(chanBlob), names: channelNames.map((n) => [n, normalizeChannelName(n)]) },
+      backup: { passphrase: 'correct horse battery', text: backupText, data: backupData },
+      social: { react: reactFrame('m-1', '👍', true), del: deleteFrame('m-2'), chips: summarizeReactions({ a: '👍', b: '👍', me: '❤️' }, 'me') },
       invite: { words: inviteWords, mailbox: rv.mailbox, uid: inviterUid, name: 'Ivy', blob: inviteBlob },
     },
     null,
