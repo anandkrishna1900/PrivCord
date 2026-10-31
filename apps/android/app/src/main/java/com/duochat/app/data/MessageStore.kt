@@ -37,6 +37,7 @@ class MessageStore(
                 type = if (extra?.optJSONObject("file") != null) MessageType.FILE else MessageType.TEXT,
                 replyTo = ReplyRef.fromJson(extra?.optJSONObject("replyTo")),
                 file = FileMeta.fromJson(extra?.optJSONObject("file")),
+                senderName = extra?.optString("senderName")?.takeIf { it.isNotEmpty() },
                 messageId = row.messageId,
                 clientMessageId = row.clientMessageId,
                 senderId = row.senderId,
@@ -64,12 +65,13 @@ class MessageStore(
                 readAt = message.readAt,
                 conversationId = message.conversationId,
                 totalRecipients = message.totalRecipients,
-                extraCipher = if (message.replyTo != null || message.file != null) {
+                extraCipher = if (message.replyTo != null || message.file != null || message.senderName != null) {
                     crypto.encrypt(
                         JSONObject()
                             .also { o ->
                                 message.replyTo?.let { o.put("replyTo", it.toJson()) }
                                 message.file?.let { o.put("file", it.toJson()) }
+                                message.senderName?.let { o.put("senderName", it) }
                             }.toString(),
                     )
                 } else {
@@ -78,6 +80,16 @@ class MessageStore(
             ),
         )
     }
+
+    /* ---- small private values ---- */
+
+    suspend fun getKv(key: String): JSONArray? = try {
+        dao.getKv(key)?.let { JSONArray(crypto.decrypt(it.valueCipher)) }
+    } catch (_: Exception) {
+        null
+    }
+
+    suspend fun putKv(key: String, value: JSONArray) = dao.putKv(com.duochat.app.data.local.KvEntity(key, crypto.encrypt(value.toString())))
 
     /* ---- files ---- */
 

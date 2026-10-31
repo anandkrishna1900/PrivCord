@@ -32,7 +32,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val database by lazy {
         Room.databaseBuilder(application, DuoDatabase::class.java, "duochat.db")
             .addMigrations(
-                DuoDatabase.MIGRATION_1_2, DuoDatabase.MIGRATION_2_3, DuoDatabase.MIGRATION_3_4, DuoDatabase.MIGRATION_4_5, DuoDatabase.MIGRATION_5_6,
+                DuoDatabase.MIGRATION_1_2, DuoDatabase.MIGRATION_2_3, DuoDatabase.MIGRATION_3_4, DuoDatabase.MIGRATION_4_5, DuoDatabase.MIGRATION_5_6, DuoDatabase.MIGRATION_6_7,
             )
             .build()
     }
@@ -103,9 +103,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             ble = com.duochat.app.ble.AndroidBleEnvironment(application),
             onNotify = { notice -> DuoNotifications.showNotice(application, notice, settingsRepository.settings.value) },
             initialGroupOnly = settingsRepository.settings.value.groupOnly,
+            meshRadioFactory = { com.duochat.app.ble.AndroidMeshRadio(application) },
         )
         engine = created
         if (visible) created.setVisible(true)
+        if (settingsRepository.settings.value.mesh) created.setMeshEnabled(true)
         stateJob = viewModelScope.launch {
             created.state.collect { _chat.value = it }
         }
@@ -164,6 +166,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (after.network != before.network) engine?.reloadNetwork()
         if (after.displayName != before.displayName) engine?.onOwnNameChanged()
         if (after.groupOnly != before.groupOnly) engine?.setGroupOnly(after.groupOnly)
+        if (after.mesh != before.mesh) engine?.setMeshEnabled(after.mesh)
     }
 
     fun toggleMute(conversationId: String) {
@@ -183,6 +186,32 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun addFriend(text: String, onResult: (Result<String>) -> Unit) = withEngine(onResult) { it.addFriend(text) }
+
+    fun createInvite(onResult: (Result<com.duochat.app.data.ActiveInvite>) -> Unit) = withEngine(onResult) { it.createInvite() }
+
+    fun acceptRequest(uid: String, onResult: (Result<String>) -> Unit) = withEngine(onResult) { it.acceptRequest(uid) }
+
+    fun retryAnswer() {
+        engine?.retryAnswer()
+    }
+
+    fun clearAnswer() {
+        engine?.clearAnswer()
+    }
+
+    fun dismissRequest(uid: String) {
+        engine?.dismissRequest(uid)
+    }
+
+    fun joinChannel(name: String, onResult: (Result<String>) -> Unit) = withEngine(onResult) { it.joinChannel(name) }
+
+    fun leaveChannel(id: String) {
+        engine?.leaveChannel(id)
+    }
+
+    fun muteSender(uid: String) {
+        engine?.muteSender(uid)
+    }
 
     fun markChecked(uid: String) {
         viewModelScope.launch { engine?.markChecked(uid) }

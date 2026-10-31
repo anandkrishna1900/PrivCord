@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { GroupSessionManager } from '../src/e2ee/groupCrypto';
-import { MeshRouter } from '../src/connectivity/mesh';
 
 describe('GroupSessionManager', () => {
   it('encrypts and decrypts group messages per epoch and isolates across epochs', async () => {
@@ -43,40 +42,5 @@ describe('GroupSessionManager', () => {
     const enc2 = await mgrA.encrypt(groupId, 'alice', 1, { text: 'Classified update' });
     // Bob attempts to decrypt Epoch 2 message without key
     await expect(mgrB.decrypt(enc2)).rejects.toThrow(/missing epoch key/);
-  });
-});
-
-describe('MeshRouter', () => {
-  it('handles multi-hop packet routing, deduplication, and loop detection', () => {
-    const router = new MeshRouter({ defaultTtl: 5 });
-
-    const pkt = {
-      v: 1 as const,
-      kind: 'mesh_pkt' as const,
-      packetId: 'pkt-001',
-      originUid: 'device-A',
-      destUid: 'device-D',
-      ttl: 4,
-      maxHops: 5,
-      timestamp: Date.now(),
-      payload: 'ciphertext-data',
-    };
-
-    // Device B receives
-    const actionB = router.processPacket(pkt, 'device-B');
-    expect(actionB).toBe('FORWARD');
-
-    // Duplicate packet arriving again at Device B is dropped
-    const actionB2 = router.processPacket(pkt, 'device-B');
-    expect(actionB2).toBe('DROP');
-
-    // Decrement TTL for forwarding
-    const hopC = router.nextHopPacket(pkt);
-    expect(hopC?.ttl).toBe(3);
-
-    // Final destination consumes
-    const routerD = new MeshRouter();
-    const actionD = routerD.processPacket(hopC!, 'device-D');
-    expect(actionD).toBe('CONSUME');
   });
 });

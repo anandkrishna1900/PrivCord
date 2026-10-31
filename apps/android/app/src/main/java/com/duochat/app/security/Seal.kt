@@ -23,6 +23,20 @@ class SealedBlob(
     fun toJson(): JSONObject = JSONObject()
         .put("v", 1).put("to", to).put("from", from).put("epk", epk)
         .put("iv", iv).put("ct", ct).put("sig", sig)
+
+    companion object {
+        /** Null unless the JSON has the exact blob shape (same checks as the TypeScript `validateBlob`). */
+        fun fromJson(json: JSONObject?): SealedBlob? = try {
+            val epk = json?.optJSONObject("epk")
+            if (json == null || epk == null || json.optInt("v", -1) != 1 || Seal.jwkOrNull(epk) == null) null
+            else SealedBlob(
+                json.getString("to"), json.getString("from"), epk,
+                json.getString("iv"), json.getString("ct"), json.getString("sig"),
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
 }
 
 object Seal {
@@ -50,6 +64,16 @@ object Seal {
             init(mode, key, GCMParameterSpec(128, iv))
             updateAAD(aad)
         }
+
+    /** Signs the parts of a blob that must not change (used by blob kinds that are not ECDH-sealed, like invite codes). */
+    fun signBlob(to: String, from: String, epk: JSONObject, iv: String, ct: String, sign: (ByteArray) -> String): String =
+        sign(signedPart(1, to, from, epk, iv, ct))
+
+    fun verifyBlob(blob: SealedBlob, signPub: PublicJwk): Boolean = try {
+        IdentityCodec.verify(signPub, signedPart(1, blob.to, blob.from, blob.epk, blob.iv, blob.ct), blob.sig)
+    } catch (_: Exception) {
+        false
+    }
 
     /** [sign] signs raw bytes with the sender's ECDSA identity key and returns base64url(r||s). */
     fun seal(payload: JSONObject, fromUid: String, toUid: String, toDh: PublicJwk, sign: (ByteArray) -> String): SealedBlob {

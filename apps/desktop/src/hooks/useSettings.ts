@@ -18,7 +18,7 @@ export function useSettings(): {
   }, [settings]);
 
   useEffect(() => {
-    if (settings.theme !== 'system') return;
+    if (settings.theme !== 'system' || settings.palette !== 'classic') return;
     const media = window.matchMedia('(prefers-color-scheme: light)');
     const onChange = () => applySettings(settings);
     media.addEventListener('change', onChange);

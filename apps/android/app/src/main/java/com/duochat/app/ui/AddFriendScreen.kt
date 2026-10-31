@@ -36,6 +36,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import com.duochat.app.data.ActiveInvite
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -60,12 +62,15 @@ import com.journeyapps.barcodescanner.ScanOptions
  * One screen to add a friend: show your invite (QR, copy, share) and scan or paste theirs. Afterwards an
  * optional, skippable "Check it's really them" step compares the numbers.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun AddFriendScreen(
     state: ChatState,
     ownCard: () -> String,
     onAdd: (String, (Result<String>) -> Unit) -> Unit,
+    onCreateInvite: ((Result<ActiveInvite>) -> Unit) -> Unit,
+    onRetryAnswer: () -> Unit,
+    onClearAnswer: () -> Unit,
     onChecked: (String) -> Unit,
     onBack: () -> Unit,
     onOpenChat: (String) -> Unit,
@@ -78,6 +83,11 @@ fun AddFriendScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var copied by remember { mutableStateOf(false) }
+    var wordsCopied by remember { mutableStateOf(false) }
+    var showFull by remember { mutableStateOf(false) }
+    var wordsError by remember { mutableStateOf<String?>(null) }
+    // Make the six words once when the screen opens (they last 15 minutes).
+    LaunchedEffect(Unit) { onCreateInvite { r -> r.onFailure { wordsError = it.message ?: "Could not make a six-word invite." } } }
     // The friend just added (uid): shows the optional check.
     var addedUid by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -125,6 +135,36 @@ fun AddFriendScreen(
                         Button(onClick = { onOpenChat(added.uid) }) { Text("Say hello") }
                     }
                 }
+                // Typed their words: say plainly whether our own invite reached them. They confirm us on their side.
+                state.answer?.takeIf { it.uid == added.uid }?.let { answer ->
+                    Spacer(Modifier.height(12.dp))
+                    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp)) {
+                            when (answer.state) {
+                                com.duochat.app.data.AnswerState.SENDING -> {
+                                    Text("Sending your invite to ${answer.name}…", style = MaterialTheme.typography.bodyMedium)
+                                }
+                                com.duochat.app.data.AnswerState.SENT -> {
+                                    Text("Your invite was sent to ${answer.name}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        "${answer.name} will see a request to add you. As soon as they accept, you are connected.",
+                                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                com.duochat.app.data.AnswerState.FAILED -> {
+                                    Text("Your invite did not reach ${answer.name}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.error)
+                                    Text(answer.error ?: "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(
+                                        "You can try again, or show ${answer.name} your own six words from this screen so they can add you.",
+                                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    Button(onClick = onRetryAnswer) { Text("Send it again") }
+                                }
+                            }
+                        }
+                    }
+                }
                 Spacer(Modifier.height(16.dp))
                 Text("Check it's really them (optional)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(6.dp))
@@ -139,7 +179,7 @@ fun AddFriendScreen(
                     Button(onClick = { onChecked(added.uid) }, enabled = !added.checked) {
                         Text(if (added.checked) "Checked" else "The numbers match")
                     }
-                    TextButton(onClick = { addedUid = null }) { Text("Skip for now") }
+                    TextButton(onClick = { addedUid = null; onClearAnswer() }) { Text("Skip for now") }
                 }
                 return@Column
             }
@@ -147,7 +187,7 @@ fun AddFriendScreen(
             Text("Your invite", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(4.dp))
             Text(
-                "Let a friend scan this code, or send them the invite text. It only contains your public identity.",
+                "Let a friend scan this code or type the six words below. It only contains your public identity.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(12.dp))
@@ -161,22 +201,53 @@ fun AddFriendScreen(
                 }
             }
             Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val words = state.invite?.words
+            if (words != null) {
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    words.split(' ').forEach { w ->
+                        Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                            Text(w, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+                        }
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Text("The words work for 15 minutes while this app is open.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { clipboard.setText(AnnotatedString(words)); wordsCopied = true }) {
+                        Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (wordsCopied) "Copied" else "Copy the words")
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, words)
+                            context.startActivity(Intent.createChooser(send, "Share the six words"))
+                        },
+                    ) {
+                        Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Share")
+                    }
+                }
+            } else {
+                Text(
+                    wordsError ?: "Making your six words…",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            TextButton(onClick = { showFull = !showFull }) { Text(if (showFull) "Hide the full invite text" else "Full invite text (for pasting without the words)") }
+            if (showFull) {
+                Text(card, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(6.dp))
                 OutlinedButton(onClick = { clipboard.setText(AnnotatedString(card)); copied = true }, enabled = card.isNotEmpty()) {
                     Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text(if (copied) "Copied" else "Copy invite")
-                }
-                OutlinedButton(
-                    onClick = {
-                        val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, card)
-                        context.startActivity(Intent.createChooser(send, "Share invite"))
-                    },
-                    enabled = card.isNotEmpty(),
-                ) {
-                    Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Share")
+                    Text(if (copied) "Copied" else "Copy full text")
                 }
             }
 
@@ -184,7 +255,7 @@ fun AddFriendScreen(
             Text("Add a friend", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(4.dp))
             Text(
-                "Scan your friend's code, or paste the invite text they sent you.",
+                "Scan your friend's code, or type the six words they see.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(12.dp))
@@ -209,15 +280,14 @@ fun AddFriendScreen(
             OutlinedTextField(
                 value = pasted,
                 onValueChange = { pasted = it; error = null },
-                label = { Text("Or paste an invite") },
+                label = { Text("Or type the six words (or paste a full invite)") },
                 minLines = 2,
                 maxLines = 4,
                 modifier = Modifier.fillMaxWidth(),
-                textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
             )
             Spacer(Modifier.height(8.dp))
             Button(onClick = { add(pasted) }, enabled = pasted.isNotBlank() && !busy, modifier = Modifier.fillMaxWidth()) {
-                Text(if (busy) "Adding…" else "Add friend")
+                Text(if (busy) "Looking…" else "Add friend")
             }
             error?.let {
                 Spacer(Modifier.height(8.dp))

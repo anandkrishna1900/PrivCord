@@ -14,6 +14,8 @@ import { RecoveryDialog } from './RecoveryDialogs';
 import { AddFriendDialog } from './AddFriendDialog';
 import { GroupDetailsDialog, NewGroupDialog } from './GroupDialogs';
 import { PersonDialog } from './PersonDialog';
+import { RequestDialog } from './RequestDialog';
+import { ChannelsDialog } from './ChannelsDialog';
 import { AlertIcon, ArrowLeftIcon, LoaderIcon, RefreshIcon, SettingsIcon, ShieldIcon, UserIcon, XIcon } from './Icons';
 
 interface Row {
@@ -62,7 +64,7 @@ export function ChatLayout({
   const [selected, setSelected] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [dialog, setDialog] = useState<
-    null | 'settings' | 'add' | 'group' | 'details' | 'manual' | 'nuke' | 'clear' | 'recovery'
+    null | 'settings' | 'add' | 'group' | 'channels' | 'details' | 'manual' | 'nuke' | 'clear' | 'recovery'
   >(null);
   const [settingsSection] = useState<SettingsSection>('profile');
   const [manualUid, setManualUid] = useState('');
@@ -111,6 +113,15 @@ export function ChatLayout({
         unread: c.unread,
         online: c.conn === 'connected',
       })),
+      ...state.channels.map((c) => ({
+        id: c.id,
+        isGroup: true,
+        name: `# ${c.name}`,
+        preview: c.last ? `${c.last.own ? 'You' : (c.last.senderName ?? 'Someone')}: ${c.last.text}` : 'Public channel',
+        at: c.last?.at ?? 0,
+        unread: c.unread,
+        online: c.conn === 'connected',
+      })),
       ...state.groups.map((g) => ({
         id: g.groupId,
         isGroup: true,
@@ -138,13 +149,16 @@ export function ChatLayout({
 
   const person = state.contacts.find((c) => c.uid === selected) ?? null;
   const group = state.groups.find((g) => g.groupId === selected) ?? null;
-  const current = person ?? group;
+  const channel = state.channels.find((c) => c.id === selected) ?? null;
+  const current = person ?? group ?? (channel ? { name: `# ${channel.name}` } : null);
   const verifyPerson = state.contacts.find((c) => c.uid === verifyUid) ?? null;
   const messages = (selected && state.messages[selected]) || [];
   const hasChats = rows.length > 0;
   const readOnly = group !== null && group.status !== 'member';
 
-  const headerStatus = person
+  const headerStatus = channel
+    ? 'Public channel · anyone who knows the name can read this'
+    : person
     ? person.status
     : group
       ? group.status === 'member'
@@ -181,6 +195,9 @@ export function ChatLayout({
             onClick={() => setDialog('group')}
           >
             New group
+          </button>
+          <button type="button" className="button secondary" aria-label="Channels" onClick={() => setDialog('channels')}>
+            Channels
           </button>
         </div>
 
@@ -247,10 +264,13 @@ export function ChatLayout({
                       onClick={() => {
                         setMenuOpen(false);
                         if (person) setVerifyUid(person.uid);
-                        else setDialog('details');
+                        else if (channel) {
+                          engine?.leaveChannel(channel.id);
+                          setSelected(null);
+                        } else setDialog('details');
                       }}
                     >
-                      {person ? 'Friend details' : 'Group details'}
+                      {person ? 'Friend details' : channel ? 'Leave channel' : 'Group details'}
                     </button>
                     {person ? (
                       <button
@@ -287,6 +307,11 @@ export function ChatLayout({
                 </button>
               </div>
             ) : null}
+            {channel ? (
+              <div className="banner subtle" role="note">
+                <span>Public channel: anyone who knows the name can read it. Your messages show your name and a short ID.</span>
+              </div>
+            ) : null}
             {state.storageBackend === 'browser' ? (
               <div className="banner subtle" role="note">
                 <span>Development mode: chats are not encrypted on disk. Use the desktop app for the real thing.</span>
@@ -296,7 +321,9 @@ export function ChatLayout({
             <MessageList
               convId={selected ?? ''}
               messages={messages}
-              isGroup={group !== null}
+              isGroup={group !== null || channel !== null}
+              canReply={channel === null}
+              onMute={channel ? (uid) => engine?.muteSender(uid) : undefined}
               empty={
                 group
                   ? 'No messages yet. Say hello to the group.'
@@ -316,6 +343,7 @@ export function ChatLayout({
                 key={selected}
                 disabled={state.phase !== 'ready'}
                 placeholder={group ? `Message ${group.name}` : `Message ${current.name}`}
+                isChannel={channel !== null}
                 reply={replying ? { name: replying.own ? 'yourself' : replying.senderName, preview: replying.text } : null}
                 onCancelReply={() => setReplying(null)}
                 onSend={async (text) => {
@@ -358,7 +386,15 @@ export function ChatLayout({
         )}
       </main>
 
-      <AddFriendDialog open={dialog === 'add'} onClose={() => setDialog(null)} engine={engine} onAdded={open} />
+      <RequestDialog requests={state.requests} engine={engine} onAdded={open} />
+      <ChannelsDialog
+        open={dialog === 'channels'}
+        onClose={() => setDialog(null)}
+        engine={engine}
+        channels={state.channels}
+        onJoined={open}
+      />
+      <AddFriendDialog open={dialog === 'add'} onClose={() => setDialog(null)} engine={engine} answer={state.answer} onAdded={open} />
       <NewGroupDialog open={dialog === 'group'} onClose={() => setDialog(null)} engine={engine} state={state} onCreated={open} />
       <GroupDetailsDialog
         open={dialog === 'details' && group !== null}

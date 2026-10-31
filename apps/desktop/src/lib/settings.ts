@@ -1,3 +1,5 @@
+import { DEFAULT_PALETTE, THEMES, themeById, themeVars } from './themes';
+
 export type ThemeMode = 'system' | 'dark' | 'light';
 
 export interface AppSettings {
@@ -5,6 +7,8 @@ export interface AppSettings {
   accent: string;
   notificationsEnabled: boolean;
   notificationPreviews: boolean;
+  /** A built-in colour theme (see themes.ts), or 'classic' for the system light/dark look with the accent picker. */
+  palette: string;
   /** The name friends see on your invite. */
   displayName: string;
   /**
@@ -29,6 +33,7 @@ const DEFAULTS: AppSettings = {
   accent: ACCENTS[0].value,
   notificationsEnabled: true,
   notificationPreviews: true,
+  palette: DEFAULT_PALETTE,
   displayName: '',
   groupOnly: false,
 };
@@ -54,6 +59,7 @@ export function parseSettings(raw: string | null): AppSettings {
         typeof parsed.notificationPreviews === 'boolean'
           ? parsed.notificationPreviews
           : DEFAULTS.notificationPreviews,
+      palette: typeof parsed.palette === 'string' && (parsed.palette === DEFAULT_PALETTE || themeById(parsed.palette)) ? parsed.palette : DEFAULT_PALETTE,
       groupOnly: typeof parsed.groupOnly === 'boolean' ? parsed.groupOnly : DEFAULTS.groupOnly,
       displayName:
         typeof parsed.displayName === 'string'
@@ -82,8 +88,18 @@ export function resolvedTheme(mode: ThemeMode): 'dark' | 'light' {
   return mode;
 }
 
+const THEME_VAR_NAMES = Object.keys(themeVars(THEMES[0]!));
+
 export function applySettings(settings: AppSettings): void {
   const root = document.documentElement;
+  for (const name of THEME_VAR_NAMES) root.style.removeProperty(name);
+  const theme = themeById(settings.palette);
+  if (theme) {
+    root.dataset.theme = theme.dark ? 'dark' : 'light';
+    for (const [name, value] of Object.entries(themeVars(theme))) root.style.setProperty(name, value);
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme.bg);
+    return;
+  }
   root.dataset.theme = resolvedTheme(settings.theme);
   root.style.setProperty('--accent', settings.accent);
   root.style.setProperty('--accent-soft', hexToRgba(settings.accent, 0.16));

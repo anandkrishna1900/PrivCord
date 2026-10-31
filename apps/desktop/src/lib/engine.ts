@@ -1,5 +1,20 @@
 import {
+  CHANNEL_TTL_SEC,
   FileAssembler,
+  MAX_CHANNEL_TEXT,
+  deriveChannel,
+  normalizeChannelName,
+  openChannelMessage,
+  sealChannelMessage,
+  type ChannelKeys,
+  INVITE_TTL_SEC,
+  deriveInvite,
+  encodeContactCard,
+  newInviteWords,
+  openInvite,
+  parseInviteWords,
+  sealInvite,
+  type InviteRendezvous,
   acceptsDirect as acceptsDirectFrom,
   canStartDirect,
   GroupCoordinator,
@@ -34,6 +49,7 @@ import {
   seal,
   validateFileSize,
   type ConnectionPath,
+  type Contact,
   type ContactCard,
   type DeliveryState,
   type GroupFrame,
@@ -141,7 +157,38 @@ export interface UiMessage extends StoredMessage {
   progress?: number;
 }
 
+/** Someone who used our invite words and answered with their own card. */
+export interface InviteRequest {
+  uid: string;
+  name: string;
+  safetyNumber: string;
+}
+
+/** A public channel we have joined. */
+export interface ChannelView {
+  /** Conversation id: `chan:` plus the normalized name. */
+  id: string;
+  name: string;
+  unread: number;
+  last?: LastMessage;
+  conn: ConnState;
+}
+
+/** After typing a friend's words: did our own invite reach them? (They then confirm us on their side.) */
+export interface InviteAnswer {
+  uid: string;
+  name: string;
+  status: 'sending' | 'sent' | 'failed';
+  error?: string;
+}
+
 export interface ChatState {
+  channels: ChannelView[];
+  answer: InviteAnswer | null;
+  /** Our current six-word invite, if one is being shown. */
+  invite: { words: string; expiresAt: number } | null;
+  /** People who used our words and are waiting for us to accept them. */
+  requests: InviteRequest[];
   phase: EnginePhase;
   uid: string;
   contacts: ContactView[];
@@ -171,6 +218,7 @@ const PING_MS = 4_000;
 const MAX_CONNECTING = 3;
 const SOFT_LINK_CAP = 30;
 const PENDING_GROUP_MS = 60_000;
+const MAX_CHANNELS = 8;
 const STALL_MS = 30_000;
 const PROGRESS_EVERY = 8;
 const RANK: Record<DeliveryState, number> = { QUEUED: 0, FAILED: 0, SENT: 1, DELIVERED: 2, READ: 3 };
@@ -213,6 +261,11 @@ export class ChatEngine {
   private groupOnly = loadSettings().groupOnly;
   /** What each connected friend told us about their own setting (re-announced on every link). */
   private peerGroupOnly = new Map<string, boolean>();
+  private activeInvite: { words: string[]; rv: InviteRendezvous; hub: SignalingHub; expiresAt: number; timer: ReturnType<typeof setTimeout>; republish: ReturnType<typeof setInterval> } | null = null;
+  private requestCards = new Map<string, { contact: Contact; safetyNumber: string }>();
+  private redeemed: { words: string; rv: InviteRendezvous; contact: Contact } | null = null;
+  private channels = new Map<string, { keys: ChannelKeys; hub: SignalingHub }>();
+  private blocked = new Set<string>();
   private assemblers = new Map<string, FileAssembler>();
   private lastChunkAt = new Map<string, number>();
   private sendingFiles = new Set<string>();
@@ -222,6 +275,10 @@ export class ChatEngine {
     this.identity = deps.identity;
     this.coord = this.newCoordinator();
     this.state = {
+      channels: [],
+      answer: null,
+      invite: null,
+      requests: [],
       phase: 'starting',
       uid: deps.identity.uid,
       contacts: [],
@@ -323,11 +380,13 @@ export class ChatEngine {
       if (this.stopped) return;
       await this.loadContacts();
       await this.coord.load((await this.deps.store.getSecret<Record<string, unknown[]>>('groups')) ?? {});
+      for (const uid of (await this.deps.store.getSecret<string[]>('blocked')) ?? []) this.blocked.add(uid);
       const stored = await this.deps.store.loadMessages();
       for (const m of stored) this.msgs.set(m.messageId, m);
       await this.migrateLegacy();
       if (this.stopped) return;
       this.startSignaling();
+      for (const name of (await this.deps.store.getSecret<string[]>('channels')) ?? []) await this.joinChannel(name, false).catch(() => undefined);
       this.timer = setInterval(() => void this.tick(), TICK_MS);
       this.state = { ...this.state, phase: 'ready', storageBackend: this.deps.store.backend };
       if (this.deps.store.initError) {
@@ -341,6 +400,9 @@ export class ChatEngine {
   }
 
   stop(): void {
+    this.stopInvite();
+    for (const c of this.channels.values()) c.hub.stop();
+    this.channels.clear();
     this.stopped = true;
     clearInterval(this.timer);
     this.hub?.stop();
@@ -411,8 +473,9 @@ export class ChatEngine {
 
   /** Validate an invite without saving anything. */
   async previewInvite(text: string): Promise<{ uid: string; name: string; safetyNumber: string; already: boolean }> {
-    const contact = await decodeContactCard(text);
-    if (!contact) throw new Error('That does not look like a PrivCord invite. Ask your friend to share it again.');
+    const words = parseInviteWords(text);
+    const contact = words ? await this.lookUpInvite(words) : await decodeContactCard(text);
+    if (!contact) throw new Error('That does not look like a PrivCord invite. Check the words, or ask your friend to share it again.');
     if (contact.uid === this.identity.uid) throw new Error('That is your own invite. Send it to a friend instead.');
     return {
       uid: contact.uid,
@@ -424,8 +487,17 @@ export class ChatEngine {
 
   /** Save a friend from their invite. Returns their uid so the UI can open the chat. */
   async addContact(text: string): Promise<string> {
-    const contact = await decodeContactCard(text);
-    if (!contact) throw new Error('That does not look like a PrivCord invite. Ask your friend to share it again.');
+    const words = parseInviteWords(text);
+    let answerWith: InviteRendezvous | null = null;
+    let contact: Contact | null;
+    if (words) {
+      if (!this.redeemed || this.redeemed.words !== words.join(' ')) this.redeemed = null;
+      contact = this.redeemed?.contact ?? (await this.lookUpInvite(words));
+      answerWith = this.redeemed?.rv ?? null;
+    } else {
+      contact = await decodeContactCard(text);
+    }
+    if (!contact) throw new Error('That does not look like a PrivCord invite. Check the words, or ask your friend to share it again.');
     if (contact.uid === this.identity.uid) throw new Error('That is your own invite. Send it to a friend instead.');
     const existing = this.contacts.get(contact.uid);
     const rec: ContactRecord = {
@@ -442,7 +514,265 @@ export class ChatEngine {
     link.offerAttempt = 0;
     this.emit({ notice: existing ? `${this.nameOf(contact.uid)} is already in your friends.` : `${this.nameOf(contact.uid)} added. Connecting…` });
     void this.tick();
+    // Used someone's words: answer with our own card so they can accept us (they confirm it on their side).
+    if (answerWith) {
+      this.lastAnswer = { rv: answerWith, uid: contact.uid };
+      void this.runAnswer();
+    }
+    this.redeemed = null;
     return contact.uid;
+  }
+
+  private lastAnswer: { rv: InviteRendezvous; uid: string } | null = null;
+
+  /** Sends our invite back and keeps the result where the screen can show it. */
+  private async runAnswer(): Promise<void> {
+    const last = this.lastAnswer;
+    if (!last) return;
+    const name = this.nameOf(last.uid);
+    this.emit({ answer: { uid: last.uid, name, status: 'sending' } });
+    try {
+      await this.answerInvite(last.rv);
+      this.emit({ answer: { uid: last.uid, name, status: 'sent' } });
+    } catch (error) {
+      this.emit({ answer: { uid: last.uid, name, status: 'failed', error: errorMessage(error) } });
+    }
+  }
+
+  retryAnswer(): void {
+    void this.runAnswer();
+  }
+
+  clearAnswer(): void {
+    this.emit({ answer: null });
+  }
+
+  /* ---------------- open channels ---------------- */
+
+  /** A readable name for someone we only know from a channel: their chosen name plus a short id. */
+  private channelLabel(card: ContactCard, uid: string): string {
+    return `${card.name?.trim() || 'Anonymous'} #${uid.slice(0, 4)}`;
+  }
+
+  /** Join (or create: there is no difference) a public channel. Returns its conversation id. */
+  async joinChannel(raw: string, persist = true): Promise<string> {
+    const name = normalizeChannelName(raw);
+    if (!name) throw new Error('Type a channel name, for example general.');
+    if (this.channels.has(name)) return `chan:${name}`;
+    if (this.channels.size >= MAX_CHANNELS) throw new Error(`You can be in at most ${MAX_CHANNELS} channels. Leave one first.`);
+    const hub = await this.onlineHub();
+    const keys = await deriveChannel(name);
+    hub.start(keys.mailbox, (blob) => void this.onChannelBlob(keys, blob));
+    this.channels.set(name, { keys, hub });
+    if (persist) this.persistChannels();
+    this.emit();
+    return `chan:${name}`;
+  }
+
+  leaveChannel(convId: string): void {
+    const name = convId.replace(/^chan:/, '');
+    this.channels.get(name)?.hub.stop();
+    this.channels.delete(name);
+    for (const [id, m] of [...this.msgs]) if (m.conversationId === `chan:${name}`) this.msgs.delete(id);
+    this.persistChannels();
+    this.emit();
+  }
+
+  private persistChannels(): void {
+    void this.deps.store.setSecret('channels', [...this.channels.keys()]).catch(() => undefined);
+  }
+
+  /** Stop showing a person's channel messages (kept on this device only). */
+  muteSender(uid: string): void {
+    this.blocked.add(uid);
+    void this.deps.store.setSecret('blocked', [...this.blocked]).catch(() => undefined);
+    this.emit();
+  }
+
+  unmuteSender(uid: string): void {
+    this.blocked.delete(uid);
+    void this.deps.store.setSecret('blocked', [...this.blocked]).catch(() => undefined);
+    this.emit();
+  }
+
+  private async sendChannel(name: string, rawText: string): Promise<{ ok: true } | { ok: false; error: string }> {
+    const c = this.channels.get(name);
+    if (!c) return { ok: false, error: 'You left this channel.' };
+    const text = rawText.replace(/\r\n?/g, '\n').trim();
+    if (!text) return { ok: false, error: 'Message cannot be empty.' };
+    if (Array.from(text).length > MAX_CHANNEL_TEXT) return { ok: false, error: `Channel messages are limited to ${MAX_CHANNEL_TEXT} characters.` };
+    if (c.hub.status() !== 'online') return { ok: false, error: 'Not connected to the connection service yet. Try again in a moment.' };
+    const at = Date.now();
+    const blob = await sealChannelMessage({ channel: c.keys, text, at, card: this.ownCard(), uid: this.identity.uid, signPriv: this.identity.privateJwk });
+    await this.publishChannel(c, blob);
+    this.storeChannelMessage(name, `c-${blob.sig.slice(0, 24)}`, this.identity.uid, text, at, this.channelLabel(this.ownCard(), this.identity.uid));
+    return { ok: true };
+  }
+
+  /** Live copy always; a stored copy (history for people who join later) only if store-and-forward is on. */
+  private async publishChannel(c: { keys: ChannelKeys; hub: SignalingHub }, blob: SealedBlob): Promise<void> {
+    const results = await Promise.allSettled([
+      c.hub.put(c.keys.mailbox, blob, { kind: 'sig', ttlSec: 120 }),
+      ...(this.network.storeForward ? [c.hub.put(c.keys.mailbox, blob, { kind: 'msg', ttlSec: CHANNEL_TTL_SEC })] : []),
+    ]);
+    if (!results.some((r) => r.status === 'fulfilled')) throw new Error('Could not send. Check your connection.');
+  }
+
+  private storeChannelMessage(name: string, messageId: string, senderId: string, text: string, at: number, senderName: string): void {
+    if (this.msgs.has(messageId)) return;
+    const convId = `chan:${name}`;
+    const own = senderId === this.identity.uid;
+    const m: StoredMessage = {
+      messageId,
+      clientMessageId: messageId,
+      senderId,
+      text,
+      clientCreatedAt: Math.min(at, Date.now() + 5 * 60_000),
+      type: 'text',
+      transport: 'p2p',
+      deliveryState: own ? 'SENT' : 'DELIVERED',
+      readAt: own || (this.active === convId && this.visible) ? Date.now() : null,
+      conversationId: convId,
+      senderName,
+    };
+    this.msgs.set(messageId, m);
+    void this.deps.store.putMessage(m).catch(() => undefined);
+    this.emit();
+  }
+
+  private async onChannelBlob(keys: ChannelKeys, blob: SealedBlob): Promise<void> {
+    const message = await openChannelMessage(keys, blob);
+    if (!message) return;
+    const { contact } = message;
+    if (contact.uid === this.identity.uid || this.blocked.has(contact.uid)) return;
+    this.storeChannelMessage(keys.name, `c-${blob.sig.slice(0, 24)}`, contact.uid, message.text, message.at, this.channelLabel(contact.card, contact.uid));
+  }
+
+  /* ---------------- six-word invites ---------------- */
+
+  private async onlineHub(): Promise<SignalingHub> {
+    if (this.network.signaling.length === 0) {
+      throw new Error('Six-word invites need a connection service (Settings > Connection). The QR code and the full invite text work without one.');
+    }
+    const hub = new SignalingHub(transportsFor(this.network));
+    return hub;
+  }
+
+  /**
+   * A live copy always (it is re-sent every few seconds while the invite is open). A stored copy only when the
+   * user turned store-and-forward on: with it off, nothing may be kept on a relay.
+   */
+  private async putEverywhere(hub: SignalingHub, mailbox: string, blob: SealedBlob): Promise<void> {
+    const results = await Promise.allSettled([
+      hub.put(mailbox, blob, { kind: 'sig', ttlSec: 120 }),
+      ...(this.network.storeForward ? [hub.put(mailbox, blob, { kind: 'msg', ttlSec: INVITE_TTL_SEC })] : []),
+    ]);
+    if (!results.some((r) => r.status === 'fulfilled')) throw new Error('Could not publish the invite.');
+  }
+
+  private async waitOnline(hub: SignalingHub, ms = 8000): Promise<void> {
+    const end = Date.now() + ms;
+    while (hub.status() !== 'online') {
+      if (Date.now() > end) {
+        hub.stop();
+        throw new Error('Could not reach the connection service. Check your internet and try again.');
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  }
+
+  /** Show-your-words: publish our card under fresh words and listen for people who answer. */
+  async createInvite(): Promise<{ words: string; expiresAt: number }> {
+    if (this.activeInvite && this.activeInvite.expiresAt > Date.now() + 30_000) {
+      return { words: this.activeInvite.words.join(' '), expiresAt: this.activeInvite.expiresAt };
+    }
+    this.stopInvite();
+    const hub = await this.onlineHub();
+    const words = newInviteWords();
+    const rv = await deriveInvite(words);
+    hub.start(rv.mailbox, (blob) => void this.onInviteBlob(rv, blob));
+    await this.waitOnline(hub);
+    const publish = async () => {
+      const blob = await sealInvite({ rendezvous: rv, kind: 'card', card: this.ownCard(), uid: this.identity.uid, signPriv: this.identity.privateJwk });
+      await this.putEverywhere(hub, rv.mailbox, blob);
+    };
+    await publish();
+    const expiresAt = Date.now() + INVITE_TTL_SEC * 1000;
+    const timer = setTimeout(() => this.stopInvite(), INVITE_TTL_SEC * 1000);
+    // Relays differ in what they keep (some store nothing, Nostr drops live-only events), so the card is
+    // published again every few seconds as well as stored once: whoever types the words next finds it.
+    const republish = setInterval(() => void publish().catch(() => undefined), 8_000);
+    this.activeInvite = { words, rv, hub, expiresAt, timer, republish };
+    this.emit({ invite: { words: words.join(' '), expiresAt } });
+    return { words: words.join(' '), expiresAt };
+  }
+
+  private stopInvite(): void {
+    if (!this.activeInvite) return;
+    clearTimeout(this.activeInvite.timer);
+    clearInterval(this.activeInvite.republish);
+    this.activeInvite.hub.stop();
+    this.activeInvite = null;
+    this.emit({ invite: null });
+  }
+
+  private async onInviteBlob(rv: InviteRendezvous, blob: SealedBlob): Promise<void> {
+    const message = await openInvite(rv, blob);
+    if (!message || message.kind !== 'reply') return;
+    const { contact } = message;
+    if (contact.uid === this.identity.uid || this.contacts.get(contact.uid)?.trust === 'verified') return;
+    this.requestCards.set(contact.uid, {
+      contact,
+      safetyNumber: await deriveSafetyNumber(this.identity.publicJwk, contact.card.sign),
+    });
+    this.emit();
+  }
+
+  /** Accept somebody who used our words. */
+  async acceptRequest(uid: string): Promise<string> {
+    const r = this.requestCards.get(uid);
+    if (!r) throw new Error('That request is no longer there.');
+    this.requestCards.delete(uid);
+    return this.addContact(encodeContactCard(r.contact.card));
+  }
+
+  dismissRequest(uid: string): void {
+    this.requestCards.delete(uid);
+    this.emit();
+  }
+
+  /** Enter-their-words: fetch their card from the meeting point. Null if nobody answered in time. */
+  private async lookUpInvite(words: string[]): Promise<Contact | null> {
+    const rv = await deriveInvite(words);
+    const hub = await this.onlineHub();
+    const found = await new Promise<Contact | null>((resolve) => {
+      const timer = setTimeout(() => resolve(null), 15_000);
+      hub.start(rv.mailbox, (blob) => {
+        void openInvite(rv, blob).then((m) => {
+          if (m?.kind === 'card') {
+            clearTimeout(timer);
+            resolve(m.contact);
+          }
+        });
+      });
+    });
+    hub.stop();
+    if (!found) throw new Error('Could not find that invite. Check the words, make sure your friend still has the invite open, and that you are both online.');
+    this.redeemed = { words: words.join(' '), rv, contact: found };
+    return found;
+  }
+
+  private async answerInvite(rv: InviteRendezvous): Promise<void> {
+    const hub = await this.onlineHub();
+    hub.start(rv.mailbox, () => undefined);
+    try {
+      await this.waitOnline(hub);
+      const blob = await sealInvite({ rendezvous: rv, kind: 'reply', card: this.ownCard(), uid: this.identity.uid, signPriv: this.identity.privateJwk });
+      await this.putEverywhere(hub, rv.mailbox, blob);
+      await new Promise((r) => setTimeout(r, 1500));
+    } finally {
+      hub.stop();
+    }
   }
 
   /**
@@ -565,6 +895,7 @@ export class ChatEngine {
         ? `You stay group-only with people you meet in groups. To message ${who} directly, swap invites (Add friend).`
         : `${who} stays group-only, so you can talk in your groups but not directly. To message them, swap invites (Add friend).`;
     }
+    if (convId.startsWith('chan:')) return this.channels.has(convId.slice(5)) ? null : 'You left this channel.';
     const s = this.coord.state(convId);
     if (!s) return 'Unknown chat.';
     return s.members.has(this.identity.uid) ? null : 'You are not in this group any more.';
@@ -582,6 +913,7 @@ export class ChatEngine {
     try {
       const blocked = this.cannotWrite(convId);
       if (blocked) return { ok: false, error: blocked };
+      if (convId.startsWith('chan:')) return await this.sendChannel(convId.slice(5), rawText);
       const base = createOutgoingMessage({ senderId: this.identity.uid, text: rawText, replyTo: this.replyFor(convId, replyToId) });
       const recipients: Record<string, DeliveryState> = {};
       for (const uid of this.recipientsOfConversation(convId)) recipients[uid] = 'QUEUED';
@@ -1434,6 +1766,9 @@ export class ChatEngine {
 
   async clearLocalData(): Promise<void> {
     await this.deps.store.clearAll();
+    for (const c of this.channels.values()) c.hub.stop();
+    this.channels.clear();
+    this.blocked.clear();
     this.msgs.clear();
     this.pendingGroup.clear();
     this.relayed.clear();
@@ -1472,7 +1807,7 @@ export class ChatEngine {
     let best: StoredMessage | undefined;
     for (const m of this.msgs.values()) if (m.conversationId === convId && (!best || compareMessages(best, m) < 0)) best = m;
     return best
-      ? { text: best.type === 'file' ? filePreviewText(best.text) : best.text, at: best.clientCreatedAt, own: best.senderId === this.identity.uid, senderName: this.nameOf(best.senderId) }
+      ? { text: best.type === 'file' ? filePreviewText(best.text) : best.text, at: best.clientCreatedAt, own: best.senderId === this.identity.uid, senderName: best.senderName ?? this.nameOf(best.senderId) }
       : undefined;
   }
 
@@ -1549,14 +1884,26 @@ export class ChatEngine {
       (messages[m.conversationId] ??= []).push({
         ...m,
         own,
-        senderName: this.nameOf(m.senderId),
+        senderName: m.senderName ?? this.nameOf(m.senderId),
         tick: own ? aggregate(m.recipients) : m.deliveryState,
         delivered: states.filter((s) => RANK[s] >= RANK.DELIVERED).length,
         total: states.length,
         ...(this.progress.has(m.messageId) ? { progress: this.progress.get(m.messageId) } : {}),
       });
     }
-    return { ...this.state, contacts, groups, messages, queued, storageBackend: this.deps.store.backend, signaling: this.hub?.status() ?? 'idle' };
+    const requests: InviteRequest[] = [...this.requestCards.entries()].map(([uid, r]) => ({
+      uid,
+      name: r.contact.card.name || `Friend ${short(uid)}`,
+      safetyNumber: r.safetyNumber,
+    }));
+    const channels: ChannelView[] = [...this.channels.entries()].map(([name, c]) => ({
+      id: `chan:${name}`,
+      name,
+      unread: this.unread(`chan:${name}`),
+      last: this.last(`chan:${name}`),
+      conn: c.hub.status() === 'online' ? 'connected' : 'connecting',
+    }));
+    return { ...this.state, channels, requests, contacts, groups, messages, queued, storageBackend: this.deps.store.backend, signaling: this.hub?.status() ?? 'idle' };
   }
 }
 

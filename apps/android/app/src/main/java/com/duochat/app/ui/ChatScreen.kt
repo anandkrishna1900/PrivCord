@@ -141,12 +141,15 @@ fun ChatScreen(
     onToggleMute: () -> Unit,
     onClearChat: () -> Unit,
     onConnectBluetooth: () -> Unit,
+    onLeaveChannel: () -> Unit,
+    onMuteSender: (String) -> Unit,
 ) {
     val friend: ContactView? = state.contacts.firstOrNull { it.uid == conversationId }
     val group: GroupView? = state.groups.firstOrNull { it.groupId == conversationId }
-    val title = friend?.name ?: group?.name ?: "Chat"
+    val channel = state.channels.firstOrNull { it.id == conversationId }
+    val title = friend?.name ?: group?.name ?: channel?.let { "# ${it.name}" } ?: "Chat"
     val messages = state.messages[conversationId].orEmpty()
-    val canWrite = state.phase == EnginePhase.READY && (friend != null || group?.iAmMember == true)
+    val canWrite = state.phase == EnginePhase.READY && (friend != null || group?.iAmMember == true || channel != null)
     var menuOpen by remember { mutableStateOf(false) }
     var clearConfirm by remember { mutableStateOf(false) }
     var replyingTo by remember(conversationId) { mutableStateOf<ChatMessage?>(null) }
@@ -158,6 +161,7 @@ fun ChatScreen(
             LinkStatus.CONNECTING -> "Connecting…"
             LinkStatus.OFFLINE -> "Waiting for ${friend.name}"
         }
+        channel != null -> "Public channel · anyone who knows the name can read this"
         group != null -> group.exitNote ?: "${group.members.size} members · ${group.connectedCount} connected"
         else -> ""
     }
@@ -194,8 +198,8 @@ fun ChatScreen(
                         IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More") }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(
-                                text = { Text(if (group != null) "Group details" else "Friend details") },
-                                onClick = { menuOpen = false; onOpenDetails() },
+                                text = { Text(if (channel != null) "Leave channel" else if (group != null) "Group details" else "Friend details") },
+                                onClick = { menuOpen = false; if (channel != null) onLeaveChannel() else onOpenDetails() },
                             )
                             if (friend != null && !friend.checked) {
                                 DropdownMenuItem(text = { Text("Check it's really them") }, onClick = { menuOpen = false; onVerify() })
@@ -233,7 +237,8 @@ fun ChatScreen(
                 }
             } else if (canWrite) {
                 Composer(
-                    connected = friend?.link == LinkStatus.CONNECTED || (group?.connectedCount ?: 0) > 0,
+                    connected = friend?.link == LinkStatus.CONNECTED || (group?.connectedCount ?: 0) > 0 || channel?.connected == true,
+                    isChannel = channel != null,
                     modifier = Modifier.navigationBarsPadding().imePadding(),
                     replyingTo = replyingTo,
                     replyName = replyingTo?.let { r -> if (r.senderId == state.uid) "yourself" else (group?.members?.firstOrNull { it.uid == r.senderId }?.name ?: friend?.name ?: "them") },
@@ -259,6 +264,13 @@ fun ChatScreen(
             state.notice?.let {
                 Banner(Icons.Filled.Shield, it, MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer, onDismiss = onClearNotice)
             }
+            if (channel != null) {
+                Banner(
+                    Icons.Filled.Shield,
+                    "Public channel: anyone who knows the name can read it. Your messages show your name and a short ID.",
+                    MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             if (friend != null && friend.trust == ContactTrust.INTRODUCED && !friend.checked && friend.direct) {
                 Banner(
                     Icons.Filled.Shield,
@@ -270,7 +282,9 @@ fun ChatScreen(
             MessageList(
                 messages = messages,
                 selfUid = state.uid,
-                isGroup = group != null,
+                isGroup = group != null || channel != null,
+                canReply = channel == null,
+                onMute = if (channel != null) onMuteSender else null,
                 nameOf = { uid -> group?.members?.firstOrNull { it.uid == uid }?.name ?: friend?.name ?: "Member" },
                 onRetry = onRetry,
                 onReply = { replyingTo = it },
@@ -327,6 +341,8 @@ private fun MessageList(
     onReply: (ChatMessage) -> Unit,
     loadFile: suspend (String) -> Pair<FileMeta, ByteArray>?,
     transfers: Map<String, Float>,
+    canReply: Boolean = true,
+    onMute: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -377,7 +393,9 @@ private fun MessageList(
                 MessageBubble(
                     message = message,
                     own = own,
-                    senderName = if (own) "You" else nameOf(message.senderId),
+                    senderName = if (own) "You" else (message.senderName ?: nameOf(message.senderId)),
+                    canReply = canReply,
+                    onMute = onMute,
                     showName = isGroup && !own && !grouped,
                     showAvatar = !grouped,
                     grouped = grouped,
@@ -423,6 +441,8 @@ private fun MessageBubble(
     progress: Float?,
     quotedName: String?,
     onJumpTo: (String) -> Unit,
+    canReply: Boolean = true,
+    onMute: ((String) -> Unit)? = null,
 ) {
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
@@ -495,10 +515,14 @@ private fun MessageBubble(
                 }
             }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                DropdownMenuItem(
+                if (canReply) DropdownMenuItem(
                     text = { Text("Reply") },
                     leadingIcon = { Icon(Icons.AutoMirrored.Filled.Reply, contentDescription = null, modifier = Modifier.size(18.dp)) },
                     onClick = { menuOpen = false; onReply(message) },
+                )
+                if (onMute != null && !own) DropdownMenuItem(
+                    text = { Text("Mute this person") },
+                    onClick = { menuOpen = false; onMute(message.senderId) },
                 )
                 if (message.type == MessageType.TEXT) DropdownMenuItem(
                     text = { Text("Copy message") },
@@ -533,17 +557,15 @@ private fun FileContent(message: ChatMessage, color: Color, loadFile: suspend (S
             }
         }
     }
+    var viewing by remember { mutableStateOf(false) }
     val image by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, message.messageId) {
         if (!isInlineImage(meta.mime)) return@produceState
-        value = withContext(Dispatchers.IO) {
-            val bytes = loadFile(message.messageId)?.second ?: return@withContext null
-            // Only PNG/JPEG/GIF/WebP get here (never SVG). Decode a reduced copy: previews do not need full size.
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-            var sample = 1
-            while (bounds.outWidth / sample > 1200 || bounds.outHeight / sample > 1200) sample *= 2
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
-        }
+        value = withContext(Dispatchers.IO) { loadFile(message.messageId)?.second?.let { decodeUpright(it, 1200) } }
+    }
+    // Full-size copy, only decoded while the viewer is open.
+    val fullImage by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, viewing) {
+        if (!viewing) return@produceState
+        value = withContext(Dispatchers.IO) { loadFile(message.messageId)?.second?.let { decodeUpright(it, 2600) } }
     }
     // Video: decrypted to a short-lived cache file (the player needs a path), shown with a poster frame and
     // played in place when tapped. The file is deleted when the bubble leaves the screen.
@@ -572,8 +594,38 @@ private fun FileContent(message: ChatMessage, color: Color, loadFile: suspend (S
     var playing by remember { mutableStateOf(false) }
     Column {
         image?.let {
-            Image(bitmap = it, contentDescription = meta.name, contentScale = ContentScale.Fit, modifier = Modifier.heightIn(max = 260.dp).clip(RoundedCornerShape(10.dp)))
+            Image(
+                bitmap = it, contentDescription = "Open ${meta.name}", contentScale = ContentScale.Fit,
+                modifier = Modifier.heightIn(max = 260.dp).clip(RoundedCornerShape(10.dp)).clickable { viewing = true },
+            )
             Spacer(Modifier.height(6.dp))
+        }
+        if (viewing) {
+            androidx.compose.ui.window.Dialog(
+                onDismissRequest = { viewing = false },
+                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+            ) {
+                Surface(color = Color.Black, modifier = Modifier.fillMaxSize()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        val big = fullImage ?: image
+                        if (big != null) {
+                            Image(bitmap = big, contentDescription = meta.name, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize().clickable { viewing = false })
+                        } else {
+                            CircularProgressIndicator(color = Color.White)
+                        }
+                        Row(Modifier.align(Alignment.TopEnd).padding(12.dp)) {
+                            IconButton(onClick = {
+                                scope.launch {
+                                    val f = loadFile(message.messageId)
+                                    if (f == null) Toast.makeText(context, "No longer stored on this phone", Toast.LENGTH_SHORT).show()
+                                    else { pendingSave = f.second; saver.launch(f.first.name) }
+                                }
+                            }) { Icon(Icons.Filled.Download, contentDescription = "Save ${meta.name}", tint = Color.White) }
+                            IconButton(onClick = { viewing = false }) { Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color.White) }
+                        }
+                    }
+                }
+            }
         }
         videoFile?.let { file ->
             Box(Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 260.dp).clip(RoundedCornerShape(10.dp)).background(Color.Black), contentAlignment = Alignment.Center) {
@@ -636,6 +688,7 @@ private fun DeliveryIndicator(state: DeliveryState, onRetry: () -> Unit) {
 @Composable
 private fun Composer(
     connected: Boolean,
+    isChannel: Boolean = false,
     modifier: Modifier = Modifier,
     replyingTo: ChatMessage?,
     replyName: String?,
@@ -703,7 +756,7 @@ private fun Composer(
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 6.dp))
             }
             Row(verticalAlignment = Alignment.Bottom) {
-                IconButton(onClick = { picker.launch("*/*") }, modifier = Modifier.size(48.dp)) {
+                if (!isChannel) IconButton(onClick = { picker.launch("*/*") }, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Filled.AttachFile, contentDescription = "Send a file (up to 8 MB)")
                 }
                 OutlinedTextField(
@@ -821,4 +874,27 @@ private fun readPicked(context: android.content.Context, uri: Uri): PickedFile {
         out.toByteArray()
     } ?: throw IllegalStateException("Could not open that file.")
     return PickedFile(name, context.contentResolver.getType(uri) ?: "application/octet-stream", bytes)
+}
+
+/**
+ * Decodes a photo, no bigger than [maxSide] on its longest side, and turns it the way the camera meant it to be
+ * seen (the EXIF orientation tag), so phone photos are not sideways.
+ */
+private fun decodeUpright(bytes: ByteArray, maxSide: Int): androidx.compose.ui.graphics.ImageBitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    var sample = 1
+    while (bounds.outWidth / sample > maxSide || bounds.outHeight / sample > maxSide) sample *= 2
+    val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
+    val orientation = runCatching {
+        android.media.ExifInterface(java.io.ByteArrayInputStream(bytes))
+            .getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL)
+    }.getOrDefault(1)
+    val (degrees, mirror) = com.duochat.app.data.exifTransform(orientation)
+    if (degrees == 0 && !mirror) return decoded.asImageBitmap()
+    val matrix = android.graphics.Matrix().apply {
+        if (mirror) postScale(-1f, 1f)
+        postRotate(degrees.toFloat())
+    }
+    return android.graphics.Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true).asImageBitmap()
 }

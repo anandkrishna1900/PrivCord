@@ -37,5 +37,5 @@ strict networks) TURN you configure.
 ## Not implemented
 
 Some building blocks exist in `packages/protocol` but nothing uses them yet: epoch group keys
-(`e2ee/groupCrypto.ts`), multi-hop Bluetooth mesh routing (`connectivity/mesh.ts`) and chunked file
-transfer. Files are implemented separately (`files.ts`, 8 MB, direct links only). There is no mesh relaying in the apps.
+(`e2ee/groupCrypto.ts`), the earlier (replaced) mesh router. Files are implemented in `files.ts` (8 MB, direct links only); open channels and
+Bluetooth mesh relaying are in `mesh/` (see [CHANNELS_AND_MESH.md](CHANNELS_AND_MESH.md)).

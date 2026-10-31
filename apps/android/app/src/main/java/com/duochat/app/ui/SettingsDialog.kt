@@ -170,6 +170,34 @@ fun SettingsDialog(
                 Spacer(Modifier.height(14.dp))
 
 SectionTitle("Appearance")
+                Text(
+                    "Color theme",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ThemeTile("Classic", listOf(Color(0xFF0B0E13), Color(0xFFF1F2F5)), settings.palette == com.duochat.app.data.CLASSIC_PALETTE) {
+                        onUpdateSettings { copy(palette = com.duochat.app.data.CLASSIC_PALETTE) }
+                    }
+                    for (t in com.duochat.app.data.THEMES) {
+                        ThemeTile(t.name, listOf(Color(t.bg), Color(t.surface), Color(com.duochat.app.data.accentFill(t.accent))), settings.palette == t.id) {
+                            onUpdateSettings { copy(palette = t.id) }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                if (settings.palette != com.duochat.app.data.CLASSIC_PALETTE) {
+                    Text(
+                        "The color theme sets the light or dark look and the accent color.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ChoiceChip("System", settings.theme == "system") {
                         onUpdateSettings { copy(theme = "system") }
@@ -217,6 +245,7 @@ SectionTitle("Appearance")
                             }
                         }
                     }
+                }
                 }
 
                 Spacer(Modifier.height(18.dp))
@@ -296,6 +325,22 @@ SectionTitle("Appearance")
                     BluetoothBlock(
                         status = state.bluetooth,
                         onPermissionResult = onBluetoothPermissionResult,
+                    )
+                    Spacer(Modifier.height(14.dp))
+                    val meshContext = LocalContext.current
+                    val meshPermission = androidx.activity.compose.rememberLauncherForActivityResult(
+                        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
+                    ) { granted -> if (granted.values.all { it }) onUpdateSettings { copy(mesh = true) } }
+                    ToggleRow(
+                        title = "Bluetooth mesh (relay for nearby phones)",
+                        description = "Pass messages along through nearby phones that also run PrivCord, so they can reach people several phones away with no internet, and join public channels over Bluetooth. Other phones can see that a PrivCord phone is nearby. Uses more battery. Experimental: simulated and compiled, never run on real radios." +
+                            if (settings.mesh) " Linked phones now: ${state.meshLinks}." else "",
+                        checked = settings.mesh,
+                        onChange = { on ->
+                            if (!on) onUpdateSettings { copy(mesh = false) }
+                            else if (BlePermissions.granted(meshContext)) onUpdateSettings { copy(mesh = true) }
+                            else meshPermission.launch(BlePermissions.required())
+                        },
                     )
                     Spacer(Modifier.height(14.dp))
                     SectionTitle("Communication Mode")
@@ -784,6 +829,38 @@ private fun BluetoothBlock(
                 ) { Text("Continue") }
             },
             dismissButton = { TextButton(onClick = { rationale = false }) { Text("Not now") } },
+        )
+    }
+}
+
+/** One colour theme in the picker: a small preview of its colours and its name. */
+@Composable
+private fun ThemeTile(name: String, colors: List<Color>, selected: Boolean, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .width(92.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .border(
+                width = if (selected) 2.dp else 1.dp,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                shape = RoundedCornerShape(12.dp),
+            )
+            .clickable(onClick = onClick)
+            .padding(6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().height(38.dp).clip(RoundedCornerShape(8.dp)),
+        ) {
+            colors.forEach { c -> Box(Modifier.weight(1f).fillMaxHeight().background(c)) }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            name,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

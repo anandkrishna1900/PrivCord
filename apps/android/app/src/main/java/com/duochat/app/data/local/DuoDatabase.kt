@@ -73,6 +73,10 @@ data class ContactEntity(
     val cardName: String? = null,
 )
 
+/** Small encrypted values the app keeps for itself (joined channels, muted people). */
+@Entity(tableName = "kv")
+data class KvEntity(@PrimaryKey val key: String, val valueCipher: String)
+
 /** A group is its signed event log; the whole log (encrypted at rest) is rewritten when it changes. */
 @Entity(tableName = "group_logs")
 data class GroupLogEntity(
@@ -174,6 +178,12 @@ interface DuoDao {
     @Query("UPDATE contacts SET identityProof = :proof WHERE uid = :uid")
     suspend fun setContactProof(uid: String, proof: String)
 
+    @Query("SELECT * FROM kv WHERE `key` = :key LIMIT 1")
+    suspend fun getKv(key: String): KvEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putKv(row: KvEntity)
+
     // Group logs
     @Query("SELECT * FROM group_logs")
     suspend fun loadGroupLogs(): List<GroupLogEntity>
@@ -194,8 +204,9 @@ interface DuoDao {
         OutboxEntity::class,
         ContactEntity::class,
         GroupLogEntity::class,
+        KvEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class DuoDatabase : RoomDatabase() {
@@ -324,6 +335,13 @@ abstract class DuoDatabase : RoomDatabase() {
                 db.execSQL("DROP TABLE IF EXISTS group_members")
                 db.execSQL("DROP TABLE IF EXISTS group_epoch_keys")
                 db.execSQL("DROP TABLE IF EXISTS file_transfers")
+            }
+        }
+
+        /** v6 -> v7: a small key-value table for joined channels and muted people. Nothing is dropped. */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS kv (`key` TEXT NOT NULL, valueCipher TEXT NOT NULL, PRIMARY KEY(`key`))")
             }
         }
 

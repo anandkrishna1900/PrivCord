@@ -546,6 +546,21 @@ await scenario(13, 'files: images preview, exactly 8 MB arrives intact, 8 MB + 1
   check(sha(got.bytes) === sha(png) && got.suggested === 'dot.png', 'PNG arrives byte for byte', { suggested: got.suggested });
   await A.page.waitForSelector('.bubble.own:has-text("dot.png") .delivery-indicator[aria-label="Delivered"], .bubble.own:has-text("dot.png") .delivery-indicator[aria-label="Read"]', { timeout: 30000 });
   ctx.note('image previewed inline, saved bytes identical, sender sees Delivered');
+  // 1b. a phone photo (40x20 pixels with EXIF orientation 6 = turn right) must show upright (20 wide, 40 tall)
+  const photo = Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/4QAiRXhpZgAATU0AKgAAAAgAAQESAAMAAAABAAYAAAAAAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAAUACgDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDkKKKK8U/TAooooAKKKKACiiigAooooAKKKKAP/9k=', 'base64');
+  await sendFile(A.page, { name: 'portrait.jpg', mime: 'image/jpeg', buffer: photo });
+  await B.page.waitForSelector('.file-bubble:has-text("portrait.jpg") img.file-image', { timeout: 30000 });
+  await B.page.waitForFunction(() => { const i = document.querySelector('.file-bubble img.file-image[alt="portrait.jpg"]'); return i && i.complete && i.naturalWidth > 0; });
+  const dims = await B.page.evaluate(() => { const i = document.querySelector('.file-bubble img.file-image[alt="portrait.jpg"]'); return [i.naturalWidth, i.naturalHeight]; });
+  check(dims[0] === 20 && dims[1] === 40, 'the photo is shown upright, not sideways', dims);
+  // clicking the preview opens it full size, with Save and Close
+  await B.page.click('button[aria-label="Open portrait.jpg"]');
+  await B.page.waitForSelector('.lightbox img.lightbox-image', { timeout: 5000 });
+  const [shot] = await Promise.all([B.page.waitForEvent('download', { timeout: 20000 }), B.page.click('.lightbox button:has-text("Save")')]);
+  check(shot.suggestedFilename() === 'portrait.jpg', 'Save in the viewer downloads the photo', shot.suggestedFilename());
+  await B.page.click('.lightbox button:has-text("Close")');
+  await B.page.waitForSelector('.lightbox', { state: 'detached' });
+  ctx.note('photo upright, opens full size from the preview, Save works');
   // 2. SVG: shown only as a file card (it can carry script), never rendered
   const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>window.__pwned = 1</script></svg>');
   await sendFile(A.page, { name: 'x.svg', mime: 'image/svg+xml', buffer: svg });
@@ -711,6 +726,148 @@ await scenario(15, 'app lock: passkey (virtual Windows Hello) gates the app; fai
   check((await page.locator('.lock-screen').count()) === 0, 'no lock after turning it off');
   ctx.note('turning the lock off needs the passkey, then the app opens freely');
   check(dev.errors.length === 0, 'no page errors', dev.errors);
+});
+
+/* 16 ----------------------------------------------------------------- */
+await scenario(16, 'six-word invite: words (not a long string) connect two people; wrong words fail clearly; the answerer is confirmed', async (ctx) => {
+  const relay = await startRelay(false);
+  ctx.cleanups.push(relay.close);
+  const net = relayNet(relay.url);
+  const [A, B] = [await namedDevice(ctx, net, 'Ann'), await namedDevice(ctx, net, 'Ben')];
+  await A.page.click('button[aria-label="Add friend"]');
+  await A.page.waitForSelector('.invite-words .invite-word', { timeout: 20000 });
+  const words = (await A.page.locator('.invite-words .invite-word').allInnerTexts()).map((w) => w.trim());
+  check(words.length === 6 && words.every((w) => /^[a-z]+$/.test(w)), 'six plain words are shown', words);
+  check(!(await A.page.locator('textarea[aria-label="Your invite"]').isVisible()), 'the long invite string is not shown by default');
+  check((await A.page.locator('.qr svg').count()) === 1, 'the QR code is still there');
+  // Ben types five right words and one wrong word: clear error, nothing added.
+  await B.page.click('button[aria-label="Add friend"]');
+  await B.page.waitForSelector('.invite-words .invite-word', { timeout: 20000 });
+  const wrong = [...words.slice(0, 5), words[5] === 'zoo' ? 'zone' : 'zoo'].join(' ');
+  await B.page.fill('textarea[aria-label="Friend\'s invite"]', wrong);
+  await B.page.click('button:has-text("Continue")');
+  await B.page.waitForSelector('.status-text.error:has-text("Could not find that invite")', { timeout: 40000 });
+  ctx.note('wrong words: "Could not find that invite", nothing added');
+  // Right words (messy typing: capitals and commas).
+  await B.page.fill('textarea[aria-label="Friend\'s invite"]', words.map((w) => w[0].toUpperCase() + w.slice(1)).join(', '));
+  await B.page.click('button:has-text("Continue")');
+  await B.page.waitForSelector('.verify-panel .safety-number', { timeout: 40000 });
+  check((await B.page.locator('.verify-panel h3').innerText()).includes('Ann'), 'Ben sees it is Ann');
+  await B.page.click('button:has-text("Skip for now")');
+  // Ben is told plainly that his own invite is being sent back, and when it arrived.
+  await B.page.waitForSelector('.verify-panel:has-text("Ann was added")', { timeout: 20000 });
+  await B.page.waitForSelector('.verify-panel:has-text("Your invite was sent to Ann")', { timeout: 40000 });
+  await B.page.click('.verify-panel button:has-text("Done")');
+  await B.page.waitForSelector('.modal-backdrop', { state: 'detached' });
+  ctx.note('Ben typed the six words, added Ann, and was told his invite was sent back to her');
+  // Ann is asked to confirm who answered.
+  await A.page.waitForSelector('.modal:has-text("Ben used your invite") .safety-number', { timeout: 40000 });
+  await A.page.click('button:has-text("Add Ben")');
+  await A.page.waitForSelector('.chat-header h2:has-text("Ben")', { timeout: 20000 });
+  ctx.note('Ann confirmed Ben (shown with safety numbers) and added him');
+  await connected(A.page, 120000);
+  await say(A.page, 'connected by six words');
+  await openChat(B.page, 'Ann');
+  await B.page.waitForSelector('text=connected by six words', { timeout: 40000 });
+  ctx.note('they chat with each other');
+  const errs = [...A.errors, ...B.errors];
+  check(errs.length === 0, 'no page errors', errs);
+});
+
+/* 17 ----------------------------------------------------------------- */
+await scenario(17, 'themes: 16 built-in colour themes apply, survive a reload, and Classic restores the original', async (ctx) => {
+  const relay = await startRelay(false);
+  ctx.cleanups.push(relay.close);
+  const dev = await namedDevice(ctx, relayNet(relay.url), 'Theme');
+  const page = dev.page;
+  const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor + '|' + getComputedStyle(document.documentElement).getPropertyValue('--accent').trim());
+  const classic = await bg();
+  await page.click('button[aria-label="Settings"]');
+  await page.click('.tab:has-text("Look")');
+  const names = await page.locator('.theme-tile > span:last-child').allInnerTexts();
+  check(names.length >= 11 && names[0] === 'Classic', 'Classic plus at least ten named themes', names);
+  const seen = new Set();
+  let lastLook = classic;
+  for (const name of names.slice(1)) {
+    await page.click(`.theme-tile:has-text("${name}")`);
+    await page.waitForFunction((n) => document.querySelector('.theme-tile.active')?.textContent?.includes(n), name);
+    // the colours are applied right after the tile turns active: wait until they change
+    let look = await bg();
+    for (let i = 0; i < 40 && look === lastLook; i += 1) { await sleep(50); look = await bg(); }
+    lastLook = look;
+    check(!seen.has(look), `${name} looks different from the others`, look);
+    seen.add(look);
+  }
+  ctx.note(`${names.length - 1} themes, each with its own background and accent`);
+  await page.click('.theme-tile:has-text("Nord")');
+  const nord = await bg();
+  await page.keyboard.press('Escape');
+  await page.reload();
+  await page.waitForSelector('.sidebar', { timeout: 20000 });
+  check((await bg()) === nord, 'the chosen theme is still there after a reload');
+  await page.click('button[aria-label="Settings"]');
+  await page.click('.tab:has-text("Look")');
+  await page.click('.theme-tile:has-text("Classic")');
+  await page.waitForFunction((c) => true, classic);
+  check((await bg()) === classic, 'Classic brings the original look back');
+  check((await page.locator('.swatches').count()) === 1, 'accent colours return with Classic');
+  ctx.note('theme persists across reload; Classic restores the original');
+  check(dev.errors.length === 0, 'no page errors', dev.errors);
+});
+
+/* 18 ----------------------------------------------------------------- */
+await scenario(18, 'open channels: three strangers share #general, messages are signed with names, muting hides a person, leaving works', async (ctx) => {
+  const relay = await startRelay(false);
+  ctx.cleanups.push(relay.close);
+  const net = relayNet(relay.url);
+  const [A, B, C] = [await namedDevice(ctx, net, 'Ann'), await namedDevice(ctx, net, 'Ben'), await namedDevice(ctx, net, 'Cat')];
+  const join = async (d, name) => {
+    await d.page.click('button[aria-label="Channels"]');
+    await d.page.fill('input[aria-label="Channel name"]', name);
+    await d.page.click('button:has-text("Join channel")');
+    await d.page.waitForSelector('.chat-header h2:has-text("# general")', { timeout: 20000 });
+  };
+  // Same room however it is typed.
+  await join(A, '#General');
+  await join(B, 'general');
+  await join(C, '  GENERAL ');
+  await A.page.waitForSelector('.banner:has-text("Public channel")');
+  check((await A.page.locator('.attach-button').count()) === 0, 'channels are text only (no attach button)');
+  await sleep(1500);
+  await say(A.page, 'hello from Ann');
+  for (const d of [B, C]) await d.page.waitForSelector('.bubble-text:text-is("hello from Ann")', { timeout: 30000 });
+  const label = await B.page.locator('.bubble:has-text("hello from Ann") .bubble-sender').innerText();
+  check(/^Ann #[0-9a-f]{4}$/.test(label.trim()), 'sender shows their name and a short id', label);
+  ctx.note(`strangers see "${label.trim()}"`);
+  await say(B.page, 'hi, Ben here');
+  for (const d of [A, C]) await d.page.waitForSelector('.bubble-text:text-is("hi, Ben here")', { timeout: 30000 });
+  // a different room stays separate
+  await A.page.click('button[aria-label="Channels"]');
+  await A.page.fill('input[aria-label="Channel name"]', 'quiet');
+  await A.page.click('button:has-text("Join channel")');
+  await A.page.waitForSelector('.chat-header h2:has-text("# quiet")');
+  await sleep(800);
+  check((await A.page.locator('.bubble-text:text-is("hello from Ann")').count()) === 0, 'another channel does not show #general messages');
+  // Cat mutes Ben: his later messages never show for her, others still see them
+  await C.page.locator('.bubble:has-text("hi, Ben here") .sender-button').click();
+  await C.page.click('button:has-text("Mute this person")');
+  await say(B.page, 'second from Ben');
+  await A.page.click('.chat-row:has-text("general")');
+  await A.page.waitForSelector('.bubble-text:text-is("second from Ben")', { timeout: 30000 });
+  await sleep(1500);
+  check((await C.page.locator('.bubble-text:text-is("second from Ben")').count()) === 0, 'a muted person is hidden');
+  ctx.note('mute hides a person for you only');
+  // history: messages survive a reload on the device
+  await A.page.reload();
+  await A.page.click('.chat-row:has-text("general")');
+  await A.page.waitForSelector('.bubble-text:text-is("hello from Ann")', { timeout: 20000 });
+  // leave
+  await A.page.click('button[aria-label="More"]');
+  await A.page.click('[role="menuitem"]:has-text("Leave channel")');
+  await A.page.waitForFunction(() => ![...document.querySelectorAll('.chat-row strong')].some((e) => e.textContent === '# general'));
+  ctx.note('channel list and history persist; leaving removes the channel');
+  const errs = [...A.errors, ...B.errors, ...C.errors];
+  check(errs.length === 0, 'no page errors', errs);
 });
 
 console.log('\n=== SUMMARY ===');

@@ -77,6 +77,7 @@ private fun RootScreen(viewModel: AppViewModel) {
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var manualOpen by rememberSaveable { mutableStateOf(false) }
     var nukeOpen by rememberSaveable { mutableStateOf(false) }
+    var channelsOpen by rememberSaveable { mutableStateOf(false) }
     var friendDialog by rememberSaveable { mutableStateOf<String?>(null) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -118,6 +119,27 @@ private fun RootScreen(viewModel: AppViewModel) {
         }
     }
 
+    // Somebody typed our six words and answered: we confirm who it is before adding them.
+    state?.requests?.firstOrNull()?.let { request ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { viewModel.dismissRequest(request.uid) },
+            title = { androidx.compose.material3.Text("${request.name} used your invite") },
+            text = {
+                androidx.compose.material3.Text(
+                    "Only add them if you expected this. To be sure it is really them, read these numbers to ${request.name} on a call or in person; they should see the same ones.\n\n${request.safetyNumber}",
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { viewModel.acceptRequest(request.uid) { r -> r.onSuccess { route = "chat:$it" } } }) {
+                    androidx.compose.material3.Text("Add ${request.name}")
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { viewModel.dismissRequest(request.uid) }) { androidx.compose.material3.Text("Not them") }
+            },
+        )
+    }
+
     when {
         locked -> com.duochat.app.ui.LockScreen(onUnlocked = viewModel::unlock)
 
@@ -134,7 +156,8 @@ private fun RootScreen(viewModel: AppViewModel) {
         else -> {
             // A chat or group that no longer exists sends the user home instead of showing an empty screen.
             val missing = when {
-                route.startsWith("chat:") -> state.contacts.none { it.uid == openChatId } && state.groups.none { it.groupId == openChatId }
+                route.startsWith("chat:") -> state.contacts.none { it.uid == openChatId } && state.groups.none { it.groupId == openChatId } &&
+                    state.channels.none { it.id == openChatId }
                 route.startsWith("group:") -> state.groups.none { it.groupId == route.removePrefix("group:") }
                 else -> false
             }
@@ -148,6 +171,9 @@ private fun RootScreen(viewModel: AppViewModel) {
                         state = state,
                         ownCard = viewModel::ownCard,
                         onAdd = viewModel::addFriend,
+                        onCreateInvite = viewModel::createInvite,
+                        onRetryAnswer = viewModel::retryAnswer,
+                        onClearAnswer = viewModel::clearAnswer,
                         onChecked = viewModel::markChecked,
                         onBack = back,
                         onOpenChat = { route = "chat:$it" },
@@ -198,6 +224,8 @@ private fun RootScreen(viewModel: AppViewModel) {
                         onVerify = { friendDialog = openChatId },
                         onToggleMute = { viewModel.toggleMute(openChatId) },
                         onClearChat = { viewModel.clearChat(openChatId) },
+                        onLeaveChannel = { viewModel.leaveChannel(openChatId); route = HOME },
+                        onMuteSender = viewModel::muteSender,
                         onConnectBluetooth = {
                             viewModel.connectBluetooth(openChatId) { result ->
                                 result.exceptionOrNull()?.message?.let { settingsOpen = true; android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show() }
@@ -211,8 +239,19 @@ private fun RootScreen(viewModel: AppViewModel) {
                     onOpenChat = { route = "chat:${it.id}" },
                     onAddFriend = { route = "add" },
                     onNewGroup = { route = "newgroup" },
+                    onChannels = { channelsOpen = true },
                     onOpenSettings = { settingsOpen = true },
                     onClearNotice = viewModel::clearNotice,
+                )
+            }
+
+            if (channelsOpen) {
+                com.duochat.app.ui.ChannelsDialog(
+                    channels = state.channels,
+                    onJoin = viewModel::joinChannel,
+                    onLeave = { id -> viewModel.leaveChannel(id); if (route == "chat:$id") route = HOME },
+                    onOpen = { id -> route = "chat:$id" },
+                    onDismiss = { channelsOpen = false },
                 )
             }
 

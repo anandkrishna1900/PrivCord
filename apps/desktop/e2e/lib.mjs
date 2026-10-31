@@ -156,6 +156,8 @@ export async function uidOf(page) {
 /** Open the Add-friend dialog and return my invite text (dialog stays open). */
 export async function openAdd(page) {
   await page.click('button[aria-label="Add friend"]');
+  // The long invite text lives under a collapsed "full invite text" section; the six words are the normal way.
+  await page.click('summary:has-text("Full invite text")');
   return page.locator('textarea[aria-label="Your invite"]').inputValue();
 }
 
