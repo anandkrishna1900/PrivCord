@@ -3274,3 +3274,25 @@ input[type='checkbox'] {
   justify-content: center;
   background: var(--bg);
 }
+
+.invite-words {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin: 10px 0 4px;
+}
+
+.invite-word {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.advanced summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.8rem;
+}

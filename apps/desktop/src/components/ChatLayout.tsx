@@ -14,6 +14,7 @@ import { RecoveryDialog } from './RecoveryDialogs';
 import { AddFriendDialog } from './AddFriendDialog';
 import { GroupDetailsDialog, NewGroupDialog } from './GroupDialogs';
 import { PersonDialog } from './PersonDialog';
+import { RequestDialog } from './RequestDialog';
 import { AlertIcon, ArrowLeftIcon, LoaderIcon, RefreshIcon, SettingsIcon, ShieldIcon, UserIcon, XIcon } from './Icons';
 
 interface Row {
@@ -358,6 +359,7 @@ export function ChatLayout({
         )}
       </main>
 
+      <RequestDialog requests={state.requests} engine={engine} onAdded={open} />
       <AddFriendDialog open={dialog === 'add'} onClose={() => setDialog(null)} engine={engine} onAdded={open} />
       <NewGroupDialog open={dialog === 'group'} onClose={() => setDialog(null)} engine={engine} state={state} onCreated={open} />
       <GroupDetailsDialog

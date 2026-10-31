@@ -1,5 +1,13 @@
 import {
   FileAssembler,
+  INVITE_TTL_SEC,
+  deriveInvite,
+  encodeContactCard,
+  newInviteWords,
+  openInvite,
+  parseInviteWords,
+  sealInvite,
+  type InviteRendezvous,
   acceptsDirect as acceptsDirectFrom,
   canStartDirect,
   GroupCoordinator,
@@ -34,6 +42,7 @@ import {
   seal,
   validateFileSize,
   type ConnectionPath,
+  type Contact,
   type ContactCard,
   type DeliveryState,
   type GroupFrame,
@@ -141,7 +150,18 @@ export interface UiMessage extends StoredMessage {
   progress?: number;
 }
 
+/** Someone who used our invite words and answered with their own card. */
+export interface InviteRequest {
+  uid: string;
+  name: string;
+  safetyNumber: string;
+}
+
 export interface ChatState {
+  /** Our current six-word invite, if one is being shown. */
+  invite: { words: string; expiresAt: number } | null;
+  /** People who used our words and are waiting for us to accept them. */
+  requests: InviteRequest[];
   phase: EnginePhase;
   uid: string;
   contacts: ContactView[];
@@ -213,6 +233,9 @@ export class ChatEngine {
   private groupOnly = loadSettings().groupOnly;
   /** What each connected friend told us about their own setting (re-announced on every link). */
   private peerGroupOnly = new Map<string, boolean>();
+  private activeInvite: { words: string[]; rv: InviteRendezvous; hub: SignalingHub; expiresAt: number; timer: ReturnType<typeof setTimeout>; republish: ReturnType<typeof setInterval> } | null = null;
+  private requestCards = new Map<string, { contact: Contact; safetyNumber: string }>();
+  private redeemed: { words: string; rv: InviteRendezvous; contact: Contact } | null = null;
   private assemblers = new Map<string, FileAssembler>();
   private lastChunkAt = new Map<string, number>();
   private sendingFiles = new Set<string>();
@@ -222,6 +245,8 @@ export class ChatEngine {
     this.identity = deps.identity;
     this.coord = this.newCoordinator();
     this.state = {
+      invite: null,
+      requests: [],
       phase: 'starting',
       uid: deps.identity.uid,
       contacts: [],
@@ -341,6 +366,7 @@ export class ChatEngine {
   }
 
   stop(): void {
+    this.stopInvite();
     this.stopped = true;
     clearInterval(this.timer);
     this.hub?.stop();
@@ -411,8 +437,9 @@ export class ChatEngine {
 
   /** Validate an invite without saving anything. */
   async previewInvite(text: string): Promise<{ uid: string; name: string; safetyNumber: string; already: boolean }> {
-    const contact = await decodeContactCard(text);
-    if (!contact) throw new Error('That does not look like a PrivCord invite. Ask your friend to share it again.');
+    const words = parseInviteWords(text);
+    const contact = words ? await this.lookUpInvite(words) : await decodeContactCard(text);
+    if (!contact) throw new Error('That does not look like a PrivCord invite. Check the words, or ask your friend to share it again.');
     if (contact.uid === this.identity.uid) throw new Error('That is your own invite. Send it to a friend instead.');
     return {
       uid: contact.uid,
@@ -424,8 +451,17 @@ export class ChatEngine {
 
   /** Save a friend from their invite. Returns their uid so the UI can open the chat. */
   async addContact(text: string): Promise<string> {
-    const contact = await decodeContactCard(text);
-    if (!contact) throw new Error('That does not look like a PrivCord invite. Ask your friend to share it again.');
+    const words = parseInviteWords(text);
+    let answerWith: InviteRendezvous | null = null;
+    let contact: Contact | null;
+    if (words) {
+      if (!this.redeemed || this.redeemed.words !== words.join(' ')) this.redeemed = null;
+      contact = this.redeemed?.contact ?? (await this.lookUpInvite(words));
+      answerWith = this.redeemed?.rv ?? null;
+    } else {
+      contact = await decodeContactCard(text);
+    }
+    if (!contact) throw new Error('That does not look like a PrivCord invite. Check the words, or ask your friend to share it again.');
     if (contact.uid === this.identity.uid) throw new Error('That is your own invite. Send it to a friend instead.');
     const existing = this.contacts.get(contact.uid);
     const rec: ContactRecord = {
@@ -442,7 +478,134 @@ export class ChatEngine {
     link.offerAttempt = 0;
     this.emit({ notice: existing ? `${this.nameOf(contact.uid)} is already in your friends.` : `${this.nameOf(contact.uid)} added. Connecting…` });
     void this.tick();
+    // Used someone's words: answer with our own card so they can accept us (they confirm it on their side).
+    if (answerWith) void this.answerInvite(answerWith).catch(() => undefined);
+    this.redeemed = null;
     return contact.uid;
+  }
+
+  /* ---------------- six-word invites ---------------- */
+
+  private async onlineHub(): Promise<SignalingHub> {
+    if (this.network.signaling.length === 0) {
+      throw new Error('Six-word invites need a connection service (Settings > Connection). The QR code and the full invite text work without one.');
+    }
+    const hub = new SignalingHub(transportsFor(this.network));
+    return hub;
+  }
+
+  /** Live copy (works on relays that store nothing) plus a stored copy (works for late arrivals where allowed). */
+  private async putEverywhere(hub: SignalingHub, mailbox: string, blob: SealedBlob): Promise<void> {
+    const results = await Promise.allSettled([
+      hub.put(mailbox, blob, { kind: 'sig', ttlSec: 120 }),
+      hub.put(mailbox, blob, { kind: 'msg', ttlSec: INVITE_TTL_SEC }),
+    ]);
+    if (!results.some((r) => r.status === 'fulfilled')) throw new Error('Could not publish the invite.');
+  }
+
+  private async waitOnline(hub: SignalingHub, ms = 8000): Promise<void> {
+    const end = Date.now() + ms;
+    while (hub.status() !== 'online') {
+      if (Date.now() > end) {
+        hub.stop();
+        throw new Error('Could not reach the connection service. Check your internet and try again.');
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  }
+
+  /** Show-your-words: publish our card under fresh words and listen for people who answer. */
+  async createInvite(): Promise<{ words: string; expiresAt: number }> {
+    if (this.activeInvite && this.activeInvite.expiresAt > Date.now() + 30_000) {
+      return { words: this.activeInvite.words.join(' '), expiresAt: this.activeInvite.expiresAt };
+    }
+    this.stopInvite();
+    const hub = await this.onlineHub();
+    const words = newInviteWords();
+    const rv = await deriveInvite(words);
+    hub.start(rv.mailbox, (blob) => void this.onInviteBlob(rv, blob));
+    await this.waitOnline(hub);
+    const publish = async () => {
+      const blob = await sealInvite({ rendezvous: rv, kind: 'card', card: this.ownCard(), uid: this.identity.uid, signPriv: this.identity.privateJwk });
+      await this.putEverywhere(hub, rv.mailbox, blob);
+    };
+    await publish();
+    const expiresAt = Date.now() + INVITE_TTL_SEC * 1000;
+    const timer = setTimeout(() => this.stopInvite(), INVITE_TTL_SEC * 1000);
+    // Relays differ in what they keep (some store nothing, Nostr drops live-only events), so the card is
+    // published again every few seconds as well as stored once: whoever types the words next finds it.
+    const republish = setInterval(() => void publish().catch(() => undefined), 8_000);
+    this.activeInvite = { words, rv, hub, expiresAt, timer, republish };
+    this.emit({ invite: { words: words.join(' '), expiresAt } });
+    return { words: words.join(' '), expiresAt };
+  }
+
+  private stopInvite(): void {
+    if (!this.activeInvite) return;
+    clearTimeout(this.activeInvite.timer);
+    clearInterval(this.activeInvite.republish);
+    this.activeInvite.hub.stop();
+    this.activeInvite = null;
+    this.emit({ invite: null });
+  }
+
+  private async onInviteBlob(rv: InviteRendezvous, blob: SealedBlob): Promise<void> {
+    const message = await openInvite(rv, blob);
+    if (!message || message.kind !== 'reply') return;
+    const { contact } = message;
+    if (contact.uid === this.identity.uid || this.contacts.get(contact.uid)?.trust === 'verified') return;
+    this.requestCards.set(contact.uid, {
+      contact,
+      safetyNumber: await deriveSafetyNumber(this.identity.publicJwk, contact.card.sign),
+    });
+    this.emit();
+  }
+
+  /** Accept somebody who used our words. */
+  async acceptRequest(uid: string): Promise<string> {
+    const r = this.requestCards.get(uid);
+    if (!r) throw new Error('That request is no longer there.');
+    this.requestCards.delete(uid);
+    return this.addContact(encodeContactCard(r.contact.card));
+  }
+
+  dismissRequest(uid: string): void {
+    this.requestCards.delete(uid);
+    this.emit();
+  }
+
+  /** Enter-their-words: fetch their card from the meeting point. Null if nobody answered in time. */
+  private async lookUpInvite(words: string[]): Promise<Contact | null> {
+    const rv = await deriveInvite(words);
+    const hub = await this.onlineHub();
+    const found = await new Promise<Contact | null>((resolve) => {
+      const timer = setTimeout(() => resolve(null), 15_000);
+      hub.start(rv.mailbox, (blob) => {
+        void openInvite(rv, blob).then((m) => {
+          if (m?.kind === 'card') {
+            clearTimeout(timer);
+            resolve(m.contact);
+          }
+        });
+      });
+    });
+    hub.stop();
+    if (!found) throw new Error('Could not find that invite. Check the words, make sure your friend still has the invite open, and that you are both online.');
+    this.redeemed = { words: words.join(' '), rv, contact: found };
+    return found;
+  }
+
+  private async answerInvite(rv: InviteRendezvous): Promise<void> {
+    const hub = await this.onlineHub();
+    hub.start(rv.mailbox, () => undefined);
+    try {
+      await this.waitOnline(hub);
+      const blob = await sealInvite({ rendezvous: rv, kind: 'reply', card: this.ownCard(), uid: this.identity.uid, signPriv: this.identity.privateJwk });
+      await this.putEverywhere(hub, rv.mailbox, blob);
+      await new Promise((r) => setTimeout(r, 1500));
+    } finally {
+      hub.stop();
+    }
   }
 
   /**
@@ -1556,7 +1719,12 @@ export class ChatEngine {
         ...(this.progress.has(m.messageId) ? { progress: this.progress.get(m.messageId) } : {}),
       });
     }
-    return { ...this.state, contacts, groups, messages, queued, storageBackend: this.deps.store.backend, signaling: this.hub?.status() ?? 'idle' };
+    const requests: InviteRequest[] = [...this.requestCards.entries()].map(([uid, r]) => ({
+      uid,
+      name: r.contact.card.name || `Friend ${short(uid)}`,
+      safetyNumber: r.safetyNumber,
+    }));
+    return { ...this.state, requests, contacts, groups, messages, queued, storageBackend: this.deps.store.backend, signaling: this.hub?.status() ?? 'idle' };
   }
 }
 

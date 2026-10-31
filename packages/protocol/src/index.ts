@@ -11,6 +11,7 @@ export * from './recovery';
 export * from './killswitch';
 export * from './connectivity/seal';
 export * from './connectivity/contactCard';
+export * from './connectivity/inviteCode';
 export * from './connectivity/networkConfig';
 export * from './connectivity/connectionPath';
 export * from './connectivity/secureChannel';

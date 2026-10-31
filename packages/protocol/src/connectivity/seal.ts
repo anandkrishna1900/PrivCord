@@ -82,6 +82,20 @@ export async function seal(input: SealInput): Promise<SealedBlob> {
   return blob;
 }
 
+/** Signs the parts of a blob that must not change. Used by blob kinds that are not ECDH-sealed (invite codes). */
+export async function signBlob(unsigned: Omit<SealedBlob, 'sig'>, signPriv: PrivateJwk): Promise<string> {
+  return toB64Url(await ecdsaSign(signPriv, signedPart(unsigned)));
+}
+
+export async function verifyBlobSignature(blob: SealedBlob, signPub: PublicJwk): Promise<boolean> {
+  const { sig, ...unsigned } = blob;
+  try {
+    return await ecdsaVerify(signPub, fromB64Url(sig), signedPart(unsigned));
+  } catch {
+    return false;
+  }
+}
+
 export interface OpenInput {
   blob: SealedBlob;
   ownUid: string;

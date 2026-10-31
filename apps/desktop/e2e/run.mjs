@@ -713,6 +713,48 @@ await scenario(15, 'app lock: passkey (virtual Windows Hello) gates the app; fai
   check(dev.errors.length === 0, 'no page errors', dev.errors);
 });
 
+/* 16 ----------------------------------------------------------------- */
+await scenario(16, 'six-word invite: words (not a long string) connect two people; wrong words fail clearly; the answerer is confirmed', async (ctx) => {
+  const relay = await startRelay(false);
+  ctx.cleanups.push(relay.close);
+  const net = relayNet(relay.url);
+  const [A, B] = [await namedDevice(ctx, net, 'Ann'), await namedDevice(ctx, net, 'Ben')];
+  await A.page.click('button[aria-label="Add friend"]');
+  await A.page.waitForSelector('.invite-words .invite-word', { timeout: 20000 });
+  const words = (await A.page.locator('.invite-words .invite-word').allInnerTexts()).map((w) => w.trim());
+  check(words.length === 6 && words.every((w) => /^[a-z]+$/.test(w)), 'six plain words are shown', words);
+  check(!(await A.page.locator('textarea[aria-label="Your invite"]').isVisible()), 'the long invite string is not shown by default');
+  check((await A.page.locator('.qr svg').count()) === 1, 'the QR code is still there');
+  // Ben types five right words and one wrong word: clear error, nothing added.
+  await B.page.click('button[aria-label="Add friend"]');
+  await B.page.waitForSelector('.invite-words .invite-word', { timeout: 20000 });
+  const wrong = [...words.slice(0, 5), words[5] === 'zoo' ? 'zone' : 'zoo'].join(' ');
+  await B.page.fill('textarea[aria-label="Friend\'s invite"]', wrong);
+  await B.page.click('button:has-text("Continue")');
+  await B.page.waitForSelector('.status-text.error:has-text("Could not find that invite")', { timeout: 40000 });
+  ctx.note('wrong words: "Could not find that invite", nothing added');
+  // Right words (messy typing: capitals and commas).
+  await B.page.fill('textarea[aria-label="Friend\'s invite"]', words.map((w) => w[0].toUpperCase() + w.slice(1)).join(', '));
+  await B.page.click('button:has-text("Continue")');
+  await B.page.waitForSelector('.verify-panel .safety-number', { timeout: 40000 });
+  check((await B.page.locator('.verify-panel h3').innerText()).includes('Ann'), 'Ben sees it is Ann');
+  await B.page.click('button:has-text("Skip for now")');
+  await B.page.waitForSelector('.modal-backdrop', { state: 'detached' });
+  ctx.note('Ben typed the six words and added Ann');
+  // Ann is asked to confirm who answered.
+  await A.page.waitForSelector('.modal:has-text("Ben used your invite") .safety-number', { timeout: 40000 });
+  await A.page.click('button:has-text("Add Ben")');
+  await A.page.waitForSelector('.chat-header h2:has-text("Ben")', { timeout: 20000 });
+  ctx.note('Ann confirmed Ben (shown with safety numbers) and added him');
+  await connected(A.page, 120000);
+  await say(A.page, 'connected by six words');
+  await openChat(B.page, 'Ann');
+  await B.page.waitForSelector('text=connected by six words', { timeout: 40000 });
+  ctx.note('they chat with each other');
+  const errs = [...A.errors, ...B.errors];
+  check(errs.length === 0, 'no page errors', errs);
+});
+
 console.log('\n=== SUMMARY ===');
 for (const r of results) console.log(`${r.status}  #${r.id}  ${r.name}`);
 fs.writeFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), 'last-results.json'), JSON.stringify(results, null, 2));
