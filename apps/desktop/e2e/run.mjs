@@ -1,7 +1,10 @@
 // Usage: node e2e/run.mjs [--only 1,2,...]   (or: npm run e2e)
 import fs from 'node:fs';
 import path from 'node:path';
-import { addFriend, build, connected, device, installBleSim, invites, isConnected, launch, onboard, openAdd, groupAdd, groupRemove, memberNames, newGroup, openChat, pair, setName, pasteInvite, realPath, relayNet, say, serve, startNostrRelay, startRelay, startTurn, uidOf, uiPath } from './lib.mjs';
+import { createHash } from 'node:crypto';
+import { addFriend, build, connected, device, installBleSim, invites, isConnected, launch, onboard, openAdd, groupAdd, groupRemove,
+  memberNames, messageMember, newGroup, openChat, openGroupDetails, pair, setName, pasteInvite, realPath, relayNet, saveFile, say, sendFile, serve,
+  setGroupOnly, startNostrRelay, startRelay, startTurn, uidOf, uiPath } from './lib.mjs';
 
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1].split(',') : null;
 const results = [];
@@ -320,8 +323,8 @@ await scenario(9, 'dead-link detection: a vanished peer is noticed within ~15s',
 });
 
 /* 10 ----------------------------------------------------------------- */
-async function namedDevice(ctx, network, name) {
-  const dev = await device(browser, appUrl, network);
+async function namedDevice(ctx, network, name, url = appUrl) {
+  const dev = await device(browser, url, network);
   ctx.cleanups.push(() => dev.context.close());
   dev.name = name;
   await onboard(dev.page);
@@ -336,39 +339,74 @@ async function befriend(x, y) {
   await addFriend(y.page, ix);
 }
 
-await scenario(10, 'A-B-C introduction: A adds B, B adds C to a group; A and C connect with no code sharing', async (ctx) => {
+await scenario(10, 'A-B-C introduction: A and C connect and can DM with no code sharing; group-only opt-out by either side blocks DMs but not the group; swapping invites pairs them', async (ctx) => {
   const relay = await startRelay(false);
   ctx.cleanups.push(relay.close);
   const net = relayNet(relay.url);
   const [A, B, C] = [await namedDevice(ctx, net, 'Ann'), await namedDevice(ctx, net, 'Ben'), await namedDevice(ctx, net, 'Cat')];
   await befriend(A, B);
   await befriend(B, C);
-  check((await A.page.locator('.chat-row', { hasText: 'Cat' }).count()) === 0, 'A and C are strangers before the group');
+  const openDirect = async (page, name) => { await page.locator('.chat-row', { has: page.locator(`strong:text-is("${name}")`) }).click(); await page.waitForSelector(`.chat-header h2:has-text("${name}")`); };
+  const row = (page, name) => page.locator(`.chat-row strong:text-is("${name}")`);
+  check((await row(A.page, 'Cat').count()) === 0, 'A and C are strangers before the group');
   await newGroup(A.page, 'Trip', ['Ben']);
   await B.page.waitForSelector('.chat-row:has-text("Trip")', { timeout: 60000 });
   await openChat(B.page, 'Trip');
   await groupAdd(B.page, 'Cat');
   const t0 = Date.now();
   await C.page.waitForSelector('.chat-row:has-text("Trip")', { timeout: 60000 });
-  ctx.note(`C sees the group ${Math.round((Date.now() - t0) / 1000)}s after B added her`);
-  // A and C now know each other (introduced) and link up on their own.
-  await A.page.waitForSelector('.chat-row:has-text("Cat")', { timeout: 60000 });
-  await C.page.waitForSelector('.chat-row:has-text("Ann")', { timeout: 60000 });
-  await openChat(A.page, 'Cat');
-  check((await A.page.locator('.banner:has-text("Introduced by Ben")').count()) === 1, 'A sees "Introduced by Ben"');
+  // Default: nobody opted out, so A and C appear in each other's lists and link up automatically.
+  await row(A.page, 'Cat').waitFor({ timeout: 60000 });
+  await row(C.page, 'Ann').waitFor({ timeout: 60000 });
+  await openDirect(A.page, 'Cat');
   await connected(A.page, 120000);
   ctx.note(`A <-> C direct link up ${Math.round((Date.now() - t0) / 1000)}s after the add (no invite, no code)`);
   await say(A.page, 'hello Cat, no code needed');
-  await openChat(C.page, 'Ann');
+  await openDirect(C.page, 'Ann');
   await C.page.waitForSelector('text=hello Cat, no code needed', { timeout: 30000 });
-  await connected(C.page, 60000);
-  // group message from C reaches A and B
-  await openChat(C.page, 'Trip');
-  await say(C.page, 'group hi from Cat');
+  ctx.note('default: introduced people can message each other directly');
+  // Cat opts out. Both sides drop the direct chat; the group keeps working in both directions.
   await openChat(A.page, 'Trip');
+  await openChat(C.page, 'Trip');
+  await setGroupOnly(C.page, true);
+  await row(A.page, 'Cat').waitFor({ state: 'detached', timeout: 30000 });
+  await row(C.page, 'Ann').waitFor({ state: 'detached', timeout: 30000 });
+  await say(C.page, 'group hi from Cat');
   await A.page.waitForSelector('text=group hi from Cat', { timeout: 30000 });
-  await openChat(B.page, 'Trip');
-  await B.page.waitForSelector('text=group hi from Cat', { timeout: 30000 });
+  await say(A.page, 'group hi from Ann');
+  await C.page.waitForSelector('text=group hi from Ann', { timeout: 30000 });
+  // reply across the group-only pair
+  await A.page.locator('.bubble:has(.bubble-text:text-is("group hi from Cat"))').hover();
+  await A.page.locator('.bubble:has(.bubble-text:text-is("group hi from Cat")) button[aria-label="Reply to this message"]').click();
+  await say(A.page, 'welcome Cat');
+  await C.page.waitForSelector('.bubble:has-text("welcome Cat") .quote:has-text("group hi from Cat")', { timeout: 30000 });
+  ctx.note('Cat opted out: no direct chat either way, group messages and replies still flow');
+  await openGroupDetails(A.page);
+  check((await A.page.locator('.member-row', { hasText: 'Cat' }).locator('.chip:has-text("Group only")').count()) === 1, 'Ann sees Cat as "Group only"');
+  await A.page.keyboard.press('Escape');
+  // Cat opts back in: the direct chat returns.
+  await setGroupOnly(C.page, false);
+  await row(A.page, 'Cat').waitFor({ timeout: 30000 });
+  await row(C.page, 'Ann').waitFor({ timeout: 30000 });
+  ctx.note('opting back in restores the direct chat');
+  // Now Ann opts out instead (the other side): same result.
+  await setGroupOnly(A.page, true);
+  await row(A.page, 'Cat').waitFor({ state: 'detached', timeout: 30000 });
+  await row(C.page, 'Ann').waitFor({ state: 'detached', timeout: 30000 });
+  ctx.note('it does not matter which of the two opts out');
+  // Pair manually (swap invites): that works even while Ann is group-only.
+  const [invA, invC] = await invites(A.page, C.page);
+  await addFriend(A.page, invC);
+  await addFriend(C.page, invA);
+  await row(A.page, 'Cat').waitFor({ timeout: 30000 });
+  await row(C.page, 'Ann').waitFor({ timeout: 30000 });
+  await openDirect(A.page, 'Cat');
+  await openDirect(C.page, 'Ann');
+  await connected(A.page, 60000);
+  await say(C.page, 'paired by hand');
+  await A.page.waitForSelector('text=paired by hand', { timeout: 30000 });
+  ctx.note('after swapping invites they can message directly even though one stays group-only');
+  await openChat(A.page, 'Trip');
   check(JSON.stringify((await memberNames(A.page)).sort()) === JSON.stringify(['Ben', 'Cat', 'You']), 'A sees all three members', await memberNames(A.page));
   const errs = [...A.errors, ...B.errors, ...C.errors];
   check(errs.length === 0, 'no page errors', errs);
@@ -433,6 +471,246 @@ await scenario(11, '6-browser group built by chain introductions: full mesh, eac
   ctx.note('U6 shows "You were removed", cannot write, receives nothing new; others continue');
   const errs = devs.flatMap((d) => d.errors);
   check(errs.length === 0, 'no page errors', errs);
+});
+
+/* 12 ----------------------------------------------------------------- */
+await scenario(12, 'replies: quote shows on both sides in a direct chat and in a group; reply survives a reload', async (ctx) => {
+  const relay = await startRelay(false);
+  ctx.cleanups.push(relay.close);
+  const net = relayNet(relay.url);
+  const [A, B, C] = [await namedDevice(ctx, net, 'Ann'), await namedDevice(ctx, net, 'Ben'), await namedDevice(ctx, net, 'Cat')];
+  await befriend(A, B);
+  await befriend(A, C);
+  await openChat(A.page, 'Ben');
+  await openChat(B.page, 'Ann');
+  await connected(A.page, 120000);
+  await say(A.page, 'lunch at noon?');
+  await B.page.waitForSelector('.bubble:has(.bubble-text:text-is("lunch at noon?"))', { timeout: 30000 });
+  // Ben replies to that bubble
+  await B.page.locator('.bubble:has(.bubble-text:text-is("lunch at noon?"))').hover();
+  await B.page.locator('.bubble:has(.bubble-text:text-is("lunch at noon?")) button[aria-label="Reply to this message"]').click();
+  await B.page.waitForSelector('.reply-bar:has-text("Replying to Ann")');
+  await say(B.page, 'yes, see you there');
+  check((await B.page.locator('.reply-bar').count()) === 0, 'reply bar closes after sending');
+  await A.page.waitForSelector('.bubble:has-text("yes, see you there") .quote:has-text("lunch at noon?")', { timeout: 30000 });
+  await B.page.waitForSelector('.bubble:has-text("yes, see you there") .quote:has-text("lunch at noon?")', { timeout: 10000 });
+  ctx.note('direct reply: both sides show the quoted original');
+  // Escape cancels a pending reply
+  await B.page.locator('.bubble:has(.bubble-text:text-is("lunch at noon?")) button[aria-label="Reply to this message"]').click();
+  await B.page.waitForSelector('.reply-bar');
+  await B.page.locator('.composer textarea').press('Escape');
+  check((await B.page.locator('.reply-bar').count()) === 0, 'Escape cancels the reply');
+  // reply survives a reload (stored with the message)
+  await B.page.reload();
+  await openChat(B.page, 'Ann');
+  await B.page.waitForSelector('.bubble:has-text("yes, see you there") .quote:has-text("lunch at noon?")', { timeout: 30000 });
+  ctx.note('reply quote is still there after a reload');
+  // group: Ann creates a group with both, Cat replies to Ben's message
+  await newGroup(A.page, 'Lunch', ['Ben', 'Cat']);
+  for (const d of [B, C]) await d.page.waitForSelector('.chat-row:has-text("Lunch")', { timeout: 60000 });
+  await openChat(B.page, 'Lunch');
+  await openChat(C.page, 'Lunch');
+  await C.page.waitForFunction(() => /3 members · 2 connected/.test(document.querySelector('.chat-header-identity p')?.textContent ?? ''), null, { timeout: 150000 });
+  await say(B.page, 'I vote pizza');
+  await C.page.waitForSelector('.bubble:has(.bubble-text:text-is("I vote pizza"))', { timeout: 30000 });
+  await C.page.locator('.bubble:has(.bubble-text:text-is("I vote pizza"))').hover();
+  await C.page.locator('.bubble:has(.bubble-text:text-is("I vote pizza")) button[aria-label="Reply to this message"]').click();
+  await say(C.page, 'pizza works');
+  await openChat(A.page, 'Lunch');
+  await A.page.waitForSelector('.bubble:has-text("pizza works") .quote:has-text("I vote pizza")', { timeout: 30000 });
+  await B.page.waitForSelector('.bubble:has-text("pizza works") .quote:has-text("I vote pizza")', { timeout: 30000 });
+  const quoted = await A.page.locator('.bubble:has-text("pizza works") .quote strong').innerText();
+  check(quoted === 'Ben', 'quote names the original author (Ben) for a third person', quoted);
+  ctx.note('group reply: all three show the quote, attributed to the original author');
+  const errs = [...A.errors, ...B.errors, ...C.errors];
+  check(errs.length === 0, 'no page errors', errs);
+});
+
+/* 13 ----------------------------------------------------------------- */
+await scenario(13, 'files: images preview, exactly 8 MB arrives intact, 8 MB + 1 refused, group file reaches everyone, SVG never rendered', async (ctx) => {
+  const relay = await startRelay(false);
+  ctx.cleanups.push(relay.close);
+  const net = relayNet(relay.url);
+  const [A, B, C] = [await namedDevice(ctx, net, 'Ann'), await namedDevice(ctx, net, 'Ben'), await namedDevice(ctx, net, 'Cat')];
+  await befriend(A, B);
+  await befriend(A, C);
+  await openChat(A.page, 'Ben');
+  await openChat(B.page, 'Ann');
+  await connected(A.page, 120000);
+  const sha = (buf) => createHash('sha256').update(buf).digest('hex');
+  // 1. a real PNG: previewed inline on the receiver, bytes identical
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  await sendFile(A.page, { name: 'dot.png', mime: 'image/png', buffer: png });
+  await B.page.waitForSelector('.file-bubble:has-text("dot.png") img.file-image', { timeout: 30000 });
+  const got = await saveFile(B.page, 'dot.png');
+  check(sha(got.bytes) === sha(png) && got.suggested === 'dot.png', 'PNG arrives byte for byte', { suggested: got.suggested });
+  await A.page.waitForSelector('.bubble.own:has-text("dot.png") .delivery-indicator[aria-label="Delivered"], .bubble.own:has-text("dot.png") .delivery-indicator[aria-label="Read"]', { timeout: 30000 });
+  ctx.note('image previewed inline, saved bytes identical, sender sees Delivered');
+  // 2. SVG: shown only as a file card (it can carry script), never rendered
+  const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>window.__pwned = 1</script></svg>');
+  await sendFile(A.page, { name: 'x.svg', mime: 'image/svg+xml', buffer: svg });
+  await B.page.waitForSelector('.file-bubble:has-text("x.svg")', { timeout: 30000 });
+  check((await B.page.locator('.file-bubble:has-text("x.svg") img').count()) === 0, 'SVG is not rendered as an image');
+  check((await B.page.evaluate(() => window.__pwned)) === undefined, 'SVG script did not run');
+  // 2b. video gets a player, other files (a PDF here) get only a card with Save
+  await sendFile(A.page, { name: 'clip.mp4', mime: 'video/mp4', buffer: Buffer.alloc(20000, 3) });
+  await B.page.waitForSelector('.file-bubble:has-text("clip.mp4") video.file-video', { timeout: 30000 });
+  check((await B.page.locator('.file-bubble:has-text("clip.mp4") button[aria-label^="Save"]').count()) === 1, 'video also has Save');
+  await sendFile(A.page, { name: 'notes.pdf', mime: 'application/pdf', buffer: Buffer.alloc(2000, 5) });
+  await B.page.waitForSelector('.file-bubble:has-text("notes.pdf")', { timeout: 30000 });
+  check((await B.page.locator('.file-bubble:has-text("notes.pdf") video, .file-bubble:has-text("notes.pdf") img').count()) === 0, 'a PDF has no preview, only the card');
+  ctx.note('video has a player and Save; other files are a plain card');
+  // 3. exactly 8 MB of random data
+  const max = Buffer.alloc(8 * 1024 * 1024);
+  for (let i = 0; i < max.length; i += 65536) globalThis.crypto.getRandomValues(max.subarray(i, i + 65536));
+  const t0 = Date.now();
+  await sendFile(A.page, { name: 'eight.bin', mime: 'application/octet-stream', buffer: max });
+  await B.page.waitForSelector('.file-bubble:has-text("eight.bin")', { timeout: 120000 });
+  ctx.note(`8 MB received in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+  const big = await saveFile(B.page, 'eight.bin');
+  check(big.bytes.length === max.length && sha(big.bytes) === sha(max), '8 MB file is intact (SHA-256 equal)');
+  // 4. one byte over: refused before anything is sent
+  await sendFile(A.page, { name: 'toobig.bin', mime: 'application/octet-stream', buffer: Buffer.alloc(8 * 1024 * 1024 + 1, 7) });
+  await A.page.waitForSelector('.composer-error:has-text("at most 8.0 MB")', { timeout: 10000 });
+  await sleep(1500);
+  check((await B.page.locator('.file-bubble:has-text("toobig.bin")').count()) === 0, 'oversized file is never sent');
+  // 5. a hostile name is cleaned
+  await sendFile(A.page, { name: '..\\..\\evil<name>.txt', mime: 'text/plain', buffer: Buffer.from('hi') });
+  await B.page.waitForSelector('.file-bubble:has-text("evil")', { timeout: 30000 });
+  const evil = await saveFile(B.page, 'evil');
+  check(!/[\\/:<>]/.test(evil.suggested), 'saved name has no path or reserved characters', evil.suggested);
+  // 6. reply to a file keeps its name as the quote
+  await B.page.locator('.bubble:has(.file-name:text-is("dot.png"))').first().hover();
+  await B.page.locator('.bubble:has(.file-name:text-is("dot.png")) button[aria-label="Reply to this message"]').first().click();
+  await say(B.page, 'nice dot');
+  await A.page.waitForSelector('.bubble:has-text("nice dot") .quote:has-text("dot.png")', { timeout: 30000 });
+  // 7. group file: Ann creates a group, everyone gets the file
+  await newGroup(A.page, 'Files', ['Ben', 'Cat']);
+  for (const d of [B, C]) await d.page.waitForSelector('.chat-row:has-text("Files")', { timeout: 60000 });
+  await openChat(B.page, 'Files');
+  await openChat(C.page, 'Files');
+  await A.page.waitForFunction(() => /3 members · 2 connected/.test(document.querySelector('.chat-header-identity p')?.textContent ?? ''), null, { timeout: 150000 });
+  const doc = Buffer.alloc(1_500_000);
+  globalThis.crypto.getRandomValues(doc.subarray(0, 65536));
+  await sendFile(A.page, { name: 'report.pdf', mime: 'application/pdf', buffer: doc });
+  for (const d of [B, C]) await d.page.waitForSelector('.file-bubble:has-text("report.pdf")', { timeout: 60000 });
+  const fromB = await saveFile(B.page, 'report.pdf');
+  const fromC = await saveFile(C.page, 'report.pdf');
+  check(sha(fromB.bytes) === sha(doc) && sha(fromC.bytes) === sha(doc), 'group file identical on both members');
+  await A.page.waitForFunction(() => [...document.querySelectorAll('.bubble.own')].some((e) => e.textContent.includes('report.pdf') && /2 of 2/.test(e.querySelector('.delivery-indicator')?.title ?? '')), null, { timeout: 60000 });
+  ctx.note('group file delivered to both members, sender sees "2 of 2"');
+  // 8. a file sent while the other side is offline is delivered when it returns
+  await C.page.close();
+  await sleep(1500);
+  const late = Buffer.from('sent while Cat was away');
+  await sendFile(A.page, { name: 'late.txt', mime: 'text/plain', buffer: late });
+  await B.page.waitForSelector('.file-bubble:has-text("late.txt")', { timeout: 60000 });
+  await C.open();
+  await openChat(C.page, 'Files');
+  await C.page.waitForSelector('.file-bubble:has-text("late.txt")', { timeout: 150000 });
+  const lateGot = await saveFile(C.page, 'late.txt');
+  check(sha(lateGot.bytes) === sha(late), 'file sent while offline arrives intact after reconnect');
+  ctx.note('offline member got the file after coming back');
+  // 9. stored files survive a reload
+  await B.page.reload();
+  await openChat(B.page, 'Files');
+  const again = await saveFile(B.page, 'report.pdf');
+  check(sha(again.bytes) === sha(doc), 'file still saved on disk after reload');
+  const errs = [...A.errors, ...B.errors, ...C.errors];
+  check(errs.length === 0, 'no page errors', errs);
+});
+
+/* 14 ----------------------------------------------------------------- */
+await scenario(14, 'group limit: 10 members is the maximum and the UI says so', async (ctx) => {
+  const relay = await startRelay(false);
+  ctx.cleanups.push(relay.close);
+  const net = relayNet(relay.url);
+  const owner = await namedDevice(ctx, net, 'Owner');
+  const others = [];
+  for (let i = 1; i <= 9; i += 1) others.push(await namedDevice(ctx, net, `M${i}`));
+  for (const o of others) await befriend(owner, o);
+  await owner.page.click('button[aria-label="New group"]');
+  await owner.page.getByLabel('Group name').fill('Full house');
+  for (const o of others) await owner.page.locator('.pick-row', { hasText: o.name }).locator('input').check();
+  check((await owner.page.locator('.pick-row input:checked').count()) === 9, 'all nine friends can be picked (9 + you = 10)');
+  await owner.page.click('button:has-text("Create group")');
+  await owner.page.waitForSelector('.chat-header h2:has-text("Full house")');
+  await openGroupDetails(owner.page);
+  const title = await owner.page.locator('.section-title').first().innerText();
+  check(/10 of 10 members/.test(title), 'details show 10 of 10', title);
+  check(await owner.page.locator('button:has-text("Add member")').isDisabled(), '"Add member" is disabled when full');
+  check((await owner.page.locator('text=This group is full').count()) === 1, 'the screen explains why');
+  await owner.page.keyboard.press('Escape');
+  for (const o of others.slice(0, 2)) await o.page.waitForSelector('.chat-row:has-text("Full house")', { timeout: 90000 });
+  const errs = [owner, ...others].flatMap((d) => d.errors);
+  check(errs.length === 0, 'no page errors', errs);
+});
+
+/* 15 ----------------------------------------------------------------- */
+await scenario(15, 'app lock: passkey (virtual Windows Hello) gates the app; failed verification stays locked; Lock now; turning off needs a passkey', async (ctx) => {
+  const relay = await startRelay(false);
+  ctx.cleanups.push(relay.close);
+  // WebAuthn refuses IP addresses as the relying party, so use the host name `localhost` (the packaged app uses tauri.localhost).
+  const dev = await namedDevice(ctx, relayNet(relay.url), 'Lock', appUrl.replace('127.0.0.1', 'localhost'));
+  const page = dev.page;
+  const cdp = await dev.context.newCDPSession(page);
+  await cdp.send('WebAuthn.enable');
+  const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', {
+    options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true },
+  });
+  const setUv = (v) => cdp.send('WebAuthn.setUserVerified', { authenticatorId, isUserVerified: v });
+  const lockSwitch = () => page.locator('button[role="switch"][aria-label^="Lock PrivCord"]');
+  const openSecurity = async () => {
+    await page.click('button[aria-label="Settings"]');
+    await page.click('.tab:has-text("Security")');
+  };
+  check((await page.locator('.lock-screen').count()) === 0, 'not locked by default');
+  await openSecurity();
+  await lockSwitch().click();
+  await page.waitForFunction(() => document.querySelector('button[role="switch"][aria-label^="Lock PrivCord"]')?.getAttribute('aria-checked') === 'true');
+  await page.keyboard.press('Escape');
+  ctx.note('passkey created, lock turned on');
+  // Reload: the lock screen asks Windows Hello (the virtual authenticator verifies) and opens.
+  await page.reload();
+  await page.waitForSelector('.chat-panel, .sidebar', { timeout: 20000 });
+  await page.waitForSelector('.lock-screen', { state: 'detached', timeout: 20000 });
+  ctx.note('after a restart the passkey prompt passed and the app opened');
+  // User verification fails (wrong face/PIN): stays locked.
+  await setUv(false);
+  await page.reload();
+  await page.waitForSelector('.lock-screen', { timeout: 20000 });
+  await sleep(2500);
+  check((await page.locator('.lock-screen').count()) === 1, 'still locked when the passkey is not verified');
+  check((await page.locator('.lock-screen .status-text').count()) === 1, 'the lock screen says it did not work');
+  ctx.note('unverified passkey: app stays locked');
+  await setUv(true);
+  await page.click('.lock-screen button:has-text("Unlock")');
+  await page.waitForSelector('.lock-screen', { state: 'detached', timeout: 20000 });
+  // Lock now.
+  await setUv(false);
+  await openSecurity();
+  await page.click('button:has-text("Lock now")');
+  await page.waitForSelector('.lock-screen', { timeout: 10000 });
+  await setUv(true);
+  await page.click('.lock-screen button:has-text("Unlock")');
+  await page.waitForSelector('.lock-screen', { state: 'detached', timeout: 20000 });
+  await page.keyboard.press('Escape');
+  ctx.note('Lock now locks; the passkey unlocks');
+  // Turning the lock off needs the passkey; with a failed verification it stays on.
+  await openSecurity();
+  await setUv(false);
+  await lockSwitch().click();
+  await page.waitForSelector('.status-text.error', { timeout: 20000 });
+  check((await lockSwitch().getAttribute('aria-checked')) === 'true', 'cannot turn the lock off without the passkey');
+  await setUv(true);
+  await lockSwitch().click();
+  await page.waitForFunction(() => document.querySelector('button[role="switch"][aria-label^="Lock PrivCord"]')?.getAttribute('aria-checked') === 'false', null, { timeout: 20000 });
+  await page.keyboard.press('Escape');
+  await page.reload();
+  await page.waitForSelector('.sidebar', { timeout: 20000 });
+  check((await page.locator('.lock-screen').count()) === 0, 'no lock after turning it off');
+  ctx.note('turning the lock off needs the passkey, then the app opens freely');
+  check(dev.errors.length === 0, 'no page errors', dev.errors);
 });
 
 console.log('\n=== SUMMARY ===');

@@ -240,3 +240,29 @@ export const EyeOffIcon = makeIcon(
     <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
   </>,
 );
+
+export const PaperclipIcon = makeIcon(
+  <path d="m21 11-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.9-8.9a3.7 3.7 0 0 1 5.2 5.2l-8.9 8.9a1.8 1.8 0 0 1-2.6-2.6l8.2-8.2" />,
+);
+
+export const ReplyIcon = makeIcon(
+  <>
+    <path d="m9 14-5-5 5-5" />
+    <path d="M4 9h10a6 6 0 0 1 6 6v3" />
+  </>,
+);
+
+export const DownloadIcon = makeIcon(
+  <>
+    <path d="M12 3v12" />
+    <path d="m7 11 5 5 5-5" />
+    <path d="M5 21h14" />
+  </>,
+);
+
+export const FileIcon = makeIcon(
+  <>
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+    <path d="M14 3v5h5" />
+  </>,
+);

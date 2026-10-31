@@ -7,6 +7,11 @@ export interface AppSettings {
   notificationPreviews: boolean;
   /** The name friends see on your invite. */
   displayName: string;
+  /**
+   * Privacy: stay group-only with people you only meet through a group. You still get their group messages
+   * and they get yours, but neither of you can start a direct chat unless you swap invites yourselves.
+   */
+  groupOnly: boolean;
 }
 
 export const ACCENTS = [
@@ -25,6 +30,7 @@ const DEFAULTS: AppSettings = {
   notificationsEnabled: true,
   notificationPreviews: true,
   displayName: '',
+  groupOnly: false,
 };
 
 export function parseSettings(raw: string | null): AppSettings {
@@ -48,6 +54,7 @@ export function parseSettings(raw: string | null): AppSettings {
         typeof parsed.notificationPreviews === 'boolean'
           ? parsed.notificationPreviews
           : DEFAULTS.notificationPreviews,
+      groupOnly: typeof parsed.groupOnly === 'boolean' ? parsed.groupOnly : DEFAULTS.groupOnly,
       displayName:
         typeof parsed.displayName === 'string'
           ? parsed.displayName.trim().slice(0, 40)

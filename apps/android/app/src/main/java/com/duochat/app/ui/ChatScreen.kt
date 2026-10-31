@@ -1,6 +1,33 @@
 package com.duochat.app.ui
 
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.material.icons.automirrored.filled.Reply
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import com.duochat.app.data.FileMeta
+import com.duochat.app.data.MAX_FILE_BYTES
+import com.duochat.app.data.MessageType
+import com.duochat.app.data.formatBytes
+import com.duochat.app.data.isInlineImage
+import com.duochat.app.data.isInlineVideo
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -14,6 +41,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -103,7 +131,9 @@ fun ChatScreen(
     conversationId: String,
     muted: Boolean,
     onBack: () -> Unit,
-    onSend: (String, (Result<Unit>) -> Unit) -> Unit,
+    onSend: (String, String?, (Result<Unit>) -> Unit) -> Unit,
+    onSendFile: (String, String, ByteArray, String?, (Result<Unit>) -> Unit) -> Unit,
+    loadFile: suspend (String) -> Pair<FileMeta, ByteArray>?,
     onRetry: (String) -> Unit,
     onClearNotice: () -> Unit,
     onOpenDetails: () -> Unit,
@@ -119,6 +149,8 @@ fun ChatScreen(
     val canWrite = state.phase == EnginePhase.READY && (friend != null || group?.iAmMember == true)
     var menuOpen by remember { mutableStateOf(false) }
     var clearConfirm by remember { mutableStateOf(false) }
+    var replyingTo by remember(conversationId) { mutableStateOf<ChatMessage?>(null) }
+    val directBlocked = friend != null && !friend.direct
 
     val status = when {
         friend != null -> when (friend.link) {
@@ -185,11 +217,29 @@ fun ChatScreen(
             )
         },
         bottomBar = {
-            if (canWrite) {
+            if (canWrite && directBlocked) {
+                Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
+                    Text(
+                        if (state.groupOnly) {
+                            "You stay group-only with people you meet in groups. To message ${friend?.name} directly, swap invites (Add friend)."
+                        } else {
+                            "${friend?.name} stays group-only. You can talk in your groups; to message directly, swap invites (Add friend)."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    )
+                }
+            } else if (canWrite) {
                 Composer(
                     connected = friend?.link == LinkStatus.CONNECTED || (group?.connectedCount ?: 0) > 0,
                     modifier = Modifier.navigationBarsPadding().imePadding(),
-                    onSend = { text, done -> onSend(text, done) },
+                    replyingTo = replyingTo,
+                    replyName = replyingTo?.let { r -> if (r.senderId == state.uid) "yourself" else (group?.members?.firstOrNull { it.uid == r.senderId }?.name ?: friend?.name ?: "them") },
+                    onCancelReply = { replyingTo = null },
+                    onSend = { text, done -> onSend(text, replyingTo?.messageId) { r -> if (r.isSuccess) replyingTo = null; done(r) } },
+                    onSendFile = { name, mime, bytes, done -> onSendFile(name, mime, bytes, replyingTo?.messageId) { r -> if (r.isSuccess) replyingTo = null; done(r) } },
                 )
             } else if (group != null) {
                 Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
@@ -209,7 +259,7 @@ fun ChatScreen(
             state.notice?.let {
                 Banner(Icons.Filled.Shield, it, MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer, onDismiss = onClearNotice)
             }
-            if (friend != null && friend.trust == ContactTrust.INTRODUCED && !friend.checked) {
+            if (friend != null && friend.trust == ContactTrust.INTRODUCED && !friend.checked && friend.direct) {
                 Banner(
                     Icons.Filled.Shield,
                     "Introduced by ${friend.introducedByName ?: "a group member"}. You can check it's really ${friend.name}.",
@@ -223,6 +273,9 @@ fun ChatScreen(
                 isGroup = group != null,
                 nameOf = { uid -> group?.members?.firstOrNull { it.uid == uid }?.name ?: friend?.name ?: "Member" },
                 onRetry = onRetry,
+                onReply = { replyingTo = it },
+                loadFile = loadFile,
+                transfers = state.transfers,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -271,9 +324,13 @@ private fun MessageList(
     isGroup: Boolean,
     nameOf: (String) -> String,
     onRetry: (String) -> Unit,
+    onReply: (ChatMessage) -> Unit,
+    loadFile: suspend (String) -> Pair<FileMeta, ByteArray>?,
+    transfers: Map<String, Float>,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     val lastId = messages.lastOrNull()?.messageId
     LaunchedEffect(lastId) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
@@ -325,6 +382,14 @@ private fun MessageList(
                     showAvatar = !grouped,
                     grouped = grouped,
                     onRetry = onRetry,
+                    onReply = onReply,
+                    loadFile = loadFile,
+                    progress = transfers[message.messageId],
+                    quotedName = message.replyTo?.let { r -> if (r.author == selfUid) "You" else nameOf(r.author) },
+                    onJumpTo = { id ->
+                        val at = messages.indexOfFirst { it.messageId == id }
+                        if (at >= 0) scope.launch { listState.animateScrollToItem(at) }
+                    },
                 )
             }
         }
@@ -353,6 +418,11 @@ private fun MessageBubble(
     showAvatar: Boolean,
     grouped: Boolean,
     onRetry: (String) -> Unit,
+    onReply: (ChatMessage) -> Unit,
+    loadFile: suspend (String) -> Pair<FileMeta, ByteArray>?,
+    progress: Float?,
+    quotedName: String?,
+    onJumpTo: (String) -> Unit,
 ) {
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
@@ -386,11 +456,25 @@ private fun MessageBubble(
                             color = Color.hsl(avatarHue(senderName).toFloat(), 0.6f, 0.62f),
                         )
                     }
-                    Text(
-                        text = message.text,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = if (own) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    val bodyColor = if (own) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                    message.replyTo?.let { reply ->
+                        Row(
+                            modifier = Modifier.padding(bottom = 6.dp).height(IntrinsicSize.Min)
+                                .clip(RoundedCornerShape(6.dp)).background(bodyColor.copy(alpha = 0.12f))
+                                .clickable { onJumpTo(reply.id) },
+                        ) {
+                            Box(Modifier.width(3.dp).fillMaxHeight().background(bodyColor.copy(alpha = 0.8f)))
+                            Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                                Text(quotedName ?: "Earlier message", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = bodyColor)
+                                Text(reply.preview, style = MaterialTheme.typography.bodySmall, color = bodyColor.copy(alpha = 0.85f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                    if (message.type == MessageType.FILE && message.file != null) {
+                        FileContent(message, bodyColor, loadFile, progress)
+                    } else {
+                        Text(text = message.text, style = MaterialTheme.typography.bodyLarge, color = bodyColor)
+                    }
                     Spacer(Modifier.height(3.dp))
                     Row(modifier = Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically) {
                         val subtle = if (own) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f)
@@ -412,6 +496,11 @@ private fun MessageBubble(
             }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 DropdownMenuItem(
+                    text = { Text("Reply") },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.Reply, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    onClick = { menuOpen = false; onReply(message) },
+                )
+                if (message.type == MessageType.TEXT) DropdownMenuItem(
                     text = { Text("Copy message") },
                     leadingIcon = { Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp)) },
                     onClick = {
@@ -421,6 +510,110 @@ private fun MessageBubble(
                     },
                 )
             }
+        }
+    }
+}
+
+/** A file: a preview for safe image types, a card with Save for everything else. */
+@Composable
+private fun FileContent(message: ChatMessage, color: Color, loadFile: suspend (String) -> Pair<FileMeta, ByteArray>?, progress: Float?) {
+    val meta = message.file ?: return
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var pendingSave by remember { mutableStateOf<ByteArray?>(null) }
+    val saver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri: Uri? ->
+        val bytes = pendingSave
+        pendingSave = null
+        if (uri != null && bytes != null) {
+            scope.launch {
+                val ok = withContext(Dispatchers.IO) {
+                    runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: error("no stream") }.isSuccess
+                }
+                Toast.makeText(context, if (ok) "Saved" else "Could not save the file", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+    val image by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, message.messageId) {
+        if (!isInlineImage(meta.mime)) return@produceState
+        value = withContext(Dispatchers.IO) {
+            val bytes = loadFile(message.messageId)?.second ?: return@withContext null
+            // Only PNG/JPEG/GIF/WebP get here (never SVG). Decode a reduced copy: previews do not need full size.
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            var sample = 1
+            while (bounds.outWidth / sample > 1200 || bounds.outHeight / sample > 1200) sample *= 2
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
+        }
+    }
+    // Video: decrypted to a short-lived cache file (the player needs a path), shown with a poster frame and
+    // played in place when tapped. The file is deleted when the bubble leaves the screen.
+    val videoFile by produceState<java.io.File?>(null, message.messageId) {
+        if (!isInlineVideo(meta.mime)) return@produceState
+        value = withContext(Dispatchers.IO) {
+            val bytes = loadFile(message.messageId)?.second ?: return@withContext null
+            java.io.File(context.cacheDir, "preview-${message.messageId}").also { it.writeBytes(bytes) }
+        }
+    }
+    androidx.compose.runtime.DisposableEffect(videoFile) { onDispose { videoFile?.delete() } }
+    val poster by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, videoFile) {
+        val f = videoFile ?: return@produceState
+        value = withContext(Dispatchers.IO) {
+            runCatching {
+                val r = android.media.MediaMetadataRetriever()
+                try {
+                    r.setDataSource(f.path)
+                    r.getFrameAtTime(0)?.asImageBitmap()
+                } finally {
+                    r.release()
+                }
+            }.getOrNull()
+        }
+    }
+    var playing by remember { mutableStateOf(false) }
+    Column {
+        image?.let {
+            Image(bitmap = it, contentDescription = meta.name, contentScale = ContentScale.Fit, modifier = Modifier.heightIn(max = 260.dp).clip(RoundedCornerShape(10.dp)))
+            Spacer(Modifier.height(6.dp))
+        }
+        videoFile?.let { file ->
+            Box(Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 260.dp).clip(RoundedCornerShape(10.dp)).background(Color.Black), contentAlignment = Alignment.Center) {
+                if (playing) {
+                    androidx.compose.ui.viewinterop.AndroidView(
+                        factory = { c ->
+                            android.widget.VideoView(c).apply {
+                                setMediaController(android.widget.MediaController(c).also { it.setAnchorView(this) })
+                                setVideoPath(file.path)
+                                setOnPreparedListener { start() }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 260.dp),
+                    )
+                } else {
+                    poster?.let { Image(bitmap = it, contentDescription = "Video preview of ${meta.name}", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize()) }
+                    IconButton(onClick = { playing = true }) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = "Play video", tint = Color.White, modifier = Modifier.size(48.dp))
+                    }
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.InsertDriveFile, contentDescription = null, tint = color, modifier = Modifier.size(28.dp))
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f, fill = false)) {
+                Text(meta.name, style = MaterialTheme.typography.bodyMedium, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(formatBytes(meta.size), style = MaterialTheme.typography.labelSmall, color = color.copy(alpha = 0.75f))
+            }
+            IconButton(onClick = {
+                scope.launch {
+                    val f = loadFile(message.messageId)
+                    if (f == null) Toast.makeText(context, "No longer stored on this phone", Toast.LENGTH_SHORT).show()
+                    else { pendingSave = f.second; saver.launch(f.first.name) }
+                }
+            }) { Icon(Icons.Filled.Download, contentDescription = "Save ${meta.name}", tint = color) }
+        }
+        if (progress != null) {
+            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp), color = color, trackColor = color.copy(alpha = 0.2f))
         }
     }
 }
@@ -444,8 +637,14 @@ private fun DeliveryIndicator(state: DeliveryState, onRetry: () -> Unit) {
 private fun Composer(
     connected: Boolean,
     modifier: Modifier = Modifier,
+    replyingTo: ChatMessage?,
+    replyName: String?,
+    onCancelReply: () -> Unit,
     onSend: (String, (Result<Unit>) -> Unit) -> Unit,
+    onSendFile: (String, String, ByteArray, (Result<Unit>) -> Unit) -> Unit,
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var text by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var sending by remember { mutableStateOf(false) }
@@ -462,12 +661,51 @@ private fun Composer(
         }
     }
 
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris: List<Uri> ->
+        scope.launch {
+            for (uri in uris.take(5)) {
+                val read = withContext(Dispatchers.IO) { runCatching { readPicked(context, uri) } }
+                val file = read.getOrNull()
+                if (file == null) {
+                    error = read.exceptionOrNull()?.message ?: "Could not read that file."
+                    return@launch
+                }
+                var failure: String? = null
+                kotlinx.coroutines.suspendCancellableCoroutine<Unit> { cont ->
+                    onSendFile(file.name, file.mime, file.bytes) { r -> failure = r.exceptionOrNull()?.message; cont.resume(Unit) { } }
+                }
+                if (failure != null) { error = failure; return@launch }
+            }
+            error = null
+        }
+    }
+
     Surface(modifier = modifier, color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp) {
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+            if (replyingTo != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp).clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant).padding(start = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+                        Text("Replying to ${replyName ?: "them"}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            if (replyingTo.type == MessageType.FILE) "\uD83D\uDCCE ${replyingTo.text}" else replyingTo.text,
+                            style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    IconButton(onClick = onCancelReply) { Icon(Icons.Filled.Close, contentDescription = "Cancel reply") }
+                }
+            }
             error?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 6.dp))
             }
             Row(verticalAlignment = Alignment.Bottom) {
+                IconButton(onClick = { picker.launch("*/*") }, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Filled.AttachFile, contentDescription = "Send a file (up to 8 MB)")
+                }
                 OutlinedTextField(
                     value = text,
                     onValueChange = {
@@ -556,4 +794,31 @@ fun avatarHue(seed: String): Int {
     var hash = 0
     for (char in seed) hash = (hash * 31 + char.code) % 360
     return hash
+}
+
+private class PickedFile(val name: String, val mime: String, val bytes: ByteArray)
+
+/** Reads a file the user picked, refusing anything over the 8 MB limit before it is loaded into memory. */
+private fun readPicked(context: android.content.Context, uri: Uri): PickedFile {
+    var name = "file"
+    var size = -1L
+    context.contentResolver.query(uri, null, null, null, null)?.use { c ->
+        if (c.moveToFirst()) {
+            c.getColumnIndex(OpenableColumns.DISPLAY_NAME).takeIf { it >= 0 }?.let { name = c.getString(it) ?: name }
+            c.getColumnIndex(OpenableColumns.SIZE).takeIf { it >= 0 && !c.isNull(it) }?.let { size = c.getLong(it) }
+        }
+    }
+    if (size > MAX_FILE_BYTES) throw IllegalArgumentException("Files can be at most ${formatBytes(MAX_FILE_BYTES)}.")
+    val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
+        val out = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            val n = input.read(buffer)
+            if (n < 0) break
+            out.write(buffer, 0, n)
+            if (out.size() > MAX_FILE_BYTES) throw IllegalArgumentException("Files can be at most ${formatBytes(MAX_FILE_BYTES)}.")
+        }
+        out.toByteArray()
+    } ?: throw IllegalStateException("Could not open that file.")
+    return PickedFile(name, context.contentResolver.getType(uri) ?: "application/octet-stream", bytes)
 }

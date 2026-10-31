@@ -364,8 +364,8 @@ describe('introductions (A adds B, B adds C: A and C connect without any code sh
 });
 
 describe('large groups', () => {
-  it('25 members, each added by a random existing member, all converge and all connect to each other', async () => {
-    const N = 25;
+  it('10 members (the limit), each added by a random existing member, all converge and all connect to each other', async () => {
+    const N = 10;
     const people = await Promise.all(Array.from({ length: N }, (_, i) => person(`P${i}`)));
     const net = new Net();
     const nodes = people.map((p) => net.add(new Node(p)));
@@ -400,7 +400,7 @@ describe('large groups', () => {
   }, 120_000);
 
   it('survives members dropping offline during growth and converges after they return', async () => {
-    const N = 12;
+    const N = 10;
     const people = await Promise.all(Array.from({ length: N }, (_, i) => person(`Q${i}`)));
     const net = new Net();
     const nodes = people.map((p) => net.add(new Node(p)));
@@ -426,6 +426,45 @@ describe('large groups', () => {
   }, 120_000);
 });
 
+describe('group size limit', () => {
+  it('refuses to author the 11th member, and replicas drop an 11th add made concurrently', async () => {
+    const people = await Promise.all(Array.from({ length: 12 }, (_, i) => person(`L${i}`)));
+    const net = new Net();
+    const nodes = people.map((p) => net.add(new Node(p)));
+    for (let i = 1; i < 12; i += 1) {
+      nodes[0]!.pin(people[i]!);
+      nodes[i]!.pin(people[0]!);
+    }
+    await net.reconcile();
+    const first = await nodes[0]!.coord.createGroup('Full', people.slice(1, 10).map((p) => p.card));
+    await net.run(nodes[0]!, first);
+    expect(nodes[0]!.coord.state(first.groupId)!.members.size).toBe(10);
+    await expect(nodes[0]!.coord.addMember(first.groupId, people[10]!.card)).rejects.toThrow(/full/);
+    // Two members add different people at the same time (offline from each other): only the roster size matters.
+    const a = nodes[1]!.coord;
+    const b = nodes[2]!.coord;
+    const ra = await a.removeMember(first.groupId, people[9]!.uid).catch(() => null);
+    expect(ra).toBeNull(); // not admin: removal refused
+    // Forge-free overflow: a replica that receives an 11th valid add ignores it.
+    const log = await GroupLog.fromJSON(first.groupId, nodes[0]!.coord.export()[first.groupId]!);
+    const extra = await signGroupEvent(
+      { groupId: first.groupId, type: 'add', actor: people[1]!.uid, target: people[10]!.uid, card: people[10]!.card, deps: log.heads() },
+      people[1]!.signPriv,
+    );
+    await log.add(extra);
+    expect(log.state()!.members.size).toBe(10);
+    expect(log.state()!.members.has(people[10]!.uid)).toBe(false);
+    void b;
+  }, 60_000);
+
+  it('cannot create a group of 11', async () => {
+    const people = await Promise.all(Array.from({ length: 11 }, (_, i) => person(`C${i}`)));
+    const n = new Node(people[0]!);
+    await expect(n.coord.createGroup('Too big', people.slice(1).map((p) => p.card))).rejects.toThrow(/at most 10/);
+    expect(n.coord.groupIds()).toHaveLength(0);
+  });
+});
+
 describe('group frames', () => {
   it('rejects malformed frames', () => {
     expect(parseGroupFrame({ v: 1, kind: 'gmsg', groupId: 'g', messageId: 'm', text: '', clientCreatedAt: 1 })).toBeNull();
@@ -433,5 +472,8 @@ describe('group frames', () => {
     expect(parseGroupFrame({ v: 2, kind: 'gmsg' })).toBeNull();
     expect(parseGroupFrame({ v: 1, kind: 'gmsg', groupId: 'g', messageId: 'm-1', text: 'hi', clientCreatedAt: 5 })?.kind).toBe('gmsg');
     expect(parseGroupFrame({ v: 1, kind: 'unknown' })).toBeNull();
+    const reply = { id: 'm-0', author: 'u', preview: 'quoted' };
+    expect(parseGroupFrame({ v: 1, kind: 'gmsg', groupId: 'g', messageId: 'm-1', text: 'hi', clientCreatedAt: 5, replyTo: reply })?.kind).toBe('gmsg');
+    expect(parseGroupFrame({ v: 1, kind: 'gmsg', groupId: 'g', messageId: 'm-1', text: 'hi', clientCreatedAt: 5, replyTo: { id: '', author: 'u', preview: 'x' } })).toBeNull();
   });
 });

@@ -16,6 +16,8 @@ import org.json.JSONObject
 class MessageStore(
     private val dao: DuoDao,
     private val crypto: LocalCrypto,
+    /** Where received and sent files are kept (encrypted). Null where files are not supported (unit tests). */
+    private val filesDir: java.io.File? = null,
 ) {
     suspend fun loadMessages(limit: Int = MAX_LOADED_MESSAGES): List<ChatMessage> =
         dao.loadMessages(limit).reversed().map { row ->
@@ -24,7 +26,17 @@ class MessageStore(
             } catch (_: Exception) {
                 "[unable to decrypt locally stored message]"
             }
+            val extra = row.extraCipher?.let {
+                try {
+                    JSONObject(crypto.decrypt(it))
+                } catch (_: Exception) {
+                    null
+                }
+            }
             ChatMessage(
+                type = if (extra?.optJSONObject("file") != null) MessageType.FILE else MessageType.TEXT,
+                replyTo = ReplyRef.fromJson(extra?.optJSONObject("replyTo")),
+                file = FileMeta.fromJson(extra?.optJSONObject("file")),
                 messageId = row.messageId,
                 clientMessageId = row.clientMessageId,
                 senderId = row.senderId,
@@ -52,8 +64,42 @@ class MessageStore(
                 readAt = message.readAt,
                 conversationId = message.conversationId,
                 totalRecipients = message.totalRecipients,
+                extraCipher = if (message.replyTo != null || message.file != null) {
+                    crypto.encrypt(
+                        JSONObject()
+                            .also { o ->
+                                message.replyTo?.let { o.put("replyTo", it.toJson()) }
+                                message.file?.let { o.put("file", it.toJson()) }
+                            }.toString(),
+                    )
+                } else {
+                    null
+                },
             ),
         )
+    }
+
+    /* ---- files ---- */
+
+    private fun fileOf(messageId: String): java.io.File {
+        val dir = filesDir ?: throw IllegalStateException("Files are not available here.")
+        dir.mkdirs()
+        // The id is validated before it reaches here (isValidClientMessageId), never a path.
+        require(messageId.all { it.isLetterOrDigit() || it == '-' || it == '_' }) { "Bad file id." }
+        return java.io.File(dir, messageId)
+    }
+
+    fun putFile(messageId: String, bytes: ByteArray) {
+        fileOf(messageId).writeBytes(crypto.encryptBytes(bytes))
+    }
+
+    fun getFile(messageId: String): ByteArray? {
+        val f = fileOf(messageId)
+        return if (f.isFile) crypto.decryptBytes(f.readBytes()) else null
+    }
+
+    fun clearFiles() {
+        filesDir?.deleteRecursively()
     }
 
     suspend fun updateMessage(
@@ -121,9 +167,13 @@ class MessageStore(
     suspend fun clearAll() {
         dao.clearMessages()
         dao.clearOutbox()
+        clearFiles()
     }
 
     suspend fun clearConversation(conversationId: String) {
+        for (row in dao.loadMessagesFor(conversationId, Int.MAX_VALUE)) {
+            runCatching { fileOf(row.messageId).delete() }
+        }
         dao.clearMessagesFor(conversationId)
         dao.clearOutboxFor(conversationId)
     }

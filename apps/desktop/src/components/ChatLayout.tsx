@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ChatEngine, ChatState } from '../lib/engine';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ChatEngine, ChatState, UiMessage } from '../lib/engine';
 import type { AppSettings } from '../lib/settings';
 import { LOCAL_ID } from '../lib/identity';
 import { formatTime } from '../lib/format';
+import { MAX_FILE_BYTES, formatBytes } from '@duochat/protocol';
 import { Avatar } from './Avatar';
 import { Composer } from './Composer';
 import { MessageList } from './MessageList';
@@ -66,7 +67,9 @@ export function ChatLayout({
   const [settingsSection] = useState<SettingsSection>('profile');
   const [manualUid, setManualUid] = useState('');
   const [verifyUid, setVerifyUid] = useState<string | null>(null);
+  const [replying, setReplying] = useState<UiMessage | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const loadFile = useCallback((id: string) => engine?.getFile(id) ?? Promise.resolve(null), [engine]);
 
   useEffect(() => {
     if (!engine) return;
@@ -84,6 +87,7 @@ export function ChatLayout({
 
   useEffect(() => {
     engine?.openConversation(selected);
+    setReplying(null);
   }, [engine, selected]);
 
   useEffect(() => {
@@ -98,7 +102,7 @@ export function ChatLayout({
   const rows = useMemo<Row[]>(() => {
     if (!state) return [];
     const list: Row[] = [
-      ...state.contacts.map((c) => ({
+      ...state.contacts.filter((c) => c.direct).map((c) => ({
         id: c.uid,
         isGroup: false,
         name: c.name,
@@ -283,14 +287,6 @@ export function ChatLayout({
                 </button>
               </div>
             ) : null}
-            {person?.trust === 'introduced' && !person.checked ? (
-              <div className="banner subtle" role="note">
-                <span>Introduced by {person.introducedByName ?? 'a friend'}.</span>
-                <button type="button" className="button small secondary" onClick={() => setVerifyUid(person.uid)}>
-                  Verify
-                </button>
-              </div>
-            ) : null}
             {state.storageBackend === 'browser' ? (
               <div className="banner subtle" role="note">
                 <span>Development mode: chats are not encrypted on disk. Use the desktop app for the real thing.</span>
@@ -309,6 +305,8 @@ export function ChatLayout({
                     : 'Messages you write now are sent as soon as they are online.'
               }
               onRetry={(id) => void engine?.retry(id)}
+              onReply={setReplying}
+              loadFile={loadFile}
             />
 
             {readOnly ? (
@@ -318,7 +316,20 @@ export function ChatLayout({
                 key={selected}
                 disabled={state.phase !== 'ready'}
                 placeholder={group ? `Message ${group.name}` : `Message ${current.name}`}
-                onSend={(text) => engine?.send(selected!, text) ?? Promise.resolve({ ok: false as const, error: 'Not ready.' })}
+                reply={replying ? { name: replying.own ? 'yourself' : replying.senderName, preview: replying.text } : null}
+                onCancelReply={() => setReplying(null)}
+                onSend={async (text) => {
+                  const r = (await engine?.send(selected!, text, replying?.messageId)) ?? { ok: false as const, error: 'Not ready.' };
+                  if (r.ok) setReplying(null);
+                  return r;
+                }}
+                onSendFile={async (file) => {
+                  if (file.size > MAX_FILE_BYTES) return { ok: false as const, error: `Files can be at most ${formatBytes(MAX_FILE_BYTES)}.` };
+                  const bytes = new Uint8Array(await file.arrayBuffer());
+                  const r = (await engine?.sendFile(selected!, { name: file.name, mime: file.type, bytes }, replying?.messageId)) ?? { ok: false as const, error: 'Not ready.' };
+                  if (r.ok) setReplying(null);
+                  return r;
+                }}
               />
             )}
           </>
@@ -358,6 +369,10 @@ export function ChatLayout({
         onVerify={(uid) => {
           setDialog(null);
           setVerifyUid(uid);
+        }}
+        onMessage={(uid) => {
+          setDialog(null);
+          open(uid);
         }}
       />
       <PersonDialog

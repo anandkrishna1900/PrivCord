@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { disableLock, enableLock, isLockEnabled, lockSupported, unlock } from '../lib/appLock';
 import type { ChatEngine, ChatState } from '../lib/engine';
 import type { AppSettings, ThemeMode } from '../lib/settings';
 import { ACCENTS } from '../lib/settings';
@@ -49,6 +50,58 @@ function Toggle({
         <span />
       </button>
     </div>
+  );
+}
+
+function AppLockControl() {
+  const [on, setOn] = useState(isLockEnabled());
+  const [supported, setSupported] = useState<boolean | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void lockSupported().then(setSupported);
+  }, []);
+
+  async function change(next: boolean) {
+    setError(null);
+    try {
+      if (next) {
+        await enableLock();
+        setOn(true);
+      } else {
+        // Turning it off needs the same proof as opening the app.
+        if (!(await unlock())) throw new Error('That did not work.');
+        disableLock();
+        setOn(false);
+      }
+    } catch (caught) {
+      setError(caught instanceof Error && caught.message ? caught.message : 'Cancelled.');
+    }
+  }
+
+  return (
+    <>
+      <Toggle
+        label="Lock PrivCord with Windows Hello"
+        description={
+          supported === false
+            ? 'Not available: this device has no passkey sign-in (Windows Hello, fingerprint, face or PIN) set up.'
+            : 'Ask for your face, fingerprint or PIN to open PrivCord, and again after it has been out of sight for 5 minutes. It keeps other people at your computer out; it does not replace the encryption of the files on disk.'
+        }
+        checked={on}
+        onChange={(value) => void change(value)}
+        disabled={supported === false && !on}
+      />
+      {on ? (
+        <button type="button" className="button secondary small" onClick={() => window.dispatchEvent(new Event('privcord:lock'))}>
+          Lock now
+        </button>
+      ) : null}
+      {error ? (
+        <p className="status-text error" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </>
   );
 }
 
@@ -232,6 +285,16 @@ export function SettingsDialog({
 
         {section === 'security' ? (
           <section className="settings-section">
+            <AppLockControl />
+            <Toggle
+              label="Stay group-only with people I meet in groups"
+              description="You still read and reply in the groups you share, but nobody you only know through a group can message you directly, and you cannot message them, unless you swap invites yourselves. It applies to people you meet from now on and to the ones you already have."
+              checked={settings.groupOnly}
+              onChange={(value) => {
+                updateSettings({ groupOnly: value });
+                engine?.setGroupOnly(value);
+              }}
+            />
             <div className="card-box">
               <div className="card-title">
                 <KeyIcon size={18} />

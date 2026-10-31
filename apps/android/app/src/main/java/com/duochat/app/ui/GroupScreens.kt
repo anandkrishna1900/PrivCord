@@ -46,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.duochat.app.data.MAX_GROUP_MEMBERS
 import com.duochat.app.data.ChatState
 import com.duochat.app.data.ContactTrust
 import com.duochat.app.data.ContactView
@@ -117,14 +118,15 @@ fun NewGroupScreen(
                 )
             } else {
                 Text(
-                    "You can also add people later. Friends of your friends can join and will connect to you automatically.",
+                    "Up to $MAX_GROUP_MEMBERS people per group, including you. Friends of your friends can join and will connect to you automatically.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 )
                 LazyColumn(Modifier.weight(1f)) {
-                    items(state.contacts, key = { it.uid }) { friend ->
-                        FriendCheckRow(friend, friend.uid in chosen) { checked ->
+                    items(state.contacts.filter { it.direct }, key = { it.uid }) { friend ->
+                        val full = friend.uid !in chosen && chosen.size >= MAX_GROUP_MEMBERS - 1
+                        FriendCheckRow(friend, friend.uid in chosen, enabled = !full, note = if (full) "Groups have at most $MAX_GROUP_MEMBERS people" else null) { checked ->
                             if (checked) chosen.add(friend.uid) else chosen.remove(friend.uid)
                         }
                     }
@@ -162,6 +164,7 @@ fun GroupDetailsScreen(
     onRename: (String, (Result<Unit>) -> Unit) -> Unit,
     onLeave: ((Result<Unit>) -> Unit) -> Unit,
     onVerify: (String) -> Unit,
+    onMessage: (String) -> Unit,
     onLeft: () -> Unit,
 ) {
     val group = state.groups.firstOrNull { it.groupId == groupId }
@@ -193,12 +196,18 @@ fun GroupDetailsScreen(
         LazyColumn(Modifier.fillMaxSize().padding(padding)) {
             item {
                 Text(
-                    group.exitNote ?: "${group.members.size} members",
+                    group.exitNote ?: "${group.members.size} of ${group.maxMembers} members",
                     style = MaterialTheme.typography.titleSmall,
                     modifier = Modifier.padding(16.dp),
                 )
                 message?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp)) }
-                if (group.iAmMember) {
+                if (group.iAmMember && group.full) {
+                    Text(
+                        "This group is full (${group.maxMembers} people is the limit).",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                } else if (group.iAmMember) {
                     Row(
                         Modifier.fillMaxWidth().clickable { picking = true }.padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -237,6 +246,16 @@ fun GroupDetailsScreen(
                                 modifier = Modifier.clickable { onVerify(member.uid) },
                             )
                         }
+                        if (!member.isMe && !member.canMessage) {
+                            Text(
+                                "Group only: no direct chat unless you swap invites",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    if (!member.isMe && member.canMessage) {
+                        TextButton(onClick = { onMessage(member.uid) }) { Text("Message") }
                     }
                     if (group.iAmAdmin && group.iAmMember && !member.isMe) {
                         TextButton(onClick = { removing = member }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
@@ -256,7 +275,8 @@ fun GroupDetailsScreen(
 
         if (picking) {
             val inGroup = group.members.map { it.uid }.toSet()
-            val candidates = state.contacts.filter { it.uid !in inGroup }
+            val candidates = state.contacts.filter { it.uid !in inGroup && it.direct }
+            val room = (group.maxMembers - group.members.size).coerceAtLeast(0)
             val chosen = remember { mutableStateListOf<String>() }
             AlertDialog(
                 onDismissRequest = { picking = false },
@@ -267,7 +287,7 @@ fun GroupDetailsScreen(
                     } else {
                         Column(Modifier.verticalScroll(rememberScrollState())) {
                             candidates.forEach { friend ->
-                                FriendCheckRow(friend, friend.uid in chosen) { checked ->
+                                FriendCheckRow(friend, friend.uid in chosen, enabled = friend.uid in chosen || chosen.size < room) { checked ->
                                     if (checked) chosen.add(friend.uid) else chosen.remove(friend.uid)
                                 }
                             }

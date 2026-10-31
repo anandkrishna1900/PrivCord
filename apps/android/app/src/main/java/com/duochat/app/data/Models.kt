@@ -38,6 +38,10 @@ data class ChatMessage(
     /** Group messages: members it had to reach, and how many have confirmed it. */
     val totalRecipients: Int = 0,
     val deliveredTo: Int = 0,
+    val type: MessageType = MessageType.TEXT,
+    val replyTo: ReplyRef? = null,
+    /** Set when [type] is FILE: the bytes live in the file store under the message id. */
+    val file: FileMeta? = null,
 )
 
 /** One message waiting for one recipient. */
@@ -141,6 +145,8 @@ data class ContactView(
     val link: LinkStatus,
     val path: ConnectionPath?,
     val safetyNumber: String,
+    /** A direct chat is possible (friends you swapped invites with, or group people when neither side is group-only). */
+    val direct: Boolean = true,
 )
 
 data class MemberView(
@@ -151,6 +157,8 @@ data class MemberView(
     val addedByName: String?,
     val trust: ContactTrust?,
     val link: LinkStatus?,
+    /** A direct chat with this member is possible. */
+    val canMessage: Boolean = false,
 )
 
 data class GroupView(
@@ -162,6 +170,8 @@ data class GroupView(
     /** "You were removed" / "You left" once we are out; the group stays visible and read-only. */
     val exitNote: String?,
     val connectedCount: Int,
+    val full: Boolean = false,
+    val maxMembers: Int = MAX_GROUP_MEMBERS,
 )
 
 /** One row of the home list: a person or a group. */
@@ -200,6 +210,9 @@ data class ChatState(
     val signaling: com.duochat.app.signaling.SignalingStatus = com.duochat.app.signaling.SignalingStatus.IDLE,
     val bluetooth: BluetoothStatus = BluetoothStatus.DISABLED,
     val manual: ManualState = ManualState(),
+    /** 0..1 for files being sent or received, by message id. */
+    val transfers: Map<String, Float> = emptyMap(),
+    val groupOnly: Boolean = false,
 )
 
 data class PendingContact(val uid: String, val safetyNumber: String, val name: String?)
@@ -284,7 +297,7 @@ fun validateOutgoingText(raw: String): Result<String> {
 fun isValidClientMessageId(value: String?): Boolean =
     value != null && value.isNotEmpty() && value.length <= MAX_CLIENT_MESSAGE_ID_LENGTH
 
-fun createOutgoingMessage(senderId: String, text: String): ChatMessage {
+fun createOutgoingMessage(senderId: String, text: String, replyTo: ReplyRef? = null): ChatMessage {
     val normalized = validateOutgoingText(text).getOrThrow()
     require(senderId.isNotEmpty()) { "A sender is required." }
     val id = UUID.randomUUID().toString()
@@ -297,5 +310,6 @@ fun createOutgoingMessage(senderId: String, text: String): ChatMessage {
         transport = TransportKind.P2P,
         deliveryState = DeliveryState.QUEUED,
         readAt = null,
+        replyTo = replyTo,
     )
 }

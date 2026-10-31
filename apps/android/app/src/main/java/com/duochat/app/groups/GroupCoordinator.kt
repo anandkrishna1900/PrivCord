@@ -1,6 +1,8 @@
 package com.duochat.app.groups
 
+import com.duochat.app.data.MAX_GROUP_MEMBERS
 import com.duochat.app.data.MAX_TEXT_LENGTH
+import com.duochat.app.data.ReplyRef
 import com.duochat.app.data.countCodePoints
 import com.duochat.app.data.isValidClientMessageId
 import com.duochat.app.security.ContactCard
@@ -26,18 +28,23 @@ sealed class GroupFrame {
             .put("events", JSONArray().also { a -> events.forEach { a.put(it.toJson()) } })
     }
 
-    class Have(val groups: List<Pair<String, List<String>>>) : GroupFrame() {
+    /** [full]: sent when a link opens; `groups` is everything the sender has, so groups missing from it are unknown to them. */
+    class Have(val groups: List<Pair<String, List<String>>>, val full: Boolean = false) : GroupFrame() {
         override fun toJson() = JSONObject().put("v", 1).put("kind", "group_have").put(
             "groups",
             JSONArray().also { a ->
                 groups.forEach { (id, ids) -> a.put(JSONObject().put("groupId", id).put("ids", JSONArray(ids))) }
             },
-        )
+        ).also { if (full) it.put("full", true) }
     }
 
-    class Message(val groupId: String, val messageId: String, val text: String, val clientCreatedAt: Long) : GroupFrame() {
+    class Message(
+        val groupId: String, val messageId: String, val text: String, val clientCreatedAt: Long,
+        val replyTo: ReplyRef? = null,
+    ) : GroupFrame() {
         override fun toJson() = JSONObject().put("v", 1).put("kind", "gmsg").put("groupId", groupId)
             .put("messageId", messageId).put("text", text).put("clientCreatedAt", clientCreatedAt)
+            .also { if (replyTo != null) it.put("replyTo", replyTo.toJson()) }
     }
 
     /** Ask a mutual contact to pass a sealed blob on to someone we cannot reach directly. */
@@ -69,7 +76,7 @@ fun parseGroupFrame(value: Any?): GroupFrame? {
                     if (ids.length() > 6000) return null
                     groups.add(gid to List(ids.length()) { k -> ids.opt(k) as? String ?: return null })
                 }
-                GroupFrame.Have(groups)
+                GroupFrame.Have(groups, f.opt("full") == true)
             }
             "gmsg" -> {
                 val gid = f.opt("groupId") as? String ?: return null
@@ -78,7 +85,10 @@ fun parseGroupFrame(value: Any?): GroupFrame? {
                 val at = (f.opt("clientCreatedAt") as? Number)?.toDouble() ?: return null
                 if (!isValidClientMessageId(mid) || text.trim().isEmpty() || countCodePoints(text) > MAX_TEXT_LENGTH) null
                 else if (at.isNaN() || at.isInfinite() || at <= 0) null
-                else GroupFrame.Message(gid, mid!!, text, at.toLong())
+                else {
+                    val reply = if (f.has("replyTo")) ReplyRef.fromJson(f.opt("replyTo")) ?: return null else null
+                    GroupFrame.Message(gid, mid!!, text, at.toLong(), reply)
+                }
             }
             "relay_blob" -> {
                 val blob = f.opt("blob") as? JSONObject ?: return null
@@ -154,6 +164,9 @@ class GroupCoordinator(
     class Created(val groupId: String, val result: GroupResult)
 
     fun createGroup(name: String, initialMembers: List<ContactCard> = emptyList()): Created {
+        if (initialMembers.size + 1 > MAX_GROUP_MEMBERS) {
+            throw GroupException("A group can have at most $MAX_GROUP_MEMBERS members, including you.")
+        }
         val create = GroupEvents.sign(
             "", "create", ownUid, now(), emptyList(), card = ownCard, name = name.trim().take(60), sign = signer,
         )
@@ -193,6 +206,9 @@ class GroupCoordinator(
     fun addMember(groupId: String, card: ContactCard): GroupResult {
         val uid = IdentityCodec.uidFor(card.dh)
         if (isMember(groupId, uid)) throw GroupException("Already in this group.")
+        if ((state(groupId)?.members?.size ?: 0) >= MAX_GROUP_MEMBERS) {
+            throw GroupException("This group is full ($MAX_GROUP_MEMBERS members is the limit).")
+        }
         return author(groupId, "add", target = uid, card = card)
     }
 
@@ -206,7 +222,8 @@ class GroupCoordinator(
     fun onLinkOpen(peerUid: String): List<OutgoingFrame> {
         val groups = logs.entries.filter { it.value.state()?.members?.containsKey(peerUid) == true }
             .map { it.key to it.value.ids() }
-        return if (groups.isEmpty()) emptyList() else listOf(OutgoingFrame(peerUid, GroupFrame.Have(groups)))
+        // Always sent, even when empty: the peer pushes us the groups we do not have yet (see `handle`).
+        return listOf(OutgoingFrame(peerUid, GroupFrame.Have(groups, full = true)))
     }
 
     /* ---- receiving ---- */
@@ -216,7 +233,8 @@ class GroupCoordinator(
         when (frame) {
             is GroupFrame.Push -> applyEvents(fromUid, listOf(frame.event), result)
             is GroupFrame.Events -> applyEvents(fromUid, frame.events, result)
-            is GroupFrame.Have -> for ((groupId, ids) in frame.groups) {
+            is GroupFrame.Have -> {
+              for ((groupId, ids) in frame.groups) {
                 val log = logs[groupId]
                 val s = log?.state()
                 // Only members may pull a group's history; everyone else learns nothing, not even that it exists.
@@ -228,6 +246,15 @@ class GroupCoordinator(
                 if (ids.any { it !in mine }) {
                     result.outgoing.add(OutgoingFrame(fromUid, GroupFrame.Have(listOf(groupId to log.ids()))))
                 }
+              }
+              if (frame.full) {
+                // They listed everything they have: any group of ours they belong to but did not list is new to them.
+                val listed = frame.groups.map { it.first }.toHashSet()
+                for ((groupId, log) in logs) {
+                    if (groupId in listed || log.state()?.members?.containsKey(fromUid) != true) continue
+                    result.outgoing.addAll(chunk(fromUid, log.missingFor(emptyList())))
+                }
+              }
             }
             else -> Unit
         }

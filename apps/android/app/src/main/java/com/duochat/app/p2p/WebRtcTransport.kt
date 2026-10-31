@@ -78,6 +78,16 @@ class WebRtcTransport(
         )
     }
 
+    override suspend fun awaitWritable(): Boolean {
+        val channel = dataChannel ?: return false
+        val deadline = System.currentTimeMillis() + 20_000
+        while (isOpen && channel.bufferedAmount() > HIGH_WATER_BYTES) {
+            if (System.currentTimeMillis() > deadline) return false
+            kotlinx.coroutines.delay(15)
+        }
+        return isOpen
+    }
+
     override fun sendJson(value: String): Boolean {
         val channel = dataChannel ?: return false
         return try {
@@ -376,3 +386,5 @@ object PeerConnectionFactoryHolder {
         peerConnectionFactory
             ?: throw IllegalStateException("WebRTC has not been initialized.")
 }
+
+private const val HIGH_WATER_BYTES = 1_000_000L

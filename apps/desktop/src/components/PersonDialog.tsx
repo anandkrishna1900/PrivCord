@@ -52,7 +52,16 @@ export function PersonDialog({
           <strong>{person.name}</strong>
           <p className="muted small">{person.status}</p>
           {person.trust === 'introduced' ? (
-            <p className="muted small">Introduced by {person.introducedByName ?? 'a friend'}</p>
+            <p className="muted small">
+              Introduced by {person.introducedByName ?? 'a friend'}
+              {person.direct ? '' : ' · group only'}
+            </p>
+          ) : null}
+          {!person.direct ? (
+            <p className="muted small">
+              You can talk in your shared groups, but not directly: one of you stays group-only. To message each
+              other directly, both add each other with an invite (Add friend).
+            </p>
           ) : null}
         </div>
       </div>

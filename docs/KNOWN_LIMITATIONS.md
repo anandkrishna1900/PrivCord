@@ -26,12 +26,18 @@ Local kill switch activation operates strictly within the local device boundary:
 ---
 
 ## 4. Groups
-- **Full mesh.** Every member connects to every other member, so a group of N means N-1 links per
-  device. The logic is simulated to 25 members and tested with 6 real browsers; phones may struggle
-  well before 30. The apps cap simultaneous links at 30.
-- **Introductions are trust.** Anyone who is added to a group by a member you already trust becomes a
-  contact (labelled "Introduced by NAME"). A malicious or compromised member could introduce an
-  impostor. Use Verify (the safety numbers) for people who matter.
+- **At most 10 members** (including the creator), enforced by every device identically. A group of N
+  means N-1 links per device (a full mesh), so 10 means 9. The limit is tested in protocol simulation
+  and in the browser suite; real-phone behaviour at 10 is not tested.
+- **Introductions are trust.** Someone added by a member you trust becomes a contact you can message
+  directly (labelled "Introduced by NAME"). A malicious or compromised member could introduce an
+  impostor; use the safety numbers for people who matter.
+- **Group-only opt-out.** With "Stay group-only with people I meet in groups" on (Settings > Security),
+  or if the other person has it on, you cannot start a direct chat with someone you only know through a
+  group. You still exchange group messages, replies and files, and you can pair manually by swapping
+  invites. It does not hide you from the group: members still learn your identity key and connect to
+  you to deliver group messages, so a direct (non-relayed) link exposes your IP address to them. A
+  modified client could ignore the setting; it is a courtesy between honest clients, not a guarantee.
 - **Removal is forward-looking.** A removed member keeps what they already received, and nothing can
   delete it.
 - **New members get no history.** They see messages sent after they joined.
@@ -39,7 +45,25 @@ Local kill switch activation operates strictly within the local device boundary:
 - **Large groups and offline members.** Messages for a member you cannot reach yet are queued and sent
   when the link opens.
 
-## 5. Not available
-- No file or photo attachments.
+## 5. App lock
+- **Android** uses the system prompt (fingerprint, face or screen lock) every time the app opens and after
+  30 seconds out of sight. **Windows** uses a Windows Hello passkey (WebAuthn, user verification required,
+  the signature is checked against the stored public key) when the app opens, after 5 minutes out of
+  sight, and on "Lock now". Turning it off needs the same proof.
+- It keeps other people at an unlocked device out. It is **not** protection against someone who copies the
+  files off the disk (they are encrypted with a separate key) and it does not stop the app from receiving
+  messages while locked: notifications can still show message text unless you turn previews off.
+- Not tested on a real Windows Hello prompt or a real Android biometric prompt; the desktop flow is tested
+  against a virtual authenticator and the Android decision rules by unit tests.
+- Video and image previews are decoded by the system's media components. Other file types are never
+  opened by PrivCord, only saved.
+
+## 6. Not available
+- Files are limited to **8 MB**, go **device to device** (never through a server or the offline
+  relay) and need a WebRTC link, so they are not sent over Bluetooth. A file for someone offline waits
+  on your device and is sent when they reconnect. In a group a file is sent separately to every member
+  (up to 9 copies), so it uses your upload each time. Received files are saved encrypted on the
+  device; "Save" writes an ordinary file. Only PNG, JPEG, GIF and WebP images and MP4, WebM, QuickTime and Ogg videos get a preview, never SVG, and no other file type is opened.
+  File saving from the packaged desktop app has only been exercised in the browser suite.
 - No push notifications (there is no server to send them).
 - No multi-hop Bluetooth mesh.

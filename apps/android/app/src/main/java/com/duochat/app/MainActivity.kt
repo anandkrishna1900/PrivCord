@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -24,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -45,7 +45,7 @@ import com.duochat.app.ui.NukeDialog
 import com.duochat.app.ui.OnboardingScreen
 import com.duochat.app.ui.SettingsDialog
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -70,6 +70,7 @@ private fun RootScreen(viewModel: AppViewModel) {
     val chat by viewModel.chat.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val killSwitchReport by viewModel.killSwitchReport.collectAsStateWithLifecycle()
+    val locked by viewModel.locked.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     var route by rememberSaveable { mutableStateOf(HOME) }
@@ -82,8 +83,8 @@ private fun RootScreen(viewModel: AppViewModel) {
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_START -> viewModel.setVisible(true)
-                Lifecycle.Event.ON_STOP -> viewModel.setVisible(false)
+                Lifecycle.Event.ON_START -> { viewModel.onEntered(); viewModel.setVisible(true) }
+                Lifecycle.Event.ON_STOP -> { viewModel.onLeft(); viewModel.setVisible(false) }
                 else -> Unit
             }
         }
@@ -118,6 +119,8 @@ private fun RootScreen(viewModel: AppViewModel) {
     }
 
     when {
+        locked -> com.duochat.app.ui.LockScreen(onUnlocked = viewModel::unlock)
+
         state == null || state.phase == EnginePhase.STOPPED || state.phase == EnginePhase.STARTING ->
             LoadingScreen("Opening your encrypted local data…")
 
@@ -173,6 +176,7 @@ private fun RootScreen(viewModel: AppViewModel) {
                         onRename = { name, done -> viewModel.renameGroup(id, name, done) },
                         onLeave = { done -> viewModel.leaveGroup(id, done) },
                         onVerify = { friendDialog = it },
+                        onMessage = { route = "chat:$it" },
                         onLeft = { route = "chat:$id" },
                     )
                 }
@@ -185,7 +189,9 @@ private fun RootScreen(viewModel: AppViewModel) {
                         conversationId = openChatId,
                         muted = openChatId in settings.mutedChats,
                         onBack = back,
-                        onSend = { text, done -> viewModel.send(openChatId, text, done) },
+                        onSend = { text, replyToId, done -> viewModel.send(openChatId, text, replyToId, done) },
+                        onSendFile = { name, mime, bytes, replyToId, done -> viewModel.sendFile(openChatId, name, mime, bytes, replyToId, done) },
+                        loadFile = { id -> viewModel.getFile(id) },
                         onRetry = viewModel::retry,
                         onClearNotice = viewModel::clearNotice,
                         onOpenDetails = { if (isGroup) route = "group:$openChatId" else friendDialog = openChatId },

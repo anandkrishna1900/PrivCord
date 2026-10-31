@@ -1,5 +1,10 @@
 import {
+  FileAssembler,
+  acceptsDirect as acceptsDirectFrom,
+  canStartDirect,
   GroupCoordinator,
+  MAX_FILE_BYTES,
+  MAX_GROUP_MEMBERS,
   compareMessages,
   createManualSignal,
   createOutgoingMessage,
@@ -9,21 +14,33 @@ import {
   deriveSafetyNumber,
   ecdhAgree,
   encodeManualSignal,
+  fileChunks,
+  filePreviewText,
   isRecord,
   mailboxFor,
+  makeFileOffer,
+  makeReplyRef,
   open as openBlob,
+  parseDeclinedFrame,
+  parseFileChunk,
+  parseFileOffer,
   parseGroupFrame,
   parsePeerFrame,
   parsePeerMessageFrame,
   randomNonce,
   reconnectDelayMs,
+  sanitizeFileName,
+  sanitizeMime,
   seal,
+  validateFileSize,
   type ConnectionPath,
   type ContactCard,
   type DeliveryState,
   type GroupFrame,
   type GroupResult,
+  type FileOfferFrame,
   type NetworkConfig,
+  type ReplyRef,
   type SealedBlob,
 } from '@duochat/protocol';
 import {
@@ -35,11 +52,12 @@ import {
 import { loadNetworkConfig, rtcConfigFor } from './network';
 import { SignalingHub, transportsFor } from './signaling/hub';
 import type { SignalingStatus, SignalingTransport } from './signaling/types';
-import { LocalStore, type StoredMessage } from './localDb';
+import { LocalStore, type FileMeta, type StoredMessage } from './localDb';
 import { PeerLink, type LinkContact } from './peerLink';
 import { SecureBleLink, getBleBridge } from './bleLink';
 import type { BleBridge } from './ble';
 import { loadSettings } from './settings';
+
 
 /* ============================== public shapes (what the UI reads) ============================== */
 
@@ -80,6 +98,8 @@ export interface ContactView {
   last?: LastMessage;
   /** Plain-language status line. */
   status: string;
+  /** Appears in the chat list and can be messaged. Group-only people do not until verified. */
+  direct: boolean;
 }
 
 export interface MemberView {
@@ -91,6 +111,8 @@ export interface MemberView {
   addedByName: string;
   conn: ConnState;
   introducedHere: boolean;
+  /** Direct messages are possible with this person (you exchanged invites or verified them). */
+  canMessage: boolean;
 }
 
 export interface GroupView {
@@ -100,6 +122,9 @@ export interface GroupView {
   status: 'member' | 'removed' | 'left';
   members: MemberView[];
   amAdmin: boolean;
+  /** The group has reached the hard member limit. */
+  full: boolean;
+  maxMembers: number;
   connected: number;
   unread: number;
   last?: LastMessage;
@@ -112,6 +137,8 @@ export interface UiMessage extends StoredMessage {
   tick: DeliveryState;
   delivered: number;
   total: number;
+  /** 0..1 while a file is being sent or received. */
+  progress?: number;
 }
 
 export interface ChatState {
@@ -144,14 +171,17 @@ const PING_MS = 4_000;
 const MAX_CONNECTING = 3;
 const SOFT_LINK_CAP = 30;
 const PENDING_GROUP_MS = 60_000;
+const STALL_MS = 30_000;
+const PROGRESS_EVERY = 8;
 const RANK: Record<DeliveryState, number> = { QUEUED: 0, FAILED: 0, SENT: 1, DELIVERED: 2, READ: 3 };
+const WEAKNESS = (s: DeliveryState): number => (s === 'FAILED' ? -1 : RANK[s]);
 const maxState = (a: DeliveryState, b: DeliveryState): DeliveryState => (RANK[b] > RANK[a] ? b : a);
 const short = (uid: string) => uid.slice(0, 6);
 
 function aggregate(recipients: Record<string, DeliveryState> | undefined): DeliveryState {
   const values = Object.values(recipients ?? {});
   if (values.length === 0) return 'SENT';
-  return values.reduce((weakest, s) => (RANK[s] < RANK[weakest] ? s : weakest));
+  return values.reduce((weakest, s) => (WEAKNESS(s) < WEAKNESS(weakest) ? s : weakest));
 }
 
 export class ChatEngine {
@@ -179,6 +209,14 @@ export class ChatEngine {
   private bleBusy = false;
   private bleNext = new Map<string, { at: number; attempt: number }>();
   private groupNotes = new Map<string, 'left' | 'removed'>();
+  /** Privacy setting: people we only know through a group stay group-only for us. */
+  private groupOnly = loadSettings().groupOnly;
+  /** What each connected friend told us about their own setting (re-announced on every link). */
+  private peerGroupOnly = new Map<string, boolean>();
+  private assemblers = new Map<string, FileAssembler>();
+  private lastChunkAt = new Map<string, number>();
+  private sendingFiles = new Set<string>();
+  private progress = new Map<string, number>();
 
   constructor(private readonly deps: EngineDeps) {
     this.identity = deps.identity;
@@ -407,6 +445,10 @@ export class ChatEngine {
     return contact.uid;
   }
 
+  /**
+   * The user compared the safety numbers (a check, not a pairing: direct messages follow the group-only
+   * rules, and swapping invites is what pairs two people for good).
+   */
   setChecked(uid: string): void {
     const rec = this.contacts.get(uid);
     if (!rec) return;
@@ -451,7 +493,11 @@ export class ChatEngine {
       context: this.deps.context,
       rtcConfig: () => rtcConfigFor(this.network),
       onReady: (link: PeerLink) => this.onLinkReady(link),
-      onClosed: () => this.emit(),
+      onClosed: (link: PeerLink) => {
+        this.assemblers.get(link.uid)?.clear();
+        for (const key of [...this.sendingFiles]) if (key.startsWith(`${link.uid}|`)) this.sendingFiles.delete(key);
+        this.emit();
+      },
       onFrame: (link: PeerLink, frame: unknown) => void this.onFrame(link, frame),
       onChange: () => this.emit(),
       onNotice: (text: string) => this.notice(text),
@@ -468,6 +514,7 @@ export class ChatEngine {
   private onLinkReady(link: PeerLink): void {
     const uid = link.uid;
     this.lastPing.set(uid, Date.now());
+    link.sendJson({ v: 1, kind: 'privacy', groupOnly: this.groupOnly });
     for (const out of this.coord.onLinkOpen(uid)) this.sendFrame(out.to, out.frame);
     this.flush(uid);
     if (this.active === uid && this.visible) this.markRead(uid);
@@ -485,16 +532,57 @@ export class ChatEngine {
     return this.coord.recipients(convId);
   }
 
-  async send(convId: string, rawText: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  /**
+   * Can we start or continue a direct chat with this person? Always for friends we exchanged invites with.
+   * For people we only met through a group: unless we or they chose to stay group-only.
+   */
+  private canDirect(uid: string): boolean {
+    const rec = this.contacts.get(uid);
+    if (!rec) return false;
+    return canStartDirect(rec.trust, this.groupOnly, this.peerGroupOnly.get(uid));
+  }
+
+  /** Do we accept a direct message from them? Their setting does not matter here, ours does. */
+  private acceptsDirect(uid: string): boolean {
+    const rec = this.contacts.get(uid);
+    return !!rec && acceptsDirectFrom(rec.trust, this.groupOnly);
+  }
+
+  /** Turn our group-only privacy setting on or off and tell everyone we are connected to. */
+  setGroupOnly(value: boolean): void {
+    this.groupOnly = value;
+    for (const link of this.links.values()) link.sendJson({ v: 1, kind: 'privacy', groupOnly: value });
+    this.emit();
+  }
+
+  /** Why this conversation cannot be written to right now, or null if it can. */
+  private cannotWrite(convId: string): string | null {
+    const rec = this.contacts.get(convId);
+    if (rec) {
+      if (this.canDirect(convId)) return null;
+      const who = this.nameOf(convId);
+      return this.groupOnly
+        ? `You stay group-only with people you meet in groups. To message ${who} directly, swap invites (Add friend).`
+        : `${who} stays group-only, so you can talk in your groups but not directly. To message them, swap invites (Add friend).`;
+    }
+    const s = this.coord.state(convId);
+    if (!s) return 'Unknown chat.';
+    return s.members.has(this.identity.uid) ? null : 'You are not in this group any more.';
+  }
+
+  /** The quote that goes with a reply, taken from our own copy of the message. */
+  private replyFor(convId: string, replyToId: string | undefined): ReplyRef | undefined {
+    if (!replyToId) return undefined;
+    const original = this.msgs.get(replyToId);
+    if (!original || original.conversationId !== convId) return undefined;
+    return makeReplyRef(original);
+  }
+
+  async send(convId: string, rawText: string, replyToId?: string): Promise<{ ok: true } | { ok: false; error: string }> {
     try {
-      const isGroup = !this.contacts.has(convId);
-      if (isGroup) {
-        const s = this.coord.state(convId);
-        if (!s || !s.members.has(this.identity.uid)) return { ok: false, error: 'You are not in this group any more.' };
-      } else if (!this.contacts.has(convId)) {
-        return { ok: false, error: 'Unknown chat.' };
-      }
-      const base = createOutgoingMessage({ senderId: this.identity.uid, text: rawText });
+      const blocked = this.cannotWrite(convId);
+      if (blocked) return { ok: false, error: blocked };
+      const base = createOutgoingMessage({ senderId: this.identity.uid, text: rawText, replyTo: this.replyFor(convId, replyToId) });
       const recipients: Record<string, DeliveryState> = {};
       for (const uid of this.recipientsOfConversation(convId)) recipients[uid] = 'QUEUED';
       const message: StoredMessage = { ...base, conversationId: convId, recipients, deliveryState: Object.keys(recipients).length ? 'QUEUED' : 'SENT' };
@@ -509,10 +597,72 @@ export class ChatEngine {
     }
   }
 
+  /** Send a file (at most 8 MB) to a friend or a group. It goes straight to each person over the direct link. */
+  async sendFile(
+    convId: string,
+    file: { name: string; mime: string; bytes: Uint8Array },
+    replyToId?: string,
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
+    try {
+      const blocked = this.cannotWrite(convId);
+      if (blocked) return { ok: false, error: blocked };
+      const tooBig = validateFileSize(file.bytes.length);
+      if (tooBig) return { ok: false, error: tooBig };
+      const name = sanitizeFileName(file.name);
+      const isGroup = !this.contacts.has(convId);
+      const messageId = crypto.randomUUID();
+      const recipients: Record<string, DeliveryState> = {};
+      for (const uid of this.recipientsOfConversation(convId)) recipients[uid] = 'QUEUED';
+      const offer = await makeFileOffer({
+        messageId,
+        groupId: isGroup ? convId : undefined,
+        name,
+        mime: file.mime,
+        bytes: file.bytes,
+        clientCreatedAt: Date.now(),
+        replyTo: this.replyFor(convId, replyToId),
+      });
+      await this.deps.store.putFile(messageId, file.bytes);
+      const message: StoredMessage = {
+        messageId,
+        clientMessageId: messageId,
+        senderId: this.identity.uid,
+        text: name,
+        clientCreatedAt: offer.clientCreatedAt,
+        type: 'file',
+        transport: 'p2p',
+        deliveryState: Object.keys(recipients).length ? 'QUEUED' : 'SENT',
+        readAt: null,
+        conversationId: convId,
+        recipients,
+        file: { name, mime: offer.mime, size: offer.size, sha256: offer.sha256 },
+        ...(offer.replyTo ? { replyTo: offer.replyTo } : {}),
+      };
+      this.msgs.set(messageId, message);
+      await this.deps.store.putMessage(message);
+      for (const uid of Object.keys(recipients)) this.deliver(message, uid);
+      this.emit();
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) };
+    }
+  }
+
+  /** The bytes of a stored file, for showing or saving it. */
+  async getFile(messageId: string): Promise<{ blob: Blob; meta: FileMeta } | null> {
+    const m = this.msgs.get(messageId);
+    if (!m?.file) return null;
+    const bytes = await this.deps.store.getFile(messageId);
+    if (!bytes) return null;
+    return { blob: new Blob([bytes as Uint8Array<ArrayBuffer>], { type: m.file.mime }), meta: m.file };
+  }
+
   async retry(messageId: string): Promise<void> {
     const m = this.msgs.get(messageId);
     if (!m || m.senderId !== this.identity.uid) return;
     for (const uid of Object.keys(m.recipients ?? {})) {
+      // A refused message (FAILED) is tried again from the start.
+      if (m.recipients?.[uid] === 'FAILED') this.setRecipient(m, uid, 'QUEUED', true);
       this.links.get(uid)?.sent.delete(messageId);
       this.deliver(m, uid);
     }
@@ -521,23 +671,90 @@ export class ChatEngine {
 
   private frameFor(m: StoredMessage): unknown {
     if (this.contacts.has(m.conversationId)) return createPeerMessageFrame(m);
-    return { v: 1, kind: 'gmsg', groupId: m.conversationId, messageId: m.messageId, text: m.text, clientCreatedAt: m.clientCreatedAt };
+    return {
+      v: 1,
+      kind: 'gmsg',
+      groupId: m.conversationId,
+      messageId: m.messageId,
+      text: m.text,
+      clientCreatedAt: m.clientCreatedAt,
+      ...(m.replyTo ? { replyTo: m.replyTo } : {}),
+    };
   }
 
   /** Write one message to one recipient if their channel is up. */
   private deliver(m: StoredMessage, uid: string): void {
     const state = m.recipients?.[uid];
-    if (!state || RANK[state] >= RANK.DELIVERED) return;
+    if (!state || state === 'FAILED' || RANK[state] >= RANK.DELIVERED) return;
     const link = this.links.get(uid);
     if (!link?.ready || link.sent.has(m.messageId)) return;
+    if (m.type === 'file') {
+      void this.pushFile(link, m);
+      return;
+    }
     if (!link.sendJson(this.frameFor(m))) return;
     link.sent.add(m.messageId);
     this.setRecipient(m, uid, 'SENT');
   }
 
-  private setRecipient(m: StoredMessage, uid: string, state: DeliveryState): void {
+  /** Stream one file to one recipient: offer, then ordered chunks, pausing while the channel is backed up. */
+  private async pushFile(link: PeerLink, m: StoredMessage): Promise<void> {
+    const key = `${link.uid}|${m.messageId}`;
+    if (this.sendingFiles.has(key)) return;
+    if (link.kind !== 'webrtc') return; // too slow over Bluetooth: it waits for an internet link
+    this.sendingFiles.add(key);
+    try {
+      const bytes = await this.deps.store.getFile(m.messageId);
+      if (!bytes || !m.file) {
+        this.failRecipient(m, link.uid, 'This file is no longer stored on this device.');
+        return;
+      }
+      const offer: FileOfferFrame = {
+        v: 1,
+        kind: 'file_offer',
+        messageId: m.messageId,
+        ...(this.contacts.has(m.conversationId) ? {} : { groupId: m.conversationId }),
+        name: m.file.name,
+        mime: m.file.mime,
+        size: m.file.size,
+        sha256: m.file.sha256,
+        clientCreatedAt: m.clientCreatedAt,
+        ...(m.replyTo ? { replyTo: m.replyTo } : {}),
+      };
+      if (!link.sendJson(offer)) return;
+      let sentChunks = 0;
+      const total = Math.ceil(bytes.length / 12288);
+      for (const chunk of fileChunks(m.messageId, bytes)) {
+        if (!link.ready || !(await link.waitWritable())) return; // link dropped: the next link opening starts over
+        if (!link.sendJson(chunk)) return;
+        sentChunks += 1;
+        if (sentChunks % PROGRESS_EVERY === 0) {
+          this.progress.set(m.messageId, sentChunks / total);
+          this.emit();
+        }
+      }
+      link.sent.add(m.messageId);
+      this.setRecipient(m, link.uid, 'SENT');
+    } catch {
+      // The channel failed mid-way; flush() starts the transfer again when the link is back.
+    } finally {
+      this.sendingFiles.delete(key);
+      this.progress.delete(m.messageId);
+      this.emit();
+    }
+  }
+
+  private failRecipient(m: StoredMessage, uid: string, why: string): void {
+    const recipients = { ...(m.recipients ?? {}), [uid]: 'FAILED' as DeliveryState };
+    m.recipients = recipients;
+    m.deliveryState = aggregate(recipients);
+    void this.deps.store.updateMessage(m.messageId, { recipients, deliveryState: m.deliveryState }).catch(() => undefined);
+    this.notice(why);
+  }
+
+  private setRecipient(m: StoredMessage, uid: string, state: DeliveryState, force = false): void {
     const recipients = { ...(m.recipients ?? {}) };
-    recipients[uid] = maxState(recipients[uid] ?? 'QUEUED', state);
+    recipients[uid] = force ? state : maxState(recipients[uid] ?? 'QUEUED', state);
     m.recipients = recipients;
     m.deliveryState = aggregate(recipients);
     void this.deps.store.updateMessage(m.messageId, { recipients, deliveryState: m.deliveryState }).catch(() => undefined);
@@ -546,7 +763,7 @@ export class ChatEngine {
   /** Everything still owed to this contact, oldest first. */
   private flush(uid: string): void {
     const own = [...this.msgs.values()]
-      .filter((m) => m.senderId === this.identity.uid && m.recipients?.[uid] && RANK[m.recipients[uid]!] < RANK.DELIVERED)
+      .filter((m) => m.senderId === this.identity.uid && m.recipients?.[uid] && m.recipients[uid] !== 'FAILED' && RANK[m.recipients[uid]!] < RANK.DELIVERED)
       .sort(compareMessages);
     for (const m of own) this.deliver(m, uid);
     this.emit();
@@ -569,9 +786,48 @@ export class ChatEngine {
       this.applyRead(uid, control.lastReadMessageId);
       return;
     }
+    if (isRecord(raw) && raw.kind === 'privacy' && typeof raw.groupOnly === 'boolean') {
+      this.peerGroupOnly.set(uid, raw.groupOnly);
+      this.emit();
+      return;
+    }
+    const declined = parseDeclinedFrame(raw);
+    if (declined) {
+      const m = this.msgs.get(declined.messageId);
+      if (m && m.senderId === this.identity.uid && m.recipients?.[uid]) {
+        const who = this.nameOf(uid);
+        if (declined.reason === 'direct_not_accepted' && this.contacts.get(uid)?.trust === 'introduced') this.peerGroupOnly.set(uid, true);
+        const why =
+          declined.reason === 'direct_not_accepted'
+            ? `${who} stays group-only, so this was not delivered. You can still talk in your groups, or swap invites to message directly.`
+            : declined.reason === 'too_large'
+              ? `${who} refused the file because it is too large.`
+              : declined.reason === 'busy'
+                ? `${who} is receiving other files right now. Try again in a moment.`
+                : `${who} could not receive the file.`;
+        this.failRecipient(m, uid, why);
+        this.emit();
+      }
+      return;
+    }
+    const offer = parseFileOffer(raw);
+    if (offer) {
+      await this.receiveOffer(link, offer);
+      return;
+    }
+    const chunk = parseFileChunk(raw);
+    if (chunk) {
+      await this.receiveChunk(link, chunk);
+      return;
+    }
     const direct = parsePeerMessageFrame(raw);
     if (direct) {
       if (direct.senderId !== uid) return;
+      // People we only know through a group can message the group, not us, if we chose to stay group-only.
+      if (!this.acceptsDirect(uid)) {
+        this.sendFrame(uid, { v: 1, kind: 'declined', messageId: direct.messageId, reason: 'direct_not_accepted' });
+        return;
+      }
       this.ingest({ ...direct, conversationId: uid, readAt: null }, uid, uid, this.nameOf(uid));
       return;
     }
@@ -617,6 +873,7 @@ export class ChatEngine {
           deliveryState: 'DELIVERED',
           readAt: null,
           conversationId: frame.groupId,
+          ...(frame.replyTo ? { replyTo: frame.replyTo } : {}),
         },
         from,
         frame.groupId,
@@ -627,6 +884,82 @@ export class ChatEngine {
     // We may simply not have the roster yet: hold the message, ask for the history, retry for a minute.
     if (this.pendingGroup.size < 200) this.pendingGroup.set(frame.messageId, { from, frame, at: Date.now() });
     for (const out of this.coord.requestSync(from, frame.groupId)) this.sendFrame(out.to, out.frame);
+  }
+
+  private assembler(uid: string): FileAssembler {
+    let a = this.assemblers.get(uid);
+    if (!a) {
+      a = new FileAssembler();
+      this.assemblers.set(uid, a);
+    }
+    return a;
+  }
+
+  private async receiveOffer(link: PeerLink, offer: FileOfferFrame): Promise<void> {
+    const uid = link.uid;
+    const decline = (reason: 'direct_not_accepted' | 'too_large' | 'bad_file' | 'busy'): void => {
+      this.sendFrame(uid, { v: 1, kind: 'declined', messageId: offer.messageId, reason });
+    };
+    if (offer.groupId) {
+      if (this.coord.checkMessage(uid, offer.groupId) !== 'ok') return decline('bad_file');
+    } else if (!this.acceptsDirect(uid)) {
+      return decline('direct_not_accepted');
+    }
+    if (offer.size > MAX_FILE_BYTES) return decline('too_large');
+    // Already have it (the sender is retrying after a dropped link): just confirm.
+    if (this.msgs.has(offer.messageId)) {
+      this.sendFrame(uid, { v: 1, kind: 'ack', messageId: offer.messageId, state: 'DELIVERED', at: Date.now() });
+      return;
+    }
+    const result = this.assembler(uid).begin(offer);
+    if (result !== 'ok') return decline(result);
+    this.lastChunkAt.set(uid, Date.now());
+  }
+
+  private async receiveChunk(link: PeerLink, chunk: ReturnType<typeof parseFileChunk> & object): Promise<void> {
+    const uid = link.uid;
+    this.lastChunkAt.set(uid, Date.now());
+    const asm = this.assembler(uid);
+    const before = asm.progress(chunk.messageId);
+    if (before === null) return; // not a transfer we accepted
+    const result = await asm.chunk(chunk);
+    if (result.status === 'more') {
+      if (chunk.index % PROGRESS_EVERY === 0) {
+        this.progress.set(chunk.messageId, asm.progress(chunk.messageId) ?? 0);
+        this.emit();
+      }
+      return;
+    }
+    this.progress.delete(chunk.messageId);
+    if (result.status === 'failed') {
+      this.sendFrame(uid, { v: 1, kind: 'declined', messageId: chunk.messageId, reason: result.reason });
+      this.emit();
+      return;
+    }
+    const { offer, bytes } = result;
+    const convId = offer.groupId ?? uid;
+    if (offer.groupId && this.coord.checkMessage(uid, offer.groupId) !== 'ok') return;
+    await this.deps.store.putFile(offer.messageId, bytes);
+    const state = offer.groupId ? this.coord.state(offer.groupId) : null;
+    this.ingest(
+      {
+        messageId: offer.messageId,
+        clientMessageId: offer.messageId,
+        senderId: uid,
+        text: offer.name,
+        clientCreatedAt: offer.clientCreatedAt,
+        type: 'file',
+        transport: 'p2p',
+        deliveryState: 'DELIVERED',
+        readAt: null,
+        conversationId: convId,
+        file: { name: offer.name, mime: offer.mime, size: offer.size, sha256: offer.sha256 },
+        ...(offer.replyTo ? { replyTo: offer.replyTo } : {}),
+      },
+      uid,
+      convId,
+      state ? `${this.nameOf(uid)} in ${state.name}` : this.nameOf(uid),
+    );
   }
 
   private async retryPending(): Promise<void> {
@@ -689,7 +1022,7 @@ export class ChatEngine {
     const cards: ContactCard[] = [];
     for (const uid of memberUids) {
       const rec = this.contacts.get(uid);
-      if (!rec) throw new Error('Pick friends from your list.');
+      if (!rec || !this.canDirect(uid)) throw new Error('Pick friends from your list.');
       if (!rec.card.proof) throw new Error(`${this.nameOf(uid)} needs to connect once before being added to a group.`);
       cards.push(rec.card);
     }
@@ -700,7 +1033,7 @@ export class ChatEngine {
 
   async addGroupMember(groupId: string, uid: string): Promise<void> {
     const rec = this.contacts.get(uid);
-    if (!rec) throw new Error('Pick a friend from your list.');
+    if (!rec || !this.canDirect(uid)) throw new Error('You can only add friends you can message directly.');
     if (!rec.card.proof) throw new Error(`${this.nameOf(uid)} needs to connect once before being added to a group.`);
     await this.applyGroupResult(await this.coord.addMember(groupId, rec.card));
   }
@@ -931,6 +1264,9 @@ export class ChatEngine {
           if (link.transport && !link.ready) link.close();
         }
       }
+      for (const [uid, asm] of this.assemblers) {
+        if (asm.activeCount > 0 && now - (this.lastChunkAt.get(uid) ?? 0) > STALL_MS) asm.clear();
+      }
       void this.maybeBluetooth();
       void this.relayPending();
       await this.retryPending();
@@ -1136,7 +1472,7 @@ export class ChatEngine {
     let best: StoredMessage | undefined;
     for (const m of this.msgs.values()) if (m.conversationId === convId && (!best || compareMessages(best, m) < 0)) best = m;
     return best
-      ? { text: best.text, at: best.clientCreatedAt, own: best.senderId === this.identity.uid, senderName: this.nameOf(best.senderId) }
+      ? { text: best.type === 'file' ? filePreviewText(best.text) : best.text, at: best.clientCreatedAt, own: best.senderId === this.identity.uid, senderName: this.nameOf(best.senderId) }
       : undefined;
   }
 
@@ -1172,6 +1508,7 @@ export class ChatEngine {
         unread: this.unread(c.uid),
         last: this.last(c.uid),
         status: this.statusFor(c.uid),
+        direct: this.canDirect(c.uid),
       };
     });
     const groups: GroupView[] = [];
@@ -1188,6 +1525,7 @@ export class ChatEngine {
         addedByName: this.nameOf(m.addedBy),
         conn: m.uid === me ? 'connected' : this.conn(m.uid),
         introducedHere: !!this.contacts.get(m.uid)?.introducedBy && this.contacts.get(m.uid)?.introducedBy === m.addedBy,
+        canMessage: this.canDirect(m.uid),
       }));
       groups.push({
         groupId,
@@ -1195,6 +1533,8 @@ export class ChatEngine {
         status: isMember ? 'member' : (this.groupNotes.get(groupId) ?? 'removed'),
         members,
         amAdmin: s.members.get(me)?.role === 'admin',
+        full: s.members.size >= MAX_GROUP_MEMBERS,
+        maxMembers: MAX_GROUP_MEMBERS,
         connected: members.filter((m) => !m.isMe && m.conn === 'connected').length,
         unread: this.unread(groupId),
         last: this.last(groupId),
@@ -1205,7 +1545,7 @@ export class ChatEngine {
     for (const m of [...this.msgs.values()].sort(compareMessages)) {
       const own = m.senderId === me;
       const states = Object.values(m.recipients ?? {});
-      if (own) queued += states.filter((s) => RANK[s] < RANK.DELIVERED).length;
+      if (own) queued += states.filter((s) => s !== 'FAILED' && RANK[s] < RANK.DELIVERED).length;
       (messages[m.conversationId] ??= []).push({
         ...m,
         own,
@@ -1213,6 +1553,7 @@ export class ChatEngine {
         tick: own ? aggregate(m.recipients) : m.deliveryState,
         delivered: states.filter((s) => RANK[s] >= RANK.DELIVERED).length,
         total: states.length,
+        ...(this.progress.has(m.messageId) ? { progress: this.progress.get(m.messageId) } : {}),
       });
     }
     return { ...this.state, contacts, groups, messages, queued, storageBackend: this.deps.store.backend, signaling: this.hub?.status() ?? 'idle' };
