@@ -811,6 +811,61 @@ await scenario(17, 'themes: 16 built-in colour themes apply, survive a reload, a
   check(dev.errors.length === 0, 'no page errors', dev.errors);
 });
 
+/* 18 ----------------------------------------------------------------- */
+await scenario(18, 'open channels: three strangers share #general, messages are signed with names, muting hides a person, leaving works', async (ctx) => {
+  const relay = await startRelay(false);
+  ctx.cleanups.push(relay.close);
+  const net = relayNet(relay.url);
+  const [A, B, C] = [await namedDevice(ctx, net, 'Ann'), await namedDevice(ctx, net, 'Ben'), await namedDevice(ctx, net, 'Cat')];
+  const join = async (d, name) => {
+    await d.page.click('button[aria-label="Channels"]');
+    await d.page.fill('input[aria-label="Channel name"]', name);
+    await d.page.click('button:has-text("Join channel")');
+    await d.page.waitForSelector('.chat-header h2:has-text("# general")', { timeout: 20000 });
+  };
+  // Same room however it is typed.
+  await join(A, '#General');
+  await join(B, 'general');
+  await join(C, '  GENERAL ');
+  await A.page.waitForSelector('.banner:has-text("Public channel")');
+  check((await A.page.locator('.attach-button').count()) === 0, 'channels are text only (no attach button)');
+  await sleep(1500);
+  await say(A.page, 'hello from Ann');
+  for (const d of [B, C]) await d.page.waitForSelector('.bubble-text:text-is("hello from Ann")', { timeout: 30000 });
+  const label = await B.page.locator('.bubble:has-text("hello from Ann") .bubble-sender').innerText();
+  check(/^Ann #[0-9a-f]{4}$/.test(label.trim()), 'sender shows their name and a short id', label);
+  ctx.note(`strangers see "${label.trim()}"`);
+  await say(B.page, 'hi, Ben here');
+  for (const d of [A, C]) await d.page.waitForSelector('.bubble-text:text-is("hi, Ben here")', { timeout: 30000 });
+  // a different room stays separate
+  await A.page.click('button[aria-label="Channels"]');
+  await A.page.fill('input[aria-label="Channel name"]', 'quiet');
+  await A.page.click('button:has-text("Join channel")');
+  await A.page.waitForSelector('.chat-header h2:has-text("# quiet")');
+  await sleep(800);
+  check((await A.page.locator('.bubble-text:text-is("hello from Ann")').count()) === 0, 'another channel does not show #general messages');
+  // Cat mutes Ben: his later messages never show for her, others still see them
+  await C.page.locator('.bubble:has-text("hi, Ben here") .sender-button').click();
+  await C.page.click('button:has-text("Mute this person")');
+  await say(B.page, 'second from Ben');
+  await A.page.click('.chat-row:has-text("general")');
+  await A.page.waitForSelector('.bubble-text:text-is("second from Ben")', { timeout: 30000 });
+  await sleep(1500);
+  check((await C.page.locator('.bubble-text:text-is("second from Ben")').count()) === 0, 'a muted person is hidden');
+  ctx.note('mute hides a person for you only');
+  // history: messages survive a reload on the device
+  await A.page.reload();
+  await A.page.click('.chat-row:has-text("general")');
+  await A.page.waitForSelector('.bubble-text:text-is("hello from Ann")', { timeout: 20000 });
+  // leave
+  await A.page.click('button[aria-label="More"]');
+  await A.page.click('[role="menuitem"]:has-text("Leave channel")');
+  await A.page.waitForFunction(() => ![...document.querySelectorAll('.chat-row strong')].some((e) => e.textContent === '# general'));
+  ctx.note('channel list and history persist; leaving removes the channel');
+  const errs = [...A.errors, ...B.errors, ...C.errors];
+  check(errs.length === 0, 'no page errors', errs);
+});
+
 console.log('\n=== SUMMARY ===');
 for (const r of results) console.log(`${r.status}  #${r.id}  ${r.name}`);
 fs.writeFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), 'last-results.json'), JSON.stringify(results, null, 2));

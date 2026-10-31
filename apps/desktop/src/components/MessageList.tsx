@@ -165,6 +165,8 @@ export function MessageList({
   onRetry,
   onReply,
   loadFile,
+  canReply = true,
+  onMute,
 }: {
   convId: string;
   messages: UiMessage[];
@@ -173,7 +175,12 @@ export function MessageList({
   onRetry: (messageId: string) => void;
   onReply: (message: UiMessage) => void;
   loadFile: LoadFile;
+  /** Channels have no replies (the quote has nowhere to travel). */
+  canReply?: boolean;
+  /** Channels: hide one person's messages. */
+  onMute?: (uid: string) => void;
 }) {
+  const [muteOffer, setMuteOffer] = useState<string | null>(null);
   const byId = new Map(messages.map((m) => [m.messageId, m]));
   function jumpTo(id: string) {
     const el = scrollRef.current?.querySelector(`[data-mid="${CSS.escape(id)}"]`);
@@ -270,12 +277,26 @@ export function MessageList({
                   title={new Date(message.clientCreatedAt).toISOString()}
                   onContextMenu={(event) => {
                     // Right-click replies (the touch-screen equivalent of press and hold).
+                    if (!canReply) return;
                     event.preventDefault();
                     onReply(message);
                   }}
                 >
                   {!own && isGroup && !grouped ? (
-                    <span className="bubble-sender">{message.senderName}</span>
+                    onMute ? (
+                      <span className="bubble-sender">
+                        <button type="button" className="sender-button" onClick={() => setMuteOffer(muteOffer === message.messageId ? null : message.messageId)}>
+                          {message.senderName}
+                        </button>
+                        {muteOffer === message.messageId ? (
+                          <button type="button" className="chip chip-button" onClick={() => { onMute(message.senderId); setMuteOffer(null); }}>
+                            Mute this person
+                          </button>
+                        ) : null}
+                      </span>
+                    ) : (
+                      <span className="bubble-sender">{message.senderName}</span>
+                    )
                   ) : null}
                   {message.replyTo ? (
                     <button type="button" className="quote" onClick={() => jumpTo(message.replyTo!.id)} title="Go to the original message">
@@ -289,15 +310,17 @@ export function MessageList({
                     <p className="bubble-text">{message.text}</p>
                   )}
                   <span className="bubble-meta">
-                    <button
-                      type="button"
-                      className="bubble-copy"
-                      onClick={() => onReply(message)}
-                      title="Reply"
-                      aria-label="Reply to this message"
-                    >
-                      <ReplyIcon size={12} />
-                    </button>
+                    {canReply ? (
+                      <button
+                        type="button"
+                        className="bubble-copy"
+                        onClick={() => onReply(message)}
+                        title="Reply"
+                        aria-label="Reply to this message"
+                      >
+                        <ReplyIcon size={12} />
+                      </button>
+                    ) : null}
                     {message.type === 'text' ? (
                       <button
                         type="button"

@@ -25,6 +25,8 @@ export interface FileMeta {
 export interface StoredMessage extends ChatMessage {
   /** Present when `type` is 'file'. The bytes live in the file store under the message id. */
   file?: FileMeta;
+  /** Channel messages: the sender's self-chosen name plus a short id (they are not in our contacts). */
+  senderName?: string;
   /** Contact uid for a direct chat, group id for a group chat. */
   conversationId: string;
   /** Delivery state per recipient uid. `deliveryState` is the weakest of these. */
@@ -222,7 +224,7 @@ export class LocalStore {
     for (const row of rows) {
       const base = rowToMessage(row);
       const { textCipher, ...rest } = base;
-      let extra: { replyTo?: ReplyRef; file?: FileMeta } = {};
+      let extra: { replyTo?: ReplyRef; file?: FileMeta; senderName?: string } = {};
       try {
         if (row.extra_cipher) extra = JSON.parse(await this.decrypt(row.extra_cipher)) as typeof extra;
       } catch {
@@ -251,8 +253,8 @@ export class LocalStore {
       delivery_state: message.deliveryState,
       read_at: message.readAt ?? null,
       extra_cipher:
-        message.replyTo || message.file
-          ? await this.encrypt(JSON.stringify({ replyTo: message.replyTo, file: message.file }))
+        message.replyTo || message.file || message.senderName
+          ? await this.encrypt(JSON.stringify({ replyTo: message.replyTo, file: message.file, senderName: message.senderName }))
           : null,
     };
   }

@@ -9,7 +9,10 @@ export function Composer({
   reply,
   onCancelReply,
   onSendFile,
+  isChannel = false,
 }: {
+  /** Public channels carry text only. */
+  isChannel?: boolean;
   onSend: (text: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   onSendFile: (file: File) => Promise<{ ok: true } | { ok: false; error: string }>;
   disabled: boolean;
@@ -140,6 +143,7 @@ export function Composer({
             void sendFiles(files);
           }}
         />
+        {isChannel ? null : (
         <button
           type="button"
           className="icon-button attach-button"
@@ -150,6 +154,7 @@ export function Composer({
         >
           <PaperclipIcon size={18} />
         </button>
+        )}
         <textarea
           ref={textareaRef}
           value={text}
