@@ -783,14 +783,18 @@ await scenario(17, 'themes: 16 built-in colour themes apply, survive a reload, a
   const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor + '|' + getComputedStyle(document.documentElement).getPropertyValue('--accent').trim());
   const classic = await bg();
   await page.click('button[aria-label="Settings"]');
-  await page.click('.tab:has-text("Appearance")');
-  const names = await page.locator('.theme-tile span:last-child').allInnerTexts();
+  await page.click('.tab:has-text("Look")');
+  const names = await page.locator('.theme-tile > span:last-child').allInnerTexts();
   check(names.length >= 11 && names[0] === 'Classic', 'Classic plus at least ten named themes', names);
   const seen = new Set();
+  let lastLook = classic;
   for (const name of names.slice(1)) {
     await page.click(`.theme-tile:has-text("${name}")`);
     await page.waitForFunction((n) => document.querySelector('.theme-tile.active')?.textContent?.includes(n), name);
-    const look = await bg();
+    // the colours are applied right after the tile turns active: wait until they change
+    let look = await bg();
+    for (let i = 0; i < 40 && look === lastLook; i += 1) { await sleep(50); look = await bg(); }
+    lastLook = look;
     check(!seen.has(look), `${name} looks different from the others`, look);
     seen.add(look);
   }
@@ -802,7 +806,7 @@ await scenario(17, 'themes: 16 built-in colour themes apply, survive a reload, a
   await page.waitForSelector('.sidebar', { timeout: 20000 });
   check((await bg()) === nord, 'the chosen theme is still there after a reload');
   await page.click('button[aria-label="Settings"]');
-  await page.click('.tab:has-text("Appearance")');
+  await page.click('.tab:has-text("Look")');
   await page.click('.theme-tile:has-text("Classic")');
   await page.waitForFunction((c) => true, classic);
   check((await bg()) === classic, 'Classic brings the original look back');
