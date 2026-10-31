@@ -7,6 +7,7 @@ import { DISAPPEAR_OPTIONS, MAX_FILE_BYTES, describeDisappear, formatBytes } fro
 import { Avatar } from './Avatar';
 import { Composer } from './Composer';
 import { MessageList } from './MessageList';
+import { t } from '../lib/i18n';
 import { SettingsDialog, type SettingsSection } from './SettingsDialog';
 import { ManualConnectDialog } from './ManualConnectDialog';
 import { ClearChatDialog, NukeDialog } from './KillSwitchDialogs';
@@ -210,7 +211,7 @@ export function ChatLayout({
             <input
               type="search"
               aria-label="Search messages"
-              placeholder="Search messages"
+              placeholder={t('search.placeholder')}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
@@ -368,12 +369,12 @@ export function ChatLayout({
                 <span>{person.diagnosis.message}</span>
                 {person.diagnosis.actions.includes('enable-store-forward') ? (
                   <button type="button" className="btn small" onClick={() => void engine?.enableStoreForward()}>
-                    Deliver via relays
+                    {t('diagnosis.deliverViaRelays')}
                   </button>
                 ) : null}
                 {person.diagnosis.actions.some((a) => a === 'add-turn' || a === 'open-connection-settings') ? (
                   <button type="button" className="btn small" onClick={() => { setSettingsSection('connection'); setDialog('settings'); }}>
-                    Connection settings
+                    {t('diagnosis.connectionSettings')}
                   </button>
                 ) : null}
               </div>

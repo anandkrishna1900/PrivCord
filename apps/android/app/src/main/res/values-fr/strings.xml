@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="search_placeholder">Rechercher des messages sur ce téléphone</string>
+    <string name="diagnosis_deliver_via_relays">Livrer via les relais</string>
+    <string name="diagnosis_connection_settings">Réglages de connexion</string>
+    <string name="message_deleted">Ce message a été supprimé</string>
+    <string name="voice_record">Enregistrer une note vocale</string>
+</resources>

@@ -108,6 +108,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         engine = created
         if (visible) created.setVisible(true)
         if (settingsRepository.settings.value.mesh) created.setMeshEnabled(true)
+        if (settingsRepository.settings.value.keepRunning) applyKeepRunning(true)
         stateJob = viewModelScope.launch {
             created.state.collect { _chat.value = it }
         }
@@ -167,6 +168,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (after.displayName != before.displayName) engine?.onOwnNameChanged()
         if (after.groupOnly != before.groupOnly) engine?.setGroupOnly(after.groupOnly)
         if (after.mesh != before.mesh) engine?.setMeshEnabled(after.mesh)
+        if (after.keepRunning != before.keepRunning) applyKeepRunning(after.keepRunning)
+    }
+
+    private fun applyKeepRunning(on: Boolean) {
+        val app = getApplication<Application>()
+        runCatching { if (on) com.duochat.app.notifications.DuoBackgroundService.start(app) else com.duochat.app.notifications.DuoBackgroundService.stop(app) }
     }
 
     fun toggleMute(conversationId: String) {

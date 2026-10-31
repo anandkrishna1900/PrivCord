@@ -1,3 +1,4 @@
+import { t } from '../lib/i18n';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { REACTION_EMOJI, formatBytes, isInlineAudio, isInlineImage, isInlineVideo, type DeliveryState } from '@duochat/protocol';
 import type { FileMeta } from '../lib/localDb';
@@ -367,7 +368,7 @@ export function MessageList({
                     )
                   ) : null}
                   {message.deleted ? (
-                    <p className="bubble-text deleted">🚫 This message was deleted</p>
+                    <p className="bubble-text deleted">🚫 {t('message.deleted')}</p>
                   ) : null}
                   {!message.deleted && message.replyTo ? (
                     <button type="button" className="quote" onClick={() => jumpTo(message.replyTo!.id)} title="Go to the original message">

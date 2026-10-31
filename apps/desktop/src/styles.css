@@ -794,6 +794,8 @@ textarea:focus {
 }
 
 .chat-header {
+  position: relative;
+  z-index: 20; /* its menus must sit above the message list */
   display: flex;
   align-items: center;
   gap: 14px;

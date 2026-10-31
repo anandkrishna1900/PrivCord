@@ -292,10 +292,10 @@ fun ChatScreen(
                         Text(d.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
                         Row {
                             if (com.duochat.app.data.DiagnosisAction.ENABLE_STORE_FORWARD in d.actions) {
-                                TextButton(onClick = onEnableStoreForward) { Text("Deliver via relays") }
+                                TextButton(onClick = onEnableStoreForward) { Text(androidx.compose.ui.res.stringResource(com.duochat.app.R.string.diagnosis_deliver_via_relays)) }
                             }
                             if (d.actions.any { it == com.duochat.app.data.DiagnosisAction.ADD_TURN || it == com.duochat.app.data.DiagnosisAction.OPEN_CONNECTION_SETTINGS }) {
-                                TextButton(onClick = onOpenConnectionSettings) { Text("Connection settings") }
+                                TextButton(onClick = onOpenConnectionSettings) { Text(androidx.compose.ui.res.stringResource(com.duochat.app.R.string.diagnosis_connection_settings)) }
                             }
                         }
                     }
@@ -598,7 +598,7 @@ private fun MessageBubble(
                         }
                     }
                     if (message.deleted) {
-                        Text("This message was deleted", style = MaterialTheme.typography.bodyMedium, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, color = bodyColor.copy(alpha = 0.7f))
+                        Text(androidx.compose.ui.res.stringResource(com.duochat.app.R.string.message_deleted), style = MaterialTheme.typography.bodyMedium, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, color = bodyColor.copy(alpha = 0.7f))
                     } else if (message.type == MessageType.FILE && message.file != null) {
                         FileContent(message, bodyColor, loadFile, progress)
                     } else {
@@ -968,7 +968,7 @@ private fun Composer(
                 if (!isChannel) IconButton(onClick = {
                     if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) startRecording()
                     else micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
-                }, modifier = Modifier.size(48.dp)) { Icon(Icons.Filled.Mic, contentDescription = "Record a voice note") }
+                }, modifier = Modifier.size(48.dp)) { Icon(Icons.Filled.Mic, contentDescription = androidx.compose.ui.res.stringResource(com.duochat.app.R.string.voice_record)) }
                 if (!isChannel) IconButton(onClick = { picker.launch("*/*") }, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Filled.AttachFile, contentDescription = "Send a file (up to 8 MB)")
                 }

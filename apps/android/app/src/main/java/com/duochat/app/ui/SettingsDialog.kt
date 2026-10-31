@@ -276,9 +276,30 @@ SectionTitle("Appearance")
                     Spacer(Modifier.width(8.dp))
                     Text("Request notification permission")
                 }
+                ToggleRow(
+                    "Keep running in the background",
+                    "Shows a small permanent notification and keeps PrivCord connected so messages arrive with the app closed. Uses some battery.",
+                    settings.keepRunning,
+                ) { on -> onUpdateSettings { copy(keepRunning = on) } }
+                if (settings.keepRunning) {
+                    val batteryContext = LocalContext.current
+                    OutlinedButton(onClick = {
+                        runCatching {
+                            batteryContext.startActivity(
+                                android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                            )
+                        }
+                    }) { Text("Allow unrestricted battery use") }
+                    Text(
+                        "Some phone makers (Xiaomi, Oppo, Vivo, Samsung) still stop background apps. If messages are late, allow unrestricted battery use for PrivCord here.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "With no server there is no push service: you are notified only while the " +
+                    "With no server there is no push service: without the setting above you are notified only while the " +
                         "app is open and a direct connection is active.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
