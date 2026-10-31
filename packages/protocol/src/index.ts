@@ -16,7 +16,8 @@ export * from './connectivity/networkConfig';
 export * from './connectivity/connectionPath';
 export * from './connectivity/secureChannel';
 
-export * from './connectivity/mesh';
+export * from './mesh/node';
+export * from './mesh/channel';
 export * from './files';
 export * from './privacy';
 export * from './e2ee/groupCrypto';

@@ -531,11 +531,14 @@ export class ChatEngine {
     return hub;
   }
 
-  /** Live copy (works on relays that store nothing) plus a stored copy (works for late arrivals where allowed). */
+  /**
+   * A live copy always (it is re-sent every few seconds while the invite is open). A stored copy only when the
+   * user turned store-and-forward on: with it off, nothing may be kept on a relay.
+   */
   private async putEverywhere(hub: SignalingHub, mailbox: string, blob: SealedBlob): Promise<void> {
     const results = await Promise.allSettled([
       hub.put(mailbox, blob, { kind: 'sig', ttlSec: 120 }),
-      hub.put(mailbox, blob, { kind: 'msg', ttlSec: INVITE_TTL_SEC }),
+      ...(this.network.storeForward ? [hub.put(mailbox, blob, { kind: 'msg', ttlSec: INVITE_TTL_SEC })] : []),
     ]);
     if (!results.some((r) => r.status === 'fulfilled')) throw new Error('Could not publish the invite.');
   }

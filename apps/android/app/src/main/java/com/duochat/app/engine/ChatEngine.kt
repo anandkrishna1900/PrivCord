@@ -465,9 +465,11 @@ class ChatEngine(
 
     /** Live copy (works on relays that store nothing) plus a stored copy (works for late arrivals where allowed). */
     private suspend fun putEverywhere(hub: SignalingHub, mailbox: String, blob: SealedBlob) {
+        // A live copy always (re-sent every few seconds while the invite is open); a stored copy only when the user
+        // turned store-and-forward on: with it off, nothing may be kept on a relay.
         val live = runCatching { hub.put(mailbox, blob, "sig", 120) }
-        val stored = runCatching { hub.put(mailbox, blob, "msg", InviteCode.TTL_SEC) }
-        if (live.isFailure && stored.isFailure) throw IllegalStateException("Could not publish the invite.")
+        val stored = if (networkConfig().storeForward) runCatching { hub.put(mailbox, blob, "msg", InviteCode.TTL_SEC) } else null
+        if (live.isFailure && (stored == null || stored.isFailure)) throw IllegalStateException("Could not publish the invite.")
     }
 
     private fun inviteCard(): ContactCard {
