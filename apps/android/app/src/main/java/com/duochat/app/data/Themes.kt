@@ -23,6 +23,7 @@ val THEMES: List<ThemeDef> = listOf(
     ThemeDef("nord", "Nord", true, 0xFF2E3440.toInt(), 0xFF3B4252.toInt(), 0xFFECEFF4.toInt(), 0xFF5E9FB3.toInt()),
     ThemeDef("dracula", "Dracula", true, 0xFF282A36.toInt(), 0xFF343746.toInt(), 0xFFF8F8F2.toInt(), 0xFFA37CF0.toInt()),
     ThemeDef("solarized-dark", "Solarized dark", true, 0xFF002B36.toInt(), 0xFF073642.toInt(), 0xFFEEE8D5.toInt(), 0xFF2F95C9.toInt()),
+    ThemeDef("blossom", "Blossom pink", false, 0xFFFDEEF4.toInt(), 0xFFFFFFFF.toInt(), 0xFF2A1420.toInt(), 0xFFD6336C.toInt()),
     ThemeDef("paper", "Paper", false, 0xFFF6F1E7.toInt(), 0xFFFFFDF8.toInt(), 0xFF2B2620.toInt(), 0xFFB45F06.toInt()),
     ThemeDef("sky", "Sky", false, 0xFFEAF3FB.toInt(), 0xFFFFFFFF.toInt(), 0xFF10222E.toInt(), 0xFF1478C8.toInt()),
     ThemeDef("mint", "Mint", false, 0xFFE9F6F0.toInt(), 0xFFFFFFFF.toInt(), 0xFF10261C.toInt(), 0xFF14805A.toInt()),

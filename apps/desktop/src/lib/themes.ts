@@ -27,6 +27,7 @@ export const THEMES: ThemeDef[] = [
   { id: 'nord', name: 'Nord', dark: true, bg: '#2e3440', surface: '#3b4252', text: '#eceff4', accent: '#5e9fb3' },
   { id: 'dracula', name: 'Dracula', dark: true, bg: '#282a36', surface: '#343746', text: '#f8f8f2', accent: '#a37cf0' },
   { id: 'solarized-dark', name: 'Solarized dark', dark: true, bg: '#002b36', surface: '#073642', text: '#eee8d5', accent: '#2f95c9' },
+  { id: 'blossom', name: 'Blossom pink', dark: false, bg: '#fdeef4', surface: '#ffffff', text: '#2a1420', accent: '#d6336c' },
   { id: 'paper', name: 'Paper', dark: false, bg: '#f6f1e7', surface: '#fffdf8', text: '#2b2620', accent: '#b45f06' },
   { id: 'sky', name: 'Sky', dark: false, bg: '#eaf3fb', surface: '#ffffff', text: '#10222e', accent: '#1478c8' },
   { id: 'mint', name: 'Mint', dark: false, bg: '#e9f6f0', surface: '#ffffff', text: '#10261c', accent: '#14805a' },

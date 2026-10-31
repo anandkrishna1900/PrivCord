@@ -775,7 +775,7 @@ await scenario(16, 'six-word invite: words (not a long string) connect two peopl
 });
 
 /* 17 ----------------------------------------------------------------- */
-await scenario(17, 'themes: 15 built-in colour themes apply, survive a reload, and Classic restores the original', async (ctx) => {
+await scenario(17, 'themes: 16 built-in colour themes apply, survive a reload, and Classic restores the original', async (ctx) => {
   const relay = await startRelay(false);
   ctx.cleanups.push(relay.close);
   const dev = await namedDevice(ctx, relayNet(relay.url), 'Theme');
