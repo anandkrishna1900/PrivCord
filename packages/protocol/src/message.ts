@@ -1,3 +1,4 @@
+import { parseTtl } from './social';
 import {
   MAX_CLIENT_MESSAGE_ID_LENGTH,
   MAX_REPLY_PREVIEW,
@@ -46,6 +47,8 @@ export interface ChatMessage {
   replyTo?: ReplyRef;
   /** Local-only read timestamp for incoming messages. */
   readAt?: number | null;
+  /** Disappearing messages: how long this message lives, in seconds, counted by each device from when it got it. */
+  ttlSec?: number;
 }
 
 export type ValidationResult<T> =
@@ -174,6 +177,7 @@ export interface PeerMessageFrame {
   text: string;
   clientCreatedAt: number;
   replyTo?: ReplyRef;
+  ttl?: number;
 }
 
 /** The receiver refused a message (for example a direct message from someone it only knows through a group). */
@@ -205,6 +209,7 @@ export function createPeerMessageFrame(
     text: message.text,
     clientCreatedAt: message.clientCreatedAt,
     ...(message.replyTo ? { replyTo: message.replyTo } : {}),
+    ...(message.ttlSec ? { ttl: message.ttlSec } : {}),
   };
 }
 
@@ -217,6 +222,8 @@ export function parsePeerMessageFrame(value: unknown): ChatMessage | null {
   if (typeof senderId !== 'string' || senderId.length === 0) return null;
   if (!validateIncomingText(value.text)) return null;
   if (value.replyTo !== undefined && !validateReply(value.replyTo)) return null;
+  const ttl = parseTtl(value.ttl);
+  if (ttl === null) return null;
   if (
     typeof clientCreatedAt !== 'number' ||
     !Number.isFinite(clientCreatedAt) ||
@@ -235,6 +242,7 @@ export function parsePeerMessageFrame(value: unknown): ChatMessage | null {
     deliveryState: 'DELIVERED',
     readAt: null,
     ...(value.replyTo ? { replyTo: value.replyTo as ReplyRef } : {}),
+    ...(ttl ? { ttlSec: ttl } : {}),
   };
 }
 
