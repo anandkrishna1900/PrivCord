@@ -7,6 +7,7 @@ import { writeFileSync } from 'node:fs';
 import { entropyToMnemonic } from '@scure/bip39';
 import { wordlist } from '@scure/bip39/wordlists/english.js';
 import {
+  encodeTurnShare,
   FILE_CHUNK_BYTES,
   deriveIdentityFromPhrase,
   deriveInvite,
@@ -94,6 +95,7 @@ writeFileSync(
       privacy,
       channel: { name: 'general', mailbox: chan.mailbox, tag: chan.tag, uid: inviterUid, text: 'hello from the channel', at: 1_700_000_000_123, blob: chanBlob, packet: makeMeshPacket(chanBlob), names: channelNames.map((n) => [n, normalizeChannelName(n)]) },
       backup: { passphrase: 'correct horse battery', text: backupText, data: backupData },
+      turnShare: encodeTurnShare({ urls: ['turn:relay.example.org:3478', 'turns:relay.example.org:5349?transport=tcp'], username: 'friend', credential: 'pä$$ w0rd' }),
       social: { react: reactFrame('m-1', '👍', true), del: deleteFrame('m-2'), chips: summarizeReactions({ a: '👍', b: '👍', me: '❤️' }, 'me') },
       invite: { words: inviteWords, mailbox: rv.mailbox, uid: inviterUid, name: 'Ivy', blob: inviteBlob },
     },

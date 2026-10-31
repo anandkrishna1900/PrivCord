@@ -229,6 +229,9 @@ data class ChatState(
     val channels: List<ChannelView> = emptyList(),
     /** Phones currently linked over the Bluetooth mesh (0 when the mesh is off). */
     val meshLinks: Int = 0,
+    /** New mesh messages this phone heard, and copies it passed on to other phones (for field testing). */
+    val meshHeard: Int = 0,
+    val meshPassedOn: Int = 0,
 )
 
 /** A public channel we have joined. */

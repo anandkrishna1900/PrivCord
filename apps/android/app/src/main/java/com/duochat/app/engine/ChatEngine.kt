@@ -801,10 +801,14 @@ class ChatEngine(
         return true
     }
 
+    private var meshHeard = 0
+    private var meshPassedOn = 0
+
     private suspend fun onMeshPacket(link: String, json: String) {
         val parsed = try { JSONObject(json) } catch (_: Exception) { return }
         val handled = meshNode.handle(parsed, link, System.currentTimeMillis())
         handled.forward.forEach(::sendMesh)
+        if (handled.accepted != null) { meshHeard += 1; meshPassedOn += handled.forward.size; emit() }
         val blob = handled.accepted ?: return
         if (blob.to == selfUid) {
             handleBlob(blob, "mesh", null) // a direct message (or ack) sealed to us, relayed by strangers
@@ -2426,6 +2430,7 @@ class ChatEngine(
                     ChannelView("chan:$name", name, shaped["chan:$name"].orEmpty().count { m -> m.senderId != selfUid && m.readAt == null }, c.hub.status() == SignalingStatus.ONLINE)
                 },
                 meshLinks = meshRadio?.linkCount ?: 0,
+                meshHeard = meshHeard, meshPassedOn = meshPassedOn,
                 requests = requestCards.map { (uid, r) -> InviteRequest(uid, r.first.card.name ?: "Friend ${uid.take(4)}", r.second) },
                 linkCount = links.values.count { l -> l.session.isReady },
                 notice = notice ?: it.notice,

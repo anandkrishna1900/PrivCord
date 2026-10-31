@@ -151,3 +151,28 @@ data class NetworkConfig(
         }
     }
 }
+
+/** One pasteable line that carries a relay (TURN) setup. Same format as the TypeScript `PRIVCORD-TURN1:` string. */
+object TurnShare {
+    const val PREFIX = "PRIVCORD-TURN1:"
+
+    fun parse(text: String): TurnServer? {
+        val t = text.trim()
+        if (!t.startsWith(PREFIX) || t.length > 2000) return null
+        return try {
+            val raw = java.util.Base64.getUrlDecoder().decode(t.removePrefix(PREFIX))
+            parseJson(JSONObject(String(raw, Charsets.UTF_8)))
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    internal fun parseJson(o: JSONObject): TurnServer? {
+        val arr = o.optJSONArray("u") ?: return null
+        val urls = (0 until arr.length()).map { arr.opt(it) as? String ?: return null }
+        val name = o.optString("n"); val cred = o.optString("c")
+        if (urls.isEmpty() || urls.size > 6 || name.isEmpty() || cred.isEmpty()) return null
+        if (urls.any { !(it.startsWith("turn:") || it.startsWith("turns:")) }) return null
+        return TurnServer(urls, name, cred)
+    }
+}

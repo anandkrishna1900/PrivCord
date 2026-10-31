@@ -69,3 +69,7 @@ Accessed via `Conversation Header → Security → Clear Everything`:
 - **Flash Storage & Wear Leveling**: Modern NAND flash controllers employ wear leveling and over-provisioning. Overwriting files does not guarantee that raw flash cells are physically wiped; full disk encryption (FDE) at the OS level is required for physical erasure guarantees.
 - **OS Caches & Screenshots**: System clipboard history, OS notification logs, or screenshots taken by the user/system outside the app sandbox cannot be deleted by DuoChat.
 
+
+## Panic wipe (one gesture, off by default)
+
+Settings > Security > **Panic wipe**. When on, **Ctrl+Shift+Backspace pressed three times within two seconds** (desktop) or **three quick taps on the "DuoChat" title on the home screen** (Android) erases everything on the device straight away, with no confirmation, and returns to the start screen. It runs the same erase as "Erase everything". It is off by default because a mistaken gesture cannot be undone: only your 12 recovery words bring your identity back, and chats are not in that phrase (use an encrypted backup for those). It does not affect other people's devices.

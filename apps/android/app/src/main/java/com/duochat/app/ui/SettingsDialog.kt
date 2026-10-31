@@ -357,7 +357,7 @@ SectionTitle("Appearance")
                     ToggleRow(
                         title = "Bluetooth mesh (relay for nearby phones)",
                         description = "Pass messages along through nearby phones that also run PrivCord, so they can reach people several phones away with no internet, and join public channels over Bluetooth. Other phones can see that a PrivCord phone is nearby. Uses more battery. Experimental: simulated and compiled, never run on real radios." +
-                            if (settings.mesh) " Linked phones now: ${state.meshLinks}." else "",
+                            if (settings.mesh) " Linked phones now: ${state.meshLinks}. Heard ${state.meshHeard} new messages, passed on ${state.meshPassedOn} copies." else "",
                         checked = settings.mesh,
                         onChange = { on ->
                             if (!on) onUpdateSettings { copy(mesh = false) }
@@ -419,6 +419,18 @@ SectionTitle("Appearance")
                     onValueChange = { stunText = it },
                     label = { Text("STUN servers (one per line, stun:host:port)") },
                     minLines = 2,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = "",
+                    onValueChange = { pasted ->
+                        com.duochat.app.data.TurnShare.parse(pasted)?.let { t ->
+                            turnUrls = t.urls.joinToString("\n"); turnUser = t.username; turnSecret = t.credential
+                        }
+                    },
+                    label = { Text("Paste a relay setup line (PRIVCORD-TURN1:…)") },
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(8.dp))

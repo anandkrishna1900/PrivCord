@@ -292,3 +292,19 @@ class SocialVectorsTest {
         assertTrue(isInlineAudio("audio/webm;codecs=opus")); assertFalse(isInlineAudio("video/mp4"))
     }
 }
+
+/** The relay setup line made by TypeScript opens in Kotlin; junk does not. */
+class TurnShareTest {
+    @Test
+    fun `parses the TypeScript string and rejects junk`() {
+        val f = listOf("../../../docs/file-vectors.json", "../../docs/file-vectors.json", "docs/file-vectors.json").map { java.io.File(it) }.first { it.exists() }
+        val line = JSONObject(f.readText()).getString("turnShare")
+        val t = TurnShare.parse(line)!!
+        assertEquals(listOf("turn:relay.example.org:3478", "turns:relay.example.org:5349?transport=tcp"), t.urls)
+        assertEquals("friend", t.username)
+        assertEquals("pä\$\$ w0rd", t.credential)
+        assertNull(TurnShare.parse("hello"))
+        assertNull(TurnShare.parse(TurnShare.PREFIX + "!!!"))
+        assertNull(TurnShare.parse(TurnShare.PREFIX + "x".repeat(3000)))
+    }
+}

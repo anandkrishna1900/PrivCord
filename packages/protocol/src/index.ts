@@ -13,6 +13,7 @@ export * from './connectivity/seal';
 export * from './connectivity/contactCard';
 export * from './connectivity/inviteCode';
 export * from './connectivity/networkConfig';
+export * from './connectivity/turnShare';
 export * from './connectivity/connectionPath';
 export * from './connectivity/diagnosis';
 export * from './connectivity/secureChannel';
