@@ -78,4 +78,4 @@ Local kill switch activation operates strictly within the local device boundary:
   device; "Save" writes an ordinary file. Only PNG, JPEG, GIF and WebP images and MP4, WebM, QuickTime and Ogg videos get a preview, never SVG, and no other file type is opened.
   File saving from the packaged desktop app has only been exercised in the browser suite.
 - No push notifications (there is no server to send them).
-- No multi-hop Bluetooth mesh.
+- The Bluetooth mesh exists on Android only and has never run on real radios; Windows cannot join it ([details](CHANNELS_AND_MESH.md)).

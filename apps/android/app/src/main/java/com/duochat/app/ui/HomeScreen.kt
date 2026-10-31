@@ -32,6 +32,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -57,6 +58,7 @@ fun HomeScreen(
     onOpenChat: (ChatSummary) -> Unit,
     onAddFriend: () -> Unit,
     onNewGroup: () -> Unit,
+    onChannels: () -> Unit,
     onOpenSettings: () -> Unit,
     onClearNotice: () -> Unit,
 ) {
@@ -88,6 +90,9 @@ fun HomeScreen(
                             Spacer(Modifier.width(8.dp))
                             Text("New group")
                         }
+                        OutlinedButton(onClick = onChannels, modifier = Modifier.weight(1f)) {
+                            Text("# Channels")
+                        }
                     }
                 }
             }
@@ -104,6 +109,7 @@ fun HomeScreen(
             }
             if (state.chats.isEmpty()) {
                 EmptyHome(onAddFriend)
+                TextButton(onClick = onChannels, modifier = Modifier.fillMaxWidth()) { Text("Or join a public channel") }
             } else {
                 LazyColumn(Modifier.fillMaxSize()) {
                     items(state.chats, key = { it.id }) { chat ->

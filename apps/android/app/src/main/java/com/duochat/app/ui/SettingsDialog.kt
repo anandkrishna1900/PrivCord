@@ -327,6 +327,22 @@ SectionTitle("Appearance")
                         onPermissionResult = onBluetoothPermissionResult,
                     )
                     Spacer(Modifier.height(14.dp))
+                    val meshContext = LocalContext.current
+                    val meshPermission = androidx.activity.compose.rememberLauncherForActivityResult(
+                        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
+                    ) { granted -> if (granted.values.all { it }) onUpdateSettings { copy(mesh = true) } }
+                    ToggleRow(
+                        title = "Bluetooth mesh (relay for nearby phones)",
+                        description = "Pass messages along through nearby phones that also run PrivCord, so they can reach people several phones away with no internet, and join public channels over Bluetooth. Other phones can see that a PrivCord phone is nearby. Uses more battery. Experimental: simulated and compiled, never run on real radios." +
+                            if (settings.mesh) " Linked phones now: ${state.meshLinks}." else "",
+                        checked = settings.mesh,
+                        onChange = { on ->
+                            if (!on) onUpdateSettings { copy(mesh = false) }
+                            else if (BlePermissions.granted(meshContext)) onUpdateSettings { copy(mesh = true) }
+                            else meshPermission.launch(BlePermissions.required())
+                        },
+                    )
+                    Spacer(Modifier.height(14.dp))
                     SectionTitle("Communication Mode")
                 Text("Select how DuoChat connects to peers:", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(4.dp))

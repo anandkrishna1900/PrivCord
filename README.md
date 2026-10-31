@@ -15,6 +15,8 @@ Bluetooth.
 - **Reply** to any message. The quote shows for everyone, in chats and groups.
 - **Send files up to 8 MB.** Photos and videos show a preview you can open; every file can be saved.
   They go straight to the other device, free, with no upload to anyone's server.
+- **Join public channels** like #general (no account, anyone who types the same name is in the same room). Messages are signed, so nobody can speak as someone else, but anyone who knows the name can read them.
+- **Reach people with no internet (Android).** An optional Bluetooth mesh passes messages along through nearby phones, up to 7 hops. Experimental: simulated, never run on real radios.
 - **Make it yours.** 16 built-in color themes (Midnight, AMOLED black, Nord, Dracula, Solarized, Blossom pink, Rose, Paper, Sky, Mint and more) plus the classic light/dark look, on both Windows and Android. Settings > Appearance.
 - **Lock the app.** Android asks for your fingerprint, face or screen lock; Windows asks for Windows Hello
   (a passkey). Turn it on or off in Settings > Security.
@@ -88,7 +90,7 @@ the Tauri build (`npm run tauri:dev`, needs Rust) for the real thing. Run your o
 
 [Architecture](docs/ARCHITECTURE.md) · [Groups and introductions](docs/GROUPS.md) ·
 [Connectivity](docs/CONNECTIVITY.md) · [Identity and recovery](docs/IDENTITY_AND_RECOVERY.md) ·
-[Bluetooth](docs/BLE_TRANSPORT.md) · [Deployment](docs/DEPLOYMENT.md) ·
+[Bluetooth](docs/BLE_TRANSPORT.md) · [Channels and mesh](docs/CHANNELS_AND_MESH.md) · [Deployment](docs/DEPLOYMENT.md) ·
 [Emergency deletion](docs/EMERGENCY_DELETION.md) · [Known limitations](docs/KNOWN_LIMITATIONS.md) ·
 [Android status](docs/ANDROID_STATUS.md) · [Security policy](SECURITY.md)
 
@@ -104,7 +106,7 @@ the Tauri build (`npm run tauri:dev`, needs Rust) for the real thing. Run your o
 | App lock | Desktop: passkey create/verify/refuse flow against a virtual authenticator in a real browser. Android: the lock rules (unit tests) | **Real Windows Hello and real Android biometric prompts** |
 | Relay | Automated tests | Docker image, production TLS |
 
-Not available: push notifications, files over Bluetooth, and a multi-hop Bluetooth mesh
+Not available: push notifications, files over Bluetooth, and the mesh on Windows (details in [docs/CHANNELS_AND_MESH.md](docs/CHANNELS_AND_MESH.md))
 ([docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md)).
 
 ## License and credit

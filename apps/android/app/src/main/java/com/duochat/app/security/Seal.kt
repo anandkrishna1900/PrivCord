@@ -23,6 +23,20 @@ class SealedBlob(
     fun toJson(): JSONObject = JSONObject()
         .put("v", 1).put("to", to).put("from", from).put("epk", epk)
         .put("iv", iv).put("ct", ct).put("sig", sig)
+
+    companion object {
+        /** Null unless the JSON has the exact blob shape (same checks as the TypeScript `validateBlob`). */
+        fun fromJson(json: JSONObject?): SealedBlob? = try {
+            val epk = json?.optJSONObject("epk")
+            if (json == null || epk == null || json.optInt("v", -1) != 1 || Seal.jwkOrNull(epk) == null) null
+            else SealedBlob(
+                json.getString("to"), json.getString("from"), epk,
+                json.getString("iv"), json.getString("ct"), json.getString("sig"),
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
 }
 
 object Seal {

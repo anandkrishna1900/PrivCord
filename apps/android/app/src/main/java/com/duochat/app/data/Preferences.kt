@@ -23,6 +23,8 @@ data class AppSettings(
      * and they get yours, but neither of you can start a direct chat unless you swap invites yourselves.
      */
     val groupOnly: Boolean = false,
+    /** Relay messages for nearby phones over Bluetooth (multi-hop mesh). Off by default: it keeps Bluetooth busy. */
+    val mesh: Boolean = false,
     /** Ask for fingerprint, face or the screen-lock PIN/pattern/password to open the app (when the phone has one). */
     val appLock: Boolean = true,
     /** Conversation ids (contact uid / group id) whose notifications are muted. */
@@ -57,6 +59,7 @@ class SettingsRepository(context: Context) {
             .putString("peerNickname", next.peerNickname)
             .putString("displayName", next.displayName)
             .putBoolean("groupOnly", next.groupOnly)
+            .putBoolean("mesh", next.mesh)
             .putBoolean("appLock", next.appLock)
             .putStringSet("mutedChats", next.mutedChats)
             .putString("network", next.network.toJson())
@@ -75,6 +78,7 @@ class SettingsRepository(context: Context) {
             peerNickname = (prefs.getString("peerNickname", "") ?: "").trim().take(40),
             displayName = (prefs.getString("displayName", "") ?: "").trim().take(40),
             groupOnly = prefs.getBoolean("groupOnly", false),
+            mesh = prefs.getBoolean("mesh", false),
             appLock = prefs.getBoolean("appLock", true),
             mutedChats = prefs.getStringSet("mutedChats", emptySet())?.toSet() ?: emptySet(),
             network = NetworkConfig.fromJson(

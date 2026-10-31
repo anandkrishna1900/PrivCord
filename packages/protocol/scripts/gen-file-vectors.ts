@@ -10,6 +10,10 @@ import {
   FILE_CHUNK_BYTES,
   deriveIdentityFromPhrase,
   deriveInvite,
+  deriveChannel,
+  sealChannelMessage,
+  makeMeshPacket,
+  normalizeChannelName,
   sealInvite,
   uidFromDh,
   type ContactCard as Card,
@@ -65,6 +69,11 @@ const inviterUid = await uidFromDh(inviter.dhKey.pubJwk);
 const rv = await deriveInvite(inviteWords);
 const inviteBlob = await sealInvite({ rendezvous: rv, kind: 'card', card: inviterCard, uid: inviterUid, signPriv: inviter.signKey.privJwk });
 
+// An open-channel message made by TypeScript, and the mesh packet around it.
+const chan = await deriveChannel('general');
+const chanBlob = await sealChannelMessage({ channel: chan, text: 'hello from the channel', at: 1_700_000_000_123, card: inviterCard, uid: inviterUid, signPriv: inviter.signKey.privJwk });
+const channelNames = ['#General', '  general  ', 'Lagos Traffic!!', 'кофе', '###', 'x'.repeat(100)];
+
 writeFileSync(
   new URL('../../../docs/file-vectors.json', import.meta.url),
   JSON.stringify(
@@ -75,6 +84,7 @@ writeFileSync(
       sanitizeMimes: mimes.map((m) => [m, sanitizeMime(m)]),
       reply: { frame: createPeerMessageFrame(reply), preview: makeReplyRef(original).preview },
       privacy,
+      channel: { name: 'general', mailbox: chan.mailbox, tag: chan.tag, uid: inviterUid, text: 'hello from the channel', at: 1_700_000_000_123, blob: chanBlob, packet: makeMeshPacket(chanBlob), names: channelNames.map((n) => [n, normalizeChannelName(n)]) },
       invite: { words: inviteWords, mailbox: rv.mailbox, uid: inviterUid, name: 'Ivy', blob: inviteBlob },
     },
     null,

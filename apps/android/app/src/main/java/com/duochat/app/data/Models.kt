@@ -42,6 +42,8 @@ data class ChatMessage(
     val replyTo: ReplyRef? = null,
     /** Set when [type] is FILE: the bytes live in the file store under the message id. */
     val file: FileMeta? = null,
+    /** Channel messages: the sender's self-chosen name plus a short id (they are not in our contacts). */
+    val senderName: String? = null,
 )
 
 /** One message waiting for one recipient. */
@@ -218,7 +220,13 @@ data class ChatState(
     /** People who used our words and wait for us to accept them. */
     val requests: List<InviteRequest> = emptyList(),
     val answer: InviteAnswer? = null,
+    val channels: List<ChannelView> = emptyList(),
+    /** Phones currently linked over the Bluetooth mesh (0 when the mesh is off). */
+    val meshLinks: Int = 0,
 )
+
+/** A public channel we have joined. */
+data class ChannelView(val id: String, val name: String, val unread: Int, val connected: Boolean)
 
 data class ActiveInvite(val words: String, val expiresAt: Long)
 

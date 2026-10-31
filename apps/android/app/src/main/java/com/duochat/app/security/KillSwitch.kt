@@ -54,7 +54,7 @@ object KillSwitchPlans {
         KillSwitchPlanStep(
             "services.stop",
             "Stop background services",
-            "Message reception stops. No Bluetooth mesh or relay services exist in this version.",
+            "Message reception stops, including channels and Bluetooth mesh relaying.",
         ),
         KillSwitchPlanStep(
             "transfers.cancel",

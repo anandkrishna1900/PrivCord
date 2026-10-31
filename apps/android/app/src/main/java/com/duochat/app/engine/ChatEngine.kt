@@ -50,6 +50,7 @@ import com.duochat.app.data.createOutgoingMessage
 import com.duochat.app.data.isValidClientMessageId
 import com.duochat.app.data.local.ContactEntity
 import com.duochat.app.data.needsDelivery
+import com.duochat.app.data.normalizeNewlines
 import com.duochat.app.groups.GroupCoordinator
 import com.duochat.app.groups.GroupEvent
 import com.duochat.app.groups.GroupException
@@ -65,6 +66,11 @@ import com.duochat.app.p2p.PeerSession
 import com.duochat.app.p2p.iceServers
 import com.duochat.app.security.AndroidIdentityManager
 import com.duochat.app.security.Contact
+import com.duochat.app.security.Channels
+import com.duochat.app.ble.MeshNode
+import com.duochat.app.ble.MeshOutgoing
+import com.duochat.app.ble.MeshRadio
+import com.duochat.app.data.ChannelView
 import com.duochat.app.security.InviteCode
 import com.duochat.app.data.ActiveInvite
 import com.duochat.app.data.InviteRequest
@@ -124,6 +130,8 @@ class ChatEngine(
     initialGroupOnly: Boolean = false,
     /** Null where Bluetooth cannot be used at all (for example in unit tests). */
     private val ble: BleEnvironment? = null,
+    /** Makes the Bluetooth mesh radio; null where it cannot exist (unit tests, no Bluetooth). */
+    private val meshRadioFactory: (() -> com.duochat.app.ble.MeshRadio)? = null,
 ) {
     private val _state = MutableStateFlow(ChatState())
     val state: StateFlow<ChatState> = _state.asStateFlow()
@@ -218,11 +226,13 @@ class ChatEngine(
             coordinator?.load(runCatching { store.loadGroupLogs() }.getOrDefault(emptyMap()))
             savedGroups += coordinator?.groupIds().orEmpty()
             repairOutbox()
+            store.getKv("muted")?.let { a -> for (i in 0 until a.length()) muted += a.getString(i) }
             if (stopped) return
             _state.update { it.copy(phase = EnginePhase.READY, uid = loadedIdentity.uid) }
             for (uid in friends.keys) ensureLink(uid)
             emit()
             startSignaling()
+            store.getKv("channels")?.let { a -> for (i in 0 until a.length()) runCatching { joinChannel(a.getString(i), persist = false) } }
             startTicking()
             refreshBluetooth()
         } catch (error: Exception) {
@@ -432,6 +442,172 @@ class ChatEngine(
 
     fun clearAnswer() {
         _state.update { it.copy(answer = null) }
+    }
+
+    // ---------------------------------------------------------------------
+    // Open channels and the Bluetooth mesh
+    // ---------------------------------------------------------------------
+
+    private class JoinedChannel(val keys: Channels.Keys, val hub: SignalingHub)
+
+    private val joinedChannels = LinkedHashMap<String, JoinedChannel>()
+    private val muted = HashSet<String>()
+    private val meshNode = MeshNode()
+    private var meshRadio: MeshRadio? = null
+
+    /** A readable name for someone we only know from a channel: their chosen name plus a short id. */
+    private fun channelLabel(card: ContactCard, uid: String) = "${card.name?.trim().takeUnless { it.isNullOrEmpty() } ?: "Anonymous"} #${uid.take(4)}"
+
+    /** Join (or create: there is no difference) a public channel. Returns its conversation id. */
+    suspend fun joinChannel(raw: String, persist: Boolean = true): Result<String> = runCatching {
+        val name = Channels.normalize(raw) ?: throw IllegalArgumentException("Type a channel name, for example general.")
+        if (joinedChannels.containsKey(name)) return@runCatching "chan:$name"
+        if (joinedChannels.size >= MAX_CHANNELS) throw IllegalStateException("You can be in at most $MAX_CHANNELS channels. Leave one first.")
+        val keys = Channels.derive(name)
+        val hub = if (networkConfig().signaling.isEmpty()) null else SignalingHub(transportsFor(networkConfig(), scope))
+        // A channel needs the internet connection service or the Bluetooth mesh; with neither it could never carry a message.
+        if (hub == null && meshRadio == null) {
+            throw IllegalStateException("Channels need a connection service (Settings > Connection) or the Bluetooth mesh (Settings).")
+        }
+        val joined = JoinedChannel(keys, hub ?: SignalingHub(emptyList()))
+        hub?.start(keys.mailbox) { blob, _, _ -> scope.launch { onChannelBlob(keys, blob) } }
+        joinedChannels[name] = joined
+        if (persist) persistChannels()
+        emit()
+        "chan:$name"
+    }
+
+    fun leaveChannel(conversationId: String) {
+        val name = conversationId.removePrefix("chan:")
+        joinedChannels.remove(name)?.hub?.stop()
+        messages.values.removeAll { it.conversationId == "chan:$name" }
+        scope.launch { store.clearConversation("chan:$name") }
+        persistChannels()
+        emit()
+    }
+
+    private fun persistChannels() {
+        scope.launch { runCatching { store.putKv("channels", org.json.JSONArray(joinedChannels.keys.toList())) } }
+    }
+
+    /** Stop showing a person's channel messages (kept on this phone only). */
+    fun muteSender(uid: String) {
+        muted += uid
+        scope.launch { runCatching { store.putKv("muted", org.json.JSONArray(muted.toList())) } }
+        emit()
+    }
+
+    private suspend fun sendChannel(name: String, rawText: String): Result<Unit> {
+        val c = joinedChannels[name] ?: return Result.failure(IllegalStateException("You left this channel."))
+        val text = normalizeNewlines(rawText).trim()
+        if (text.isEmpty()) return Result.failure(IllegalArgumentException("Message cannot be empty."))
+        if (countCodePoints(text) > Channels.MAX_TEXT) return Result.failure(IllegalArgumentException("Channel messages are limited to ${Channels.MAX_TEXT} characters."))
+        val online = c.hub.status() == SignalingStatus.ONLINE
+        if (!online && meshRadio?.linkCount.let { it == null || it == 0 }) {
+            return Result.failure(IllegalStateException("Not connected to the connection service or to any nearby phone yet. Try again in a moment."))
+        }
+        val at = System.currentTimeMillis()
+        val card = inviteCard()
+        val blob = withContext(Dispatchers.Default) { Channels.seal(c.keys, text, at, card, selfUid) { identityManager.signRaw(it) } }
+        var sent = false
+        if (online) {
+            // Live copy always; a stored copy (history for people who join later) only if store-and-forward is on.
+            val live = runCatching { c.hub.put(c.keys.mailbox, blob, "sig", 120) }
+            val stored = if (networkConfig().storeForward) runCatching { c.hub.put(c.keys.mailbox, blob, "msg", Channels.TTL_SEC) } else null
+            sent = live.isSuccess || stored?.isSuccess == true
+        }
+        if (meshInject(blob)) sent = true
+        if (!sent) return Result.failure(IllegalStateException("Could not send. Check your connection."))
+        storeChannelMessage(name, "c-${blob.sig.take(24)}", selfUid, text, at, channelLabel(card, selfUid))
+        return Result.success(Unit)
+    }
+
+    private suspend fun storeChannelMessage(name: String, messageId: String, senderId: String, text: String, at: Long, label: String) {
+        if (messages.containsKey(messageId)) return
+        val convId = "chan:$name"
+        val own = senderId == selfUid
+        val m = ChatMessage(
+            messageId = messageId, clientMessageId = messageId, senderId = senderId, text = text,
+            clientCreatedAt = minOf(at, System.currentTimeMillis() + 5 * 60_000), transport = TransportKind.P2P,
+            deliveryState = if (own) DeliveryState.SENT else DeliveryState.DELIVERED,
+            readAt = if (own || (appVisible && openChat == convId)) System.currentTimeMillis() else null,
+            conversationId = convId, senderName = label,
+        )
+        messages[messageId] = m
+        store.putMessage(m)
+        emit()
+    }
+
+    private suspend fun onChannelBlob(keys: Channels.Keys, blob: SealedBlob) {
+        val message = withContext(Dispatchers.Default) { Channels.open(keys, blob) } ?: return
+        val uid = message.contact.uid
+        if (uid == selfUid || uid in muted) return
+        storeChannelMessage(keys.name, "c-${blob.sig.take(24)}", uid, message.text, message.at, channelLabel(message.contact.card, uid))
+    }
+
+    /** Turns the Bluetooth mesh on or off (Settings). Nothing is advertised or scanned while it is off. */
+    fun setMeshEnabled(on: Boolean) {
+        if (on && meshRadio == null) {
+            val radio = meshRadioFactory?.invoke() ?: return
+            meshRadio = radio
+            radio.start(object : MeshRadio.Listener {
+                override fun onLinkUp(link: String) {
+                    scope.launch { meshNode.linkUp(link, System.currentTimeMillis()).forEach(::sendMesh); emit() }
+                }
+
+                override fun onLinkDown(link: String) {
+                    meshNode.linkDown(link)
+                    emit()
+                }
+
+                override fun onPacket(link: String, json: String) {
+                    scope.launch { onMeshPacket(link, json) }
+                }
+            })
+        } else if (!on) {
+            meshRadio?.stop()
+            meshRadio = null
+            for (l in meshNode.neighbours) meshNode.linkDown(l)
+        }
+        emit()
+    }
+
+    private fun sendMesh(o: MeshOutgoing) {
+        meshRadio?.send(o.link, o.packet.toJson().toString())
+    }
+
+    /** Hands a signed or sealed message to every nearby phone. False when the mesh is off. */
+    private fun meshInject(blob: SealedBlob): Boolean {
+        if (meshRadio == null) return false
+        meshNode.inject(blob, System.currentTimeMillis()).forEach(::sendMesh)
+        return true
+    }
+
+    private suspend fun onMeshPacket(link: String, json: String) {
+        val parsed = try { JSONObject(json) } catch (_: Exception) { return }
+        val handled = meshNode.handle(parsed, link, System.currentTimeMillis())
+        handled.forward.forEach(::sendMesh)
+        val blob = handled.accepted ?: return
+        if (blob.to == selfUid) {
+            handleBlob(blob, "mesh", null) // a direct message (or ack) sealed to us, relayed by strangers
+        } else {
+            joinedChannels.values.firstOrNull { it.keys.tag == blob.to }?.let { onChannelBlob(it.keys, blob) }
+        }
+    }
+
+    /** Queued direct messages for friends we are not linked to go out over the mesh too. */
+    private suspend fun meshPending() {
+        if (meshRadio == null || meshNode.neighbours.isEmpty()) return
+        for (row in outbox.values.toList()) {
+            val message = messages[row.messageId] ?: continue
+            if (message.senderId != selfUid || !needsDelivery(message.deliveryState) || message.type != MessageType.TEXT) continue
+            if (coordinator?.state(message.conversationId) != null) continue
+            if (links[row.recipientId]?.session?.isReady == true) continue
+            if (!relayed.add("mesh|${row.key}")) continue
+            val friend = friends[row.recipientId] ?: continue
+            val blob = sealTo(friend, JSONObject().put("t", "msg").put("id", message.messageId).put("text", message.text).put("at", message.clientCreatedAt))
+            meshInject(blob)
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -648,6 +824,7 @@ class ChatEngine(
                 "${friend.name} stays group-only, so you can talk in your groups but not directly. To message them, swap invites (Add friend)."
             }
         }
+        if (conversationId.startsWith("chan:")) return if (joinedChannels.containsKey(conversationId.removePrefix("chan:"))) null else "You left this channel."
         val group = coordinator?.state(conversationId) ?: return "Unknown chat."
         return if (group.members.containsKey(selfUid)) null else "You are no longer in this group."
     }
@@ -796,6 +973,7 @@ class ChatEngine(
         return try {
             val coordinator = coordinator ?: throw IllegalStateException("Identity is not ready yet.")
             cannotWrite(conversationId)?.let { throw IllegalStateException(it) }
+            if (conversationId.startsWith("chan:")) return sendChannel(conversationId.removePrefix("chan:"), rawText)
             val isGroup = coordinator.state(conversationId) != null
             val recipients: List<String> = if (isGroup) {
                 if (!coordinator.isMember(conversationId, selfUid)) throw IllegalStateException("You are no longer in this group.")
@@ -1514,6 +1692,7 @@ class ChatEngine(
                 failure = e
             }
         }
+        if (kind == "msg" && meshInject(blob)) delivered = true
         val struggling = (links[uid]?.attempt ?: 0) >= 2
         if (kind == "sig" && (!delivered || struggling)) {
             if (relayThroughLinks(blob, uid, 0, exclude = null)) delivered = true
@@ -1648,6 +1827,7 @@ class ChatEngine(
                 connectDueLinks()
                 maybeBluetooth()
                 relayPending()
+                meshPending()
                 refreshBluetooth()
                 emit()
             }
@@ -1911,7 +2091,7 @@ class ChatEngine(
     private fun emit() {
         val current = identity ?: return
         val coordinator = coordinator
-        val byConversation = messages.values.groupBy { it.conversationId }
+        val byConversation = messages.values.filter { it.senderId !in muted }.groupBy { it.conversationId }
             .mapValues { (_, list) -> list.sortedWith { a, b -> compareMessages(a, b) } }
         val pendingByMessage = outbox.values.groupingBy { it.messageId }.eachCount()
         val shaped = byConversation.mapValues { (_, list) ->
@@ -1974,12 +2154,26 @@ class ChatEngine(
                 g.exitNote ?: "${g.members.size} members" + if (others > 0) " · ${g.connectedCount} connected" else "",
             )
         }
+        for ((name, c) in joinedChannels) {
+            val list = shaped["chan:$name"].orEmpty().filter { it.senderId !in muted }
+            summaries += ChatSummary(
+                "chan:$name", true, "# $name",
+                list.lastOrNull()?.let { m -> (m.senderName ?: "Someone") + ": " + m.text },
+                list.lastOrNull()?.clientCreatedAt ?: 0L, list.count { it.senderId != selfUid && it.readAt == null },
+                if (c.hub.status() == SignalingStatus.ONLINE || (meshRadio?.linkCount ?: 0) > 0) LinkStatus.CONNECTED else LinkStatus.OFFLINE,
+                "Public channel",
+            )
+        }
         summaries.sortByDescending { it.lastAt }
         _state.update {
             it.copy(
                 contacts = contacts, groups = groups, chats = summaries, messages = shaped,
                 queuedCount = outbox.values.count { r -> r.deliveryState != DeliveryState.FAILED },
                 transfers = progress.toMap(), groupOnly = groupOnly,
+                channels = joinedChannels.map { (name, c) ->
+                    ChannelView("chan:$name", name, shaped["chan:$name"].orEmpty().count { m -> m.senderId != selfUid && m.readAt == null }, c.hub.status() == SignalingStatus.ONLINE)
+                },
+                meshLinks = meshRadio?.linkCount ?: 0,
                 requests = requestCards.map { (uid, r) -> InviteRequest(uid, r.first.card.name ?: "Friend ${uid.take(4)}", r.second) },
                 linkCount = links.values.count { l -> l.session.isReady },
                 notice = notice ?: it.notice,
@@ -1996,6 +2190,7 @@ class ChatEngine(
     }
 
     private companion object {
+        const val MAX_CHANNELS = 8
         const val PROGRESS_EVERY = 8
         const val STALL_MS = 30_000L
         const val TICK_MS = 4_000L
