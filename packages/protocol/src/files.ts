@@ -1,7 +1,6 @@
 import { FILE_CHUNK_BYTES, MAX_FILE_BYTES, MAX_REPLY_PREVIEW, PROTOCOL_VERSION } from './constants';
 import { fromB64Url, sha256, toB64Url } from './e2ee/primitives';
 import { isRecord, validateClientMessageId, validateReply, type ReplyRef } from './message';
-import { parseTtl } from './social';
 
 /*
  * File sharing. A file goes straight to each recipient over the already-authenticated direct link
@@ -31,7 +30,6 @@ export interface FileOfferFrame {
   sha256: string;
   clientCreatedAt: number;
   replyTo?: ReplyRef;
-  ttl?: number;
 }
 
 export interface FileChunkFrame {
@@ -102,7 +100,6 @@ export async function makeFileOffer(input: {
   bytes: Uint8Array;
   clientCreatedAt: number;
   replyTo?: ReplyRef;
-  ttl?: number;
 }): Promise<FileOfferFrame> {
   const error = validateFileSize(input.bytes.length);
   if (error) throw new Error(error);
@@ -117,7 +114,6 @@ export async function makeFileOffer(input: {
     sha256: toB64Url(await sha256(input.bytes)),
     clientCreatedAt: input.clientCreatedAt,
     ...(input.replyTo ? { replyTo: input.replyTo } : {}),
-    ...(input.ttl ? { ttl: input.ttl } : {}),
   };
 }
 
@@ -144,8 +140,6 @@ export function parseFileOffer(value: unknown): FileOfferFrame | null {
   if (typeof value.sha256 !== 'string' || value.sha256.length < 40 || value.sha256.length > 64) return null;
   if (typeof value.clientCreatedAt !== 'number' || !Number.isFinite(value.clientCreatedAt) || value.clientCreatedAt <= 0) return null;
   if (value.replyTo !== undefined && !validateReply(value.replyTo)) return null;
-  const ttl = parseTtl(value.ttl);
-  if (ttl === null) return null;
   return {
     v: PROTOCOL_VERSION,
     kind: 'file_offer',
@@ -157,7 +151,6 @@ export function parseFileOffer(value: unknown): FileOfferFrame | null {
     sha256: value.sha256,
     clientCreatedAt: value.clientCreatedAt,
     ...(value.replyTo ? { replyTo: value.replyTo as ReplyRef } : {}),
-    ...(ttl ? { ttl } : {}),
   };
 }
 

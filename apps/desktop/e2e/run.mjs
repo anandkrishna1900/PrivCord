@@ -920,7 +920,7 @@ await scenario(19, 'scrolling: opens at the newest message, follows new ones, st
 });
 
 /* 20 ----------------------------------------------------------------- */
-await scenario(20, 'delete for everyone, reactions, disappearing messages, search, backup and restore, voice notes', async (ctx) => {
+await scenario(20, 'delete for everyone, reactions, search, backup and restore, voice notes', async (ctx) => {
   const relay = await startRelay(false);
   ctx.cleanups.push(relay.close);
   const net = relayNet(relay.url);
@@ -981,19 +981,6 @@ await scenario(20, 'delete for everyone, reactions, disappearing messages, searc
   await A.page.waitForSelector('.bubble.flash, [data-mid].flash', { timeout: 5000 });
   ctx.note('search finds messages, skips deleted ones, and jumps to the match');
 
-  // --- disappearing messages (Ann sets 1 hour; the message carries it; Ben sees the clock)
-  await A.page.click('button[aria-label="More"]');
-  await A.page.click('[role="menuitemradio"]:has-text("1 hour")');
-  await say(A.page, 'this will disappear');
-  await B.page.waitForSelector('.bubble:has(.bubble-text:text-is("this will disappear")) [aria-label="Disappearing message"]', { timeout: 20000 });
-  check((await A.page.locator('.bubble:has(.bubble-text:text-is("this will disappear")) [aria-label="Disappearing message"]').count()) === 1, 'the sender sees the clock too');
-  // fast-forward Ben's clock past the hour: the next purge removes it
-  await B.page.evaluate(() => { const real = Date.now; Date.now = () => real() + 2 * 3600 * 1000; });
-  await B.page.waitForFunction(() => ![...document.querySelectorAll('.bubble-text')].some((e) => e.textContent === 'this will disappear'), null, { timeout: 15000 });
-  check((await bubble(A.page, 'this will disappear').count()) === 1, "the other device keeps its own copy until its own timer ends");
-  await A.page.click('button[aria-label="More"]');
-  await A.page.click('[role="menuitemradio"]:has-text("Off")');
-  ctx.note('a message with a lifetime shows a clock and is removed when its time is up');
 
   // --- voice note (fake microphone)
   await A.page.click('button[aria-label="Record a voice note"]');

@@ -1,4 +1,3 @@
-import { t } from '../lib/i18n';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { REACTION_EMOJI, formatBytes, isInlineAudio, isInlineImage, isInlineVideo, type DeliveryState } from '@duochat/protocol';
 import type { FileMeta } from '../lib/localDb';
@@ -368,7 +367,7 @@ export function MessageList({
                     )
                   ) : null}
                   {message.deleted ? (
-                    <p className="bubble-text deleted">🚫 {t('message.deleted')}</p>
+                    <p className="bubble-text deleted">🚫 This message was deleted</p>
                   ) : null}
                   {!message.deleted && message.replyTo ? (
                     <button type="button" className="quote" onClick={() => jumpTo(message.replyTo!.id)} title="Go to the original message">
@@ -431,11 +430,6 @@ export function MessageList({
                       >
                         <CopyIcon size={12} />
                       </button>
-                    ) : null}
-                    {message.expiresAt ? (
-                      <span className="bubble-time" title={`Disappears ${new Date(message.expiresAt).toLocaleString()}`} aria-label="Disappearing message">
-                        ⏱
-                      </span>
                     ) : null}
                     <span className="bubble-time">{formatTime(message.clientCreatedAt)}</span>
                     {own ? (

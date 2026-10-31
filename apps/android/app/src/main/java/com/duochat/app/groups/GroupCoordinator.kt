@@ -41,12 +41,10 @@ sealed class GroupFrame {
     class Message(
         val groupId: String, val messageId: String, val text: String, val clientCreatedAt: Long,
         val replyTo: ReplyRef? = null,
-        val ttl: Int? = null,
     ) : GroupFrame() {
         override fun toJson() = JSONObject().put("v", 1).put("kind", "gmsg").put("groupId", groupId)
             .put("messageId", messageId).put("text", text).put("clientCreatedAt", clientCreatedAt)
             .also { if (replyTo != null) it.put("replyTo", replyTo.toJson()) }
-            .also { if (ttl != null) it.put("ttl", ttl) }
     }
 
     /** Ask a mutual contact to pass a sealed blob on to someone we cannot reach directly. */
@@ -89,8 +87,7 @@ fun parseGroupFrame(value: Any?): GroupFrame? {
                 else if (at.isNaN() || at.isInfinite() || at <= 0) null
                 else {
                     val reply = if (f.has("replyTo")) ReplyRef.fromJson(f.opt("replyTo")) ?: return null else null
-                    val ttl = try { com.duochat.app.data.parseTtl(f) } catch (_: IllegalArgumentException) { return null }
-                    GroupFrame.Message(gid, mid!!, text, at.toLong(), reply, ttl)
+                    GroupFrame.Message(gid, mid!!, text, at.toLong(), reply)
                 }
             }
             "relay_blob" -> {

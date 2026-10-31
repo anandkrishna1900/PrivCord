@@ -228,7 +228,6 @@ private fun RootScreen(viewModel: AppViewModel) {
                         onMuteSender = viewModel::muteSender,
                         onDeleteMessage = viewModel::deleteMessage,
                         onReact = viewModel::react,
-                        onSetDisappearing = { viewModel.setDisappearing(openChatId, it) },
                         onEnableStoreForward = { viewModel.updateSettings { copy(network = network.copy(storeForward = true)) } },
                         onOpenConnectionSettings = { settingsOpen = true },
                         onConnectBluetooth = {

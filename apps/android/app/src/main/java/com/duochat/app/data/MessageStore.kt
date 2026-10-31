@@ -38,8 +38,6 @@ class MessageStore(
                 replyTo = ReplyRef.fromJson(extra?.optJSONObject("replyTo")),
                 file = FileMeta.fromJson(extra?.optJSONObject("file")),
                 senderName = extra?.optString("senderName")?.takeIf { it.isNotEmpty() },
-                ttlSec = extra?.optInt("ttlSec", 0)?.takeIf { it > 0 },
-                expiresAt = extra?.optLong("expiresAt", 0L)?.takeIf { it > 0 },
                 deleted = extra?.optBoolean("deleted", false) ?: false,
                 reactions = extra?.optJSONObject("reactions")?.let { o -> o.keys().asSequence().associateWith { k -> o.getString(k) } } ?: emptyMap(),
                 messageId = row.messageId,
@@ -70,7 +68,7 @@ class MessageStore(
                 conversationId = message.conversationId,
                 totalRecipients = message.totalRecipients,
                 extraCipher = if (message.replyTo != null || message.file != null || message.senderName != null ||
-                    message.ttlSec != null || message.expiresAt != null || message.deleted || message.reactions.isNotEmpty()
+                    message.deleted || message.reactions.isNotEmpty()
                 ) {
                     crypto.encrypt(
                         JSONObject()
@@ -78,8 +76,6 @@ class MessageStore(
                                 message.replyTo?.let { o.put("replyTo", it.toJson()) }
                                 message.file?.let { o.put("file", it.toJson()) }
                                 message.senderName?.let { o.put("senderName", it) }
-                                message.ttlSec?.let { o.put("ttlSec", it) }
-                                message.expiresAt?.let { o.put("expiresAt", it) }
                                 if (message.deleted) o.put("deleted", true)
                                 if (message.reactions.isNotEmpty()) o.put("reactions", JSONObject(message.reactions))
                             }.toString(),

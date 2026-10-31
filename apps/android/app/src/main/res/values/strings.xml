@@ -1,9 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">DuoChat</string>
-    <string name="search_placeholder">Search messages on this phone</string>
-    <string name="diagnosis_deliver_via_relays">Deliver via relays</string>
-    <string name="diagnosis_connection_settings">Connection settings</string>
-    <string name="message_deleted">This message was deleted</string>
-    <string name="voice_record">Record a voice note</string>
 </resources>

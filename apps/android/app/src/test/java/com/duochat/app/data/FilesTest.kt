@@ -241,7 +241,7 @@ class InviteVectorsTest {
     }
 }
 
-/** Delete, reactions, disappearing messages and backups against the TypeScript implementation. */
+/** Delete, reactions and backups against the TypeScript implementation. */
 class SocialVectorsTest {
     private val v: JSONObject by lazy {
         val f = listOf("../../../docs/file-vectors.json", "../../docs/file-vectors.json", "docs/file-vectors.json").map(::File).first { it.exists() }
@@ -289,10 +289,6 @@ class SocialVectorsTest {
             assertEquals(chips.getJSONObject(i).getInt("count"), mine[i].count)
             assertEquals(chips.getJSONObject(i).getBoolean("mine"), mine[i].mine)
         }
-        assertNull(parseTtl(JSONObject()))
-        assertEquals(3600, parseTtl(JSONObject().put("ttl", 3600)))
-        for (bad in listOf(0, -5, 99_999_999)) assertTrue(runCatching { parseTtl(JSONObject().put("ttl", bad)) }.isFailure)
-        assertEquals(listOf("Off", "1 hour", "1 day", "1 week"), DISAPPEAR_OPTIONS.map(::describeDisappear))
         assertTrue(isInlineAudio("audio/webm;codecs=opus")); assertFalse(isInlineAudio("video/mp4"))
     }
 }

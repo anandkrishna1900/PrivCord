@@ -31,8 +31,6 @@ export interface StoredMessage extends ChatMessage {
   reactions?: Record<string, string>;
   /** Deleted for everyone: only a tombstone is kept. */
   deleted?: boolean;
-  /** Disappearing messages: when this device removes the message (ms). */
-  expiresAt?: number;
   /** Contact uid for a direct chat, group id for a group chat. */
   conversationId: string;
   /** Delivery state per recipient uid. `deliveryState` is the weakest of these. */
@@ -230,7 +228,7 @@ export class LocalStore {
     for (const row of rows) {
       const base = rowToMessage(row);
       const { textCipher, ...rest } = base;
-      let extra: { replyTo?: ReplyRef; file?: FileMeta; senderName?: string; reactions?: Record<string, string>; deleted?: boolean; expiresAt?: number; ttlSec?: number } = {};
+      let extra: { replyTo?: ReplyRef; file?: FileMeta; senderName?: string; reactions?: Record<string, string>; deleted?: boolean } = {};
       try {
         if (row.extra_cipher) extra = JSON.parse(await this.decrypt(row.extra_cipher)) as typeof extra;
       } catch {
@@ -259,7 +257,7 @@ export class LocalStore {
       delivery_state: message.deliveryState,
       read_at: message.readAt ?? null,
       extra_cipher:
-        message.replyTo || message.file || message.senderName || message.reactions || message.deleted || message.expiresAt || message.ttlSec
+        message.replyTo || message.file || message.senderName || message.reactions || message.deleted
           ? await this.encrypt(
               JSON.stringify({
                 replyTo: message.replyTo,
@@ -267,8 +265,6 @@ export class LocalStore {
                 senderName: message.senderName,
                 reactions: message.reactions && Object.keys(message.reactions).length ? message.reactions : undefined,
                 deleted: message.deleted || undefined,
-                expiresAt: message.expiresAt,
-                ttlSec: message.ttlSec,
               }),
             )
           : null,

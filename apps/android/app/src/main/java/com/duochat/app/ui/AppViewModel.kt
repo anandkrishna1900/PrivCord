@@ -270,10 +270,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { engine?.react(messageId, emoji) }
     }
 
-    fun setDisappearing(conversationId: String, seconds: Int) {
-        engine?.setDisappearing(conversationId, seconds)
-    }
-
     fun search(query: String): List<ChatEngine.SearchHit> = engine?.search(query).orEmpty()
 
     fun exportBackup(passphrase: String, onResult: (Result<String>) -> Unit) {

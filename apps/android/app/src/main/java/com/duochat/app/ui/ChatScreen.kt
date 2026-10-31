@@ -147,7 +147,6 @@ fun ChatScreen(
     onMuteSender: (String) -> Unit,
     onDeleteMessage: (String, Boolean) -> Unit = { _, _ -> },
     onReact: (String, String) -> Unit = { _, _ -> },
-    onSetDisappearing: (Int) -> Unit = {},
     onEnableStoreForward: () -> Unit = {},
     onOpenConnectionSettings: () -> Unit = {},
 ) {
@@ -159,7 +158,6 @@ fun ChatScreen(
     val canWrite = state.phase == EnginePhase.READY && (friend != null || group?.iAmMember == true || channel != null)
     var menuOpen by remember { mutableStateOf(false) }
     var clearConfirm by remember { mutableStateOf(false) }
-    var disappearOpen by remember { mutableStateOf(false) }
     var replyingTo by remember(conversationId) { mutableStateOf<ChatMessage?>(null) }
     val directBlocked = friend != null && !friend.direct
 
@@ -220,13 +218,6 @@ fun ChatScreen(
                                 DropdownMenuItem(
                                     text = { Text("Connect over Bluetooth") },
                                     onClick = { menuOpen = false; onConnectBluetooth() },
-                                )
-                            }
-                            if (channel == null) {
-                                val cur = state.disappearing[conversationId] ?: 0
-                                DropdownMenuItem(
-                                    text = { Text("Disappearing messages: ${com.duochat.app.data.describeDisappear(cur)}") },
-                                    onClick = { menuOpen = false; disappearOpen = true },
                                 )
                             }
                             DropdownMenuItem(text = { Text("Clear this chat") }, onClick = { menuOpen = false; clearConfirm = true })
@@ -292,10 +283,10 @@ fun ChatScreen(
                         Text(d.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
                         Row {
                             if (com.duochat.app.data.DiagnosisAction.ENABLE_STORE_FORWARD in d.actions) {
-                                TextButton(onClick = onEnableStoreForward) { Text(androidx.compose.ui.res.stringResource(com.duochat.app.R.string.diagnosis_deliver_via_relays)) }
+                                TextButton(onClick = onEnableStoreForward) { Text("Deliver via relays") }
                             }
                             if (d.actions.any { it == com.duochat.app.data.DiagnosisAction.ADD_TURN || it == com.duochat.app.data.DiagnosisAction.OPEN_CONNECTION_SETTINGS }) {
-                                TextButton(onClick = onOpenConnectionSettings) { Text(androidx.compose.ui.res.stringResource(com.duochat.app.R.string.diagnosis_connection_settings)) }
+                                TextButton(onClick = onOpenConnectionSettings) { Text("Connection settings") }
                             }
                         }
                     }
@@ -326,25 +317,6 @@ fun ChatScreen(
                 modifier = Modifier.weight(1f),
             )
         }
-    }
-
-    if (disappearOpen) {
-        AlertDialog(
-            onDismissRequest = { disappearOpen = false },
-            title = { Text("Disappearing messages") },
-            text = {
-                Column {
-                    Text("New messages in this chat are removed from both phones after the time you pick. Anyone can still copy or screenshot them.", style = MaterialTheme.typography.bodySmall)
-                    com.duochat.app.data.DISAPPEAR_OPTIONS.forEach { sec ->
-                        TextButton(onClick = { onSetDisappearing(sec); disappearOpen = false }) {
-                            Text(com.duochat.app.data.describeDisappear(sec) + if ((state.disappearing[conversationId] ?: 0) == sec) "  ✓" else "")
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = { TextButton(onClick = { disappearOpen = false }) { Text("Close") } },
-        )
     }
 
     if (clearConfirm) {
@@ -598,7 +570,7 @@ private fun MessageBubble(
                         }
                     }
                     if (message.deleted) {
-                        Text(androidx.compose.ui.res.stringResource(com.duochat.app.R.string.message_deleted), style = MaterialTheme.typography.bodyMedium, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, color = bodyColor.copy(alpha = 0.7f))
+                        Text("This message was deleted", style = MaterialTheme.typography.bodyMedium, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, color = bodyColor.copy(alpha = 0.7f))
                     } else if (message.type == MessageType.FILE && message.file != null) {
                         FileContent(message, bodyColor, loadFile, progress)
                     } else {
@@ -968,7 +940,7 @@ private fun Composer(
                 if (!isChannel) IconButton(onClick = {
                     if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) startRecording()
                     else micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
-                }, modifier = Modifier.size(48.dp)) { Icon(Icons.Filled.Mic, contentDescription = androidx.compose.ui.res.stringResource(com.duochat.app.R.string.voice_record)) }
+                }, modifier = Modifier.size(48.dp)) { Icon(Icons.Filled.Mic, contentDescription = "Record a voice note") }
                 if (!isChannel) IconButton(onClick = { picker.launch("*/*") }, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Filled.AttachFile, contentDescription = "Send a file (up to 8 MB)")
                 }

@@ -3,11 +3,10 @@ import type { ChatEngine, ChatState, UiMessage } from '../lib/engine';
 import type { AppSettings } from '../lib/settings';
 import { LOCAL_ID } from '../lib/identity';
 import { formatTime } from '../lib/format';
-import { DISAPPEAR_OPTIONS, MAX_FILE_BYTES, describeDisappear, formatBytes } from '@duochat/protocol';
+import { MAX_FILE_BYTES, formatBytes } from '@duochat/protocol';
 import { Avatar } from './Avatar';
 import { Composer } from './Composer';
 import { MessageList } from './MessageList';
-import { t } from '../lib/i18n';
 import { SettingsDialog, type SettingsSection } from './SettingsDialog';
 import { ManualConnectDialog } from './ManualConnectDialog';
 import { ClearChatDialog, NukeDialog } from './KillSwitchDialogs';
@@ -211,7 +210,7 @@ export function ChatLayout({
             <input
               type="search"
               aria-label="Search messages"
-              placeholder={t('search.placeholder')}
+              placeholder="Search messages"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
@@ -322,26 +321,6 @@ export function ChatLayout({
                         Connect without internet
                       </button>
                     ) : null}
-                    {!channel && selected ? (
-                      <div className="menu-group" role="group" aria-label="Disappearing messages">
-                        <span className="menu-label">Disappearing messages (yours)</span>
-                        {DISAPPEAR_OPTIONS.map((sec) => (
-                          <button
-                            key={sec}
-                            type="button"
-                            role="menuitemradio"
-                            aria-checked={(state.disappearing[selected] ?? 0) === sec}
-                            onClick={() => {
-                              engine?.setDisappearing(selected, sec);
-                              setMenuOpen(false);
-                            }}
-                          >
-                            {(state.disappearing[selected] ?? 0) === sec ? '✓ ' : ''}
-                            {describeDisappear(sec)}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
                   </div>
                 ) : null}
               </div>
@@ -369,12 +348,12 @@ export function ChatLayout({
                 <span>{person.diagnosis.message}</span>
                 {person.diagnosis.actions.includes('enable-store-forward') ? (
                   <button type="button" className="btn small" onClick={() => void engine?.enableStoreForward()}>
-                    {t('diagnosis.deliverViaRelays')}
+                    Deliver via relays
                   </button>
                 ) : null}
                 {person.diagnosis.actions.some((a) => a === 'add-turn' || a === 'open-connection-settings') ? (
                   <button type="button" className="btn small" onClick={() => { setSettingsSection('connection'); setDialog('settings'); }}>
-                    {t('diagnosis.connectionSettings')}
+                    Connection settings
                   </button>
                 ) : null}
               </div>

@@ -121,7 +121,7 @@ fun HomeScreen(
             } else {
                 androidx.compose.material3.OutlinedTextField(
                     value = query, onValueChange = { query = it }, singleLine = true,
-                    placeholder = { Text(androidx.compose.ui.res.stringResource(com.duochat.app.R.string.search_placeholder)) },
+                    placeholder = { Text("Search messages on this phone") },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
                 )

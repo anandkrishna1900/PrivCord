@@ -241,7 +241,6 @@ class ChatEngine(
             savedGroups += coordinator?.groupIds().orEmpty()
             repairOutbox()
             store.getKv("muted")?.let { a -> for (i in 0 until a.length()) muted += a.getString(i) }
-            store.getKv("disappear")?.let { a -> for (i in 0 until a.length()) a.getJSONArray(i).let { p -> convTtl[p.getString(0)] = p.getInt(1) } }
             if (stopped) return
             _state.update { it.copy(phase = EnginePhase.READY, uid = loadedIdentity.uid) }
             for (uid in friends.keys) ensureLink(uid)
@@ -460,24 +459,8 @@ class ChatEngine(
     }
 
     // ---------------------------------------------------------------------
-    // Delete, reactions, disappearing messages, search, backup
+    // Delete, reactions, search, backup
     // ---------------------------------------------------------------------
-
-    private val convTtl = HashMap<String, Int>()
-
-    fun setDisappearing(conversationId: String, seconds: Int) {
-        if (seconds > 0) convTtl[conversationId] = seconds else convTtl.remove(conversationId)
-        scope.launch {
-            runCatching { store.putKv("disappear", org.json.JSONArray(convTtl.map { (k, v) -> org.json.JSONArray(listOf(k, v)) })) }
-        }
-        emit()
-    }
-
-    private suspend fun purgeExpired(now: Long) {
-        for (m in messages.values.toList()) {
-            if (m.expiresAt != null && m.expiresAt <= now) dropMessage(m.messageId)
-        }
-    }
 
     private suspend fun dropMessage(messageId: String) {
         messages.remove(messageId)
@@ -507,7 +490,7 @@ class ChatEngine(
     }
 
     private suspend fun tombstone(m: ChatMessage) {
-        val dead = m.copy(deleted = true, text = "", file = null, type = MessageType.TEXT, reactions = emptyMap(), replyTo = null, expiresAt = null)
+        val dead = m.copy(deleted = true, text = "", file = null, type = MessageType.TEXT, reactions = emptyMap(), replyTo = null)
         messages[m.messageId] = dead
         runCatching { store.putMessage(dead) }
         runCatching { withContext(Dispatchers.IO) { store.deleteFileOnly(m.messageId) } }
@@ -605,7 +588,6 @@ class ChatEngine(
                         m.file?.let { o.put("file", it.toJson()) }
                         m.replyTo?.let { o.put("replyTo", it.toJson()) }
                         m.senderName?.let { o.put("senderName", it) }
-                        m.ttlSec?.let { o.put("ttl", it) }
                         if (m.reactions.isNotEmpty()) o.put("reactions", JSONObject(m.reactions))
                     },
             )
@@ -666,7 +648,7 @@ class ChatEngine(
                 readAt = System.currentTimeMillis(), conversationId = o.optString("conv"),
                 type = MessageType.fromWire(o.optString("type")), deleted = o.optBoolean("deleted"),
                 file = FileMeta.fromJson(o.optJSONObject("file")), replyTo = ReplyRef.fromJson(o.optJSONObject("replyTo")),
-                senderName = o.optString("senderName").ifEmpty { null }, ttlSec = o.optInt("ttl", 0).takeIf { it > 0 },
+                senderName = o.optString("senderName").ifEmpty { null }, 
                 reactions = o.optJSONObject("reactions")?.let { r -> r.keys().asSequence().associateWith { k -> r.getString(k) } } ?: emptyMap(),
             )
             messages[id] = m
@@ -1220,11 +1202,9 @@ class ChatEngine(
                 if (!friends.containsKey(conversationId)) throw IllegalStateException("This friend is no longer in your list.")
                 listOf(conversationId)
             }
-            val ttl = convTtl[conversationId]
             val base = createOutgoingMessage(selfUid, rawText, replyFor(conversationId, replyToId))
             val message = base.copy(
                 conversationId = conversationId, totalRecipients = if (isGroup) recipients.size else 0,
-                ttlSec = ttl, expiresAt = ttl?.let { base.clientCreatedAt + it * 1000L },
             )
             messages[message.messageId] = message
             store.putMessage(message)
@@ -1258,8 +1238,7 @@ class ChatEngine(
             val recipients = if (isGroup) coordinator.recipients(conversationId) else listOf(conversationId)
             if (recipients.isEmpty()) throw IllegalStateException("Add someone to this group first.")
             val id = java.util.UUID.randomUUID().toString()
-            val ttl = convTtl[conversationId]
-            val offer = FileOffer.create(id, if (isGroup) conversationId else null, rawName, mime, bytes, System.currentTimeMillis(), replyFor(conversationId, replyToId), ttl)
+            val offer = FileOffer.create(id, if (isGroup) conversationId else null, rawName, mime, bytes, System.currentTimeMillis(), replyFor(conversationId, replyToId))
             withContext(Dispatchers.IO) { store.putFile(id, bytes) }
             val message = ChatMessage(
                 messageId = id, clientMessageId = id, senderId = selfUid, text = offer.name,
@@ -1267,7 +1246,6 @@ class ChatEngine(
                 totalRecipients = if (isGroup) recipients.size else 0,
                 type = MessageType.FILE, replyTo = offer.replyTo,
                 file = FileMeta(offer.name, offer.mime, offer.size, offer.sha256),
-                ttlSec = ttl, expiresAt = ttl?.let { offer.clientCreatedAt + it * 1000L },
             )
             messages[id] = message
             store.putMessage(message)
@@ -1326,14 +1304,13 @@ class ChatEngine(
             val isGroup = coordinator?.state(message.conversationId) != null
             val frame = if (isGroup) {
                 if (coordinator?.isMember(message.conversationId, uid) != true) continue
-                GroupFrame.Message(message.conversationId, message.messageId, message.text, message.clientCreatedAt, message.replyTo, message.ttlSec).toJson()
+                GroupFrame.Message(message.conversationId, message.messageId, message.text, message.clientCreatedAt, message.replyTo).toJson()
             } else {
                 JSONObject().put("v", 1).put("kind", "message")
                     .put("messageId", message.messageId).put("clientMessageId", message.clientMessageId)
                     .put("senderId", message.senderId).put("text", message.text)
                     .put("clientCreatedAt", message.clientCreatedAt)
                     .also { o -> message.replyTo?.let { o.put("replyTo", it.toJson()) } }
-                    .also { o -> message.ttlSec?.let { o.put("ttl", it) } }
             }
             if (!session.sendJson(frame)) return
             link.sent += row.messageId
@@ -1362,7 +1339,7 @@ class ChatEngine(
                 val isGroup = coordinator?.state(message.conversationId) != null
                 val offer = FileOffer(
                     message.messageId, if (isGroup) message.conversationId else null, meta.name, meta.mime, meta.size, meta.sha256,
-                    message.clientCreatedAt, message.replyTo, message.ttlSec,
+                    message.clientCreatedAt, message.replyTo,
                 )
                 if (!link.session.sendJson(offer.toJson())) return@launch
                 val total = (bytes.size + com.duochat.app.data.FILE_CHUNK_BYTES - 1) / com.duochat.app.data.FILE_CHUNK_BYTES
@@ -1652,7 +1629,7 @@ class ChatEngine(
     /** Store a message from a friend, acknowledge it, notify. Shared by the direct, group and relay paths. */
     private suspend fun ingest(message: ChatMessage, fromUid: String, sendAck: (JSONObject) -> Unit) {
         val existing = messages[message.messageId]
-        val withExpiry = if (existing == null && message.ttlSec != null) message.copy(expiresAt = System.currentTimeMillis() + message.ttlSec * 1000L) else message
+        val withExpiry = message
         val merged = if (existing != null) {
             existing.copy(
                 deliveryState = if (rank(existing.deliveryState) >= rank(message.deliveryState)) existing.deliveryState else message.deliveryState,
@@ -1718,7 +1695,7 @@ class ChatEngine(
                     messageId = parsed.messageId, clientMessageId = parsed.messageId, senderId = fromUid, text = parsed.text,
                     clientCreatedAt = parsed.clientCreatedAt, transport = TransportKind.P2P,
                     deliveryState = DeliveryState.DELIVERED, conversationId = parsed.groupId,
-                    replyTo = parsed.replyTo, ttlSec = parsed.ttl,
+                    replyTo = parsed.replyTo,
                 )
                 if (messages.containsKey(message.messageId)) {
                     // Duplicate (resend after a lost ack): just acknowledge again.
@@ -1811,7 +1788,7 @@ class ChatEngine(
                         clientCreatedAt = offer.clientCreatedAt, transport = TransportKind.P2P,
                         deliveryState = DeliveryState.DELIVERED, conversationId = convId,
                         type = MessageType.FILE, replyTo = offer.replyTo,
-                        file = FileMeta(offer.name, offer.mime, offer.size, offer.sha256), ttlSec = offer.ttl,
+                        file = FileMeta(offer.name, offer.mime, offer.size, offer.sha256),
                     ),
                     uid,
                 ) { ack -> link.session.sendJson(ack) }
@@ -2075,7 +2052,6 @@ class ChatEngine(
                 _state.update { it.copy(signaling = hub?.status() ?: SignalingStatus.IDLE) }
                 dropBluetoothIfDisabled()
                 pendingGroup.expire(System.currentTimeMillis())
-                purgeExpired(System.currentTimeMillis())
                 val nowMs = System.currentTimeMillis()
                 for ((uid, asm) in assemblers) {
                     if (asm.activeCount > 0 && nowMs - (lastChunkAt[uid] ?: 0L) > STALL_MS) asm.clear()
@@ -2450,7 +2426,6 @@ class ChatEngine(
                     ChannelView("chan:$name", name, shaped["chan:$name"].orEmpty().count { m -> m.senderId != selfUid && m.readAt == null }, c.hub.status() == SignalingStatus.ONLINE)
                 },
                 meshLinks = meshRadio?.linkCount ?: 0,
-                disappearing = convTtl.toMap(),
                 requests = requestCards.map { (uid, r) -> InviteRequest(uid, r.first.card.name ?: "Friend ${uid.take(4)}", r.second) },
                 linkCount = links.values.count { l -> l.session.isReady },
                 notice = notice ?: it.notice,

@@ -156,22 +156,20 @@ data class FileOffer(
     val sha256: String,
     val clientCreatedAt: Long,
     val replyTo: ReplyRef?,
-    val ttl: Int? = null,
 ) {
     fun toJson(): JSONObject = JSONObject().put("v", 1).put("kind", "file_offer").put("messageId", messageId)
         .also { if (groupId != null) it.put("groupId", groupId) }
         .put("name", name).put("mime", mime).put("size", size).put("sha256", sha256)
         .put("clientCreatedAt", clientCreatedAt)
         .also { if (replyTo != null) it.put("replyTo", replyTo.toJson()) }
-        .also { if (ttl != null) it.put("ttl", ttl) }
 
     companion object {
         fun create(
             messageId: String, groupId: String?, name: String, mime: String, bytes: ByteArray,
-            clientCreatedAt: Long, replyTo: ReplyRef?, ttl: Int? = null,
+            clientCreatedAt: Long, replyTo: ReplyRef?,
         ): FileOffer {
             validateFileSize(bytes.size)?.let { throw IllegalArgumentException(it) }
-            return FileOffer(messageId, groupId, sanitizeFileName(name), sanitizeMime(mime), bytes.size, sha256B64(bytes), clientCreatedAt, replyTo, ttl)
+            return FileOffer(messageId, groupId, sanitizeFileName(name), sanitizeMime(mime), bytes.size, sha256B64(bytes), clientCreatedAt, replyTo)
         }
 
         fun parse(f: JSONObject): FileOffer? {
@@ -185,8 +183,7 @@ data class FileOffer(
             val hash = (f.opt("sha256") as? String)?.takeIf { it.length in 40..64 } ?: return null
             val at = (f.opt("clientCreatedAt") as? Number)?.toLong()?.takeIf { it > 0 } ?: return null
             val reply = if (f.has("replyTo")) ReplyRef.fromJson(f.opt("replyTo")) ?: return null else null
-            val ttl = try { parseTtl(f) } catch (_: IllegalArgumentException) { return null }
-            return FileOffer(id!!, groupId, sanitizeFileName(name), sanitizeMime(mime), size, hash, at, reply, ttl)
+            return FileOffer(id!!, groupId, sanitizeFileName(name), sanitizeMime(mime), size, hash, at, reply)
         }
     }
 }

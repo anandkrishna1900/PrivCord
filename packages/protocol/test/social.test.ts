@@ -5,7 +5,6 @@ import {
   createOutgoingMessage,
   createPeerMessageFrame,
   deleteFrame,
-  describeDisappear,
   isInlineAudio,
   makeFileOffer,
   openBackup,
@@ -13,14 +12,13 @@ import {
   parseFileOffer,
   parsePeerMessageFrame,
   parseReactFrame,
-  parseTtl,
   parseGroupFrame,
   reactFrame,
   sealBackup,
   summarizeReactions,
 } from '../src';
 
-describe('delete, reactions and disappearing messages', () => {
+describe('delete and reactions', () => {
   it('delete frames carry just a message id', () => {
     expect(parseDeleteFrame(JSON.parse(JSON.stringify(deleteFrame('m-1'))))?.messageId).toBe('m-1');
     expect(parseDeleteFrame({ v: 1, kind: 'delete', messageId: '' })).toBeNull();
@@ -41,25 +39,6 @@ describe('delete, reactions and disappearing messages', () => {
     expect(summarizeReactions(undefined, 'me')).toEqual([]);
   });
 
-  it('a lifetime rides on messages, group messages and files, and bad ones are refused', () => {
-    expect(parseTtl(undefined)).toBeUndefined();
-    expect(parseTtl(3600)).toBe(3600);
-    for (const bad of [0, -5, 1.5, 'x', 99_999_999, null]) expect(parseTtl(bad)).toBeNull();
-    const m = { ...createOutgoingMessage({ senderId: 'a', text: 'hi' }), ttlSec: 86_400 };
-    expect(parsePeerMessageFrame(JSON.parse(JSON.stringify(createPeerMessageFrame(m))))?.ttlSec).toBe(86_400);
-    expect(parsePeerMessageFrame({ ...createPeerMessageFrame(m), ttl: -1 })).toBeNull();
-    expect(parsePeerMessageFrame(createPeerMessageFrame({ ...m, ttlSec: undefined }))?.ttlSec).toBeUndefined();
-    expect(parseGroupFrame({ v: 1, kind: 'gmsg', groupId: 'g', messageId: 'm-1', text: 'hi', clientCreatedAt: 5, ttl: 60 })?.kind).toBe('gmsg');
-    expect(parseGroupFrame({ v: 1, kind: 'gmsg', groupId: 'g', messageId: 'm-1', text: 'hi', clientCreatedAt: 5, ttl: 0 })).toBeNull();
-    return makeFileOffer({ messageId: 'f1', name: 'a.txt', mime: 'text/plain', bytes: new Uint8Array([1, 2, 3]), clientCreatedAt: 1, ttl: 3600 }).then((offer) => {
-      expect(parseFileOffer(JSON.parse(JSON.stringify(offer)))?.ttl).toBe(3600);
-      expect(parseFileOffer({ ...offer, ttl: 0 })).toBeNull();
-    });
-  });
-
-  it('describes the options in plain words', () => {
-    expect([0, 3600, 86_400, 604_800].map(describeDisappear)).toEqual(['Off', '1 hour', '1 day', '1 week']);
-  });
 
   it('knows which audio plays inline', () => {
     expect(isInlineAudio('audio/webm;codecs=opus')).toBe(true);

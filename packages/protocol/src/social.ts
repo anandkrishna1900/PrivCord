@@ -5,31 +5,11 @@ import { isRecord, validateClientMessageId } from './message';
  * Small social features that travel over an already-authenticated link:
  *  - delete for everyone: the sender asks the others to remove one of the sender's own messages;
  *  - reactions: one emoji per person per message;
- *  - disappearing messages: a sender-chosen lifetime carried on each message (`ttl`, seconds).
  *
  * None of this can be enforced against a modified app: a receiver who wants to keep a message can. The apps say so.
  */
 
 export const REACTION_EMOJI = ['👍', '❤️', '😂', '😮', '😢', '🙏'] as const;
-
-/** Off, one hour, one day, one week. */
-export const DISAPPEAR_OPTIONS = [0, 3600, 86_400, 604_800] as const;
-export const MAX_DISAPPEAR_SEC = 30 * 86_400;
-
-/** The lifetime in seconds, `undefined` when absent, `null` when present but not allowed. */
-export function parseTtl(value: unknown): number | undefined | null {
-  if (value === undefined) return undefined;
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > MAX_DISAPPEAR_SEC) return null;
-  return value;
-}
-
-export function describeDisappear(sec: number): string {
-  if (sec <= 0) return 'Off';
-  if (sec % 604_800 === 0) return `${sec / 604_800} week${sec === 604_800 ? '' : 's'}`;
-  if (sec % 86_400 === 0) return `${sec / 86_400} day${sec === 86_400 ? '' : 's'}`;
-  if (sec % 3600 === 0) return `${sec / 3600} hour${sec === 3600 ? '' : 's'}`;
-  return `${sec} seconds`;
-}
 
 export interface DeleteFrame {
   v: typeof PROTOCOL_VERSION;

@@ -206,8 +206,6 @@ export interface InviteAnswer {
 }
 
 export interface ChatState {
-  /** Disappearing-message timer per conversation, in seconds (absent = off). */
-  disappearing: Record<string, number>;
   channels: ChannelView[];
   answer: InviteAnswer | null;
   /** Our current six-word invite, if one is being shown. */
@@ -291,7 +289,6 @@ export class ChatEngine {
   private redeemed: { words: string; rv: InviteRendezvous; contact: Contact } | null = null;
   private channels = new Map<string, { keys: ChannelKeys; hub: SignalingHub }>();
   private blocked = new Set<string>();
-  private convTtl = new Map<string, number>();
   private assemblers = new Map<string, FileAssembler>();
   private lastChunkAt = new Map<string, number>();
   private sendingFiles = new Set<string>();
@@ -301,7 +298,6 @@ export class ChatEngine {
     this.identity = deps.identity;
     this.coord = this.newCoordinator();
     this.state = {
-      disappearing: {},
       channels: [],
       answer: null,
       invite: null,
@@ -408,7 +404,6 @@ export class ChatEngine {
       await this.loadContacts();
       await this.coord.load((await this.deps.store.getSecret<Record<string, unknown[]>>('groups')) ?? {});
       for (const uid of (await this.deps.store.getSecret<string[]>('blocked')) ?? []) this.blocked.add(uid);
-      for (const [id, sec] of Object.entries((await this.deps.store.getSecret<Record<string, number>>('disappear')) ?? {})) this.convTtl.set(id, sec);
       const stored = await this.deps.store.loadMessages();
       for (const m of stored) this.msgs.set(m.messageId, m);
       await this.migrateLegacy();
@@ -575,21 +570,7 @@ export class ChatEngine {
     this.emit({ answer: null });
   }
 
-  /* ---------------- delete, reactions, disappearing messages, search ---------------- */
-
-  setDisappearing(convId: string, seconds: number): void {
-    if (seconds > 0) this.convTtl.set(convId, seconds);
-    else this.convTtl.delete(convId);
-    void this.deps.store.setSecret('disappear', Object.fromEntries(this.convTtl)).catch(() => undefined);
-    this.emit();
-  }
-
-  /** Remove messages whose time is up, here and from the file store. */
-  private purgeExpired(now: number): void {
-    for (const [id, m] of [...this.msgs]) {
-      if (m.expiresAt && m.expiresAt <= now) this.dropMessage(id);
-    }
-  }
+  /* ---------------- delete, reactions, search ---------------- */
 
   private dropMessage(messageId: string): void {
     this.msgs.delete(messageId);
@@ -620,7 +601,6 @@ export class ChatEngine {
     m.type = 'text';
     m.reactions = undefined;
     m.replyTo = undefined;
-    m.expiresAt = undefined;
     void this.deps.store.deleteFile(m.messageId).catch(() => undefined);
     void this.deps.store.putMessage(m).catch(() => undefined);
   }
@@ -705,7 +685,6 @@ export class ChatEngine {
         groups: this.coord.export(),
         channels: [...this.channels.keys()],
         blocked: [...this.blocked],
-        disappear: Object.fromEntries(this.convTtl),
         messages,
       },
       passphrase,
@@ -716,7 +695,7 @@ export class ChatEngine {
   async importBackup(text: string, passphrase: string): Promise<{ friends: number; groups: number; messages: number }> {
     const data = (await openBackup(text, passphrase)) as {
       v?: number; uid?: string; contacts?: ContactRecord[]; groups?: Record<string, unknown[]>; channels?: string[];
-      blocked?: string[]; disappear?: Record<string, number>; messages?: StoredMessage[];
+      blocked?: string[]; messages?: StoredMessage[];
     } | null;
     if (!data || data.v !== 1 || typeof data.uid !== 'string') throw new Error('That did not open. Check the passphrase and that this is a PrivCord backup file.');
     if (data.uid !== this.identity.uid) throw new Error('This backup belongs to a different identity. Restore your 12-word recovery phrase first, then import it.');
@@ -741,7 +720,6 @@ export class ChatEngine {
       await this.deps.store.putMessage(m).catch(() => undefined);
       added += 1;
     }
-    for (const [id, sec] of Object.entries(data.disappear ?? {})) if (!this.convTtl.has(id)) this.convTtl.set(id, sec);
     for (const uid of data.blocked ?? []) this.blocked.add(uid);
     for (const name of data.channels ?? []) await this.joinChannel(name, true).catch(() => undefined);
     this.emit({ notice: `Restored ${friends} friend${friends === 1 ? '' : 's'}, ${groups} group${groups === 1 ? '' : 's'} and ${added} message${added === 1 ? '' : 's'}.` });
@@ -1117,10 +1095,8 @@ export class ChatEngine {
       const blocked = this.cannotWrite(convId);
       if (blocked) return { ok: false, error: blocked };
       if (convId.startsWith('chan:')) return await this.sendChannel(convId.slice(5), rawText);
-      const ttlSec = this.convTtl.get(convId);
       const base = {
         ...createOutgoingMessage({ senderId: this.identity.uid, text: rawText, replyTo: this.replyFor(convId, replyToId) }),
-        ...(ttlSec ? { ttlSec } : {}),
       };
       const recipients: Record<string, DeliveryState> = {};
       for (const uid of this.recipientsOfConversation(convId)) recipients[uid] = 'QUEUED';
@@ -1129,7 +1105,6 @@ export class ChatEngine {
         conversationId: convId,
         recipients,
         deliveryState: Object.keys(recipients).length ? 'QUEUED' : 'SENT',
-        ...(ttlSec ? { expiresAt: base.clientCreatedAt + ttlSec * 1000 } : {}),
       };
       this.msgs.set(message.messageId, message);
       await this.deps.store.putMessage(message);
@@ -1158,10 +1133,8 @@ export class ChatEngine {
       const messageId = crypto.randomUUID();
       const recipients: Record<string, DeliveryState> = {};
       for (const uid of this.recipientsOfConversation(convId)) recipients[uid] = 'QUEUED';
-      const ttlSec = this.convTtl.get(convId);
       const offer = await makeFileOffer({
         messageId,
-        ttl: ttlSec,
         groupId: isGroup ? convId : undefined,
         name,
         mime: file.mime,
@@ -1184,7 +1157,6 @@ export class ChatEngine {
         recipients,
         file: { name, mime: offer.mime, size: offer.size, sha256: offer.sha256 },
         ...(offer.replyTo ? { replyTo: offer.replyTo } : {}),
-        ...(ttlSec ? { ttlSec, expiresAt: offer.clientCreatedAt + ttlSec * 1000 } : {}),
       };
       this.msgs.set(messageId, message);
       await this.deps.store.putMessage(message);
@@ -1227,7 +1199,6 @@ export class ChatEngine {
       text: m.text,
       clientCreatedAt: m.clientCreatedAt,
       ...(m.replyTo ? { replyTo: m.replyTo } : {}),
-      ...(m.ttlSec ? { ttl: m.ttlSec } : {}),
     };
   }
 
@@ -1269,8 +1240,7 @@ export class ChatEngine {
         sha256: m.file.sha256,
         clientCreatedAt: m.clientCreatedAt,
         ...(m.replyTo ? { replyTo: m.replyTo } : {}),
-        ...(m.ttlSec ? { ttl: m.ttlSec } : {}),
-      };
+        };
       if (!link.sendJson(offer)) return;
       let sentChunks = 0;
       const total = Math.ceil(bytes.length / 12288);
@@ -1421,7 +1391,6 @@ export class ChatEngine {
     const exists = this.msgs.has(message.messageId);
     if (!exists) {
       message.deliveryState = 'DELIVERED';
-      if (message.ttlSec) message.expiresAt = Date.now() + message.ttlSec * 1000;
       if (this.active === convId && this.visible) message.readAt = Date.now();
       this.msgs.set(message.messageId, message);
       void this.deps.store.putMessage(message).catch(() => undefined);
@@ -1449,7 +1418,6 @@ export class ChatEngine {
           readAt: null,
           conversationId: frame.groupId,
           ...(frame.replyTo ? { replyTo: frame.replyTo } : {}),
-          ...(frame.ttl ? { ttlSec: frame.ttl } : {}),
         },
         from,
         frame.groupId,
@@ -1531,7 +1499,6 @@ export class ChatEngine {
         conversationId: convId,
         file: { name: offer.name, mime: offer.mime, size: offer.size, sha256: offer.sha256 },
         ...(offer.replyTo ? { replyTo: offer.replyTo } : {}),
-        ...(offer.ttl ? { ttlSec: offer.ttl } : {}),
       },
       uid,
       convId,
@@ -1844,7 +1811,6 @@ export class ChatEngine {
           if (link.transport && !link.ready) link.close();
         }
       }
-      this.purgeExpired(now);
       for (const [uid, asm] of this.assemblers) {
         if (asm.activeCount > 0 && now - (this.lastChunkAt.get(uid) ?? 0) > STALL_MS) asm.clear();
       }
@@ -2178,7 +2144,7 @@ export class ChatEngine {
       last: this.last(`chan:${name}`),
       conn: c.hub.status() === 'online' ? 'connected' : 'connecting',
     }));
-    return { ...this.state, disappearing: Object.fromEntries(this.convTtl), channels, requests, contacts, groups, messages, queued, storageBackend: this.deps.store.backend, signaling: this.hub?.status() ?? 'idle' };
+    return { ...this.state, channels, requests, contacts, groups, messages, queued, storageBackend: this.deps.store.backend, signaling: this.hub?.status() ?? 'idle' };
   }
 }
 

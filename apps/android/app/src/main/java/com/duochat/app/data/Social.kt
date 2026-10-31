@@ -11,33 +11,12 @@ import javax.crypto.spec.PBEKeySpec
 import javax.crypto.spec.SecretKeySpec
 
 /*
- * Delete for everyone, reactions, disappearing messages and encrypted backups. Port of
+ * Delete for everyone, reactions and encrypted backups. Port of
  * packages/protocol/src/social.ts and backup.ts; the frames and the backup file are byte-compatible.
  * None of this can be enforced against a modified app: a receiver who wants to keep a message can.
  */
 
 val REACTION_EMOJI = listOf("👍", "❤️", "😂", "😮", "😢", "🙏")
-
-/** Off, one hour, one day, one week. */
-val DISAPPEAR_OPTIONS = listOf(0, 3600, 86_400, 604_800)
-const val MAX_DISAPPEAR_SEC = 30 * 86_400
-
-/** The lifetime in seconds, or null when absent. Throws for a present but disallowed value, so the frame is dropped. */
-fun parseTtl(json: JSONObject, key: String = "ttl"): Int? {
-    if (!json.has(key)) return null
-    val v = json.opt(key) as? Number ?: throw IllegalArgumentException("bad ttl")
-    val d = v.toDouble()
-    if (d != Math.floor(d) || d < 1 || d > MAX_DISAPPEAR_SEC) throw IllegalArgumentException("bad ttl")
-    return d.toInt()
-}
-
-fun describeDisappear(sec: Int): String = when {
-    sec <= 0 -> "Off"
-    sec % 604_800 == 0 -> "${sec / 604_800} week${if (sec == 604_800) "" else "s"}"
-    sec % 86_400 == 0 -> "${sec / 86_400} day${if (sec == 86_400) "" else "s"}"
-    sec % 3600 == 0 -> "${sec / 3600} hour${if (sec == 3600) "" else "s"}"
-    else -> "$sec seconds"
-}
 
 fun deleteFrame(messageId: String): JSONObject = JSONObject().put("v", 1).put("kind", "delete").put("messageId", messageId)
 

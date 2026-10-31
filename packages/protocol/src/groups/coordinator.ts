@@ -3,7 +3,6 @@ import { validateBlob, type SealedBlob } from '../connectivity/seal';
 import type { PrivateJwk } from '../e2ee';
 import { MAX_GROUP_MEMBERS } from '../constants';
 import { validateClientMessageId, validateIncomingText, validateReply, type ReplyRef } from '../message';
-import { parseTtl } from '../social';
 import { isGroupEventShape, signGroupEvent, type GroupEvent } from './events';
 import { GroupLog, type GroupState } from './log';
 
@@ -26,7 +25,6 @@ export interface GroupMessageFrame {
   text: string;
   clientCreatedAt: number;
   replyTo?: ReplyRef;
-  ttl?: number;
 }
 /** Ask a mutual contact to pass a sealed blob on to someone we cannot reach directly (signaling without internet). */
 export interface RelayBlobFrame { v: 1; kind: 'relay_blob'; blob: SealedBlob; hops: number }
@@ -54,7 +52,7 @@ export function parseGroupFrame(value: unknown): GroupFrame | null {
     case 'gmsg':
       return typeof f.groupId === 'string' && validateClientMessageId(f.messageId) && validateIncomingText(f.text) &&
         typeof f.clientCreatedAt === 'number' && Number.isFinite(f.clientCreatedAt) && f.clientCreatedAt > 0 &&
-        (f.replyTo === undefined || validateReply(f.replyTo)) && parseTtl(f.ttl) !== null
+        (f.replyTo === undefined || validateReply(f.replyTo))
         ? (f as unknown as GroupMessageFrame)
         : null;
     case 'relay_blob':
