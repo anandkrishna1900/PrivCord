@@ -774,6 +774,43 @@ await scenario(16, 'six-word invite: words (not a long string) connect two peopl
   check(errs.length === 0, 'no page errors', errs);
 });
 
+/* 17 ----------------------------------------------------------------- */
+await scenario(17, 'themes: 15 built-in colour themes apply, survive a reload, and Classic restores the original', async (ctx) => {
+  const relay = await startRelay(false);
+  ctx.cleanups.push(relay.close);
+  const dev = await namedDevice(ctx, relayNet(relay.url), 'Theme');
+  const page = dev.page;
+  const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor + '|' + getComputedStyle(document.documentElement).getPropertyValue('--accent').trim());
+  const classic = await bg();
+  await page.click('button[aria-label="Settings"]');
+  await page.click('.tab:has-text("Appearance")');
+  const names = await page.locator('.theme-tile span:last-child').allInnerTexts();
+  check(names.length >= 11 && names[0] === 'Classic', 'Classic plus at least ten named themes', names);
+  const seen = new Set();
+  for (const name of names.slice(1)) {
+    await page.click(`.theme-tile:has-text("${name}")`);
+    await page.waitForFunction((n) => document.querySelector('.theme-tile.active')?.textContent?.includes(n), name);
+    const look = await bg();
+    check(!seen.has(look), `${name} looks different from the others`, look);
+    seen.add(look);
+  }
+  ctx.note(`${names.length - 1} themes, each with its own background and accent`);
+  await page.click('.theme-tile:has-text("Nord")');
+  const nord = await bg();
+  await page.keyboard.press('Escape');
+  await page.reload();
+  await page.waitForSelector('.sidebar', { timeout: 20000 });
+  check((await bg()) === nord, 'the chosen theme is still there after a reload');
+  await page.click('button[aria-label="Settings"]');
+  await page.click('.tab:has-text("Appearance")');
+  await page.click('.theme-tile:has-text("Classic")');
+  await page.waitForFunction((c) => true, classic);
+  check((await bg()) === classic, 'Classic brings the original look back');
+  check((await page.locator('.swatches').count()) === 1, 'accent colours return with Classic');
+  ctx.note('theme persists across reload; Classic restores the original');
+  check(dev.errors.length === 0, 'no page errors', dev.errors);
+});
+
 console.log('\n=== SUMMARY ===');
 for (const r of results) console.log(`${r.status}  #${r.id}  ${r.name}`);
 fs.writeFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), 'last-results.json'), JSON.stringify(results, null, 2));

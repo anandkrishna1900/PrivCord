@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.update
 data class AppSettings(
     val theme: String = "system",
     val accent: String = ACCENTS.first().second,
+    /** A built-in colour theme (see Themes.kt), or "classic" for the system light/dark look with the accent picker. */
+    val palette: String = CLASSIC_PALETTE,
     val notificationsEnabled: Boolean = true,
     val notificationPreviews: Boolean = true,
     /** Local nickname the single paired friend had before multi-contact; used once to migrate it. */
@@ -49,6 +51,7 @@ class SettingsRepository(context: Context) {
         prefs.edit()
             .putString("theme", next.theme)
             .putString("accent", next.accent)
+            .putString("palette", next.palette)
             .putBoolean("notificationsEnabled", next.notificationsEnabled)
             .putBoolean("notificationPreviews", next.notificationPreviews)
             .putString("peerNickname", next.peerNickname)
@@ -66,6 +69,7 @@ class SettingsRepository(context: Context) {
         return AppSettings(
             theme = if (theme in setOf("system", "dark", "light")) theme else "system",
             accent = if (Regex("^#[0-9a-fA-F]{6}$").matches(accent)) accent else ACCENTS.first().second,
+            palette = (prefs.getString("palette", CLASSIC_PALETTE) ?: CLASSIC_PALETTE).let { if (it == CLASSIC_PALETTE || themeById(it) != null) it else CLASSIC_PALETTE },
             notificationsEnabled = prefs.getBoolean("notificationsEnabled", true),
             notificationPreviews = prefs.getBoolean("notificationPreviews", true),
             peerNickname = (prefs.getString("peerNickname", "") ?: "").trim().take(40),

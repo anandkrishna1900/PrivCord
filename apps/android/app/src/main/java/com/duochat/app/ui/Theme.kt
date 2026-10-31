@@ -12,6 +12,9 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.duochat.app.data.AppSettings
+import com.duochat.app.data.accentFill
+import com.duochat.app.data.mixColors
+import com.duochat.app.data.themeById
 
 private val typography = Typography(
     headlineMedium = TextStyle(fontSize = 28.sp, fontWeight = FontWeight.SemiBold),
@@ -25,13 +28,34 @@ private val typography = Typography(
 
 @Composable
 fun DuoChatTheme(settings: AppSettings, content: @Composable () -> Unit) {
-    val dark = when (settings.theme) {
+    val themed = themeById(settings.palette)
+    val dark = themed?.dark ?: when (settings.theme) {
         "dark" -> true
         "light" -> false
         else -> isSystemInDarkTheme()
     }
     val accent = parseColor(settings.accent)
-    val scheme = if (dark) {
+    val scheme = if (themed != null) {
+        val t = themed
+        val text = Color(t.text)
+        val fill = Color(accentFill(t.accent))
+        val base = if (t.dark) darkColorScheme() else lightColorScheme()
+        base.copy(
+            primary = fill,
+            onPrimary = Color.White,
+            primaryContainer = Color(t.accent).copy(alpha = if (t.dark) 0.26f else 0.16f),
+            onPrimaryContainer = text,
+            secondary = Color(t.accent),
+            background = Color(t.bg),
+            onBackground = text,
+            surface = Color(t.surface),
+            onSurface = text,
+            surfaceVariant = Color(mixColors(t.surface, t.text, 0.10f)),
+            onSurfaceVariant = Color(mixColors(t.text, t.bg, 0.30f)),
+            error = if (t.dark) Color(0xFFFFB4AB) else Color(0xFFB3261E),
+            outline = Color(mixColors(t.bg, t.text, 0.22f)),
+        )
+    } else if (dark) {
         darkColorScheme(
             primary = accent,
             onPrimary = Color.White,

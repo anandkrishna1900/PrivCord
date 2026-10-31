@@ -15,6 +15,7 @@ Bluetooth.
 - **Reply** to any message. The quote shows for everyone, in chats and groups.
 - **Send files up to 8 MB.** Photos and videos show a preview you can open; every file can be saved.
   They go straight to the other device, free, with no upload to anyone's server.
+- **Make it yours.** 15 built-in color themes (Midnight, AMOLED black, Nord, Dracula, Solarized, Paper, Sky, Mint and more) plus the classic light/dark look, on both Windows and Android. Settings > Appearance.
 - **Lock the app.** Android asks for your fingerprint, face or screen lock; Windows asks for Windows Hello
   (a passkey). Turn it on or off in Settings > Security.
 - **Make groups of up to 10.** Create a group, add friends, and anyone in the group can add more people.

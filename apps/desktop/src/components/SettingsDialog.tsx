@@ -3,6 +3,7 @@ import { disableLock, enableLock, isLockEnabled, lockSupported, unlock } from '.
 import type { ChatEngine, ChatState } from '../lib/engine';
 import type { AppSettings, ThemeMode } from '../lib/settings';
 import { ACCENTS } from '../lib/settings';
+import { THEMES, themeVars } from '../lib/themes';
 import { ensureNotificationPermission } from '../lib/notifications';
 import { config } from '../config';
 import { Modal } from './Modal';
@@ -207,6 +208,40 @@ export function SettingsDialog({
         {section === 'appearance' ? (
           <section className="settings-section">
             <div className="setting-block">
+              <span className="setting-label">Color theme</span>
+              <div className="theme-grid" role="group" aria-label="Color theme">
+                <button
+                  type="button"
+                  className={`theme-tile ${settings.palette === 'classic' ? 'active' : ''}`}
+                  onClick={() => updateSettings({ palette: 'classic' })}
+                  aria-pressed={settings.palette === 'classic'}
+                >
+                  <span className="theme-preview classic" aria-hidden="true" />
+                  <span>Classic</span>
+                </button>
+                {THEMES.map((t) => {
+                  const v = themeVars(t);
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      className={`theme-tile ${settings.palette === t.id ? 'active' : ''}`}
+                      onClick={() => updateSettings({ palette: t.id })}
+                      aria-pressed={settings.palette === t.id}
+                    >
+                      <span className="theme-preview" style={{ background: t.bg, borderColor: v['--border-strong'] }} aria-hidden="true">
+                        <span style={{ background: t.surface }} />
+                        <span style={{ background: v['--accent-fill'] }} />
+                      </span>
+                      <span>{t.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            {settings.palette === 'classic' ? (
+              <>
+            <div className="setting-block">
               <span className="setting-label">Theme</span>
               <div className="segmented" role="group" aria-label="Theme">
                 {(['system', 'dark', 'light'] as ThemeMode[]).map((theme) => (
@@ -241,6 +276,10 @@ export function SettingsDialog({
                 ))}
               </div>
             </div>
+              </>
+            ) : (
+              <p className="muted small">The color theme sets the light or dark look and the accent color.</p>
+            )}
             <Toggle
               label="Notifications"
               description="Show a system notification for new messages while the app is open."
