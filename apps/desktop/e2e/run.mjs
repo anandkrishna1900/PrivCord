@@ -870,6 +870,55 @@ await scenario(18, 'open channels: three strangers share #general, messages are 
   check(errs.length === 0, 'no page errors', errs);
 });
 
+/* 19 ----------------------------------------------------------------- */
+await scenario(19, 'scrolling: opens at the newest message, follows new ones, stays put while reading old ones, jump button returns', async (ctx) => {
+  const relay = await startRelay(false);
+  ctx.cleanups.push(relay.close);
+  const [A, B] = [await namedDevice(ctx, relayNet(relay.url), 'Ann'), await namedDevice(ctx, relayNet(relay.url), 'Ben')];
+  await befriend(A, B);
+  await openChat(A.page, 'Ben');
+  await openChat(B.page, 'Ann');
+  await connected(A.page, 120000);
+  for (let i = 1; i <= 60; i += 1) await say(A.page, `line ${i}`);
+  await B.page.waitForSelector('.bubble-text:text-is("line 60")', { timeout: 60000 });
+  const gap = (page) => page.evaluate(() => { const e = document.querySelector('.message-scroll'); return Math.round(e.scrollHeight - e.scrollTop - e.clientHeight); });
+  check((await gap(B.page)) <= 2, 'receiver is at the newest message', await gap(B.page));
+  // reopen: leaving and coming back lands at the bottom immediately
+  await openChat(B.page, 'Ann');
+  await B.page.reload();
+  await openChat(B.page, 'Ann');
+  await B.page.waitForSelector('.bubble-text:text-is("line 60")');
+  await sleep(300);
+  check((await gap(B.page)) <= 2, 'after a reload the chat opens at the bottom', await gap(B.page));
+  // a new message while at the bottom is followed
+  await say(A.page, 'line 61');
+  await B.page.waitForSelector('.bubble-text:text-is("line 61")');
+  await sleep(300);
+  check((await gap(B.page)) <= 2, 'a new message is followed', await gap(B.page));
+  // scroll up to read: new messages must not yank the view down
+  await B.page.hover('.message-scroll');
+  await B.page.mouse.wheel(0, -1500);
+  await sleep(300);
+  const before = await B.page.evaluate(() => document.querySelector('.message-scroll').scrollTop);
+  await say(A.page, 'line 62');
+  await B.page.waitForSelector('.bubble-text:text-is("line 62")');
+  await sleep(500);
+  const after = await B.page.evaluate(() => document.querySelector('.message-scroll').scrollTop);
+  check(Math.abs(after - before) < 4, 'reading old messages is not interrupted', { before, after });
+  await B.page.waitForSelector('.jump-latest:has-text("1 new message")', { timeout: 5000 });
+  await B.page.click('.jump-latest');
+  await B.page.waitForFunction(() => { const e = document.querySelector('.message-scroll'); return e.scrollHeight - e.scrollTop - e.clientHeight < 3; }, null, { timeout: 5000 });
+  check((await B.page.locator('.jump-latest').count()) === 0, 'the jump button goes away');
+  // sending your own message always brings you to the bottom
+  await B.page.mouse.wheel(0, -1500);
+  await sleep(300);
+  await say(B.page, 'my reply');
+  await B.page.waitForFunction(() => { const e = document.querySelector('.message-scroll'); return e.scrollHeight - e.scrollTop - e.clientHeight < 3; }, null, { timeout: 5000 });
+  ctx.note('opens at the bottom, follows, does not yank while reading, jump button works, own message returns to the bottom');
+  const errs = [...A.errors, ...B.errors];
+  check(errs.length === 0, 'no page errors', errs);
+});
+
 console.log('\n=== SUMMARY ===');
 for (const r of results) console.log(`${r.status}  #${r.id}  ${r.name}`);
 fs.writeFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), 'last-results.json'), JSON.stringify(results, null, 2));

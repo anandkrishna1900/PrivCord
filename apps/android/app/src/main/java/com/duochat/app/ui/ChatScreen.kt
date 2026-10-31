@@ -281,6 +281,7 @@ fun ChatScreen(
             }
             MessageList(
                 messages = messages,
+                convId = conversationId,
                 selfUid = state.uid,
                 isGroup = group != null || channel != null,
                 canReply = channel == null,
@@ -341,6 +342,7 @@ private fun MessageList(
     onReply: (ChatMessage) -> Unit,
     loadFile: suspend (String) -> Pair<FileMeta, ByteArray>?,
     transfers: Map<String, Float>,
+    convId: String = "",
     canReply: Boolean = true,
     onMute: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -348,8 +350,42 @@ private fun MessageList(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val lastId = messages.lastOrNull()?.messageId
-    LaunchedEffect(lastId) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+    // True while the view follows the newest message. Dragging up turns it off; reaching the bottom turns it on.
+    var pinned by remember(convId) { mutableStateOf(true) }
+    var unseen by remember(convId) { mutableStateOf(0) }
+    var lastSeenId by remember(convId) { mutableStateOf<String?>(null) }
+    val atBottom by remember {
+        androidx.compose.runtime.derivedStateOf {
+            val info = listState.layoutInfo
+            val last = info.visibleItemsInfo.lastOrNull()
+            last == null || (last.index >= info.totalItemsCount - 1 && last.offset + last.size <= info.viewportEndOffset + 48)
+        }
+    }
+    LaunchedEffect(listState) {
+        androidx.compose.runtime.snapshotFlow { listState.isScrollInProgress to atBottom }.collect { (dragging, bottom) ->
+            if (dragging) pinned = bottom
+            if (bottom) unseen = 0
+        }
+    }
+    // New messages: open at the newest one, follow while pinned or when we sent it, otherwise count them.
+    LaunchedEffect(convId, lastId) {
+        if (messages.isEmpty() || lastId == lastSeenId) return@LaunchedEffect
+        val first = lastSeenId == null
+        lastSeenId = lastId
+        val mine = messages.last().senderId == selfUid
+        if (first) {
+            listState.scrollToItem(messages.lastIndex)
+        } else if (pinned || mine) {
+            pinned = true
+            listState.animateScrollToItem(messages.lastIndex)
+        } else {
+            unseen += 1
+        }
+    }
+    // Photos and videos change height after they appear: keep following the bottom while pinned.
+    val lastItemSize = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.size
+    LaunchedEffect(lastItemSize) {
+        if (pinned && messages.isNotEmpty()) listState.scrollToItem(messages.lastIndex)
     }
 
     if (messages.isEmpty()) {
@@ -375,9 +411,10 @@ private fun MessageList(
         return
     }
 
+    Box(modifier = modifier.fillMaxWidth()) {
     LazyColumn(
         state = listState,
-        modifier = modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
@@ -411,6 +448,17 @@ private fun MessageList(
                 )
             }
         }
+    }
+    if (unseen > 0) {
+        androidx.compose.material3.FilledTonalButton(
+            onClick = {
+                pinned = true
+                unseen = 0
+                scope.launch { listState.animateScrollToItem(messages.lastIndex) }
+            },
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp),
+        ) { Text("↓ $unseen new ${if (unseen == 1) "message" else "messages"}") }
+    }
     }
 }
 

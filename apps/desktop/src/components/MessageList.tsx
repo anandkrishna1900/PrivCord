@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { formatBytes, isInlineImage, isInlineVideo, type DeliveryState } from '@duochat/protocol';
 import type { FileMeta } from '../lib/localDb';
 import type { UiMessage } from '../lib/engine';
@@ -190,9 +190,11 @@ export function MessageList({
     window.setTimeout(() => el.classList.remove('flash'), 1400);
   }
   const scrollRef = useRef<HTMLDivElement>(null);
-  const atBottomRef = useRef(true);
-  const didInitialScroll = useRef(false);
+  const innerRef = useRef<HTMLDivElement>(null);
+  /** True while the view follows the newest message. Scrolling up by hand turns it off; reaching the bottom turns it on. */
+  const pinnedRef = useRef(true);
   const lastIdRef = useRef<string | undefined>(undefined);
+  const [unseen, setUnseen] = useState(0);
   const [copyStatus, setCopyStatus] = useState<'copied' | 'failed' | null>(null);
 
   async function handleCopy(text: string) {
@@ -201,28 +203,60 @@ export function MessageList({
     window.setTimeout(() => setCopyStatus(null), 1800);
   }
 
-  useEffect(() => {
-    didInitialScroll.current = false;
+  function toBottom(behavior: ScrollBehavior = 'auto') {
+    const element = scrollRef.current;
+    if (element) element.scrollTo({ top: element.scrollHeight, behavior });
+  }
+
+  // A new conversation opens at the newest message.
+  useLayoutEffect(() => {
+    pinnedRef.current = true;
     lastIdRef.current = undefined;
+    setUnseen(0);
+    toBottom();
   }, [convId]);
 
-  useEffect(() => {
-    const element = scrollRef.current;
-    if (!element) return;
+  // New messages: follow them while pinned (or when we sent it); otherwise count them for the jump button.
+  useLayoutEffect(() => {
     const last = messages[messages.length - 1];
-    const sentNew = last?.own && last.messageId !== lastIdRef.current;
+    const isNew = !!last && last.messageId !== lastIdRef.current;
+    const hadAny = lastIdRef.current !== undefined;
     lastIdRef.current = last?.messageId;
-    if (!didInitialScroll.current || atBottomRef.current || sentNew) {
-      element.scrollTop = element.scrollHeight;
-      didInitialScroll.current = true;
+    if (!isNew) return;
+    if (pinnedRef.current || last.own || !hadAny) {
+      pinnedRef.current = true;
+      toBottom();
+    } else if (!last.own) {
+      setUnseen((n) => n + 1);
     }
-  }, [messages, convId]);
+  }, [messages]);
+
+  // Photos, videos and quotes change height after they appear: keep following the bottom while pinned.
+  useEffect(() => {
+    const inner = innerRef.current;
+    if (!inner || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (pinnedRef.current) toBottom();
+    });
+    observer.observe(inner);
+    return () => observer.disconnect();
+  }, [messages.length === 0]);
 
   function onScroll() {
     const element = scrollRef.current;
     if (!element) return;
-    atBottomRef.current =
-      element.scrollHeight - element.scrollTop - element.clientHeight < 120;
+    const distance = element.scrollHeight - element.scrollTop - element.clientHeight;
+    if (distance < 40) {
+      pinnedRef.current = true;
+      setUnseen(0);
+    } else if (distance > 120) {
+      pinnedRef.current = false;
+    }
+  }
+
+  // Reading older messages must not be undone by a message arriving at the same moment.
+  function onWheel(event: React.WheelEvent) {
+    if (event.deltaY < 0) pinnedRef.current = false;
   }
 
   if (messages.length === 0) {
@@ -240,8 +274,8 @@ export function MessageList({
   let lastTimestamp = 0;
 
   return (
-    <div className="message-scroll" ref={scrollRef} onScroll={onScroll}>
-      <div className="message-inner">
+    <div className="message-scroll" ref={scrollRef} onScroll={onScroll} onWheel={onWheel} onTouchMove={() => { if (scrollRef.current && scrollRef.current.scrollHeight - scrollRef.current.scrollTop - scrollRef.current.clientHeight > 120) pinnedRef.current = false; }}>
+      <div className="message-inner" ref={innerRef}>
         {messages.map((message, index) => {
           const day = formatDay(message.clientCreatedAt);
           const showDay = day !== lastDay;
@@ -347,6 +381,19 @@ export function MessageList({
           );
         })}
       </div>
+      {unseen > 0 ? (
+        <button
+          type="button"
+          className="jump-latest"
+          onClick={() => {
+            pinnedRef.current = true;
+            setUnseen(0);
+            toBottom('smooth');
+          }}
+        >
+          ↓ {unseen} new {unseen === 1 ? 'message' : 'messages'}
+        </button>
+      ) : null}
       {copyStatus ? (
         <div
           className={`copy-toast ${copyStatus === 'failed' ? 'error' : ''}`}

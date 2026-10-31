@@ -977,7 +977,8 @@ textarea:focus {
   overflow-y: auto;
   overflow-x: hidden;
   padding: 18px 22px 6px;
-  scroll-behavior: smooth;
+  /* Not smooth: an animated programmatic scroll made the view lose the bottom while it was still moving. */
+  overflow-anchor: none;
 }
 
 .message-scroll.empty {
@@ -3421,4 +3422,20 @@ input[type='checkbox'] {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.jump-latest {
+  position: sticky;
+  bottom: 10px;
+  display: block;
+  margin: 0 auto;
+  padding: 7px 14px;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent-fill, var(--accent));
+  color: #fff;
+  font: inherit;
+  font-size: 0.8rem;
+  box-shadow: var(--shadow);
+  cursor: pointer;
 }
