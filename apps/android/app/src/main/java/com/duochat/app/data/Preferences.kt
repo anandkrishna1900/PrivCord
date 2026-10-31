@@ -27,6 +27,8 @@ data class AppSettings(
     val mesh: Boolean = false,
     /** Keep PrivCord running in the background (shows a small permanent notification) so messages arrive with the app closed. */
     val keepRunning: Boolean = false,
+    /** Panic wipe: tapping the app title three times quickly erases everything on this phone, with no questions. */
+    val panicWipe: Boolean = false,
     /** Ask for fingerprint, face or the screen-lock PIN/pattern/password to open the app (when the phone has one). */
     val appLock: Boolean = true,
     /** Conversation ids (contact uid / group id) whose notifications are muted. */
@@ -63,6 +65,7 @@ class SettingsRepository(context: Context) {
             .putBoolean("groupOnly", next.groupOnly)
             .putBoolean("mesh", next.mesh)
             .putBoolean("keepRunning", next.keepRunning)
+            .putBoolean("panicWipe", next.panicWipe)
             .putBoolean("appLock", next.appLock)
             .putStringSet("mutedChats", next.mutedChats)
             .putString("network", next.network.toJson())
@@ -83,6 +86,7 @@ class SettingsRepository(context: Context) {
             groupOnly = prefs.getBoolean("groupOnly", false),
             mesh = prefs.getBoolean("mesh", false),
             keepRunning = prefs.getBoolean("keepRunning", false),
+            panicWipe = prefs.getBoolean("panicWipe", false),
             appLock = prefs.getBoolean("appLock", true),
             mutedChats = prefs.getStringSet("mutedChats", emptySet())?.toSet() ?: emptySet(),
             network = NetworkConfig.fromJson(

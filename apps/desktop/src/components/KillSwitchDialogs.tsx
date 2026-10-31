@@ -7,7 +7,7 @@
  * "everything erased" when something failed.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   summarizeReport,
   type KillSwitchMode,
@@ -143,7 +143,9 @@ export function NukeDialog({
   uid,
   peerUid,
   onFinished,
+  autoRun = false,
 }: {
+  autoRun?: boolean;
   open: boolean;
   onClose: () => void;
   engine: ChatEngine | null;
@@ -205,6 +207,16 @@ export function NukeDialog({
     report !== null &&
     phase === 'result' &&
     summarizeReport(report).complete;
+
+  // Panic wipe: start at once, and leave as soon as everything is gone.
+  useEffect(() => {
+    if (open && autoRun && phase === 'setup') void execute();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, autoRun, phase]);
+  useEffect(() => {
+    if (autoRun && canFinish) void onFinished();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRun, canFinish]);
 
   return (
     <Modal

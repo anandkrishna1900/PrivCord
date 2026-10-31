@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -77,6 +78,7 @@ private fun RootScreen(viewModel: AppViewModel) {
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var manualOpen by rememberSaveable { mutableStateOf(false) }
     var nukeOpen by rememberSaveable { mutableStateOf(false) }
+    var panic by remember { mutableStateOf(false) }
     var channelsOpen by rememberSaveable { mutableStateOf(false) }
     var friendDialog by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -247,6 +249,7 @@ private fun RootScreen(viewModel: AppViewModel) {
                     onOpenSettings = { settingsOpen = true },
                     onClearNotice = viewModel::clearNotice,
                     onSearch = viewModel::search,
+                    onPanic = if (settings.panicWipe) ({ panic = true; nukeOpen = true }) else null,
                     onOpenConversation = { route = "chat:$it" },
                 )
             }
@@ -316,11 +319,13 @@ private fun RootScreen(viewModel: AppViewModel) {
 
     if (nukeOpen || killSwitchReport != null) {
         NukeDialog(
+            autoRun = panic,
             onDismiss = { nukeOpen = false },
             onRun = { viewModel.runNuke() },
             report = killSwitchReport,
             onDone = {
                 nukeOpen = false
+                panic = false
                 route = HOME
                 viewModel.acknowledgeKillSwitch()
             },

@@ -1033,6 +1033,25 @@ await scenario(20, 'delete for everyone, reactions, search, backup and restore, 
   check(errs.length === 0, 'no page errors', errs);
 });
 
+await scenario(21, 'panic wipe: off by default; once on, three quick Ctrl+Shift+Backspace erase everything with no questions', async (ctx) => {
+  const relay = await startRelay(false);
+  ctx.cleanups.push(relay.close);
+  const dev = await namedDevice(ctx, relayNet(relay.url), 'Panic');
+  const page = dev.page;
+  const press3 = async () => { for (let i = 0; i < 3; i += 1) await page.keyboard.press('Control+Shift+Backspace'); };
+  await press3();
+  await sleep(800);
+  check((await page.locator('.sidebar').count()) === 1, 'with the setting off nothing happens');
+  await page.click('button[aria-label="Settings"]');
+  await page.click('.tab:has-text("Security")');
+  await page.click('.toggle-row:has-text("Panic wipe") [role="switch"]');
+  await page.keyboard.press('Escape');
+  await press3();
+  await page.waitForSelector('.phrase-word-box', { timeout: 30000 });
+  check((await page.locator('.sidebar').count()) === 0, 'the app is back at onboarding with a new identity');
+  ctx.note('off by default; after turning it on, three quick presses wipe the device and restart at onboarding');
+});
+
 console.log('\n=== SUMMARY ===');
 for (const r of results) console.log(`${r.status}  #${r.id}  ${r.name}`);
 fs.writeFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), 'last-results.json'), JSON.stringify(results, null, 2));

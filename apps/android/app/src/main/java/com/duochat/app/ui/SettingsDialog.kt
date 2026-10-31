@@ -651,7 +651,13 @@ SectionTitle("Security")
                 HorizontalDivider()
                 Spacer(Modifier.height(14.dp))
 
-SectionTitle("Backup")
+ToggleRow(
+                    "Panic wipe",
+                    "Tap the DuoChat title on the home screen three times quickly and everything on this phone is erased at once, with no confirmation. Your 12 recovery words are the only way back, so keep them somewhere safe first.",
+                    settings.panicWipe,
+                ) { on -> onUpdateSettings { copy(panicWipe = on) } }
+                Spacer(Modifier.height(14.dp))
+                SectionTitle("Backup")
                 BackupSection(onExportBackup, onImportBackup)
                 Spacer(Modifier.height(18.dp))
                 HorizontalDivider()

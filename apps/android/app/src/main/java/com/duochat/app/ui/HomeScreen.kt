@@ -66,6 +66,7 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
     onClearNotice: () -> Unit,
     onSearch: (String) -> List<com.duochat.app.engine.ChatEngine.SearchHit> = { emptyList() },
+    onPanic: (() -> Unit)? = null,
     onOpenConversation: (String) -> Unit = {},
 ) {
     var query by remember { mutableStateOf("") }
@@ -75,7 +76,18 @@ fun HomeScreen(
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
-                title = { Text("DuoChat", fontWeight = FontWeight.Bold) },
+                title = {
+                    // Three quick taps on the title trigger the panic wipe when the person turned it on.
+                    var taps by remember { mutableStateOf(listOf<Long>()) }
+                    Text(
+                        "DuoChat", fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable(enabled = onPanic != null) {
+                            val now = System.currentTimeMillis()
+                            taps = (taps + now).filter { now - it < 1500 }
+                            if (taps.size >= 3) { taps = emptyList(); onPanic?.invoke() }
+                        },
+                    )
+                },
                 actions = {
                     IconButton(onClick = onOpenSettings) { Icon(Icons.Filled.Settings, contentDescription = "Settings") }
                 },

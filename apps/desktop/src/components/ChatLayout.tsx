@@ -67,6 +67,7 @@ export function ChatLayout({
     null | 'settings' | 'add' | 'group' | 'channels' | 'details' | 'manual' | 'nuke' | 'clear' | 'recovery'
   >(null);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('profile');
+  const [panic, setPanic] = useState(false);
   const [manualUid, setManualUid] = useState('');
   const [verifyUid, setVerifyUid] = useState<string | null>(null);
   const [replying, setReplying] = useState<UiMessage | null>(null);
@@ -74,6 +75,25 @@ export function ChatLayout({
   const [focusId, setFocusId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const loadFile = useCallback((id: string) => engine?.getFile(id) ?? Promise.resolve(null), [engine]);
+
+  // Panic wipe: three quick Ctrl+Shift+Backspace presses, when the user turned it on.
+  useEffect(() => {
+    if (!settings.panicWipe) return;
+    const times: number[] = [];
+    function onKey(e: KeyboardEvent) {
+      if (!(e.ctrlKey && e.shiftKey && e.key === 'Backspace')) return;
+      const now = Date.now();
+      times.push(now);
+      while (times.length && now - times[0]! > 2000) times.shift();
+      if (times.length >= 3) {
+        times.length = 0;
+        setPanic(true);
+        setDialog('nuke');
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [settings.panicWipe]);
 
   useEffect(() => {
     if (!engine) return;
@@ -491,6 +511,7 @@ export function ChatLayout({
         onOpenRecovery={() => setDialog('recovery')}
       />
       <NukeDialog
+        autoRun={panic}
         open={dialog === 'nuke'}
         onClose={() => setDialog(null)}
         engine={engine}

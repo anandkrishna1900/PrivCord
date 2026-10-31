@@ -112,6 +112,7 @@ fun NukeDialog(
     onRun: () -> Unit,
     report: KillSwitchReport?,
     onDone: () -> Unit,
+    autoRun: Boolean = false,
 ) {
     val steps = remember {
         KillSwitchPlans.planSteps(KillSwitchScope.APPLICATION, KillSwitchMode.LOCAL_ONLY)
@@ -123,6 +124,11 @@ fun NukeDialog(
     // between pressing the button and that point show a spinner.
     val running = launched && (report == null || report.finishedAt == null)
     val finished = launched && report != null && report.finishedAt != null
+    // Panic wipe: no questions, and straight back to the start once everything is gone.
+    androidx.compose.runtime.LaunchedEffect(autoRun) { if (autoRun && !launched) { launched = true; onRun() } }
+    androidx.compose.runtime.LaunchedEffect(autoRun, finished) {
+        if (autoRun && finished && summarizeReport(report!!).complete) onDone()
+    }
 
     Dialog(onDismissRequest = { if (!running) onDismiss() }) {
         Surface(

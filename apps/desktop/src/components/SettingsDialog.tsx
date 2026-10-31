@@ -422,6 +422,12 @@ export function SettingsDialog({
                 engine?.setGroupOnly(value);
               }}
             />
+            <Toggle
+              label="Panic wipe"
+              description="Press Ctrl+Shift+Backspace three times within two seconds and everything on this device is erased immediately, with no confirmation. Your 12 recovery words are the only way back, so keep them somewhere safe first."
+              checked={settings.panicWipe}
+              onChange={(value) => updateSettings({ panicWipe: value })}
+            />
             <div className="card-box">
               <div className="card-title">
                 <KeyIcon size={18} />
