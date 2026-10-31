@@ -13,6 +13,15 @@ import com.duochat.app.data.ContactView
 import com.duochat.app.data.ConnectionPath
 import com.duochat.app.data.AssembleResult
 import com.duochat.app.data.DeclineReason
+import com.duochat.app.data.Backup
+import com.duochat.app.data.REACTION_EMOJI
+import com.duochat.app.data.ReactionEvent
+import com.duochat.app.data.deleteFrame
+import com.duochat.app.data.parseDelete
+import com.duochat.app.data.parseReact
+import com.duochat.app.data.reactFrame
+import com.duochat.app.data.summarizeReactions
+import org.json.JSONArray
 import com.duochat.app.data.FileAssembler
 import com.duochat.app.data.FileChunk
 import com.duochat.app.data.FileMeta
@@ -495,7 +504,6 @@ class ChatEngine(
     private suspend fun tombstone(m: ChatMessage) {
         val dead = m.copy(deleted = true, text = "", file = null, type = MessageType.TEXT, reactions = emptyMap(), replyTo = null, expiresAt = null)
         messages[m.messageId] = dead
-        outbox.values.removeAll { it.messageId == m.messageId && !friends.containsKey(it.recipientId).not() && false }
         runCatching { store.putMessage(dead) }
         runCatching { withContext(Dispatchers.IO) { store.deleteFileOnly(m.messageId) } }
     }
@@ -630,7 +638,7 @@ class ChatEngine(
         val groups = data.optJSONObject("groups")
         val known = coordinator?.groupIds().orEmpty().toSet()
         val missing = HashMap<String, List<Any?>>()
-        for (id in groups?.keys().orEmpty().asSequence().toList()) {
+        for (id in groups?.keys()?.asSequence()?.toList().orEmpty()) {
             if (id in known) continue
             val a = groups!!.getJSONArray(id)
             missing[id] = List(a.length()) { a.get(it) }
