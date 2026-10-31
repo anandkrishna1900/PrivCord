@@ -226,6 +226,9 @@ private fun RootScreen(viewModel: AppViewModel) {
                         onClearChat = { viewModel.clearChat(openChatId) },
                         onLeaveChannel = { viewModel.leaveChannel(openChatId); route = HOME },
                         onMuteSender = viewModel::muteSender,
+                        onDeleteMessage = viewModel::deleteMessage,
+                        onReact = viewModel::react,
+                        onSetDisappearing = { viewModel.setDisappearing(openChatId, it) },
                         onEnableStoreForward = { viewModel.updateSettings { copy(network = network.copy(storeForward = true)) } },
                         onOpenConnectionSettings = { settingsOpen = true },
                         onConnectBluetooth = {
@@ -244,6 +247,8 @@ private fun RootScreen(viewModel: AppViewModel) {
                     onChannels = { channelsOpen = true },
                     onOpenSettings = { settingsOpen = true },
                     onClearNotice = viewModel::clearNotice,
+                    onSearch = viewModel::search,
+                    onOpenConversation = { route = "chat:$it" },
                 )
             }
 
@@ -286,6 +291,8 @@ private fun RootScreen(viewModel: AppViewModel) {
                     },
                     onOpenNuke = { nukeOpen = true },
                     onBluetoothPermissionResult = viewModel::refreshBluetooth,
+                    onExportBackup = viewModel::exportBackup,
+                    onImportBackup = viewModel::importBackup,
                 )
             }
 

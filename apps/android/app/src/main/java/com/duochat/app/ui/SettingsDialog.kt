@@ -79,6 +79,8 @@ fun SettingsDialog(
     onOpenManual: () -> Unit,
     onOpenNuke: () -> Unit,
     onBluetoothPermissionResult: () -> Unit = {},
+    onExportBackup: (String, (Result<String>) -> Unit) -> Unit = { _, _ -> },
+    onImportBackup: (String, String, (Result<String>) -> Unit) -> Unit = { _, _, _ -> },
 ) {
     var displayName by remember { mutableStateOf(settings.displayName) }
     var nameStatus by remember { mutableStateOf<String?>(null) }
@@ -624,6 +626,12 @@ SectionTitle("Security")
                     }
                 }
 
+                Spacer(Modifier.height(18.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(14.dp))
+
+SectionTitle("Backup")
+                BackupSection(onExportBackup, onImportBackup)
                 Spacer(Modifier.height(18.dp))
                 HorizontalDivider()
                 Spacer(Modifier.height(14.dp))

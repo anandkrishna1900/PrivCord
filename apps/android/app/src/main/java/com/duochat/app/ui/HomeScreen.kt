@@ -36,6 +36,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,7 +65,11 @@ fun HomeScreen(
     onChannels: () -> Unit,
     onOpenSettings: () -> Unit,
     onClearNotice: () -> Unit,
+    onSearch: (String) -> List<com.duochat.app.engine.ChatEngine.SearchHit> = { emptyList() },
+    onOpenConversation: (String) -> Unit = {},
 ) {
+    var query by remember { mutableStateOf("") }
+    val hits = remember(query, state.messages) { if (query.trim().length >= 2) onSearch(query) else emptyList() }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -111,6 +119,24 @@ fun HomeScreen(
                 EmptyHome(onAddFriend)
                 TextButton(onClick = onChannels, modifier = Modifier.fillMaxWidth()) { Text("Or join a public channel") }
             } else {
+                androidx.compose.material3.OutlinedTextField(
+                    value = query, onValueChange = { query = it }, singleLine = true,
+                    placeholder = { Text("Search messages on this phone") },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+                )
+                if (query.trim().length >= 2) {
+                    LazyColumn(Modifier.fillMaxSize()) {
+                        if (hits.isEmpty()) item { Text("No matches.", modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        items(hits, key = { h -> h.messageId }) { h ->
+                            Column(Modifier.fillMaxWidth().clickable { onOpenConversation(h.conversationId); query = "" }.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                                Text("${h.conversationName} · ${h.senderName}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                Text(h.text, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+                            }
+                            HorizontalDivider()
+                        }
+                    }
+                } else
                 LazyColumn(Modifier.fillMaxSize()) {
                     items(state.chats, key = { it.id }) { chat ->
                         ChatRow(chat) { onOpenChat(chat) }

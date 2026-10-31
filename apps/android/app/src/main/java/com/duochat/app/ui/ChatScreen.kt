@@ -11,9 +11,11 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
@@ -143,6 +145,9 @@ fun ChatScreen(
     onConnectBluetooth: () -> Unit,
     onLeaveChannel: () -> Unit,
     onMuteSender: (String) -> Unit,
+    onDeleteMessage: (String, Boolean) -> Unit = { _, _ -> },
+    onReact: (String, String) -> Unit = { _, _ -> },
+    onSetDisappearing: (Int) -> Unit = {},
     onEnableStoreForward: () -> Unit = {},
     onOpenConnectionSettings: () -> Unit = {},
 ) {
@@ -154,6 +159,7 @@ fun ChatScreen(
     val canWrite = state.phase == EnginePhase.READY && (friend != null || group?.iAmMember == true || channel != null)
     var menuOpen by remember { mutableStateOf(false) }
     var clearConfirm by remember { mutableStateOf(false) }
+    var disappearOpen by remember { mutableStateOf(false) }
     var replyingTo by remember(conversationId) { mutableStateOf<ChatMessage?>(null) }
     val directBlocked = friend != null && !friend.direct
 
@@ -214,6 +220,13 @@ fun ChatScreen(
                                 DropdownMenuItem(
                                     text = { Text("Connect over Bluetooth") },
                                     onClick = { menuOpen = false; onConnectBluetooth() },
+                                )
+                            }
+                            if (channel == null) {
+                                val cur = state.disappearing[conversationId] ?: 0
+                                DropdownMenuItem(
+                                    text = { Text("Disappearing messages: ${com.duochat.app.data.describeDisappear(cur)}") },
+                                    onClick = { menuOpen = false; disappearOpen = true },
                                 )
                             }
                             DropdownMenuItem(text = { Text("Clear this chat") }, onClick = { menuOpen = false; clearConfirm = true })
@@ -306,11 +319,32 @@ fun ChatScreen(
                 nameOf = { uid -> group?.members?.firstOrNull { it.uid == uid }?.name ?: friend?.name ?: "Member" },
                 onRetry = onRetry,
                 onReply = { replyingTo = it },
+                onDelete = onDeleteMessage,
+                onReact = onReact,
                 loadFile = loadFile,
                 transfers = state.transfers,
                 modifier = Modifier.weight(1f),
             )
         }
+    }
+
+    if (disappearOpen) {
+        AlertDialog(
+            onDismissRequest = { disappearOpen = false },
+            title = { Text("Disappearing messages") },
+            text = {
+                Column {
+                    Text("New messages in this chat are removed from both phones after the time you pick. Anyone can still copy or screenshot them.", style = MaterialTheme.typography.bodySmall)
+                    com.duochat.app.data.DISAPPEAR_OPTIONS.forEach { sec ->
+                        TextButton(onClick = { onSetDisappearing(sec); disappearOpen = false }) {
+                            Text(com.duochat.app.data.describeDisappear(sec) + if ((state.disappearing[conversationId] ?: 0) == sec) "  ✓" else "")
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { disappearOpen = false }) { Text("Close") } },
+        )
     }
 
     if (clearConfirm) {
@@ -357,6 +391,8 @@ private fun MessageList(
     nameOf: (String) -> String,
     onRetry: (String) -> Unit,
     onReply: (ChatMessage) -> Unit,
+    onDelete: (String, Boolean) -> Unit,
+    onReact: (String, String) -> Unit,
     loadFile: suspend (String) -> Pair<FileMeta, ByteArray>?,
     transfers: Map<String, Float>,
     convId: String = "",
@@ -455,6 +491,9 @@ private fun MessageList(
                     grouped = grouped,
                     onRetry = onRetry,
                     onReply = onReply,
+                    onDelete = onDelete,
+                    onReact = onReact,
+                    selfUid = selfUid,
                     loadFile = loadFile,
                     progress = transfers[message.messageId],
                     quotedName = message.replyTo?.let { r -> if (r.author == selfUid) "You" else nameOf(r.author) },
@@ -502,6 +541,9 @@ private fun MessageBubble(
     grouped: Boolean,
     onRetry: (String) -> Unit,
     onReply: (ChatMessage) -> Unit,
+    onDelete: (String, Boolean) -> Unit,
+    onReact: (String, String) -> Unit,
+    selfUid: String,
     loadFile: suspend (String) -> Pair<FileMeta, ByteArray>?,
     progress: Float?,
     quotedName: String?,
@@ -555,10 +597,25 @@ private fun MessageBubble(
                             }
                         }
                     }
-                    if (message.type == MessageType.FILE && message.file != null) {
+                    if (message.deleted) {
+                        Text("This message was deleted", style = MaterialTheme.typography.bodyMedium, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, color = bodyColor.copy(alpha = 0.7f))
+                    } else if (message.type == MessageType.FILE && message.file != null) {
                         FileContent(message, bodyColor, loadFile, progress)
                     } else {
                         Text(text = message.text, style = MaterialTheme.typography.bodyLarge, color = bodyColor)
+                    }
+                    val chips = com.duochat.app.data.summarizeReactions(message.reactions, selfUid)
+                    if (chips.isNotEmpty() && !message.deleted) {
+                        Spacer(Modifier.height(4.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            chips.forEach { c ->
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = bodyColor.copy(alpha = if (c.mine) 0.30f else 0.14f),
+                                    modifier = Modifier.clickable { onReact(message.messageId, c.emoji) },
+                                ) { Text(if (c.count > 1) "${c.emoji} ${c.count}" else c.emoji, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)) }
+                            }
+                        }
                     }
                     Spacer(Modifier.height(3.dp))
                     Row(modifier = Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically) {
@@ -580,7 +637,12 @@ private fun MessageBubble(
                 }
             }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                if (canReply) DropdownMenuItem(
+                if (!message.deleted) Row(Modifier.padding(horizontal = 8.dp)) {
+                    com.duochat.app.data.REACTION_EMOJI.forEach { e ->
+                        TextButton(onClick = { menuOpen = false; onReact(message.messageId, e) }, contentPadding = PaddingValues(6.dp), modifier = Modifier.widthIn(min = 36.dp)) { Text(e) }
+                    }
+                }
+                if (canReply && !message.deleted) DropdownMenuItem(
                     text = { Text("Reply") },
                     leadingIcon = { Icon(Icons.AutoMirrored.Filled.Reply, contentDescription = null, modifier = Modifier.size(18.dp)) },
                     onClick = { menuOpen = false; onReply(message) },
@@ -589,7 +651,15 @@ private fun MessageBubble(
                     text = { Text("Mute this person") },
                     onClick = { menuOpen = false; onMute(message.senderId) },
                 )
-                if (message.type == MessageType.TEXT) DropdownMenuItem(
+                if (!message.deleted) DropdownMenuItem(
+                    text = { Text("Delete for me") },
+                    onClick = { menuOpen = false; onDelete(message.messageId, false) },
+                )
+                if (own && !message.deleted && canReply) DropdownMenuItem(
+                    text = { Text("Delete for everyone") },
+                    onClick = { menuOpen = false; onDelete(message.messageId, true) },
+                )
+                if (message.type == MessageType.TEXT && !message.deleted) DropdownMenuItem(
                     text = { Text("Copy message") },
                     leadingIcon = { Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp)) },
                     onClick = {
@@ -714,6 +784,34 @@ private fun FileContent(message: ChatMessage, color: Color, loadFile: suspend (S
             }
             Spacer(Modifier.height(6.dp))
         }
+        if (com.duochat.app.data.isInlineAudio(meta.mime)) {
+            val audioFile by produceState<java.io.File?>(null, message.messageId) {
+                value = withContext(Dispatchers.IO) {
+                    val bytes = loadFile(message.messageId)?.second ?: return@withContext null
+                    java.io.File(context.cacheDir, "audio-${message.messageId}").also { it.writeBytes(bytes) }
+                }
+            }
+            androidx.compose.runtime.DisposableEffect(audioFile) { onDispose { audioFile?.delete() } }
+            var player by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
+            var isPlaying by remember { mutableStateOf(false) }
+            androidx.compose.runtime.DisposableEffect(Unit) { onDispose { player?.release() } }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(enabled = audioFile != null, onClick = {
+                    val f = audioFile ?: return@IconButton
+                    if (isPlaying) { player?.pause(); isPlaying = false }
+                    else {
+                        val p = player ?: android.media.MediaPlayer().also { mp ->
+                            mp.setDataSource(f.path); mp.prepare()
+                            mp.setOnCompletionListener { isPlaying = false }
+                            player = mp
+                        }
+                        p.start(); isPlaying = true
+                    }
+                }) { Icon(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, contentDescription = if (isPlaying) "Pause" else "Play voice note", tint = color) }
+                Text("Voice note · ${formatBytes(meta.size)}", style = MaterialTheme.typography.bodyMedium, color = color)
+            }
+            Spacer(Modifier.height(4.dp))
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.InsertDriveFile, contentDescription = null, tint = color, modifier = Modifier.size(28.dp))
             Spacer(Modifier.width(8.dp))
@@ -798,6 +896,44 @@ private fun Composer(
         }
     }
 
+    var recorder by remember { mutableStateOf<android.media.MediaRecorder?>(null) }
+    var recordFile by remember { mutableStateOf<java.io.File?>(null) }
+    var recordStart by remember { mutableStateOf(0L) }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { runCatching { recorder?.stop() }; recorder?.release(); recordFile?.delete() }
+    }
+    fun startRecording() {
+        runCatching {
+            val f = java.io.File(context.cacheDir, "voice-${System.currentTimeMillis()}.m4a")
+            @Suppress("DEPRECATION")
+            val r = if (android.os.Build.VERSION.SDK_INT >= 31) android.media.MediaRecorder(context) else android.media.MediaRecorder()
+            r.setAudioSource(android.media.MediaRecorder.AudioSource.MIC)
+            r.setOutputFormat(android.media.MediaRecorder.OutputFormat.MPEG_4)
+            r.setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AAC)
+            r.setAudioEncodingBitRate(48_000)
+            r.setAudioSamplingRate(32_000)
+            r.setMaxDuration(5 * 60_000)
+            r.setOutputFile(f.path)
+            r.prepare(); r.start()
+            recorder = r; recordFile = f; recordStart = System.currentTimeMillis(); error = null
+        }.onFailure { error = "Could not start recording." }
+    }
+    fun stopRecording(send: Boolean) {
+        val r = recorder; val f = recordFile
+        recorder = null; recordFile = null
+        val ok = runCatching { r?.stop() }.isSuccess
+        r?.release()
+        if (!send || !ok || f == null) { f?.delete(); return }
+        scope.launch {
+            val bytes = withContext(Dispatchers.IO) { runCatching { f.readBytes() }.getOrNull().also { f.delete() } }
+            if (bytes == null || bytes.isEmpty()) { error = "Recording was empty."; return@launch }
+            onSendFile("voice-note.m4a", "audio/mp4", bytes) { r2 -> r2.exceptionOrNull()?.let { error = it.message } }
+        }
+    }
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) startRecording() else error = "Allow the microphone to record voice notes."
+    }
+
     Surface(modifier = modifier, color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp) {
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
             if (replyingTo != null) {
@@ -820,7 +956,19 @@ private fun Composer(
             error?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 6.dp))
             }
-            Row(verticalAlignment = Alignment.Bottom) {
+            if (recorder != null) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Filled.Mic, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Recording… tap send to share it", modifier = Modifier.weight(1f))
+                    TextButton(onClick = { stopRecording(false) }) { Text("Cancel") }
+                    IconButton(onClick = { stopRecording(true) }) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send voice note") }
+                }
+            } else Row(verticalAlignment = Alignment.Bottom) {
+                if (!isChannel) IconButton(onClick = {
+                    if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) startRecording()
+                    else micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+                }, modifier = Modifier.size(48.dp)) { Icon(Icons.Filled.Mic, contentDescription = "Record a voice note") }
                 if (!isChannel) IconButton(onClick = { picker.launch("*/*") }, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Filled.AttachFile, contentDescription = "Send a file (up to 8 MB)")
                 }

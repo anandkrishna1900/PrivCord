@@ -255,6 +255,28 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         engine?.clearNotice()
     }
 
+    fun deleteMessage(messageId: String, everyone: Boolean) {
+        viewModelScope.launch { engine?.deleteMessage(messageId, everyone) }
+    }
+
+    fun react(messageId: String, emoji: String) {
+        viewModelScope.launch { engine?.react(messageId, emoji) }
+    }
+
+    fun setDisappearing(conversationId: String, seconds: Int) {
+        engine?.setDisappearing(conversationId, seconds)
+    }
+
+    fun search(query: String): List<ChatEngine.SearchHit> = engine?.search(query).orEmpty()
+
+    fun exportBackup(passphrase: String, onResult: (Result<String>) -> Unit) {
+        viewModelScope.launch { onResult(engine?.exportBackup(passphrase) ?: Result.failure(IllegalStateException("Not ready yet."))) }
+    }
+
+    fun importBackup(text: String, passphrase: String, onResult: (Result<String>) -> Unit) {
+        viewModelScope.launch { onResult(engine?.importBackup(text, passphrase) ?: Result.failure(IllegalStateException("Not ready yet."))) }
+    }
+
     fun clearChat(conversationId: String) {
         viewModelScope.launch { engine?.clearChat(conversationId) }
     }
