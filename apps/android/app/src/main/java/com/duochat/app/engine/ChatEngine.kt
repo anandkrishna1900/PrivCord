@@ -14,6 +14,9 @@ import com.duochat.app.data.ConnectionPath
 import com.duochat.app.data.AssembleResult
 import com.duochat.app.data.DeclineReason
 import com.duochat.app.data.Backup
+import com.duochat.app.data.ConnectionFacts
+import com.duochat.app.data.Diagnosis
+import com.duochat.app.data.diagnoseConnection
 import com.duochat.app.data.REACTION_EMOJI
 import com.duochat.app.data.ReactionEvent
 import com.duochat.app.data.deleteFrame
@@ -169,6 +172,8 @@ class ChatEngine(
         var path: ConnectionPath? = null
         var lastOfferAt = 0L
         var attempt = 0
+        /** Something came back from the friend during this attempt (a ready, offer or answer). */
+        var heardAt = 0L
         var offerTimeout: Job? = null
         var pathJob: Job? = null
         val sent = mutableSetOf<String>()
@@ -1580,6 +1585,7 @@ class ChatEngine(
     private suspend fun onChannelReady(uid: String) {
         val link = links[uid] ?: return
         link.attempt = 0
+        link.heardAt = 0
         link.bleAttempt = 0
         link.offerTimeout?.cancel()
         link.sent.clear()
@@ -1991,8 +1997,9 @@ class ChatEngine(
         val link = ensureLink(friend.uid)
         try {
             when (payload.optString("t")) {
-                "ready" -> if (isInitiator(selfUid, friend.uid)) link.lastOfferAt = 0
+                "ready" -> { link.heardAt = System.currentTimeMillis(); if (isInitiator(selfUid, friend.uid)) link.lastOfferAt = 0 }
                 "offer" -> {
+                    link.heardAt = System.currentTimeMillis()
                     val sdp = payload.optString("sdp")
                     if (isInitiator(selfUid, friend.uid) || link.session.isReady || sdp.isEmpty()) return
                     if (!LinkScheduler.acceptIncoming(links.values.count { it.session.isReady })) return
@@ -2002,6 +2009,7 @@ class ChatEngine(
                     armOfferTimeout(friend.uid)
                 }
                 "answer" -> {
+                    link.heardAt = System.currentTimeMillis()
                     val sdp = payload.optString("sdp")
                     if (!isInitiator(selfUid, friend.uid) || !link.session.hasPendingConnection || link.session.isReady || sdp.isEmpty()) return
                     link.session.applyAnswer(sdp)
@@ -2337,6 +2345,24 @@ class ChatEngine(
         }
     }
 
+    private fun diagnosisOf(f: Friend): Diagnosis? {
+        val link = links[f.uid] ?: return null
+        if (link.session.isReady || link.session.isBluetooth) return null
+        val cfg = networkConfig()
+        return diagnoseConnection(
+            ConnectionFacts(
+                signaling = hub?.status() ?: SignalingStatus.IDLE,
+                attempts = link.attempt,
+                sawPeerReply = link.heardAt > 0,
+                localCandidates = link.session.localCandidates,
+                iceState = link.session.iceState,
+                hasTurn = cfg.turn.isNotEmpty(),
+                storeForward = cfg.storeForward,
+            ),
+            f.name,
+        )
+    }
+
     private fun emit() {
         val current = identity ?: return
         val coordinator = coordinator
@@ -2356,6 +2382,7 @@ class ChatEngine(
                 links[f.uid]?.path.takeIf { linkStatus(f.uid) == LinkStatus.CONNECTED },
                 runCatching { identityManager.deriveSafetyNumber(current.publicJwk, f.card.sign) }.getOrDefault(""),
                 direct = canDirect(f.uid),
+                diagnosis = diagnosisOf(f),
             )
         }
         val groups = coordinator?.groupIds().orEmpty().mapNotNull { id ->

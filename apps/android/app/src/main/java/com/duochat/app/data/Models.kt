@@ -156,6 +156,8 @@ data class ContactView(
     val safetyNumber: String,
     /** A direct chat is possible (friends you swapped invites with, or group people when neither side is group-only). */
     val direct: Boolean = true,
+    /** Plain-language reason a direct link is not forming; null when fine or too early to say. */
+    val diagnosis: Diagnosis? = null,
 )
 
 data class MemberView(

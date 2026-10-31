@@ -39,6 +39,12 @@ class WebRtcTransport(
     private var closedByUs = false
     private var iceGatherContinuation: kotlinx.coroutines.CancellableContinuation<Unit>? = null
 
+    /** What the last offer or answer contained and how ICE ended up; used only to explain failures. */
+    @Volatile var lastCandidates: com.duochat.app.data.CandidateCounts? = null
+        private set
+    @Volatile var iceState: String? = null
+        private set
+
     @Volatile
     override var isOpen: Boolean = false
         private set
@@ -53,8 +59,8 @@ class WebRtcTransport(
         val offer = pc.createOfferSuspending()
         pc.setLocalDescriptionSuspending(offer)
         waitForIceGathering(pc)
-        return pc.localDescription?.description
-            ?: throw IllegalStateException("Failed to create a connection offer.")
+        return (pc.localDescription?.description
+            ?: throw IllegalStateException("Failed to create a connection offer.")).also { lastCandidates = com.duochat.app.data.countSdpCandidates(it) }
     }
 
     suspend fun acceptOffer(offerSdp: String): String {
@@ -67,8 +73,8 @@ class WebRtcTransport(
         val answer = pc.createAnswerSuspending()
         pc.setLocalDescriptionSuspending(answer)
         waitForIceGathering(pc)
-        return pc.localDescription?.description
-            ?: throw IllegalStateException("Failed to create a connection answer.")
+        return (pc.localDescription?.description
+            ?: throw IllegalStateException("Failed to create a connection answer.")).also { lastCandidates = com.duochat.app.data.countSdpCandidates(it) }
     }
 
     suspend fun applyAnswer(answerSdp: String) {
@@ -167,7 +173,9 @@ class WebRtcTransport(
             object : PeerConnection.Observer {
                 override fun onSignalingChange(state: PeerConnection.SignalingState?) = Unit
 
-                override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) = Unit
+                override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
+                    iceState = state?.name?.lowercase()
+                }
 
                 override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
 

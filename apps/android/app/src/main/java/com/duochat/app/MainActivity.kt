@@ -226,6 +226,8 @@ private fun RootScreen(viewModel: AppViewModel) {
                         onClearChat = { viewModel.clearChat(openChatId) },
                         onLeaveChannel = { viewModel.leaveChannel(openChatId); route = HOME },
                         onMuteSender = viewModel::muteSender,
+                        onEnableStoreForward = { viewModel.updateSettings { copy(network = network.copy(storeForward = true)) } },
+                        onOpenConnectionSettings = { settingsOpen = true },
                         onConnectBluetooth = {
                             viewModel.connectBluetooth(openChatId) { result ->
                                 result.exceptionOrNull()?.message?.let { settingsOpen = true; android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show() }

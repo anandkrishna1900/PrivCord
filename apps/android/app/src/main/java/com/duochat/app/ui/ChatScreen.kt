@@ -143,6 +143,8 @@ fun ChatScreen(
     onConnectBluetooth: () -> Unit,
     onLeaveChannel: () -> Unit,
     onMuteSender: (String) -> Unit,
+    onEnableStoreForward: () -> Unit = {},
+    onOpenConnectionSettings: () -> Unit = {},
 ) {
     val friend: ContactView? = state.contacts.firstOrNull { it.uid == conversationId }
     val group: GroupView? = state.groups.firstOrNull { it.groupId == conversationId }
@@ -270,6 +272,21 @@ fun ChatScreen(
                     "Public channel: anyone who knows the name can read it. Your messages show your name and a short ID.",
                     MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+            friend?.diagnosis?.let { d ->
+                Surface(color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                        Text(d.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                        Row {
+                            if (com.duochat.app.data.DiagnosisAction.ENABLE_STORE_FORWARD in d.actions) {
+                                TextButton(onClick = onEnableStoreForward) { Text("Deliver via relays") }
+                            }
+                            if (d.actions.any { it == com.duochat.app.data.DiagnosisAction.ADD_TURN || it == com.duochat.app.data.DiagnosisAction.OPEN_CONNECTION_SETTINGS }) {
+                                TextButton(onClick = onOpenConnectionSettings) { Text("Connection settings") }
+                            }
+                        }
+                    }
+                }
             }
             if (friend != null && friend.trust == ContactTrust.INTRODUCED && !friend.checked && friend.direct) {
                 Banner(
