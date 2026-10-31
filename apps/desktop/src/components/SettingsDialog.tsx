@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { disableLock, enableLock, isLockEnabled, lockSupported, unlock } from '../lib/appLock';
 import type { ChatEngine, ChatState } from '../lib/engine';
 import type { AppSettings, ThemeMode } from '../lib/settings';
@@ -50,6 +50,93 @@ function Toggle({
       >
         <span />
       </button>
+    </div>
+  );
+}
+
+function BackupControl({ engine }: { engine: ChatEngine | null }) {
+  const [pass, setPass] = useState('');
+  const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function backUp() {
+    if (!engine) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const text = await engine.exportBackup(pass);
+      const url = URL.createObjectURL(new Blob([text], { type: 'application/octet-stream' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `privcord-backup-${new Date().toISOString().slice(0, 10)}.privcord`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      setMessage({ text: 'Backup saved. Keep the file and the passphrase safe: you need both, and nobody can recover the passphrase.', error: false });
+    } catch (caught) {
+      setMessage({ text: caught instanceof Error ? caught.message : 'Could not make the backup.', error: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function restore(file: File) {
+    if (!engine) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const result = await engine.importBackup(await file.text(), pass);
+      setMessage({ text: `Restored ${result.friends} friends, ${result.groups} groups and ${result.messages} messages.`, error: false });
+    } catch (caught) {
+      setMessage({ text: caught instanceof Error ? caught.message : 'Could not restore.', error: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card-box">
+      <div className="card-title">
+        <KeyIcon size={18} />
+        <strong>Back up and restore chats</strong>
+      </div>
+      <p className="muted small">
+        Saves your friends, groups, channels and messages (not photos or files) in one file, locked with a passphrase you
+        choose. Restoring adds to what is here and needs the same identity (restore the 12-word phrase first on a new device).
+      </p>
+      <input
+        type="password"
+        aria-label="Backup passphrase"
+        placeholder="Passphrase (at least 8 characters)"
+        value={pass}
+        onChange={(event) => setPass(event.target.value)}
+      />
+      <div className="button-row">
+        <button type="button" className="button secondary small" disabled={busy || pass.length < 8} onClick={() => void backUp()}>
+          Save a backup
+        </button>
+        <button type="button" className="button secondary small" disabled={busy || pass.length < 8} onClick={() => fileRef.current?.click()}>
+          Restore from a file
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          hidden
+          aria-label="Backup file"
+          onChange={(event) => {
+            const f = event.target.files?.[0];
+            event.target.value = '';
+            if (f) void restore(f);
+          }}
+        />
+      </div>
+      {message ? (
+        <p className={`status-text ${message.error ? 'error' : ''}`} role={message.error ? 'alert' : 'status'}>
+          {message.text}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -325,6 +412,7 @@ export function SettingsDialog({
         {section === 'security' ? (
           <section className="settings-section">
             <AppLockControl />
+            <BackupControl engine={engine} />
             <Toggle
               label="Stay group-only with people I meet in groups"
               description="You still read and reply in the groups you share, but nobody you only know through a group can message you directly, and you cannot message them, unless you swap invites yourselves. It applies to people you meet from now on and to the ones you already have."

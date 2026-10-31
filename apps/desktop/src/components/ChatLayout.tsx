@@ -3,7 +3,7 @@ import type { ChatEngine, ChatState, UiMessage } from '../lib/engine';
 import type { AppSettings } from '../lib/settings';
 import { LOCAL_ID } from '../lib/identity';
 import { formatTime } from '../lib/format';
-import { MAX_FILE_BYTES, formatBytes } from '@duochat/protocol';
+import { DISAPPEAR_OPTIONS, MAX_FILE_BYTES, describeDisappear, formatBytes } from '@duochat/protocol';
 import { Avatar } from './Avatar';
 import { Composer } from './Composer';
 import { MessageList } from './MessageList';
@@ -70,6 +70,8 @@ export function ChatLayout({
   const [manualUid, setManualUid] = useState('');
   const [verifyUid, setVerifyUid] = useState<string | null>(null);
   const [replying, setReplying] = useState<UiMessage | null>(null);
+  const [query, setQuery] = useState('');
+  const [focusId, setFocusId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const loadFile = useCallback((id: string) => engine?.getFile(id) ?? Promise.resolve(null), [engine]);
 
@@ -139,6 +141,8 @@ export function ChatLayout({
     return list.sort((a, b) => b.at - a.at || a.name.localeCompare(b.name));
   }, [state]);
 
+  const hits = useMemo(() => (engine && query.trim().length >= 2 ? engine.search(query) : []), [engine, query, state?.messages]);
+
   useEffect(() => {
     document.title = 'PrivCord';
   }, []);
@@ -202,6 +206,38 @@ export function ChatLayout({
         </div>
 
         {hasChats ? (
+          <div className="search-box">
+            <input
+              type="search"
+              aria-label="Search messages"
+              placeholder="Search messages"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </div>
+        ) : null}
+        {query.trim().length >= 2 ? (
+          <div className="search-results" aria-label="Search results">
+            {hits.length === 0 ? <p className="muted small" style={{ padding: 12 }}>Nothing found.</p> : null}
+            {hits.map((h) => (
+              <button
+                key={h.messageId}
+                type="button"
+                className="search-hit"
+                onClick={() => {
+                  setSelected(h.convId);
+                  setFocusId(h.messageId);
+                  setQuery('');
+                }}
+              >
+                <strong>
+                  {h.convName} · {h.senderName}
+                </strong>
+                <span className="muted small">{h.text}</span>
+              </button>
+            ))}
+          </div>
+        ) : hasChats ? (
           <nav className="chat-list" aria-label="Chats">
             {rows.map((row) => (
               <button
@@ -285,6 +321,26 @@ export function ChatLayout({
                         Connect without internet
                       </button>
                     ) : null}
+                    {!channel && selected ? (
+                      <div className="menu-group" role="group" aria-label="Disappearing messages">
+                        <span className="menu-label">Disappearing messages (yours)</span>
+                        {DISAPPEAR_OPTIONS.map((sec) => (
+                          <button
+                            key={sec}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={(state.disappearing[selected] ?? 0) === sec}
+                            onClick={() => {
+                              engine?.setDisappearing(selected, sec);
+                              setMenuOpen(false);
+                            }}
+                          >
+                            {(state.disappearing[selected] ?? 0) === sec ? '✓ ' : ''}
+                            {describeDisappear(sec)}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
@@ -332,6 +388,10 @@ export function ChatLayout({
                     : 'Messages you write now are sent as soon as they are online.'
               }
               onRetry={(id) => void engine?.retry(id)}
+              onReact={(id, emoji) => engine?.react(id, emoji)}
+              onDelete={(id, everyone) => engine?.deleteMessage(id, everyone)}
+              focusId={focusId}
+              onFocused={() => setFocusId(null)}
               onReply={setReplying}
               loadFile={loadFile}
             />

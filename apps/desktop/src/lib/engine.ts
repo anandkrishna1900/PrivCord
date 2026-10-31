@@ -1,5 +1,13 @@
 import {
   CHANNEL_TTL_SEC,
+  deleteFrame,
+  parseDeleteFrame,
+  parseReactFrame,
+  reactFrame,
+  summarizeReactions,
+  BACKUP_MIN_PASSPHRASE,
+  openBackup,
+  sealBackup,
   FileAssembler,
   MAX_CHANNEL_TEXT,
   deriveChannel,
@@ -155,6 +163,17 @@ export interface UiMessage extends StoredMessage {
   total: number;
   /** 0..1 while a file is being sent or received. */
   progress?: number;
+  /** Reactions grouped for display. */
+  reactionChips: { emoji: string; count: number; mine: boolean }[];
+}
+
+export interface SearchHit {
+  messageId: string;
+  convId: string;
+  convName: string;
+  senderName: string;
+  text: string;
+  at: number;
 }
 
 /** Someone who used our invite words and answered with their own card. */
@@ -183,6 +202,8 @@ export interface InviteAnswer {
 }
 
 export interface ChatState {
+  /** Disappearing-message timer per conversation, in seconds (absent = off). */
+  disappearing: Record<string, number>;
   channels: ChannelView[];
   answer: InviteAnswer | null;
   /** Our current six-word invite, if one is being shown. */
@@ -266,6 +287,7 @@ export class ChatEngine {
   private redeemed: { words: string; rv: InviteRendezvous; contact: Contact } | null = null;
   private channels = new Map<string, { keys: ChannelKeys; hub: SignalingHub }>();
   private blocked = new Set<string>();
+  private convTtl = new Map<string, number>();
   private assemblers = new Map<string, FileAssembler>();
   private lastChunkAt = new Map<string, number>();
   private sendingFiles = new Set<string>();
@@ -275,6 +297,7 @@ export class ChatEngine {
     this.identity = deps.identity;
     this.coord = this.newCoordinator();
     this.state = {
+      disappearing: {},
       channels: [],
       answer: null,
       invite: null,
@@ -381,6 +404,7 @@ export class ChatEngine {
       await this.loadContacts();
       await this.coord.load((await this.deps.store.getSecret<Record<string, unknown[]>>('groups')) ?? {});
       for (const uid of (await this.deps.store.getSecret<string[]>('blocked')) ?? []) this.blocked.add(uid);
+      for (const [id, sec] of Object.entries((await this.deps.store.getSecret<Record<string, number>>('disappear')) ?? {})) this.convTtl.set(id, sec);
       const stored = await this.deps.store.loadMessages();
       for (const m of stored) this.msgs.set(m.messageId, m);
       await this.migrateLegacy();
@@ -545,6 +569,180 @@ export class ChatEngine {
 
   clearAnswer(): void {
     this.emit({ answer: null });
+  }
+
+  /* ---------------- delete, reactions, disappearing messages, search ---------------- */
+
+  setDisappearing(convId: string, seconds: number): void {
+    if (seconds > 0) this.convTtl.set(convId, seconds);
+    else this.convTtl.delete(convId);
+    void this.deps.store.setSecret('disappear', Object.fromEntries(this.convTtl)).catch(() => undefined);
+    this.emit();
+  }
+
+  /** Remove messages whose time is up, here and from the file store. */
+  private purgeExpired(now: number): void {
+    for (const [id, m] of [...this.msgs]) {
+      if (m.expiresAt && m.expiresAt <= now) this.dropMessage(id);
+    }
+  }
+
+  private dropMessage(messageId: string): void {
+    this.msgs.delete(messageId);
+    void this.deps.store.deleteMessage(messageId).catch(() => undefined);
+  }
+
+  /** "Delete for me" removes it here only. "Delete for everyone" (your own messages) also asks the others to remove it. */
+  deleteMessage(messageId: string, everyone: boolean): void {
+    const m = this.msgs.get(messageId);
+    if (!m) return;
+    if (!everyone || m.senderId !== this.identity.uid) {
+      this.dropMessage(messageId);
+      this.emit();
+      return;
+    }
+    this.tombstone(m);
+    for (const uid of this.recipientsOfConversation(m.conversationId)) {
+      const link = this.links.get(uid);
+      if (link?.ready && link.sendJson(deleteFrame(messageId))) link.sent.add(`del:${messageId}`);
+    }
+    this.emit();
+  }
+
+  private tombstone(m: StoredMessage): void {
+    m.deleted = true;
+    m.text = '';
+    m.file = undefined;
+    m.type = 'text';
+    m.reactions = undefined;
+    m.replyTo = undefined;
+    m.expiresAt = undefined;
+    void this.deps.store.deleteFile(m.messageId).catch(() => undefined);
+    void this.deps.store.putMessage(m).catch(() => undefined);
+  }
+
+  private applyRemoteDelete(from: string, messageId: string): void {
+    const m = this.msgs.get(messageId);
+    // Only the author can delete a message for everyone.
+    if (!m || m.senderId !== from || m.deleted) return;
+    this.tombstone(m);
+    this.emit();
+  }
+
+  /** Toggle my reaction on a message (the same emoji again removes it). */
+  react(messageId: string, emoji: string): void {
+    const m = this.msgs.get(messageId);
+    if (!m || m.deleted || m.conversationId.startsWith('chan:')) return;
+    const me = this.identity.uid;
+    const reactions = { ...(m.reactions ?? {}) };
+    const on = reactions[me] !== emoji;
+    if (on) reactions[me] = emoji;
+    else delete reactions[me];
+    m.reactions = reactions;
+    void this.deps.store.putMessage(m).catch(() => undefined);
+    for (const uid of this.recipientsOfConversationAll(m)) {
+      const link = this.links.get(uid);
+      if (link?.ready && link.sendJson(reactFrame(messageId, emoji, on))) link.sent.add(`rx:${messageId}:${emoji}`);
+    }
+    this.emit();
+  }
+
+  /** Everyone in a message's conversation except me (for a message someone else sent this includes the sender). */
+  private recipientsOfConversationAll(m: StoredMessage): string[] {
+    const me = this.identity.uid;
+    if (this.contacts.has(m.conversationId)) return [m.conversationId];
+    return (this.coord.state(m.conversationId) ? [...this.coord.state(m.conversationId)!.members.keys()] : []).filter((u) => u !== me);
+  }
+
+  private applyRemoteReaction(from: string, messageId: string, emoji: string, on: boolean): void {
+    const m = this.msgs.get(messageId);
+    if (!m || m.deleted) return;
+    const inConversation = this.contacts.has(m.conversationId) ? m.conversationId === from : this.coord.isMember(m.conversationId, from);
+    if (!inConversation) return;
+    const reactions = { ...(m.reactions ?? {}) };
+    if (on) reactions[from] = emoji;
+    else if (reactions[from] === emoji) delete reactions[from];
+    m.reactions = reactions;
+    void this.deps.store.putMessage(m).catch(() => undefined);
+    this.emit();
+  }
+
+  /** Looks through the messages on this device (nothing leaves it). */
+  search(query: string, limit = 50): SearchHit[] {
+    const q = query.trim().toLowerCase();
+    if (q.length < 2) return [];
+    const nameOfConv = (id: string) => (id.startsWith('chan:') ? `# ${id.slice(5)}` : this.contacts.has(id) ? this.nameOf(id) : (this.coord.state(id)?.name ?? 'Chat'));
+    return [...this.msgs.values()]
+      .filter((m) => !m.deleted && m.text.toLowerCase().includes(q) && !(m.senderId !== this.identity.uid && this.blocked.has(m.senderId)))
+      .sort((a, b) => b.clientCreatedAt - a.clientCreatedAt)
+      .slice(0, limit)
+      .map((m) => ({
+        messageId: m.messageId,
+        convId: m.conversationId,
+        convName: nameOfConv(m.conversationId),
+        senderName: m.senderId === this.identity.uid ? 'You' : (m.senderName ?? this.nameOf(m.senderId)),
+        text: m.text,
+        at: m.clientCreatedAt,
+      }));
+  }
+
+  /* ---------------- backup ---------------- */
+
+  /** A passphrase-protected copy of friends, groups, channels and messages (no files, no recovery phrase). */
+  async exportBackup(passphrase: string): Promise<string> {
+    if (passphrase.length < BACKUP_MIN_PASSPHRASE) throw new Error(`Use at least ${BACKUP_MIN_PASSPHRASE} characters.`);
+    const messages = [...this.msgs.values()].map((m) => ({ ...m, file: m.file ? { ...m.file } : undefined }));
+    return sealBackup(
+      {
+        v: 1,
+        uid: this.identity.uid,
+        at: Date.now(),
+        contacts: [...this.contacts.values()],
+        groups: this.coord.export(),
+        channels: [...this.channels.keys()],
+        blocked: [...this.blocked],
+        disappear: Object.fromEntries(this.convTtl),
+        messages,
+      },
+      passphrase,
+    );
+  }
+
+  /** Adds what is in a backup to what is here. Never replaces or removes anything that already exists. */
+  async importBackup(text: string, passphrase: string): Promise<{ friends: number; groups: number; messages: number }> {
+    const data = (await openBackup(text, passphrase)) as {
+      v?: number; uid?: string; contacts?: ContactRecord[]; groups?: Record<string, unknown[]>; channels?: string[];
+      blocked?: string[]; disappear?: Record<string, number>; messages?: StoredMessage[];
+    } | null;
+    if (!data || data.v !== 1 || typeof data.uid !== 'string') throw new Error('That did not open. Check the passphrase and that this is a PrivCord backup file.');
+    if (data.uid !== this.identity.uid) throw new Error('This backup belongs to a different identity. Restore your 12-word recovery phrase first, then import it.');
+    let friends = 0;
+    for (const rec of data.contacts ?? []) {
+      if (!rec?.uid || !rec.card || this.contacts.has(rec.uid)) continue;
+      this.registerContact(rec, false);
+      friends += 1;
+    }
+    if (friends > 0) this.persistContacts();
+    let groups = 0;
+    const missing = Object.fromEntries(Object.entries(data.groups ?? {}).filter(([id]) => !this.coord.groupIds().includes(id)));
+    if (Object.keys(missing).length > 0) {
+      await this.coord.load(missing);
+      groups = Object.keys(missing).length;
+      this.persistGroups();
+    }
+    let added = 0;
+    for (const m of data.messages ?? []) {
+      if (!m?.messageId || this.msgs.has(m.messageId)) continue;
+      this.msgs.set(m.messageId, m);
+      await this.deps.store.putMessage(m).catch(() => undefined);
+      added += 1;
+    }
+    for (const [id, sec] of Object.entries(data.disappear ?? {})) if (!this.convTtl.has(id)) this.convTtl.set(id, sec);
+    for (const uid of data.blocked ?? []) this.blocked.add(uid);
+    for (const name of data.channels ?? []) await this.joinChannel(name, true).catch(() => undefined);
+    this.emit({ notice: `Restored ${friends} friend${friends === 1 ? '' : 's'}, ${groups} group${groups === 1 ? '' : 's'} and ${added} message${added === 1 ? '' : 's'}.` });
+    void this.tick();
+    return { friends, groups, messages: added };
   }
 
   /* ---------------- open channels ---------------- */
@@ -914,10 +1112,20 @@ export class ChatEngine {
       const blocked = this.cannotWrite(convId);
       if (blocked) return { ok: false, error: blocked };
       if (convId.startsWith('chan:')) return await this.sendChannel(convId.slice(5), rawText);
-      const base = createOutgoingMessage({ senderId: this.identity.uid, text: rawText, replyTo: this.replyFor(convId, replyToId) });
+      const ttlSec = this.convTtl.get(convId);
+      const base = {
+        ...createOutgoingMessage({ senderId: this.identity.uid, text: rawText, replyTo: this.replyFor(convId, replyToId) }),
+        ...(ttlSec ? { ttlSec } : {}),
+      };
       const recipients: Record<string, DeliveryState> = {};
       for (const uid of this.recipientsOfConversation(convId)) recipients[uid] = 'QUEUED';
-      const message: StoredMessage = { ...base, conversationId: convId, recipients, deliveryState: Object.keys(recipients).length ? 'QUEUED' : 'SENT' };
+      const message: StoredMessage = {
+        ...base,
+        conversationId: convId,
+        recipients,
+        deliveryState: Object.keys(recipients).length ? 'QUEUED' : 'SENT',
+        ...(ttlSec ? { expiresAt: base.clientCreatedAt + ttlSec * 1000 } : {}),
+      };
       this.msgs.set(message.messageId, message);
       await this.deps.store.putMessage(message);
       for (const uid of Object.keys(recipients)) this.deliver(message, uid);
@@ -945,8 +1153,10 @@ export class ChatEngine {
       const messageId = crypto.randomUUID();
       const recipients: Record<string, DeliveryState> = {};
       for (const uid of this.recipientsOfConversation(convId)) recipients[uid] = 'QUEUED';
+      const ttlSec = this.convTtl.get(convId);
       const offer = await makeFileOffer({
         messageId,
+        ttl: ttlSec,
         groupId: isGroup ? convId : undefined,
         name,
         mime: file.mime,
@@ -969,6 +1179,7 @@ export class ChatEngine {
         recipients,
         file: { name, mime: offer.mime, size: offer.size, sha256: offer.sha256 },
         ...(offer.replyTo ? { replyTo: offer.replyTo } : {}),
+        ...(ttlSec ? { ttlSec, expiresAt: offer.clientCreatedAt + ttlSec * 1000 } : {}),
       };
       this.msgs.set(messageId, message);
       await this.deps.store.putMessage(message);
@@ -1011,13 +1222,14 @@ export class ChatEngine {
       text: m.text,
       clientCreatedAt: m.clientCreatedAt,
       ...(m.replyTo ? { replyTo: m.replyTo } : {}),
+      ...(m.ttlSec ? { ttl: m.ttlSec } : {}),
     };
   }
 
   /** Write one message to one recipient if their channel is up. */
   private deliver(m: StoredMessage, uid: string): void {
     const state = m.recipients?.[uid];
-    if (!state || state === 'FAILED' || RANK[state] >= RANK.DELIVERED) return;
+    if (m.deleted || !state || state === 'FAILED' || RANK[state] >= RANK.DELIVERED) return;
     const link = this.links.get(uid);
     if (!link?.ready || link.sent.has(m.messageId)) return;
     if (m.type === 'file') {
@@ -1052,6 +1264,7 @@ export class ChatEngine {
         sha256: m.file.sha256,
         clientCreatedAt: m.clientCreatedAt,
         ...(m.replyTo ? { replyTo: m.replyTo } : {}),
+        ...(m.ttlSec ? { ttl: m.ttlSec } : {}),
       };
       if (!link.sendJson(offer)) return;
       let sentChunks = 0;
@@ -1098,6 +1311,20 @@ export class ChatEngine {
       .filter((m) => m.senderId === this.identity.uid && m.recipients?.[uid] && m.recipients[uid] !== 'FAILED' && RANK[m.recipients[uid]!] < RANK.DELIVERED)
       .sort(compareMessages);
     for (const m of own) this.deliver(m, uid);
+    const link = this.links.get(uid);
+    if (link?.ready) {
+      for (const m of this.msgs.values()) {
+        const inConv = m.conversationId === uid || (m.recipients && uid in m.recipients);
+        if (!inConv) continue;
+        if (m.deleted && m.senderId === this.identity.uid && !link.sent.has(`del:${m.messageId}`)) {
+          if (link.sendJson(deleteFrame(m.messageId))) link.sent.add(`del:${m.messageId}`);
+        }
+        const mine = m.reactions?.[this.identity.uid];
+        if (mine && !m.deleted && !link.sent.has(`rx:${m.messageId}:${mine}`)) {
+          if (link.sendJson(reactFrame(m.messageId, mine, true))) link.sent.add(`rx:${m.messageId}:${mine}`);
+        }
+      }
+    }
     this.emit();
   }
 
@@ -1121,6 +1348,16 @@ export class ChatEngine {
     if (isRecord(raw) && raw.kind === 'privacy' && typeof raw.groupOnly === 'boolean') {
       this.peerGroupOnly.set(uid, raw.groupOnly);
       this.emit();
+      return;
+    }
+    const del = parseDeleteFrame(raw);
+    if (del) {
+      this.applyRemoteDelete(uid, del.messageId);
+      return;
+    }
+    const rx = parseReactFrame(raw);
+    if (rx) {
+      this.applyRemoteReaction(uid, rx.messageId, rx.emoji, rx.on);
       return;
     }
     const declined = parseDeclinedFrame(raw);
@@ -1179,6 +1416,7 @@ export class ChatEngine {
     const exists = this.msgs.has(message.messageId);
     if (!exists) {
       message.deliveryState = 'DELIVERED';
+      if (message.ttlSec) message.expiresAt = Date.now() + message.ttlSec * 1000;
       if (this.active === convId && this.visible) message.readAt = Date.now();
       this.msgs.set(message.messageId, message);
       void this.deps.store.putMessage(message).catch(() => undefined);
@@ -1206,6 +1444,7 @@ export class ChatEngine {
           readAt: null,
           conversationId: frame.groupId,
           ...(frame.replyTo ? { replyTo: frame.replyTo } : {}),
+          ...(frame.ttl ? { ttlSec: frame.ttl } : {}),
         },
         from,
         frame.groupId,
@@ -1287,6 +1526,7 @@ export class ChatEngine {
         conversationId: convId,
         file: { name: offer.name, mime: offer.mime, size: offer.size, sha256: offer.sha256 },
         ...(offer.replyTo ? { replyTo: offer.replyTo } : {}),
+        ...(offer.ttl ? { ttlSec: offer.ttl } : {}),
       },
       uid,
       convId,
@@ -1596,6 +1836,7 @@ export class ChatEngine {
           if (link.transport && !link.ready) link.close();
         }
       }
+      this.purgeExpired(now);
       for (const [uid, asm] of this.assemblers) {
         if (asm.activeCount > 0 && now - (this.lastChunkAt.get(uid) ?? 0) > STALL_MS) asm.clear();
       }
@@ -1807,7 +2048,7 @@ export class ChatEngine {
     let best: StoredMessage | undefined;
     for (const m of this.msgs.values()) if (m.conversationId === convId && (!best || compareMessages(best, m) < 0)) best = m;
     return best
-      ? { text: best.type === 'file' ? filePreviewText(best.text) : best.text, at: best.clientCreatedAt, own: best.senderId === this.identity.uid, senderName: best.senderName ?? this.nameOf(best.senderId) }
+      ? { text: best.deleted ? 'Message deleted' : best.type === 'file' ? filePreviewText(best.text) : best.text, at: best.clientCreatedAt, own: best.senderId === this.identity.uid, senderName: best.senderName ?? this.nameOf(best.senderId) }
       : undefined;
   }
 
@@ -1888,6 +2129,7 @@ export class ChatEngine {
         tick: own ? aggregate(m.recipients) : m.deliveryState,
         delivered: states.filter((s) => RANK[s] >= RANK.DELIVERED).length,
         total: states.length,
+        reactionChips: summarizeReactions(m.reactions, me),
         ...(this.progress.has(m.messageId) ? { progress: this.progress.get(m.messageId) } : {}),
       });
     }
@@ -1903,7 +2145,7 @@ export class ChatEngine {
       last: this.last(`chan:${name}`),
       conn: c.hub.status() === 'online' ? 'connected' : 'connecting',
     }));
-    return { ...this.state, channels, requests, contacts, groups, messages, queued, storageBackend: this.deps.store.backend, signaling: this.hub?.status() ?? 'idle' };
+    return { ...this.state, disappearing: Object.fromEntries(this.convTtl), channels, requests, contacts, groups, messages, queued, storageBackend: this.deps.store.backend, signaling: this.hub?.status() ?? 'idle' };
   }
 }
 
