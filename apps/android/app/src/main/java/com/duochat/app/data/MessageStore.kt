@@ -38,6 +38,8 @@ class MessageStore(
                 replyTo = ReplyRef.fromJson(extra?.optJSONObject("replyTo")),
                 file = FileMeta.fromJson(extra?.optJSONObject("file")),
                 senderName = extra?.optString("senderName")?.takeIf { it.isNotEmpty() },
+                deleted = extra?.optBoolean("deleted", false) ?: false,
+                reactions = extra?.optJSONObject("reactions")?.let { o -> o.keys().asSequence().associateWith { k -> o.getString(k) } } ?: emptyMap(),
                 messageId = row.messageId,
                 clientMessageId = row.clientMessageId,
                 senderId = row.senderId,
@@ -65,13 +67,17 @@ class MessageStore(
                 readAt = message.readAt,
                 conversationId = message.conversationId,
                 totalRecipients = message.totalRecipients,
-                extraCipher = if (message.replyTo != null || message.file != null || message.senderName != null) {
+                extraCipher = if (message.replyTo != null || message.file != null || message.senderName != null ||
+                    message.deleted || message.reactions.isNotEmpty()
+                ) {
                     crypto.encrypt(
                         JSONObject()
                             .also { o ->
                                 message.replyTo?.let { o.put("replyTo", it.toJson()) }
                                 message.file?.let { o.put("file", it.toJson()) }
                                 message.senderName?.let { o.put("senderName", it) }
+                                if (message.deleted) o.put("deleted", true)
+                                if (message.reactions.isNotEmpty()) o.put("reactions", JSONObject(message.reactions))
                             }.toString(),
                     )
                 } else {
@@ -90,6 +96,16 @@ class MessageStore(
     }
 
     suspend fun putKv(key: String, value: JSONArray) = dao.putKv(com.duochat.app.data.local.KvEntity(key, crypto.encrypt(value.toString())))
+
+    /** Removes just the stored file (the message stays, for a tombstone). */
+    fun deleteFileOnly(messageId: String) {
+        runCatching { fileOf(messageId).delete() }
+    }
+
+    suspend fun deleteMessage(messageId: String) {
+        dao.deleteMessage(messageId)
+        runCatching { fileOf(messageId).delete() }
+    }
 
     /* ---- files ---- */
 

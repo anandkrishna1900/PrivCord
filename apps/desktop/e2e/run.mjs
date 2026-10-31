@@ -870,6 +870,188 @@ await scenario(18, 'open channels: three strangers share #general, messages are 
   check(errs.length === 0, 'no page errors', errs);
 });
 
+/* 19 ----------------------------------------------------------------- */
+await scenario(19, 'scrolling: opens at the newest message, follows new ones, stays put while reading old ones, jump button returns', async (ctx) => {
+  const relay = await startRelay(false);
+  ctx.cleanups.push(relay.close);
+  const [A, B] = [await namedDevice(ctx, relayNet(relay.url), 'Ann'), await namedDevice(ctx, relayNet(relay.url), 'Ben')];
+  await befriend(A, B);
+  await openChat(A.page, 'Ben');
+  await openChat(B.page, 'Ann');
+  await connected(A.page, 120000);
+  for (let i = 1; i <= 60; i += 1) await say(A.page, `line ${i}`);
+  await B.page.waitForSelector('.bubble-text:text-is("line 60")', { timeout: 60000 });
+  const gap = (page) => page.evaluate(() => { const e = document.querySelector('.message-scroll'); return Math.round(e.scrollHeight - e.scrollTop - e.clientHeight); });
+  check((await gap(B.page)) <= 2, 'receiver is at the newest message', await gap(B.page));
+  // reopen: leaving and coming back lands at the bottom immediately
+  await openChat(B.page, 'Ann');
+  await B.page.reload();
+  await openChat(B.page, 'Ann');
+  await B.page.waitForSelector('.bubble-text:text-is("line 60")');
+  await sleep(300);
+  check((await gap(B.page)) <= 2, 'after a reload the chat opens at the bottom', await gap(B.page));
+  // a new message while at the bottom is followed
+  await say(A.page, 'line 61');
+  await B.page.waitForSelector('.bubble-text:text-is("line 61")');
+  await sleep(300);
+  check((await gap(B.page)) <= 2, 'a new message is followed', await gap(B.page));
+  // scroll up to read: new messages must not yank the view down
+  await B.page.hover('.message-scroll');
+  await B.page.mouse.wheel(0, -1500);
+  await sleep(300);
+  const before = await B.page.evaluate(() => document.querySelector('.message-scroll').scrollTop);
+  await say(A.page, 'line 62');
+  await B.page.waitForSelector('.bubble-text:text-is("line 62")');
+  await sleep(500);
+  const after = await B.page.evaluate(() => document.querySelector('.message-scroll').scrollTop);
+  check(Math.abs(after - before) < 4, 'reading old messages is not interrupted', { before, after });
+  await B.page.waitForSelector('.jump-latest:has-text("1 new message")', { timeout: 5000 });
+  await B.page.click('.jump-latest');
+  await B.page.waitForFunction(() => { const e = document.querySelector('.message-scroll'); return e.scrollHeight - e.scrollTop - e.clientHeight < 3; }, null, { timeout: 5000 });
+  check((await B.page.locator('.jump-latest').count()) === 0, 'the jump button goes away');
+  // sending your own message always brings you to the bottom
+  await B.page.mouse.wheel(0, -1500);
+  await sleep(300);
+  await say(B.page, 'my reply');
+  await B.page.waitForFunction(() => { const e = document.querySelector('.message-scroll'); return e.scrollHeight - e.scrollTop - e.clientHeight < 3; }, null, { timeout: 5000 });
+  ctx.note('opens at the bottom, follows, does not yank while reading, jump button works, own message returns to the bottom');
+  const errs = [...A.errors, ...B.errors];
+  check(errs.length === 0, 'no page errors', errs);
+});
+
+/* 20 ----------------------------------------------------------------- */
+await scenario(20, 'delete for everyone, reactions, search, backup and restore, voice notes', async (ctx) => {
+  const relay = await startRelay(false);
+  ctx.cleanups.push(relay.close);
+  const net = relayNet(relay.url);
+  const [A, B] = [await namedDevice(ctx, net, 'Ann'), await namedDevice(ctx, net, 'Ben')];
+  await befriend(A, B);
+  await openChat(A.page, 'Ben');
+  await openChat(B.page, 'Ann');
+  await connected(A.page, 120000);
+  const bubble = (page, text) => page.locator(`.bubble:has(.bubble-text:text-is("${text}"))`);
+  const more = async (page, text) => { await bubble(page, text).hover(); await bubble(page, text).locator('button[aria-label="More actions"]').click(); };
+
+  // --- reactions
+  await say(A.page, 'react to me');
+  await B.page.waitForSelector('.bubble-text:text-is("react to me")');
+  await more(B.page, 'react to me');
+  await B.page.click('button[aria-label="React 👍"]');
+  await A.page.waitForSelector('.bubble:has(.bubble-text:text-is("react to me")) .reaction:has-text("👍 1")', { timeout: 20000 });
+  await more(A.page, 'react to me');
+  await A.page.click('button[aria-label="React ❤️"]');
+  await B.page.waitForSelector('.bubble:has(.bubble-text:text-is("react to me")) .reaction:has-text("❤️ 1")', { timeout: 20000 });
+  // the same emoji again removes it
+  await more(B.page, 'react to me');
+  await B.page.click('button[aria-label="React 👍"]');
+  await A.page.waitForFunction(() => ![...document.querySelectorAll('.reaction')].some((e) => e.textContent.includes('👍')), null, { timeout: 20000 });
+  ctx.note('reactions appear on both sides and toggle off');
+
+  // --- delete for everyone (only your own message offers it)
+  await say(A.page, 'oops wrong chat');
+  await B.page.waitForSelector('.bubble-text:text-is("oops wrong chat")');
+  await more(B.page, 'oops wrong chat');
+  check((await B.page.locator('.bubble-menu button:has-text("Delete for everyone")').count()) === 0, "someone else's message has no 'Delete for everyone'");
+  await B.page.keyboard.press('Escape');
+  await B.page.mouse.click(5, 5);
+  await more(A.page, 'oops wrong chat');
+  await A.page.click('.bubble-menu button:has-text("Delete for everyone")');
+  await B.page.waitForSelector('.bubble:has-text("This message was deleted")', { timeout: 20000 });
+  check((await B.page.locator('.bubble-text:text-is("oops wrong chat")').count()) === 0, 'the text is gone on the other side');
+  // delete for me only removes it here
+  await say(A.page, 'only mine');
+  await B.page.waitForSelector('.bubble-text:text-is("only mine")');
+  await more(A.page, 'only mine');
+  await A.page.click('.bubble-menu button:has-text("Delete for me")');
+  await sleep(800);
+  check((await A.page.locator('.bubble-text:text-is("only mine")').count()) === 0, 'delete for me removes it here');
+  check((await B.page.locator('.bubble-text:text-is("only mine")').count()) === 1, 'and keeps it on the other side');
+  ctx.note('delete for everyone leaves a tombstone; delete for me is local');
+
+  // --- search
+  await say(B.page, 'the quick brown fox');
+  await A.page.waitForSelector('.bubble-text:text-is("the quick brown fox")');
+  await A.page.fill('input[aria-label="Search messages"]', 'brown fox');
+  await A.page.waitForSelector('.search-hit:has-text("the quick brown fox")');
+  await A.page.fill('input[aria-label="Search messages"]', 'oops wrong');
+  await sleep(300);
+  check((await A.page.locator('.search-hit:has-text("oops wrong")').count()) === 0, 'deleted messages are not searchable');
+  await A.page.fill('input[aria-label="Search messages"]', 'quick brown');
+  await A.page.click('.search-hit:has-text("quick brown")');
+  await A.page.waitForSelector('.bubble.flash, [data-mid].flash', { timeout: 5000 });
+  ctx.note('search finds messages, skips deleted ones, and jumps to the match');
+
+
+  // --- voice note (fake microphone)
+  await A.page.click('button[aria-label="Record a voice note"]');
+  await sleep(1500);
+  await A.page.click('button[aria-label="Stop and send the voice note"]');
+  await B.page.waitForSelector('.file-bubble audio.file-audio', { timeout: 30000 });
+  check((await A.page.locator('.file-bubble audio.file-audio').count()) >= 1, 'the sender sees the player too');
+  ctx.note('a recorded voice note arrives with an audio player');
+
+  // --- backup and restore
+  await A.page.click('button[aria-label="Settings"]');
+  await A.page.click('.tab:has-text("Security")');
+  await A.page.fill('input[aria-label="Backup passphrase"]', 'correct horse battery');
+  const [saved] = await Promise.all([A.page.waitForEvent('download', { timeout: 30000 }), A.page.click('button:has-text("Save a backup")')]);
+  const backupPath = await saved.path();
+  const backupText = (await import('node:fs')).readFileSync(backupPath, 'utf8');
+  check(backupText.startsWith('PRIVCORD-BACKUP1:') && !backupText.includes('quick brown'), 'the backup file is encrypted');
+  await A.page.keyboard.press('Escape');
+  // wrong passphrase / wrong identity fail clearly
+  await B.page.click('button[aria-label="Settings"]');
+  await B.page.click('.tab:has-text("Security")');
+  await B.page.fill('input[aria-label="Backup passphrase"]', 'correct horse battery');
+  await B.page.setInputFiles('input[aria-label="Backup file"]', backupPath);
+  await B.page.waitForSelector('.status-text.error:has-text("different identity")', { timeout: 20000 });
+  await B.page.fill('input[aria-label="Backup passphrase"]', 'not the passphrase');
+  await B.page.setInputFiles('input[aria-label="Backup file"]', backupPath);
+  await B.page.waitForSelector('.status-text.error:has-text("did not open")', { timeout: 20000 });
+  await B.page.keyboard.press('Escape');
+  // Ann wipes her chats, then restores them
+  await A.page.click('button[aria-label="Settings"]');
+  await A.page.click('.tab:has-text("Security")');
+  await A.page.click('button:has-text("Clear all chats")').catch(() => undefined);
+  const clearBtn = A.page.locator('button:has-text("Clear all chats"), button:has-text("Clear chats")');
+  if (await A.page.locator('.modal:has-text("Clear")').count()) await A.page.keyboard.press('Escape');
+  await A.page.keyboard.press('Escape');
+  await A.page.evaluate(() => { indexedDB.deleteDatabase('privcord-files'); localStorage.removeItem('duochat.dev-store.v1'); });
+  await A.page.reload();
+  await A.page.waitForSelector('.sidebar', { timeout: 20000 });
+  await A.page.click('button[aria-label="Settings"]');
+  await A.page.click('.tab:has-text("Security")');
+  await A.page.fill('input[aria-label="Backup passphrase"]', 'correct horse battery');
+  await A.page.setInputFiles('input[aria-label="Backup file"]', backupPath);
+  await A.page.waitForSelector('.status-text:has-text("Restored")', { timeout: 30000 });
+  await A.page.keyboard.press('Escape');
+  await openChat(A.page, 'Ben');
+  await A.page.waitForSelector('.bubble-text:text-is("the quick brown fox")', { timeout: 20000 });
+  ctx.note('encrypted backup: wrong passphrase and wrong identity refused; restoring brings the chat back');
+  void clearBtn;
+  const errs = [...A.errors, ...B.errors];
+  check(errs.length === 0, 'no page errors', errs);
+});
+
+await scenario(21, 'panic wipe: off by default; once on, three quick Ctrl+Shift+Backspace erase everything with no questions', async (ctx) => {
+  const relay = await startRelay(false);
+  ctx.cleanups.push(relay.close);
+  const dev = await namedDevice(ctx, relayNet(relay.url), 'Panic');
+  const page = dev.page;
+  const press3 = async () => { for (let i = 0; i < 3; i += 1) await page.keyboard.press('Control+Shift+Backspace'); };
+  await press3();
+  await sleep(800);
+  check((await page.locator('.sidebar').count()) === 1, 'with the setting off nothing happens');
+  await page.click('button[aria-label="Settings"]');
+  await page.click('.tab:has-text("Security")');
+  await page.click('.toggle-row:has-text("Panic wipe") [role="switch"]');
+  await page.keyboard.press('Escape');
+  await press3();
+  await page.waitForSelector('.phrase-word-box', { timeout: 30000 });
+  check((await page.locator('.sidebar').count()) === 0, 'the app is back at onboarding with a new identity');
+  ctx.note('off by default; after turning it on, three quick presses wipe the device and restart at onboarding');
+});
+
 console.log('\n=== SUMMARY ===');
 for (const r of results) console.log(`${r.status}  #${r.id}  ${r.name}`);
 fs.writeFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), 'last-results.json'), JSON.stringify(results, null, 2));

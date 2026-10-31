@@ -240,3 +240,71 @@ class InviteVectorsTest {
         assertEquals(fresh, com.duochat.app.security.InviteCode.parse(fresh.joinToString(" ")))
     }
 }
+
+/** Delete, reactions and backups against the TypeScript implementation. */
+class SocialVectorsTest {
+    private val v: JSONObject by lazy {
+        val f = listOf("../../../docs/file-vectors.json", "../../docs/file-vectors.json", "docs/file-vectors.json").map(::File).first { it.exists() }
+        JSONObject(f.readText(Charsets.UTF_8))
+    }
+
+    @Test
+    fun `Kotlin opens a backup made by TypeScript and refuses a wrong passphrase`() {
+        val b = v.getJSONObject("backup")
+        val data = Backup.open(b.getString("text"), b.getString("passphrase"))!!
+        assertEquals("uid-backup", data.getString("uid"))
+        assertEquals("hello backup", data.getJSONArray("messages").getString(0))
+        assertNull(Backup.open(b.getString("text"), "wrong passphrase!"))
+        assertNull(Backup.open("not a backup", b.getString("passphrase")))
+        assertNull(Backup.open(b.getString("text").dropLast(6) + "AAAAAA", b.getString("passphrase")))
+    }
+
+    @Test
+    fun `a Kotlin backup opens in Kotlin and is not readable without the passphrase`() {
+        val text = Backup.seal(JSONObject().put("secret", "quick brown fox"), "correct horse battery")
+        assertTrue(text.startsWith(Backup.PREFIX))
+        assertFalse(text.contains("quick brown"))
+        assertEquals("quick brown fox", Backup.open(text, "correct horse battery")!!.getString("secret"))
+        assertTrue(runCatching { Backup.seal(JSONObject(), "short") }.isFailure)
+    }
+
+    @Test
+    fun `TypeScript delete and react frames parse, bad ones do not`() {
+        val s = v.getJSONObject("social")
+        assertEquals("m-2", parseDelete(s.getJSONObject("del")))
+        val r = parseReact(s.getJSONObject("react"))!!
+        assertEquals("m-1", r.messageId); assertEquals("👍", r.emoji); assertTrue(r.on)
+        assertNull(parseReact(JSONObject(s.getJSONObject("react").toString()).put("emoji", "💣")))
+        assertNull(parseDelete(JSONObject().put("v", 1).put("kind", "delete").put("messageId", "")))
+        assertEquals("m-1", parseReact(reactFrame("m-1", "❤️", false))!!.messageId)
+    }
+
+    @Test
+    fun `reaction chips and lifetimes match the TypeScript results`() {
+        val chips = v.getJSONObject("social").getJSONArray("chips")
+        val mine = summarizeReactions(mapOf("a" to "👍", "b" to "👍", "me" to "❤️"), "me")
+        assertEquals(chips.length(), mine.size)
+        for (i in mine.indices) {
+            assertEquals(chips.getJSONObject(i).getString("emoji"), mine[i].emoji)
+            assertEquals(chips.getJSONObject(i).getInt("count"), mine[i].count)
+            assertEquals(chips.getJSONObject(i).getBoolean("mine"), mine[i].mine)
+        }
+        assertTrue(isInlineAudio("audio/webm;codecs=opus")); assertFalse(isInlineAudio("video/mp4"))
+    }
+}
+
+/** The relay setup line made by TypeScript opens in Kotlin; junk does not. */
+class TurnShareTest {
+    @Test
+    fun `parses the TypeScript string and rejects junk`() {
+        val f = listOf("../../../docs/file-vectors.json", "../../docs/file-vectors.json", "docs/file-vectors.json").map { java.io.File(it) }.first { it.exists() }
+        val line = JSONObject(f.readText()).getString("turnShare")
+        val t = TurnShare.parse(line)!!
+        assertEquals(listOf("turn:relay.example.org:3478", "turns:relay.example.org:5349?transport=tcp"), t.urls)
+        assertEquals("friend", t.username)
+        assertEquals("pä\$\$ w0rd", t.credential)
+        assertNull(TurnShare.parse("hello"))
+        assertNull(TurnShare.parse(TurnShare.PREFIX + "!!!"))
+        assertNull(TurnShare.parse(TurnShare.PREFIX + "x".repeat(3000)))
+    }
+}

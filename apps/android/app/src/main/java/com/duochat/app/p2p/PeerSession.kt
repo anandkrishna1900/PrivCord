@@ -114,6 +114,9 @@ class PeerSession(
 
     suspend fun connectionPath(): ConnectionPath? = transport?.connectionPath()
 
+    val iceState: String? get() = (transport as? WebRtcTransport)?.iceState
+    val localCandidates get() = (transport as? WebRtcTransport)?.lastCandidates
+
     /** The peer's identity as it proved itself in the handshake (null before that). */
     fun peerCard(): com.duochat.app.security.ContactCard? =
         auth.hello?.let { com.duochat.app.security.ContactCard(it.key, it.dh, it.proof) }
@@ -333,7 +336,7 @@ class PeerSession(
             "read" -> if (auth.authenticated) handleRead(frame)
             "message" -> if (auth.authenticated) handlePeerMessage(frame)
             "gmsg", "group_push", "group_events", "group_have", "relay_blob",
-            "declined", "file_offer", "file_chunk", "privacy",
+            "declined", "file_offer", "file_chunk", "privacy", "delete", "react",
             -> if (isReady) listener.onFrame(frame)
         }
     }

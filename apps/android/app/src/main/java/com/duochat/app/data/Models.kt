@@ -44,6 +44,10 @@ data class ChatMessage(
     val file: FileMeta? = null,
     /** Channel messages: the sender's self-chosen name plus a short id (they are not in our contacts). */
     val senderName: String? = null,
+    /** Deleted for everyone: only a tombstone is kept. */
+    val deleted: Boolean = false,
+    /** Who reacted with what (uid to emoji). */
+    val reactions: Map<String, String> = emptyMap(),
 )
 
 /** One message waiting for one recipient. */
@@ -149,6 +153,8 @@ data class ContactView(
     val safetyNumber: String,
     /** A direct chat is possible (friends you swapped invites with, or group people when neither side is group-only). */
     val direct: Boolean = true,
+    /** Plain-language reason a direct link is not forming; null when fine or too early to say. */
+    val diagnosis: Diagnosis? = null,
 )
 
 data class MemberView(
@@ -223,6 +229,9 @@ data class ChatState(
     val channels: List<ChannelView> = emptyList(),
     /** Phones currently linked over the Bluetooth mesh (0 when the mesh is off). */
     val meshLinks: Int = 0,
+    /** New mesh messages this phone heard, and copies it passed on to other phones (for field testing). */
+    val meshHeard: Int = 0,
+    val meshPassedOn: Int = 0,
 )
 
 /** A public channel we have joined. */

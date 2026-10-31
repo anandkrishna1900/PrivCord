@@ -55,6 +55,13 @@ export function isInlineVideo(mime: string): boolean {
   return INLINE_VIDEO.has(mime.toLowerCase());
 }
 
+/** Voice notes and other audio that play inline. */
+const INLINE_AUDIO = new Set(['audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'audio/aac', 'audio/wav', 'audio/x-m4a']);
+
+export function isInlineAudio(mime: string): boolean {
+  return INLINE_AUDIO.has(mime.toLowerCase().split(';')[0]!.trim());
+}
+
 /** A file name that is safe to show and to save under: no path, no control characters, bounded length. */
 export function sanitizeFileName(raw: string): string {
   // eslint-disable-next-line no-control-regex

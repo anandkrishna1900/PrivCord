@@ -87,6 +87,20 @@ class MeshTest {
     }
 
     @Test
+    fun `a packet lost because the link dropped mid-send arrives when the link comes back`() {
+        val sim = Sim()
+        sim.add("A", "B", "C")
+        sim.connect("A", "B"); sim.connect("B", "C")
+        val outs = sim.nodes["A"]!!.inject(message("flaky"), sim.now) // handed to the radio...
+        assertEquals(1, outs.size)
+        sim.disconnect("A", "B") // ...which loses the link before it arrives
+        assertEquals(0, sim.got["B"]!!.size)
+        sim.connect("A", "B")
+        assertEquals(1, sim.got["B"]!!.size)
+        assertEquals(1, sim.got["C"]!!.size)
+    }
+
+    @Test
     fun `carries a message for a phone that shows up later, once only, and forgets it after the carry time`() {
         val sim = Sim()
         sim.add("A", "B", "C", "D")

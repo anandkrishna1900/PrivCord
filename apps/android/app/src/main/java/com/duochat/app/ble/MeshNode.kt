@@ -99,6 +99,9 @@ class MeshNode(
     @Synchronized
     fun linkDown(link: String) {
         links.remove(link)
+        // A link that drops may have dropped a packet in flight: forget what we "sent" over it so the next link-up
+        // hands everything over again (the other phone ignores copies it already has).
+        for (c in carried.values) c.sentTo.remove(link)
     }
 
     private fun remember(id: String, now: Long) {

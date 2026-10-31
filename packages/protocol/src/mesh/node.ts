@@ -139,6 +139,9 @@ export class MeshNode {
 
   linkDown(link: string): void {
     this.links.delete(link);
+    // A link that drops may have dropped a packet in flight. Forget what we "sent" over it so the next link-up
+    // hands everything over again; the other phone ignores copies it already has.
+    for (const c of this.carried.values()) c.sentTo.delete(link);
   }
 
   /* ---- internals ---- */

@@ -91,7 +91,7 @@ the Tauri build (`npm run tauri:dev`, needs Rust) for the real thing. Run your o
 [Architecture](docs/ARCHITECTURE.md) · [Groups and introductions](docs/GROUPS.md) ·
 [Connectivity](docs/CONNECTIVITY.md) · [Identity and recovery](docs/IDENTITY_AND_RECOVERY.md) ·
 [Bluetooth](docs/BLE_TRANSPORT.md) · [Channels and mesh](docs/CHANNELS_AND_MESH.md) · [Deployment](docs/DEPLOYMENT.md) ·
-[Emergency deletion](docs/EMERGENCY_DELETION.md) · [Known limitations](docs/KNOWN_LIMITATIONS.md) ·
+[Emergency deletion and panic wipe](docs/EMERGENCY_DELETION.md) · [Relay (TURN) server kit](docs/turn-server/docker-compose.yml) · [Bluetooth mesh field test](docs/MESH_FIELD_TEST.md) · [Known limitations](docs/KNOWN_LIMITATIONS.md) ·
 [Android status](docs/ANDROID_STATUS.md) · [Security policy](SECURITY.md)
 
 ## Status: what is tested, and what is not

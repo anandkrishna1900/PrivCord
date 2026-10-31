@@ -230,3 +230,53 @@ describe('mesh relaying', () => {
     }
   });
 });
+
+
+describe('mesh over flaky radios', () => {
+  it('a packet lost because the link dropped mid-send arrives when the link comes back', async () => {
+    const sim = new Sim();
+    sim.add('A', 'B', 'C');
+    sim.connect('A', 'B');
+    sim.connect('B', 'C');
+    const { blob } = await message('flaky');
+    const outs = sim.nodes.get('A')!.inject(blob, sim.now); // handed to the radio...
+    expect(outs).toHaveLength(1);
+    sim.disconnect('A', 'B'); // ...which loses the link before it arrives
+    expect(sim.got.get('B')).toHaveLength(0);
+    sim.connect('A', 'B');
+    expect(sim.got.get('B')).toHaveLength(1);
+    expect(sim.got.get('C')).toHaveLength(1);
+  });
+
+  it('links that keep flapping still deliver everything exactly once to everyone who stays connected', async () => {
+    const sim = new Sim();
+    const ids = Array.from({ length: 12 }, (_, i) => `F${i}`);
+    sim.add(...ids);
+    let seed = 99;
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    const ring: Array<[string, string]> = ids.map((id, i) => [id, ids[(i + 1) % ids.length]!]);
+    for (const [a, b] of ring) sim.connect(a, b);
+    const sent: SealedBlob[] = [];
+    for (let round = 0; round < 40; round += 1) {
+      const [a, b] = ring[Math.floor(rnd() * ring.length)]!;
+      if (sim.edges.has(a < b ? `${a}|${b}` : `${b}|${a}`)) sim.disconnect(a, b);
+      else sim.connect(a, b);
+      if (round % 8 === 0) {
+        const m = await message(`m${round}`, `Who${round}`);
+        sent.push(m.blob);
+        sim.send(ids[Math.floor(rnd() * ids.length)]!, m.blob);
+      }
+      sim.now += 1000;
+    }
+    for (const [a, b] of ring) if (!sim.edges.has(a < b ? `${a}|${b}` : `${b}|${a}`)) sim.connect(a, b); // everyone back in range
+    for (const id of ids) {
+      const ours = sim.got.get(id)!;
+      expect(new Set(ours.map((x) => x.ct)).size, `${id} got duplicates`).toBe(ours.length);
+    }
+    // every message that was sent reached every phone except its author, who never receives their own
+    for (const blob of sent) {
+      const holders = ids.filter((id) => sim.got.get(id)!.some((x) => x.ct === blob.ct));
+      expect(holders.length).toBeGreaterThanOrEqual(ids.length - 1);
+    }
+  });
+});

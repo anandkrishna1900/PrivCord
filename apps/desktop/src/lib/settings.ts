@@ -16,6 +16,8 @@ export interface AppSettings {
    * and they get yours, but neither of you can start a direct chat unless you swap invites yourselves.
    */
   groupOnly: boolean;
+  /** Panic wipe: pressing Ctrl+Shift+Backspace three times quickly erases everything on this device, with no questions. */
+  panicWipe: boolean;
 }
 
 export const ACCENTS = [
@@ -36,6 +38,7 @@ const DEFAULTS: AppSettings = {
   palette: DEFAULT_PALETTE,
   displayName: '',
   groupOnly: false,
+  panicWipe: false,
 };
 
 export function parseSettings(raw: string | null): AppSettings {
@@ -61,6 +64,7 @@ export function parseSettings(raw: string | null): AppSettings {
           : DEFAULTS.notificationPreviews,
       palette: typeof parsed.palette === 'string' && (parsed.palette === DEFAULT_PALETTE || themeById(parsed.palette)) ? parsed.palette : DEFAULT_PALETTE,
       groupOnly: typeof parsed.groupOnly === 'boolean' ? parsed.groupOnly : DEFAULTS.groupOnly,
+      panicWipe: typeof parsed.panicWipe === 'boolean' ? parsed.panicWipe : DEFAULTS.panicWipe,
       displayName:
         typeof parsed.displayName === 'string'
           ? parsed.displayName.trim().slice(0, 40)

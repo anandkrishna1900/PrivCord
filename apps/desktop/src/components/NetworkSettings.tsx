@@ -3,6 +3,7 @@ import {
   DEFAULT_NETWORK_CONFIG,
   DEFAULT_NOSTR_RELAYS,
   isIceUrl,
+  parseTurnShare,
   isWsUrl,
   type NetworkConfig,
   type TransportMode,
@@ -186,6 +187,22 @@ export function NetworkSettings({ engine, state }: { engine: ChatEngine | null; 
         <textarea rows={2} value={stun} onChange={(e) => setStun(e.target.value)} placeholder="stun:stun.example.org:3478" />
       </label>
 
+      <label className="field">
+        <span>Paste a relay setup line (from a friend or from your own relay) to fill in the three boxes below</span>
+        <input
+          aria-label="Relay setup line"
+          placeholder="PRIVCORD-TURN1:..."
+          autoComplete="off"
+          onChange={(e) => {
+            const t = parseTurnShare(e.target.value);
+            if (!t) return;
+            setTurnUrls(t.urls.join(','));
+            setTurnUser(t.username);
+            setTurnPass(t.credential);
+            e.target.value = '';
+          }}
+        />
+      </label>
       <label className="field">
         <span>TURN servers (relay traffic when no direct path exists; one per line, comma-separate alternatives)</span>
         <textarea rows={2} value={turnUrls} onChange={(e) => setTurnUrls(e.target.value)} placeholder="turn:turn.example.org:3478" />

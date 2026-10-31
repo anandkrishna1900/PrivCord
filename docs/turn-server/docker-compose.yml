@@ -1,0 +1,12 @@
+# A relay (TURN) server for PrivCord. Run on any small VPS with a public IP (about 1 GB RAM is plenty).
+# 1. Copy this folder to the server, edit turnserver.conf (public IP, realm, password).
+# 2. docker compose up -d
+# 3. Open UDP+TCP 3478 and UDP 49152-49252 in the server firewall.
+# 4. On your own computer: node make-share-line.mjs   -> paste the line into Settings > Connection on every device.
+services:
+  coturn:
+    image: coturn/coturn:4.6
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro

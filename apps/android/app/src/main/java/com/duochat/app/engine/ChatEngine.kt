@@ -13,6 +13,18 @@ import com.duochat.app.data.ContactView
 import com.duochat.app.data.ConnectionPath
 import com.duochat.app.data.AssembleResult
 import com.duochat.app.data.DeclineReason
+import com.duochat.app.data.Backup
+import com.duochat.app.data.ConnectionFacts
+import com.duochat.app.data.Diagnosis
+import com.duochat.app.data.diagnoseConnection
+import com.duochat.app.data.REACTION_EMOJI
+import com.duochat.app.data.ReactionEvent
+import com.duochat.app.data.deleteFrame
+import com.duochat.app.data.parseDelete
+import com.duochat.app.data.parseReact
+import com.duochat.app.data.reactFrame
+import com.duochat.app.data.summarizeReactions
+import org.json.JSONArray
 import com.duochat.app.data.FileAssembler
 import com.duochat.app.data.FileChunk
 import com.duochat.app.data.FileMeta
@@ -160,6 +172,8 @@ class ChatEngine(
         var path: ConnectionPath? = null
         var lastOfferAt = 0L
         var attempt = 0
+        /** Something came back from the friend during this attempt (a ready, offer or answer). */
+        var heardAt = 0L
         var offerTimeout: Job? = null
         var pathJob: Job? = null
         val sent = mutableSetOf<String>()
@@ -445,6 +459,210 @@ class ChatEngine(
     }
 
     // ---------------------------------------------------------------------
+    // Delete, reactions, search, backup
+    // ---------------------------------------------------------------------
+
+    private suspend fun dropMessage(messageId: String) {
+        messages.remove(messageId)
+        outbox.values.removeAll { it.messageId == messageId }
+        runCatching { store.deleteMessage(messageId) }
+        emit()
+    }
+
+    private fun peersOf(m: ChatMessage): List<String> {
+        if (friends.containsKey(m.conversationId)) return listOf(m.conversationId)
+        return coordinator?.state(m.conversationId)?.members?.keys?.filter { it != selfUid }.orEmpty()
+    }
+
+    /** "Delete for me" removes it here only. "Delete for everyone" (your own messages) also asks the others to remove it. */
+    suspend fun deleteMessage(messageId: String, everyone: Boolean) {
+        val m = messages[messageId] ?: return
+        if (!everyone || m.senderId != selfUid) {
+            dropMessage(messageId)
+            return
+        }
+        tombstone(m)
+        for (uid in peersOf(m)) {
+            val link = links[uid] ?: continue
+            if (link.session.isReady && link.session.sendJson(deleteFrame(messageId))) link.sent += "del:$messageId"
+        }
+        emit()
+    }
+
+    private suspend fun tombstone(m: ChatMessage) {
+        val dead = m.copy(deleted = true, text = "", file = null, type = MessageType.TEXT, reactions = emptyMap(), replyTo = null)
+        messages[m.messageId] = dead
+        runCatching { store.putMessage(dead) }
+        runCatching { withContext(Dispatchers.IO) { store.deleteFileOnly(m.messageId) } }
+    }
+
+    private suspend fun applyRemoteDelete(from: String, messageId: String) {
+        val m = messages[messageId] ?: return
+        // Only the author can delete a message for everyone.
+        if (m.senderId != from || m.deleted) return
+        tombstone(m)
+        emit()
+    }
+
+    /** Toggle my reaction on a message (the same emoji again removes it). */
+    suspend fun react(messageId: String, emoji: String) {
+        val m = messages[messageId] ?: return
+        if (m.deleted || m.conversationId.startsWith("chan:") || emoji !in REACTION_EMOJI) return
+        val reactions = m.reactions.toMutableMap()
+        val on = reactions[selfUid] != emoji
+        if (on) reactions[selfUid] = emoji else reactions.remove(selfUid)
+        val updated = m.copy(reactions = reactions)
+        messages[messageId] = updated
+        runCatching { store.putMessage(updated) }
+        for (uid in peersOf(m)) {
+            val link = links[uid] ?: continue
+            if (link.session.isReady && link.session.sendJson(reactFrame(messageId, emoji, on))) link.sent += "rx:$messageId:$emoji"
+        }
+        emit()
+    }
+
+    private suspend fun applyRemoteReaction(from: String, e: ReactionEvent) {
+        val m = messages[e.messageId] ?: return
+        if (m.deleted) return
+        val allowed = if (friends.containsKey(m.conversationId)) m.conversationId == from else coordinator?.isMember(m.conversationId, from) == true
+        if (!allowed) return
+        val reactions = m.reactions.toMutableMap()
+        if (e.on) reactions[from] = e.emoji else if (reactions[from] == e.emoji) reactions.remove(from)
+        val updated = m.copy(reactions = reactions)
+        messages[e.messageId] = updated
+        runCatching { store.putMessage(updated) }
+        emit()
+    }
+
+    /** When a link opens: repeat deletions and my reactions the other side may have missed. */
+    private fun resendSocial(uid: String, link: Link) {
+        if (!link.session.isReady) return
+        for (m in messages.values) {
+            if (peersOf(m).none { it == uid }) continue
+            if (m.deleted && m.senderId == selfUid && "del:${m.messageId}" !in link.sent) {
+                if (link.session.sendJson(deleteFrame(m.messageId))) link.sent += "del:${m.messageId}"
+            }
+            val mine = m.reactions[selfUid]
+            if (mine != null && !m.deleted && "rx:${m.messageId}:$mine" !in link.sent) {
+                if (link.session.sendJson(reactFrame(m.messageId, mine, true))) link.sent += "rx:${m.messageId}:$mine"
+            }
+        }
+    }
+
+    class SearchHit(val messageId: String, val conversationId: String, val conversationName: String, val senderName: String, val text: String, val at: Long)
+
+    /** Looks through the messages on this phone (nothing leaves it). */
+    fun search(query: String, limit: Int = 50): List<SearchHit> {
+        val q = query.trim().lowercase()
+        if (q.length < 2) return emptyList()
+        fun convName(id: String) = when {
+            id.startsWith("chan:") -> "# ${id.removePrefix("chan:")}"
+            friends.containsKey(id) -> nameOf(id)
+            else -> coordinator?.state(id)?.name ?: "Chat"
+        }
+        return messages.values
+            .filter { !it.deleted && it.text.lowercase().contains(q) && it.senderId !in muted }
+            .sortedByDescending { it.clientCreatedAt }
+            .take(limit)
+            .map { SearchHit(it.messageId, it.conversationId, convName(it.conversationId), if (it.senderId == selfUid) "You" else (it.senderName ?: nameOf(it.senderId)), it.text, it.clientCreatedAt) }
+    }
+
+    /** A passphrase-protected copy of friends, groups, channels and messages (no files, no recovery phrase). */
+    suspend fun exportBackup(passphrase: String): Result<String> = runCatching {
+        require(passphrase.length >= Backup.MIN_PASSPHRASE) { "Use at least ${Backup.MIN_PASSPHRASE} characters." }
+        val contacts = org.json.JSONArray()
+        for (f in friends.values) {
+            contacts.put(
+                JSONObject().put("uid", f.uid).put("name", f.name).put("card", ContactCards.encode(f.card)).put("trust", f.trust.wire)
+                    .also { o -> f.introducedBy?.let { o.put("introducedBy", it) } },
+            )
+        }
+        val groups = JSONObject()
+        for (id in coordinator?.groupIds().orEmpty()) coordinator?.exportGroup(id)?.let { groups.put(id, org.json.JSONArray(it)) }
+        val msgs = org.json.JSONArray()
+        for (m in messages.values) {
+            msgs.put(
+                JSONObject().put("id", m.messageId).put("from", m.senderId).put("text", m.text).put("at", m.clientCreatedAt)
+                    .put("conv", m.conversationId).put("type", m.type.wire).put("deleted", m.deleted)
+                    .also { o ->
+                        m.file?.let { o.put("file", it.toJson()) }
+                        m.replyTo?.let { o.put("replyTo", it.toJson()) }
+                        m.senderName?.let { o.put("senderName", it) }
+                        if (m.reactions.isNotEmpty()) o.put("reactions", JSONObject(m.reactions))
+                    },
+            )
+        }
+        withContext(Dispatchers.Default) {
+            Backup.seal(
+                JSONObject().put("v", 1).put("uid", selfUid).put("at", System.currentTimeMillis()).put("contacts", contacts)
+                    .put("groups", groups).put("channels", org.json.JSONArray(joinedChannels.keys.toList()))
+                    .put("blocked", org.json.JSONArray(muted.toList())).put("messages", msgs),
+                passphrase,
+            )
+        }
+    }
+
+    /** Adds what is in a backup to what is here. Never replaces or removes anything that already exists. */
+    suspend fun importBackup(text: String, passphrase: String): Result<String> = runCatching {
+        val data = withContext(Dispatchers.Default) { Backup.open(text, passphrase) }
+            ?: throw IllegalArgumentException("That did not open. Check the passphrase and that this is a PrivCord backup file.")
+        if (data.optString("uid") != selfUid) {
+            throw IllegalArgumentException("This backup belongs to a different identity. Restore your 12-word recovery phrase first, then import it.")
+        }
+        var addedFriends = 0
+        val contacts = data.optJSONArray("contacts")
+        for (i in 0 until (contacts?.length() ?: 0)) {
+            val c = contacts!!.getJSONObject(i)
+            val contact = ContactCards.decode(c.optString("card")) ?: continue
+            if (friends.containsKey(contact.uid)) continue
+            val friend = Friend(contact.uid, c.optString("name").ifEmpty { contact.card.name ?: "Friend ${contact.uid.take(4)}" }, contact.card, ContactTrust.fromWire(c.optString("trust")), c.optString("introducedBy").ifEmpty { null }, null, System.currentTimeMillis())
+            friends[friend.uid] = friend
+            store.putContact(entityFrom(friend))
+            ensureLink(friend.uid)
+            addedFriends++
+        }
+        var addedGroups = 0
+        val groups = data.optJSONObject("groups")
+        val known = coordinator?.groupIds().orEmpty().toSet()
+        val missing = HashMap<String, List<Any?>>()
+        for (id in groups?.keys()?.asSequence()?.toList().orEmpty()) {
+            if (id in known) continue
+            val a = groups!!.getJSONArray(id)
+            missing[id] = List(a.length()) { a.get(it) }
+        }
+        if (missing.isNotEmpty()) {
+            coordinator?.load(missing.mapValues { (_, v) -> v.filterIsInstance<JSONObject>() })
+            for (id in missing.keys) coordinator?.exportGroup(id)?.let { store.saveGroupLog(id, it); savedGroups += id }
+            addedGroups = missing.size
+        }
+        var addedMessages = 0
+        val msgs = data.optJSONArray("messages")
+        for (i in 0 until (msgs?.length() ?: 0)) {
+            val o = msgs!!.getJSONObject(i)
+            val id = o.optString("id")
+            if (!isValidClientMessageId(id) || messages.containsKey(id)) continue
+            val m = ChatMessage(
+                messageId = id, clientMessageId = id, senderId = o.optString("from"), text = o.optString("text"),
+                clientCreatedAt = o.optLong("at"), transport = TransportKind.P2P,
+                deliveryState = if (o.optString("from") == selfUid) DeliveryState.DELIVERED else DeliveryState.READ,
+                readAt = System.currentTimeMillis(), conversationId = o.optString("conv"),
+                type = MessageType.fromWire(o.optString("type")), deleted = o.optBoolean("deleted"),
+                file = FileMeta.fromJson(o.optJSONObject("file")), replyTo = ReplyRef.fromJson(o.optJSONObject("replyTo")),
+                senderName = o.optString("senderName").ifEmpty { null }, 
+                reactions = o.optJSONObject("reactions")?.let { r -> r.keys().asSequence().associateWith { k -> r.getString(k) } } ?: emptyMap(),
+            )
+            messages[id] = m
+            store.putMessage(m)
+            addedMessages++
+        }
+        val chans = data.optJSONArray("channels")
+        for (i in 0 until (chans?.length() ?: 0)) runCatching { joinChannel(chans!!.getString(i)) }
+        startSignaling(force = hub == null)
+        emit()
+        "Restored $addedFriends friends, $addedGroups groups and $addedMessages messages."
+    }
+
+    // ---------------------------------------------------------------------
     // Open channels and the Bluetooth mesh
     // ---------------------------------------------------------------------
 
@@ -583,10 +801,14 @@ class ChatEngine(
         return true
     }
 
+    private var meshHeard = 0
+    private var meshPassedOn = 0
+
     private suspend fun onMeshPacket(link: String, json: String) {
         val parsed = try { JSONObject(json) } catch (_: Exception) { return }
         val handled = meshNode.handle(parsed, link, System.currentTimeMillis())
         handled.forward.forEach(::sendMesh)
+        if (handled.accepted != null) { meshHeard += 1; meshPassedOn += handled.forward.size; emit() }
         val blob = handled.accepted ?: return
         if (blob.to == selfUid) {
             handleBlob(blob, "mesh", null) // a direct message (or ack) sealed to us, relayed by strangers
@@ -985,7 +1207,9 @@ class ChatEngine(
                 listOf(conversationId)
             }
             val base = createOutgoingMessage(selfUid, rawText, replyFor(conversationId, replyToId))
-            val message = base.copy(conversationId = conversationId, totalRecipients = if (isGroup) recipients.size else 0)
+            val message = base.copy(
+                conversationId = conversationId, totalRecipients = if (isGroup) recipients.size else 0,
+            )
             messages[message.messageId] = message
             store.putMessage(message)
             val now = System.currentTimeMillis()
@@ -1076,7 +1300,7 @@ class ChatEngine(
         for (row in outbox.values.filter { it.recipientId == uid }.sortedBy { it.createdAt }) {
             val message = messages[row.messageId] ?: continue
             if (message.senderId != selfUid || row.messageId in link.sent) continue
-            if (row.deliveryState == DeliveryState.FAILED) continue
+            if (row.deliveryState == DeliveryState.FAILED || message.deleted) continue
             if (message.type == MessageType.FILE) {
                 pushFile(uid, link, message, row)
                 continue
@@ -1099,6 +1323,7 @@ class ChatEngine(
             store.updateOutboxDelivery(row, DeliveryState.SENT, now)
             if (isGroup) refreshGroupMessage(message.messageId) else setDirectState(message, DeliveryState.SENT, TransportKind.P2P)
         }
+        resendSocial(uid, link)
         emit()
     }
 
@@ -1341,6 +1566,7 @@ class ChatEngine(
     private suspend fun onChannelReady(uid: String) {
         val link = links[uid] ?: return
         link.attempt = 0
+        link.heardAt = 0
         link.bleAttempt = 0
         link.offerTimeout?.cancel()
         link.sent.clear()
@@ -1407,13 +1633,14 @@ class ChatEngine(
     /** Store a message from a friend, acknowledge it, notify. Shared by the direct, group and relay paths. */
     private suspend fun ingest(message: ChatMessage, fromUid: String, sendAck: (JSONObject) -> Unit) {
         val existing = messages[message.messageId]
+        val withExpiry = message
         val merged = if (existing != null) {
             existing.copy(
                 deliveryState = if (rank(existing.deliveryState) >= rank(message.deliveryState)) existing.deliveryState else message.deliveryState,
                 readAt = existing.readAt ?: message.readAt,
             )
         } else {
-            message
+            withExpiry
         }
         messages[merged.messageId] = merged
         store.putMessage(merged)
@@ -1453,6 +1680,14 @@ class ChatEngine(
             }
             "file_chunk" -> {
                 FileChunk.parse(frame)?.let { receiveChunk(fromUid, it) }
+                return
+            }
+            "delete" -> {
+                parseDelete(frame)?.let { applyRemoteDelete(fromUid, it) }
+                return
+            }
+            "react" -> {
+                parseReact(frame)?.let { applyRemoteReaction(fromUid, it) }
                 return
             }
         }
@@ -1743,8 +1978,9 @@ class ChatEngine(
         val link = ensureLink(friend.uid)
         try {
             when (payload.optString("t")) {
-                "ready" -> if (isInitiator(selfUid, friend.uid)) link.lastOfferAt = 0
+                "ready" -> { link.heardAt = System.currentTimeMillis(); if (isInitiator(selfUid, friend.uid)) link.lastOfferAt = 0 }
                 "offer" -> {
+                    link.heardAt = System.currentTimeMillis()
                     val sdp = payload.optString("sdp")
                     if (isInitiator(selfUid, friend.uid) || link.session.isReady || sdp.isEmpty()) return
                     if (!LinkScheduler.acceptIncoming(links.values.count { it.session.isReady })) return
@@ -1754,6 +1990,7 @@ class ChatEngine(
                     armOfferTimeout(friend.uid)
                 }
                 "answer" -> {
+                    link.heardAt = System.currentTimeMillis()
                     val sdp = payload.optString("sdp")
                     if (!isInitiator(selfUid, friend.uid) || !link.session.hasPendingConnection || link.session.isReady || sdp.isEmpty()) return
                     link.session.applyAnswer(sdp)
@@ -2088,6 +2325,24 @@ class ChatEngine(
         }
     }
 
+    private fun diagnosisOf(f: Friend): Diagnosis? {
+        val link = links[f.uid] ?: return null
+        if (link.session.isReady || link.session.isBluetooth) return null
+        val cfg = networkConfig()
+        return diagnoseConnection(
+            ConnectionFacts(
+                signaling = hub?.status() ?: SignalingStatus.IDLE,
+                attempts = link.attempt,
+                sawPeerReply = link.heardAt > 0,
+                localCandidates = link.session.localCandidates,
+                iceState = link.session.iceState,
+                hasTurn = cfg.turn.isNotEmpty(),
+                storeForward = cfg.storeForward,
+            ),
+            f.name,
+        )
+    }
+
     private fun emit() {
         val current = identity ?: return
         val coordinator = coordinator
@@ -2107,6 +2362,7 @@ class ChatEngine(
                 links[f.uid]?.path.takeIf { linkStatus(f.uid) == LinkStatus.CONNECTED },
                 runCatching { identityManager.deriveSafetyNumber(current.publicJwk, f.card.sign) }.getOrDefault(""),
                 direct = canDirect(f.uid),
+                diagnosis = diagnosisOf(f),
             )
         }
         val groups = coordinator?.groupIds().orEmpty().mapNotNull { id ->
@@ -2174,6 +2430,7 @@ class ChatEngine(
                     ChannelView("chan:$name", name, shaped["chan:$name"].orEmpty().count { m -> m.senderId != selfUid && m.readAt == null }, c.hub.status() == SignalingStatus.ONLINE)
                 },
                 meshLinks = meshRadio?.linkCount ?: 0,
+                meshHeard = meshHeard, meshPassedOn = meshPassedOn,
                 requests = requestCards.map { (uid, r) -> InviteRequest(uid, r.first.card.name ?: "Friend ${uid.take(4)}", r.second) },
                 linkCount = links.values.count { l -> l.session.isReady },
                 notice = notice ?: it.notice,

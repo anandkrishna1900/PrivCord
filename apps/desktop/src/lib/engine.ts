@@ -1,5 +1,15 @@
 import {
   CHANNEL_TTL_SEC,
+  diagnoseConnection,
+  type Diagnosis,
+  deleteFrame,
+  parseDeleteFrame,
+  parseReactFrame,
+  reactFrame,
+  summarizeReactions,
+  BACKUP_MIN_PASSPHRASE,
+  openBackup,
+  sealBackup,
   FileAssembler,
   MAX_CHANNEL_TEXT,
   deriveChannel,
@@ -65,7 +75,7 @@ import {
   uidMatchesKeys,
   type DeviceIdentity,
 } from './identity';
-import { loadNetworkConfig, rtcConfigFor } from './network';
+import { loadNetworkConfig, rtcConfigFor, saveNetworkConfig } from './network';
 import { SignalingHub, transportsFor } from './signaling/hub';
 import type { SignalingStatus, SignalingTransport } from './signaling/types';
 import { LocalStore, type FileMeta, type StoredMessage } from './localDb';
@@ -114,6 +124,8 @@ export interface ContactView {
   last?: LastMessage;
   /** Plain-language status line. */
   status: string;
+  /** Why it is not connecting, in plain words, once it has been tried a few times. */
+  diagnosis?: Diagnosis;
   /** Appears in the chat list and can be messaged. Group-only people do not until verified. */
   direct: boolean;
 }
@@ -155,6 +167,17 @@ export interface UiMessage extends StoredMessage {
   total: number;
   /** 0..1 while a file is being sent or received. */
   progress?: number;
+  /** Reactions grouped for display. */
+  reactionChips: { emoji: string; count: number; mine: boolean }[];
+}
+
+export interface SearchHit {
+  messageId: string;
+  convId: string;
+  convName: string;
+  senderName: string;
+  text: string;
+  at: number;
 }
 
 /** Someone who used our invite words and answered with their own card. */
@@ -547,6 +570,163 @@ export class ChatEngine {
     this.emit({ answer: null });
   }
 
+  /* ---------------- delete, reactions, search ---------------- */
+
+  private dropMessage(messageId: string): void {
+    this.msgs.delete(messageId);
+    void this.deps.store.deleteMessage(messageId).catch(() => undefined);
+  }
+
+  /** "Delete for me" removes it here only. "Delete for everyone" (your own messages) also asks the others to remove it. */
+  deleteMessage(messageId: string, everyone: boolean): void {
+    const m = this.msgs.get(messageId);
+    if (!m) return;
+    if (!everyone || m.senderId !== this.identity.uid) {
+      this.dropMessage(messageId);
+      this.emit();
+      return;
+    }
+    this.tombstone(m);
+    for (const uid of this.recipientsOfConversation(m.conversationId)) {
+      const link = this.links.get(uid);
+      if (link?.ready && link.sendJson(deleteFrame(messageId))) link.sent.add(`del:${messageId}`);
+    }
+    this.emit();
+  }
+
+  private tombstone(m: StoredMessage): void {
+    m.deleted = true;
+    m.text = '';
+    m.file = undefined;
+    m.type = 'text';
+    m.reactions = undefined;
+    m.replyTo = undefined;
+    void this.deps.store.deleteFile(m.messageId).catch(() => undefined);
+    void this.deps.store.putMessage(m).catch(() => undefined);
+  }
+
+  private applyRemoteDelete(from: string, messageId: string): void {
+    const m = this.msgs.get(messageId);
+    // Only the author can delete a message for everyone.
+    if (!m || m.senderId !== from || m.deleted) return;
+    this.tombstone(m);
+    this.emit();
+  }
+
+  /** Toggle my reaction on a message (the same emoji again removes it). */
+  react(messageId: string, emoji: string): void {
+    const m = this.msgs.get(messageId);
+    if (!m || m.deleted || m.conversationId.startsWith('chan:')) return;
+    const me = this.identity.uid;
+    const reactions = { ...(m.reactions ?? {}) };
+    const on = reactions[me] !== emoji;
+    if (on) reactions[me] = emoji;
+    else delete reactions[me];
+    m.reactions = reactions;
+    void this.deps.store.putMessage(m).catch(() => undefined);
+    for (const uid of this.recipientsOfConversationAll(m)) {
+      const link = this.links.get(uid);
+      if (link?.ready && link.sendJson(reactFrame(messageId, emoji, on))) link.sent.add(`rx:${messageId}:${emoji}`);
+    }
+    this.emit();
+  }
+
+  /** Everyone in a message's conversation except me (for a message someone else sent this includes the sender). */
+  private recipientsOfConversationAll(m: StoredMessage): string[] {
+    const me = this.identity.uid;
+    if (this.contacts.has(m.conversationId)) return [m.conversationId];
+    return (this.coord.state(m.conversationId) ? [...this.coord.state(m.conversationId)!.members.keys()] : []).filter((u) => u !== me);
+  }
+
+  private applyRemoteReaction(from: string, messageId: string, emoji: string, on: boolean): void {
+    const m = this.msgs.get(messageId);
+    if (!m || m.deleted) return;
+    const inConversation = this.contacts.has(m.conversationId) ? m.conversationId === from : this.coord.isMember(m.conversationId, from);
+    if (!inConversation) return;
+    const reactions = { ...(m.reactions ?? {}) };
+    if (on) reactions[from] = emoji;
+    else if (reactions[from] === emoji) delete reactions[from];
+    m.reactions = reactions;
+    void this.deps.store.putMessage(m).catch(() => undefined);
+    this.emit();
+  }
+
+  /** Looks through the messages on this device (nothing leaves it). */
+  search(query: string, limit = 50): SearchHit[] {
+    const q = query.trim().toLowerCase();
+    if (q.length < 2) return [];
+    const nameOfConv = (id: string) => (id.startsWith('chan:') ? `# ${id.slice(5)}` : this.contacts.has(id) ? this.nameOf(id) : (this.coord.state(id)?.name ?? 'Chat'));
+    return [...this.msgs.values()]
+      .filter((m) => !m.deleted && m.text.toLowerCase().includes(q) && !(m.senderId !== this.identity.uid && this.blocked.has(m.senderId)))
+      .sort((a, b) => b.clientCreatedAt - a.clientCreatedAt)
+      .slice(0, limit)
+      .map((m) => ({
+        messageId: m.messageId,
+        convId: m.conversationId,
+        convName: nameOfConv(m.conversationId),
+        senderName: m.senderId === this.identity.uid ? 'You' : (m.senderName ?? this.nameOf(m.senderId)),
+        text: m.text,
+        at: m.clientCreatedAt,
+      }));
+  }
+
+  /* ---------------- backup ---------------- */
+
+  /** A passphrase-protected copy of friends, groups, channels and messages (no files, no recovery phrase). */
+  async exportBackup(passphrase: string): Promise<string> {
+    if (passphrase.length < BACKUP_MIN_PASSPHRASE) throw new Error(`Use at least ${BACKUP_MIN_PASSPHRASE} characters.`);
+    const messages = [...this.msgs.values()].map((m) => ({ ...m, file: m.file ? { ...m.file } : undefined }));
+    return sealBackup(
+      {
+        v: 1,
+        uid: this.identity.uid,
+        at: Date.now(),
+        contacts: [...this.contacts.values()],
+        groups: this.coord.export(),
+        channels: [...this.channels.keys()],
+        blocked: [...this.blocked],
+        messages,
+      },
+      passphrase,
+    );
+  }
+
+  /** Adds what is in a backup to what is here. Never replaces or removes anything that already exists. */
+  async importBackup(text: string, passphrase: string): Promise<{ friends: number; groups: number; messages: number }> {
+    const data = (await openBackup(text, passphrase)) as {
+      v?: number; uid?: string; contacts?: ContactRecord[]; groups?: Record<string, unknown[]>; channels?: string[];
+      blocked?: string[]; messages?: StoredMessage[];
+    } | null;
+    if (!data || data.v !== 1 || typeof data.uid !== 'string') throw new Error('That did not open. Check the passphrase and that this is a PrivCord backup file.');
+    if (data.uid !== this.identity.uid) throw new Error('This backup belongs to a different identity. Restore your 12-word recovery phrase first, then import it.');
+    let friends = 0;
+    for (const rec of data.contacts ?? []) {
+      if (!rec?.uid || !rec.card || this.contacts.has(rec.uid)) continue;
+      this.registerContact(rec, false);
+      friends += 1;
+    }
+    if (friends > 0) this.persistContacts();
+    let groups = 0;
+    const missing = Object.fromEntries(Object.entries(data.groups ?? {}).filter(([id]) => !this.coord.groupIds().includes(id)));
+    if (Object.keys(missing).length > 0) {
+      await this.coord.load(missing);
+      groups = Object.keys(missing).length;
+      this.persistGroups();
+    }
+    let added = 0;
+    for (const m of data.messages ?? []) {
+      if (!m?.messageId || this.msgs.has(m.messageId)) continue;
+      this.msgs.set(m.messageId, m);
+      await this.deps.store.putMessage(m).catch(() => undefined);
+      added += 1;
+    }
+    for (const uid of data.blocked ?? []) this.blocked.add(uid);
+    for (const name of data.channels ?? []) await this.joinChannel(name, true).catch(() => undefined);
+    this.emit({ notice: `Restored ${friends} friend${friends === 1 ? '' : 's'}, ${groups} group${groups === 1 ? '' : 's'} and ${added} message${added === 1 ? '' : 's'}.` });
+    void this.tick();
+    return { friends, groups, messages: added };
+  }
+
   /* ---------------- open channels ---------------- */
 
   /** A readable name for someone we only know from a channel: their chosen name plus a short id. */
@@ -844,6 +1024,7 @@ export class ChatEngine {
   private onLinkReady(link: PeerLink): void {
     const uid = link.uid;
     this.lastPing.set(uid, Date.now());
+    link.heardAt = 0;
     link.sendJson({ v: 1, kind: 'privacy', groupOnly: this.groupOnly });
     for (const out of this.coord.onLinkOpen(uid)) this.sendFrame(out.to, out.frame);
     this.flush(uid);
@@ -914,10 +1095,17 @@ export class ChatEngine {
       const blocked = this.cannotWrite(convId);
       if (blocked) return { ok: false, error: blocked };
       if (convId.startsWith('chan:')) return await this.sendChannel(convId.slice(5), rawText);
-      const base = createOutgoingMessage({ senderId: this.identity.uid, text: rawText, replyTo: this.replyFor(convId, replyToId) });
+      const base = {
+        ...createOutgoingMessage({ senderId: this.identity.uid, text: rawText, replyTo: this.replyFor(convId, replyToId) }),
+      };
       const recipients: Record<string, DeliveryState> = {};
       for (const uid of this.recipientsOfConversation(convId)) recipients[uid] = 'QUEUED';
-      const message: StoredMessage = { ...base, conversationId: convId, recipients, deliveryState: Object.keys(recipients).length ? 'QUEUED' : 'SENT' };
+      const message: StoredMessage = {
+        ...base,
+        conversationId: convId,
+        recipients,
+        deliveryState: Object.keys(recipients).length ? 'QUEUED' : 'SENT',
+      };
       this.msgs.set(message.messageId, message);
       await this.deps.store.putMessage(message);
       for (const uid of Object.keys(recipients)) this.deliver(message, uid);
@@ -1017,7 +1205,7 @@ export class ChatEngine {
   /** Write one message to one recipient if their channel is up. */
   private deliver(m: StoredMessage, uid: string): void {
     const state = m.recipients?.[uid];
-    if (!state || state === 'FAILED' || RANK[state] >= RANK.DELIVERED) return;
+    if (m.deleted || !state || state === 'FAILED' || RANK[state] >= RANK.DELIVERED) return;
     const link = this.links.get(uid);
     if (!link?.ready || link.sent.has(m.messageId)) return;
     if (m.type === 'file') {
@@ -1052,7 +1240,7 @@ export class ChatEngine {
         sha256: m.file.sha256,
         clientCreatedAt: m.clientCreatedAt,
         ...(m.replyTo ? { replyTo: m.replyTo } : {}),
-      };
+        };
       if (!link.sendJson(offer)) return;
       let sentChunks = 0;
       const total = Math.ceil(bytes.length / 12288);
@@ -1098,6 +1286,20 @@ export class ChatEngine {
       .filter((m) => m.senderId === this.identity.uid && m.recipients?.[uid] && m.recipients[uid] !== 'FAILED' && RANK[m.recipients[uid]!] < RANK.DELIVERED)
       .sort(compareMessages);
     for (const m of own) this.deliver(m, uid);
+    const link = this.links.get(uid);
+    if (link?.ready) {
+      for (const m of this.msgs.values()) {
+        const inConv = m.conversationId === uid || (m.recipients && uid in m.recipients);
+        if (!inConv) continue;
+        if (m.deleted && m.senderId === this.identity.uid && !link.sent.has(`del:${m.messageId}`)) {
+          if (link.sendJson(deleteFrame(m.messageId))) link.sent.add(`del:${m.messageId}`);
+        }
+        const mine = m.reactions?.[this.identity.uid];
+        if (mine && !m.deleted && !link.sent.has(`rx:${m.messageId}:${mine}`)) {
+          if (link.sendJson(reactFrame(m.messageId, mine, true))) link.sent.add(`rx:${m.messageId}:${mine}`);
+        }
+      }
+    }
     this.emit();
   }
 
@@ -1121,6 +1323,16 @@ export class ChatEngine {
     if (isRecord(raw) && raw.kind === 'privacy' && typeof raw.groupOnly === 'boolean') {
       this.peerGroupOnly.set(uid, raw.groupOnly);
       this.emit();
+      return;
+    }
+    const del = parseDeleteFrame(raw);
+    if (del) {
+      this.applyRemoteDelete(uid, del.messageId);
+      return;
+    }
+    const rx = parseReactFrame(raw);
+    if (rx) {
+      this.applyRemoteReaction(uid, rx.messageId, rx.emoji, rx.on);
       return;
     }
     const declined = parseDeclinedFrame(raw);
@@ -1508,15 +1720,18 @@ export class ChatEngine {
     try {
       switch (payload.t) {
         case 'ready':
+          link.heardAt = Date.now();
           if (link.isInitiator()) link.lastOfferAt = 0;
           return;
         case 'offer': {
+          link.heardAt = Date.now();
           if (link.isInitiator() || link.manual || link.ready || typeof payload.sdp !== 'string') return;
           const answer = await link.acceptOffer(payload.sdp);
           await this.putTo(rec.uid, { t: 'answer', sdp: answer }, 'sig', 120);
           return;
         }
         case 'answer':
+          link.heardAt = Date.now();
           if (link.isInitiator() && typeof payload.sdp === 'string') await link.applyAnswer(payload.sdp);
           return;
         case 'msg': {
@@ -1807,7 +2022,7 @@ export class ChatEngine {
     let best: StoredMessage | undefined;
     for (const m of this.msgs.values()) if (m.conversationId === convId && (!best || compareMessages(best, m) < 0)) best = m;
     return best
-      ? { text: best.type === 'file' ? filePreviewText(best.text) : best.text, at: best.clientCreatedAt, own: best.senderId === this.identity.uid, senderName: best.senderName ?? this.nameOf(best.senderId) }
+      ? { text: best.deleted ? 'Message deleted' : best.type === 'file' ? filePreviewText(best.text) : best.text, at: best.clientCreatedAt, own: best.senderId === this.identity.uid, senderName: best.senderName ?? this.nameOf(best.senderId) }
       : undefined;
   }
 
@@ -1815,6 +2030,30 @@ export class ChatEngine {
     let n = 0;
     for (const m of this.msgs.values()) if (m.conversationId === convId && m.senderId !== this.identity.uid && m.readAt == null) n += 1;
     return n;
+  }
+
+  private diagnosisOf(uid: string, link: PeerLink): { diagnosis?: Diagnosis } {
+    const status = this.hub?.status() ?? 'idle';
+    const d = diagnoseConnection(
+      {
+        signaling: status === 'online' || status === 'connecting' || status === 'error' ? status : 'idle',
+        attempts: link.offerAttempt,
+        sawPeerReply: link.heardAt > 0,
+        localCandidates: link.lastCandidates,
+        iceState: link.iceState,
+        hasTurn: this.network.turn.length > 0,
+        storeForward: this.network.storeForward,
+      },
+      this.nameOf(uid),
+    );
+    return d ? { diagnosis: d } : {};
+  }
+
+  /** One tap fallback from the "not connecting" banner: messages also go through the relays (sealed, 7 days). */
+  enableStoreForward(): void {
+    this.network = { ...this.network, storeForward: true };
+    saveNetworkConfig(this.network);
+    this.emit({ notice: 'Store-and-forward is on. Messages now also travel (encrypted) through the relays, so they arrive even when a direct link is not possible.' });
   }
 
   private statusFor(uid: string): string {
@@ -1843,6 +2082,7 @@ export class ChatEngine {
         unread: this.unread(c.uid),
         last: this.last(c.uid),
         status: this.statusFor(c.uid),
+        ...(link && !link.ready && !link.manual ? this.diagnosisOf(c.uid, link) : {}),
         direct: this.canDirect(c.uid),
       };
     });
@@ -1888,6 +2128,7 @@ export class ChatEngine {
         tick: own ? aggregate(m.recipients) : m.deliveryState,
         delivered: states.filter((s) => RANK[s] >= RANK.DELIVERED).length,
         total: states.length,
+        reactionChips: summarizeReactions(m.reactions, me),
         ...(this.progress.has(m.messageId) ? { progress: this.progress.get(m.messageId) } : {}),
       });
     }

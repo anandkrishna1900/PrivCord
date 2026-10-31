@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { formatBytes, isInlineImage, isInlineVideo, type DeliveryState } from '@duochat/protocol';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { REACTION_EMOJI, formatBytes, isInlineAudio, isInlineImage, isInlineVideo, type DeliveryState } from '@duochat/protocol';
 import type { FileMeta } from '../lib/localDb';
 import type { UiMessage } from '../lib/engine';
 import { formatDay, formatTime } from '../lib/format';
@@ -26,7 +26,8 @@ function FileBubble({ message, loadFile }: { message: UiMessage; loadFile: LoadF
   const [viewing, setViewing] = useState(false);
   const isImage = !!meta && isInlineImage(meta.mime);
   const isVideo = !!meta && isInlineVideo(meta.mime);
-  const preview = isImage || isVideo;
+  const isAudio = !!meta && isInlineAudio(meta.mime);
+  const preview = isImage || isVideo || isAudio;
 
   useEffect(() => {
     if (!preview) return;
@@ -87,6 +88,7 @@ function FileBubble({ message, loadFile }: { message: UiMessage; loadFile: LoadF
         </div>
       ) : null}
       {isVideo && url ? <video className="file-video" src={url} controls preload="metadata" playsInline /> : null}
+      {isAudio && url ? <audio className="file-audio" src={url} controls preload="metadata" aria-label={meta.name.startsWith('voice-note') ? 'Voice note' : meta.name} /> : null}
       <div className="file-card">
         <span className="file-icon" aria-hidden="true">
           <FileIcon size={22} />
@@ -167,8 +169,17 @@ export function MessageList({
   loadFile,
   canReply = true,
   onMute,
+  onReact,
+  onDelete,
+  focusId,
+  onFocused,
 }: {
   convId: string;
+  /** Message to scroll to and flash (from search). */
+  focusId?: string | null;
+  onFocused?: () => void;
+  onReact?: (messageId: string, emoji: string) => void;
+  onDelete?: (messageId: string, everyone: boolean) => void;
   messages: UiMessage[];
   isGroup: boolean;
   empty: string;
@@ -181,6 +192,29 @@ export function MessageList({
   onMute?: (uid: string) => void;
 }) {
   const [muteOffer, setMuteOffer] = useState<string | null>(null);
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  /** Open the menu under the bubble when there is no room above it. */
+  const [menuDown, setMenuDown] = useState(false);
+
+  useEffect(() => {
+    if (!menuFor) return;
+    const close = (event: MouseEvent) => {
+      if (!(event.target as HTMLElement).closest('.bubble-menu, .bubble-more')) setMenuFor(null);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [menuFor]);
+
+  useEffect(() => {
+    if (!focusId) return;
+    const el = scrollRef.current?.querySelector(`[data-mid="${CSS.escape(focusId)}"]`);
+    if (!el) return;
+    pinnedRef.current = false;
+    el.scrollIntoView({ block: 'center' });
+    el.classList.add('flash');
+    window.setTimeout(() => el.classList.remove('flash'), 1400);
+    onFocused?.();
+  }, [focusId, messages]);
   const byId = new Map(messages.map((m) => [m.messageId, m]));
   function jumpTo(id: string) {
     const el = scrollRef.current?.querySelector(`[data-mid="${CSS.escape(id)}"]`);
@@ -190,9 +224,11 @@ export function MessageList({
     window.setTimeout(() => el.classList.remove('flash'), 1400);
   }
   const scrollRef = useRef<HTMLDivElement>(null);
-  const atBottomRef = useRef(true);
-  const didInitialScroll = useRef(false);
+  const innerRef = useRef<HTMLDivElement>(null);
+  /** True while the view follows the newest message. Scrolling up by hand turns it off; reaching the bottom turns it on. */
+  const pinnedRef = useRef(true);
   const lastIdRef = useRef<string | undefined>(undefined);
+  const [unseen, setUnseen] = useState(0);
   const [copyStatus, setCopyStatus] = useState<'copied' | 'failed' | null>(null);
 
   async function handleCopy(text: string) {
@@ -201,28 +237,60 @@ export function MessageList({
     window.setTimeout(() => setCopyStatus(null), 1800);
   }
 
-  useEffect(() => {
-    didInitialScroll.current = false;
+  function toBottom(behavior: ScrollBehavior = 'auto') {
+    const element = scrollRef.current;
+    if (element) element.scrollTo({ top: element.scrollHeight, behavior });
+  }
+
+  // A new conversation opens at the newest message.
+  useLayoutEffect(() => {
+    pinnedRef.current = true;
     lastIdRef.current = undefined;
+    setUnseen(0);
+    toBottom();
   }, [convId]);
 
-  useEffect(() => {
-    const element = scrollRef.current;
-    if (!element) return;
+  // New messages: follow them while pinned (or when we sent it); otherwise count them for the jump button.
+  useLayoutEffect(() => {
     const last = messages[messages.length - 1];
-    const sentNew = last?.own && last.messageId !== lastIdRef.current;
+    const isNew = !!last && last.messageId !== lastIdRef.current;
+    const hadAny = lastIdRef.current !== undefined;
     lastIdRef.current = last?.messageId;
-    if (!didInitialScroll.current || atBottomRef.current || sentNew) {
-      element.scrollTop = element.scrollHeight;
-      didInitialScroll.current = true;
+    if (!isNew) return;
+    if (pinnedRef.current || last.own || !hadAny) {
+      pinnedRef.current = true;
+      toBottom();
+    } else if (!last.own) {
+      setUnseen((n) => n + 1);
     }
-  }, [messages, convId]);
+  }, [messages]);
+
+  // Photos, videos and quotes change height after they appear: keep following the bottom while pinned.
+  useEffect(() => {
+    const inner = innerRef.current;
+    if (!inner || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (pinnedRef.current) toBottom();
+    });
+    observer.observe(inner);
+    return () => observer.disconnect();
+  }, [messages.length === 0]);
 
   function onScroll() {
     const element = scrollRef.current;
     if (!element) return;
-    atBottomRef.current =
-      element.scrollHeight - element.scrollTop - element.clientHeight < 120;
+    const distance = element.scrollHeight - element.scrollTop - element.clientHeight;
+    if (distance < 40) {
+      pinnedRef.current = true;
+      setUnseen(0);
+    } else if (distance > 120) {
+      pinnedRef.current = false;
+    }
+  }
+
+  // Reading older messages must not be undone by a message arriving at the same moment.
+  function onWheel(event: React.WheelEvent) {
+    if (event.deltaY < 0) pinnedRef.current = false;
   }
 
   if (messages.length === 0) {
@@ -240,8 +308,8 @@ export function MessageList({
   let lastTimestamp = 0;
 
   return (
-    <div className="message-scroll" ref={scrollRef} onScroll={onScroll}>
-      <div className="message-inner">
+    <div className="message-scroll" ref={scrollRef} onScroll={onScroll} onWheel={onWheel} onTouchMove={() => { if (scrollRef.current && scrollRef.current.scrollHeight - scrollRef.current.scrollTop - scrollRef.current.clientHeight > 120) pinnedRef.current = false; }}>
+      <div className="message-inner" ref={innerRef}>
         {messages.map((message, index) => {
           const day = formatDay(message.clientCreatedAt);
           const showDay = day !== lastDay;
@@ -298,19 +366,50 @@ export function MessageList({
                       <span className="bubble-sender">{message.senderName}</span>
                     )
                   ) : null}
-                  {message.replyTo ? (
+                  {message.deleted ? (
+                    <p className="bubble-text deleted">🚫 This message was deleted</p>
+                  ) : null}
+                  {!message.deleted && message.replyTo ? (
                     <button type="button" className="quote" onClick={() => jumpTo(message.replyTo!.id)} title="Go to the original message">
                       <strong>{message.replyTo.author === message.senderId ? message.senderName : byId.get(message.replyTo.id)?.senderName ?? 'Earlier message'}</strong>
                       <span>{message.replyTo.preview}</span>
                     </button>
                   ) : null}
-                  {message.type === 'file' ? (
+                  {message.deleted ? null : message.type === 'file' ? (
                     <FileBubble message={message} loadFile={loadFile} />
                   ) : (
                     <p className="bubble-text">{message.text}</p>
                   )}
+                  {message.reactionChips.length > 0 ? (
+                    <div className="reactions">
+                      {message.reactionChips.map((r) => (
+                        <button
+                          key={r.emoji}
+                          type="button"
+                          className={`reaction ${r.mine ? 'mine' : ''}`}
+                          aria-label={`${r.emoji} ${r.count}${r.mine ? ', yours' : ''}`}
+                          onClick={() => onReact?.(message.messageId, r.emoji)}
+                        >
+                          {r.emoji} {r.count}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
                   <span className="bubble-meta">
-                    {canReply ? (
+                    <button
+                      type="button"
+                      className="bubble-copy bubble-more"
+                      onClick={(event) => {
+                        const room = event.currentTarget.getBoundingClientRect().top - (scrollRef.current?.getBoundingClientRect().top ?? 0);
+                        setMenuDown(room < 150);
+                        setMenuFor(menuFor === message.messageId ? null : message.messageId);
+                      }}
+                      title="More"
+                      aria-label="More actions"
+                    >
+                      ⋯
+                    </button>
+                    {message.deleted ? null : canReply ? (
                       <button
                         type="button"
                         className="bubble-copy"
@@ -321,7 +420,7 @@ export function MessageList({
                         <ReplyIcon size={12} />
                       </button>
                     ) : null}
-                    {message.type === 'text' ? (
+                    {!message.deleted && message.type === 'text' ? (
                       <button
                         type="button"
                         className="bubble-copy"
@@ -341,12 +440,46 @@ export function MessageList({
                       />
                     ) : null}
                   </span>
+                  {menuFor === message.messageId ? (
+                    <div className={`bubble-menu ${menuDown ? 'down' : ''} ${own ? 'own-side' : 'their-side'}`} role="menu">
+                      {onReact && canReply && !message.deleted ? (
+                        <div className="emoji-row">
+                          {REACTION_EMOJI.map((e) => (
+                            <button key={e} type="button" aria-label={`React ${e}`} onClick={() => { onReact(message.messageId, e); setMenuFor(null); }}>
+                              {e}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                      <button type="button" role="menuitem" onClick={() => { onDelete?.(message.messageId, false); setMenuFor(null); }}>
+                        Delete for me
+                      </button>
+                      {own && !message.deleted && canReply ? (
+                        <button type="button" role="menuitem" onClick={() => { onDelete?.(message.messageId, true); setMenuFor(null); }}>
+                          Delete for everyone
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>
           );
         })}
       </div>
+      {unseen > 0 ? (
+        <button
+          type="button"
+          className="jump-latest"
+          onClick={() => {
+            pinnedRef.current = true;
+            setUnseen(0);
+            toBottom('smooth');
+          }}
+        >
+          ↓ {unseen} new {unseen === 1 ? 'message' : 'messages'}
+        </button>
+      ) : null}
       {copyStatus ? (
         <div
           className={`copy-toast ${copyStatus === 'failed' ? 'error' : ''}`}

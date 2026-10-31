@@ -138,6 +138,9 @@ interface DuoDao {
     @Query("UPDATE outbox SET conversationId = :to WHERE conversationId = :from")
     suspend fun moveOutbox(from: String, to: String)
 
+    @Query("DELETE FROM messages WHERE messageId = :messageId")
+    suspend fun deleteMessage(messageId: String)
+
     @Query("DELETE FROM messages")
     suspend fun clearMessages()
 

@@ -79,6 +79,8 @@ fun SettingsDialog(
     onOpenManual: () -> Unit,
     onOpenNuke: () -> Unit,
     onBluetoothPermissionResult: () -> Unit = {},
+    onExportBackup: (String, (Result<String>) -> Unit) -> Unit = { _, _ -> },
+    onImportBackup: (String, String, (Result<String>) -> Unit) -> Unit = { _, _, _ -> },
 ) {
     var displayName by remember { mutableStateOf(settings.displayName) }
     var nameStatus by remember { mutableStateOf<String?>(null) }
@@ -274,9 +276,30 @@ SectionTitle("Appearance")
                     Spacer(Modifier.width(8.dp))
                     Text("Request notification permission")
                 }
+                ToggleRow(
+                    "Keep running in the background",
+                    "Shows a small permanent notification and keeps PrivCord connected so messages arrive with the app closed. Uses some battery.",
+                    settings.keepRunning,
+                ) { on -> onUpdateSettings { copy(keepRunning = on) } }
+                if (settings.keepRunning) {
+                    val batteryContext = LocalContext.current
+                    OutlinedButton(onClick = {
+                        runCatching {
+                            batteryContext.startActivity(
+                                android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                            )
+                        }
+                    }) { Text("Allow unrestricted battery use") }
+                    Text(
+                        "Some phone makers (Xiaomi, Oppo, Vivo, Samsung) still stop background apps. If messages are late, allow unrestricted battery use for PrivCord here.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "With no server there is no push service: you are notified only while the " +
+                    "With no server there is no push service: without the setting above you are notified only while the " +
                         "app is open and a direct connection is active.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -334,7 +357,7 @@ SectionTitle("Appearance")
                     ToggleRow(
                         title = "Bluetooth mesh (relay for nearby phones)",
                         description = "Pass messages along through nearby phones that also run PrivCord, so they can reach people several phones away with no internet, and join public channels over Bluetooth. Other phones can see that a PrivCord phone is nearby. Uses more battery. Experimental: simulated and compiled, never run on real radios." +
-                            if (settings.mesh) " Linked phones now: ${state.meshLinks}." else "",
+                            if (settings.mesh) " Linked phones now: ${state.meshLinks}. Heard ${state.meshHeard} new messages, passed on ${state.meshPassedOn} copies." else "",
                         checked = settings.mesh,
                         onChange = { on ->
                             if (!on) onUpdateSettings { copy(mesh = false) }
@@ -396,6 +419,18 @@ SectionTitle("Appearance")
                     onValueChange = { stunText = it },
                     label = { Text("STUN servers (one per line, stun:host:port)") },
                     minLines = 2,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = "",
+                    onValueChange = { pasted ->
+                        com.duochat.app.data.TurnShare.parse(pasted)?.let { t ->
+                            turnUrls = t.urls.joinToString("\n"); turnUser = t.username; turnSecret = t.credential
+                        }
+                    },
+                    label = { Text("Paste a relay setup line (PRIVCORD-TURN1:…)") },
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(8.dp))
@@ -624,6 +659,18 @@ SectionTitle("Security")
                     }
                 }
 
+                Spacer(Modifier.height(18.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(14.dp))
+
+ToggleRow(
+                    "Panic wipe",
+                    "Tap the DuoChat title on the home screen three times quickly and everything on this phone is erased at once, with no confirmation. Your 12 recovery words are the only way back, so keep them somewhere safe first.",
+                    settings.panicWipe,
+                ) { on -> onUpdateSettings { copy(panicWipe = on) } }
+                Spacer(Modifier.height(14.dp))
+                SectionTitle("Backup")
+                BackupSection(onExportBackup, onImportBackup)
                 Spacer(Modifier.height(18.dp))
                 HorizontalDivider()
                 Spacer(Modifier.height(14.dp))

@@ -66,12 +66,34 @@ export function ChatLayout({
   const [dialog, setDialog] = useState<
     null | 'settings' | 'add' | 'group' | 'channels' | 'details' | 'manual' | 'nuke' | 'clear' | 'recovery'
   >(null);
-  const [settingsSection] = useState<SettingsSection>('profile');
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('profile');
+  const [panic, setPanic] = useState(false);
   const [manualUid, setManualUid] = useState('');
   const [verifyUid, setVerifyUid] = useState<string | null>(null);
   const [replying, setReplying] = useState<UiMessage | null>(null);
+  const [query, setQuery] = useState('');
+  const [focusId, setFocusId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const loadFile = useCallback((id: string) => engine?.getFile(id) ?? Promise.resolve(null), [engine]);
+
+  // Panic wipe: three quick Ctrl+Shift+Backspace presses, when the user turned it on.
+  useEffect(() => {
+    if (!settings.panicWipe) return;
+    const times: number[] = [];
+    function onKey(e: KeyboardEvent) {
+      if (!(e.ctrlKey && e.shiftKey && e.key === 'Backspace')) return;
+      const now = Date.now();
+      times.push(now);
+      while (times.length && now - times[0]! > 2000) times.shift();
+      if (times.length >= 3) {
+        times.length = 0;
+        setPanic(true);
+        setDialog('nuke');
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [settings.panicWipe]);
 
   useEffect(() => {
     if (!engine) return;
@@ -139,6 +161,8 @@ export function ChatLayout({
     return list.sort((a, b) => b.at - a.at || a.name.localeCompare(b.name));
   }, [state]);
 
+  const hits = useMemo(() => (engine && query.trim().length >= 2 ? engine.search(query) : []), [engine, query, state?.messages]);
+
   useEffect(() => {
     document.title = 'PrivCord';
   }, []);
@@ -202,6 +226,38 @@ export function ChatLayout({
         </div>
 
         {hasChats ? (
+          <div className="search-box">
+            <input
+              type="search"
+              aria-label="Search messages"
+              placeholder="Search messages"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </div>
+        ) : null}
+        {query.trim().length >= 2 ? (
+          <div className="search-results" aria-label="Search results">
+            {hits.length === 0 ? <p className="muted small" style={{ padding: 12 }}>Nothing found.</p> : null}
+            {hits.map((h) => (
+              <button
+                key={h.messageId}
+                type="button"
+                className="search-hit"
+                onClick={() => {
+                  setSelected(h.convId);
+                  setFocusId(h.messageId);
+                  setQuery('');
+                }}
+              >
+                <strong>
+                  {h.convName} · {h.senderName}
+                </strong>
+                <span className="muted small">{h.text}</span>
+              </button>
+            ))}
+          </div>
+        ) : hasChats ? (
           <nav className="chat-list" aria-label="Chats">
             {rows.map((row) => (
               <button
@@ -307,6 +363,21 @@ export function ChatLayout({
                 </button>
               </div>
             ) : null}
+            {person?.diagnosis ? (
+              <div className="banner info" role="status" data-testid="diagnosis">
+                <span>{person.diagnosis.message}</span>
+                {person.diagnosis.actions.includes('enable-store-forward') ? (
+                  <button type="button" className="btn small" onClick={() => void engine?.enableStoreForward()}>
+                    Deliver via relays
+                  </button>
+                ) : null}
+                {person.diagnosis.actions.some((a) => a === 'add-turn' || a === 'open-connection-settings') ? (
+                  <button type="button" className="btn small" onClick={() => { setSettingsSection('connection'); setDialog('settings'); }}>
+                    Connection settings
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
             {channel ? (
               <div className="banner subtle" role="note">
                 <span>Public channel: anyone who knows the name can read it. Your messages show your name and a short ID.</span>
@@ -332,6 +403,10 @@ export function ChatLayout({
                     : 'Messages you write now are sent as soon as they are online.'
               }
               onRetry={(id) => void engine?.retry(id)}
+              onReact={(id, emoji) => engine?.react(id, emoji)}
+              onDelete={(id, everyone) => engine?.deleteMessage(id, everyone)}
+              focusId={focusId}
+              onFocused={() => setFocusId(null)}
               onReply={setReplying}
               loadFile={loadFile}
             />
@@ -436,6 +511,7 @@ export function ChatLayout({
         onOpenRecovery={() => setDialog('recovery')}
       />
       <NukeDialog
+        autoRun={panic}
         open={dialog === 'nuke'}
         onClose={() => setDialog(null)}
         engine={engine}

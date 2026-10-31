@@ -75,6 +75,11 @@ export class PeerLink {
   lastOfferAt = 0;
   offerAttempt = 0;
   lastPathAt = 0;
+  /** The last time anything arrived from the friend while connecting (an offer, an answer, a "ready"); 0 = nothing. */
+  heardAt = 0;
+  /** What the last connection attempt found, kept after the attempt is torn down. */
+  lastCandidates: { host: number; srflx: number; relay: number } | null = null;
+  lastIceState: string | null = null;
   /** Messages already written to the current channel (cleared whenever it reopens). */
   sent = new Set<string>();
 
@@ -134,6 +139,7 @@ export class PeerLink {
   }
 
   close(): void {
+    if (this.transport instanceof PeerTransport) this.lastIceState = this.transport.iceState;
     this.reset();
     this.transport?.close();
     this.transport = null;
@@ -161,6 +167,7 @@ export class PeerLink {
     const transport = this.newWebRtc();
     try {
       const sdp = await transport.createOffer();
+      this.lastCandidates = transport.candidates;
       this.armTimeout(transport);
       return sdp;
     } catch (error) {
@@ -173,6 +180,7 @@ export class PeerLink {
     const transport = this.newWebRtc();
     try {
       const answer = await transport.acceptOffer(sdp);
+      this.lastCandidates = transport.candidates;
       this.armTimeout(transport);
       return answer;
     } catch (error) {
@@ -184,6 +192,11 @@ export class PeerLink {
   async applyAnswer(sdp: string): Promise<void> {
     if (!(this.transport instanceof PeerTransport) || this.ready) return;
     await this.transport.applyAnswer(sdp);
+  }
+
+  /** WebRTC's verdict on the current attempt (or the one that just ended). */
+  get iceState(): string | null {
+    return this.transport instanceof PeerTransport ? this.transport.iceState : this.lastIceState;
   }
 
   private abort(transport: PeerTransport): void {

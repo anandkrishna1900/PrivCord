@@ -27,6 +27,10 @@ export interface StoredMessage extends ChatMessage {
   file?: FileMeta;
   /** Channel messages: the sender's self-chosen name plus a short id (they are not in our contacts). */
   senderName?: string;
+  /** Who reacted with what (uid to emoji). */
+  reactions?: Record<string, string>;
+  /** Deleted for everyone: only a tombstone is kept. */
+  deleted?: boolean;
   /** Contact uid for a direct chat, group id for a group chat. */
   conversationId: string;
   /** Delivery state per recipient uid. `deliveryState` is the weakest of these. */
@@ -224,7 +228,7 @@ export class LocalStore {
     for (const row of rows) {
       const base = rowToMessage(row);
       const { textCipher, ...rest } = base;
-      let extra: { replyTo?: ReplyRef; file?: FileMeta; senderName?: string } = {};
+      let extra: { replyTo?: ReplyRef; file?: FileMeta; senderName?: string; reactions?: Record<string, string>; deleted?: boolean } = {};
       try {
         if (row.extra_cipher) extra = JSON.parse(await this.decrypt(row.extra_cipher)) as typeof extra;
       } catch {
@@ -253,8 +257,16 @@ export class LocalStore {
       delivery_state: message.deliveryState,
       read_at: message.readAt ?? null,
       extra_cipher:
-        message.replyTo || message.file || message.senderName
-          ? await this.encrypt(JSON.stringify({ replyTo: message.replyTo, file: message.file, senderName: message.senderName }))
+        message.replyTo || message.file || message.senderName || message.reactions || message.deleted
+          ? await this.encrypt(
+              JSON.stringify({
+                replyTo: message.replyTo,
+                file: message.file,
+                senderName: message.senderName,
+                reactions: message.reactions && Object.keys(message.reactions).length ? message.reactions : undefined,
+                deleted: message.deleted || undefined,
+              }),
+            )
           : null,
     };
   }
@@ -521,6 +533,17 @@ export class LocalStore {
    * queued delivery, keep other local state. Component metadata survives so
    * a new conversation continues to function.
    */
+  async deleteMessage(messageId: string): Promise<void> {
+    if (this.sql) {
+      await this.sql.execute(`DELETE FROM messages WHERE message_id = $1`, [messageId]);
+    } else {
+      const state = this.readBrowser();
+      state.messages = state.messages.filter((m) => m.message_id !== messageId);
+      this.writeBrowser(state);
+    }
+    await this.deleteFile(messageId).catch(() => undefined);
+  }
+
   async clearMessages(): Promise<void> {
     if (this.sql) {
       await this.sql.execute(`DELETE FROM messages`);

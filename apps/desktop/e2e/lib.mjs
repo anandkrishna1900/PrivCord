@@ -99,11 +99,11 @@ export async function startTurn() {
 
 /* ---------- browser ---------- */
 export const launch = () =>
-  chromium.launch({ args: ['--disable-features=WebRtcHideLocalIpsWithMdns'] });
+  chromium.launch({ args: ['--disable-features=WebRtcHideLocalIpsWithMdns', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
 
 /** New isolated "device". `network` is injected as DuoChat's network settings before the app loads. */
 export async function device(browser, appUrl, network) {
-  const context = await browser.newContext({ viewport: { width: 1200, height: 800 } });
+  const context = await browser.newContext({ viewport: { width: 1200, height: 800 }, permissions: ['microphone'] });
   await context.addInitScript(
     ([cfg]) => {
       if (cfg && !localStorage.getItem('duochat.network.v1')) localStorage.setItem('duochat.network.v1', JSON.stringify(cfg));

@@ -13,12 +13,16 @@ export * from './connectivity/seal';
 export * from './connectivity/contactCard';
 export * from './connectivity/inviteCode';
 export * from './connectivity/networkConfig';
+export * from './connectivity/turnShare';
 export * from './connectivity/connectionPath';
+export * from './connectivity/diagnosis';
 export * from './connectivity/secureChannel';
 
 export * from './mesh/node';
 export * from './mesh/channel';
 export * from './files';
+export * from './social';
+export * from './backup';
 export * from './privacy';
 export * from './e2ee/groupCrypto';
 export * from './groups/events';

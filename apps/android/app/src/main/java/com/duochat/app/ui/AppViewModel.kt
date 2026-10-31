@@ -108,6 +108,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         engine = created
         if (visible) created.setVisible(true)
         if (settingsRepository.settings.value.mesh) created.setMeshEnabled(true)
+        if (settingsRepository.settings.value.keepRunning) applyKeepRunning(true)
         stateJob = viewModelScope.launch {
             created.state.collect { _chat.value = it }
         }
@@ -167,6 +168,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (after.displayName != before.displayName) engine?.onOwnNameChanged()
         if (after.groupOnly != before.groupOnly) engine?.setGroupOnly(after.groupOnly)
         if (after.mesh != before.mesh) engine?.setMeshEnabled(after.mesh)
+        if (after.keepRunning != before.keepRunning) applyKeepRunning(after.keepRunning)
+    }
+
+    private fun applyKeepRunning(on: Boolean) {
+        val app = getApplication<Application>()
+        runCatching { if (on) com.duochat.app.notifications.DuoBackgroundService.start(app) else com.duochat.app.notifications.DuoBackgroundService.stop(app) }
     }
 
     fun toggleMute(conversationId: String) {
@@ -253,6 +260,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearNotice() {
         engine?.clearNotice()
+    }
+
+    fun deleteMessage(messageId: String, everyone: Boolean) {
+        viewModelScope.launch { engine?.deleteMessage(messageId, everyone) }
+    }
+
+    fun react(messageId: String, emoji: String) {
+        viewModelScope.launch { engine?.react(messageId, emoji) }
+    }
+
+    fun search(query: String): List<ChatEngine.SearchHit> = engine?.search(query).orEmpty()
+
+    fun exportBackup(passphrase: String, onResult: (Result<String>) -> Unit) {
+        viewModelScope.launch { onResult(engine?.exportBackup(passphrase) ?: Result.failure(IllegalStateException("Not ready yet."))) }
+    }
+
+    fun importBackup(text: String, passphrase: String, onResult: (Result<String>) -> Unit) {
+        viewModelScope.launch { onResult(engine?.importBackup(text, passphrase) ?: Result.failure(IllegalStateException("Not ready yet."))) }
     }
 
     fun clearChat(conversationId: String) {
