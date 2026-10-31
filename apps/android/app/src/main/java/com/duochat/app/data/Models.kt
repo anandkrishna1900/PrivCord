@@ -213,7 +213,21 @@ data class ChatState(
     /** 0..1 for files being sent or received, by message id. */
     val transfers: Map<String, Float> = emptyMap(),
     val groupOnly: Boolean = false,
+    /** Our current six-word invite, if one is being shown. */
+    val invite: ActiveInvite? = null,
+    /** People who used our words and wait for us to accept them. */
+    val requests: List<InviteRequest> = emptyList(),
+    val answer: InviteAnswer? = null,
 )
+
+data class ActiveInvite(val words: String, val expiresAt: Long)
+
+/** After typing a friend's words: did our own invite reach them? (They then confirm us on their side.) */
+enum class AnswerState { SENDING, SENT, FAILED }
+
+data class InviteAnswer(val uid: String, val name: String, val state: AnswerState, val error: String? = null)
+
+data class InviteRequest(val uid: String, val name: String, val safetyNumber: String)
 
 data class PendingContact(val uid: String, val safetyNumber: String, val name: String?)
 

@@ -360,7 +360,7 @@ export function ChatLayout({
       </main>
 
       <RequestDialog requests={state.requests} engine={engine} onAdded={open} />
-      <AddFriendDialog open={dialog === 'add'} onClose={() => setDialog(null)} engine={engine} onAdded={open} />
+      <AddFriendDialog open={dialog === 'add'} onClose={() => setDialog(null)} engine={engine} answer={state.answer} onAdded={open} />
       <NewGroupDialog open={dialog === 'group'} onClose={() => setDialog(null)} engine={engine} state={state} onCreated={open} />
       <GroupDetailsDialog
         open={dialog === 'details' && group !== null}

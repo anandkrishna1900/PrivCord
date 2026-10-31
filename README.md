@@ -10,7 +10,7 @@ Bluetooth.
 
 ## What you can do
 
-- **Add a friend in seconds.** Show your invite (QR or text), scan or paste theirs. That is the whole setup.
+- **Add a friend in seconds.** Show a QR code or six words; your friend scans the code or types the words, and you tap *Add* when they answer. No long strings to copy.
 - **Chat one-to-one** with end-to-end encryption. Messages go straight from device to device.
 - **Reply** to any message. The quote shows for everyone, in chats and groups.
 - **Send files up to 8 MB.** Photos and videos show a preview you can open; every file can be saved.

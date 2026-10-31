@@ -51,6 +51,16 @@ object Seal {
             updateAAD(aad)
         }
 
+    /** Signs the parts of a blob that must not change (used by blob kinds that are not ECDH-sealed, like invite codes). */
+    fun signBlob(to: String, from: String, epk: JSONObject, iv: String, ct: String, sign: (ByteArray) -> String): String =
+        sign(signedPart(1, to, from, epk, iv, ct))
+
+    fun verifyBlob(blob: SealedBlob, signPub: PublicJwk): Boolean = try {
+        IdentityCodec.verify(signPub, signedPart(1, blob.to, blob.from, blob.epk, blob.iv, blob.ct), blob.sig)
+    } catch (_: Exception) {
+        false
+    }
+
     /** [sign] signs raw bytes with the sender's ECDSA identity key and returns base64url(r||s). */
     fun seal(payload: JSONObject, fromUid: String, toUid: String, toDh: PublicJwk, sign: (ByteArray) -> String): SealedBlob {
         val eph = EcKeys.generateEphemeral()

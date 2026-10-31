@@ -129,6 +129,21 @@ fun filePreviewText(name: String): String = "📎 $name".let {
     it.substring(0, it.offsetByCodePoints(0, minOf(MAX_REPLY_PREVIEW, countCodePoints(it))))
 }
 
+/**
+ * Phone cameras store photos in the sensor's orientation plus an EXIF "orientation" tag. A decoder that ignores
+ * the tag shows them sideways. Returns (clockwise degrees to rotate, mirror horizontally first) for an EXIF value.
+ */
+fun exifTransform(orientation: Int): Pair<Int, Boolean> = when (orientation) {
+    2 -> 0 to true
+    3 -> 180 to false
+    4 -> 180 to true
+    5 -> 270 to true
+    6 -> 90 to false
+    7 -> 90 to true
+    8 -> 270 to false
+    else -> 0 to false
+}
+
 fun sha256B64(bytes: ByteArray): String =
     SignatureCodec.base64UrlEncode(MessageDigest.getInstance("SHA-256").digest(bytes))
 

@@ -23,6 +23,7 @@ function FileBubble({ message, loadFile }: { message: UiMessage; loadFile: LoadF
   const meta = message.file;
   const [url, setUrl] = useState<string | null>(null);
   const [missing, setMissing] = useState(false);
+  const [viewing, setViewing] = useState(false);
   const isImage = !!meta && isInlineImage(meta.mime);
   const isVideo = !!meta && isInlineVideo(meta.mime);
   const preview = isImage || isVideo;
@@ -66,7 +67,25 @@ function FileBubble({ message, loadFile }: { message: UiMessage; loadFile: LoadF
   if (!meta) return <p className="bubble-text">{message.text}</p>;
   return (
     <div className="file-bubble">
-      {isImage && url ? <img className="file-image" src={url} alt={meta.name} /> : null}
+      {isImage && url ? (
+        <button type="button" className="file-image-button" onClick={() => setViewing(true)} aria-label={`Open ${meta.name}`}>
+          <img className="file-image" src={url} alt={meta.name} />
+        </button>
+      ) : null}
+      {viewing && url ? (
+        <div className="lightbox" role="dialog" aria-modal="true" aria-label={meta.name} onClick={() => setViewing(false)}>
+          <img className="lightbox-image" src={url} alt={meta.name} />
+          <div className="lightbox-bar" onClick={(event) => event.stopPropagation()}>
+            <button type="button" className="button secondary small" onClick={() => void save()}>
+              <DownloadIcon size={15} />
+              Save
+            </button>
+            <button type="button" className="button ghost small" onClick={() => setViewing(false)}>
+              Close
+            </button>
+          </div>
+        </div>
+      ) : null}
       {isVideo && url ? <video className="file-video" src={url} controls preload="metadata" playsInline /> : null}
       <div className="file-card">
         <span className="file-icon" aria-hidden="true">

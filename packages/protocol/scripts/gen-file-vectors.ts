@@ -4,8 +4,15 @@
  * from packages/protocol.
  */
 import { writeFileSync } from 'node:fs';
+import { entropyToMnemonic } from '@scure/bip39';
+import { wordlist } from '@scure/bip39/wordlists/english.js';
 import {
   FILE_CHUNK_BYTES,
+  deriveIdentityFromPhrase,
+  deriveInvite,
+  sealInvite,
+  uidFromDh,
+  type ContactCard as Card,
   acceptsDirect,
   canStartDirect,
   createOutgoingMessage,
@@ -50,6 +57,14 @@ for (const trust of trusts) for (const mine of [false, true]) for (const peer of
   privacy.push({ trust, mine, peer: peer ?? null, canStart: canStartDirect(trust, mine, peer), accepts: acceptsDirect(trust, mine) });
 }
 
+// A six-word invite made by the TypeScript side: Kotlin must derive the same mailbox and open the blob.
+const inviteWords = ['apple', 'river', 'tiger', 'moon', 'cloud', 'seven'];
+const inviter = (await deriveIdentityFromPhrase(entropyToMnemonic(new Uint8Array(16).fill(0x51), wordlist))).identity;
+const inviterCard: Card = { v: 1, sign: inviter.signKey.pubJwk, dh: inviter.dhKey.pubJwk, proof: inviter.identityProof, name: 'Ivy' };
+const inviterUid = await uidFromDh(inviter.dhKey.pubJwk);
+const rv = await deriveInvite(inviteWords);
+const inviteBlob = await sealInvite({ rendezvous: rv, kind: 'card', card: inviterCard, uid: inviterUid, signPriv: inviter.signKey.privJwk });
+
 writeFileSync(
   new URL('../../../docs/file-vectors.json', import.meta.url),
   JSON.stringify(
@@ -60,6 +75,7 @@ writeFileSync(
       sanitizeMimes: mimes.map((m) => [m, sanitizeMime(m)]),
       reply: { frame: createPeerMessageFrame(reply), preview: makeReplyRef(original).preview },
       privacy,
+      invite: { words: inviteWords, mailbox: rv.mailbox, uid: inviterUid, name: 'Ivy', blob: inviteBlob },
     },
     null,
     1,

@@ -65,6 +65,9 @@ import com.duochat.app.p2p.PeerSession
 import com.duochat.app.p2p.iceServers
 import com.duochat.app.security.AndroidIdentityManager
 import com.duochat.app.security.Contact
+import com.duochat.app.security.InviteCode
+import com.duochat.app.data.ActiveInvite
+import com.duochat.app.data.InviteRequest
 import com.duochat.app.security.ContactCard
 import com.duochat.app.security.ContactCards
 import com.duochat.app.security.DeviceIdentity
@@ -86,6 +89,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.security.SecureRandom
 
@@ -372,7 +376,10 @@ class ChatEngine(
     /** Save the friend whose invite was scanned or pasted. Returns their uid. */
     suspend fun addFriend(text: String): Result<String> = runCatching {
         val current = identity ?: throw IllegalStateException("Identity is not ready.")
-        val contact: Contact = ContactCards.decode(text) ?: throw IllegalArgumentException("That is not a valid invite. Ask your friend to share it again.")
+        val words = InviteCode.parse(text)
+        val found = words?.let { lookUpInvite(it) }
+        val contact: Contact = found?.second ?: ContactCards.decode(text)
+            ?: throw IllegalArgumentException("That is not a valid invite. Check the words, or ask your friend to share it again.")
         if (contact.uid == current.uid) throw IllegalArgumentException("That is your own invite. Send it to a friend instead.")
         val existing = friends[contact.uid]
         if (existing != null) {
@@ -395,7 +402,169 @@ class ChatEngine(
             say("${friend.name} was added. Connecting automatically whenever you are both online.")
         }
         emit()
+        // Used someone's words: answer with our own card so they can accept us (they confirm it on their side).
+        found?.let { (rv, _) ->
+            lastAnswer = rv to contact.uid
+            scope.launch { runAnswer() }
+        }
         contact.uid
+    }
+
+    private var lastAnswer: Pair<InviteCode.Rendezvous, String>? = null
+
+    /** Sends our invite back and keeps the result where the screen can show it. */
+    private suspend fun runAnswer() {
+        val (rv, uid) = lastAnswer ?: return
+        val name = friends[uid]?.name ?: "your friend"
+        _state.update { it.copy(answer = com.duochat.app.data.InviteAnswer(uid, name, com.duochat.app.data.AnswerState.SENDING)) }
+        val result = runCatching { answerInvite(rv) }
+        _state.update {
+            it.copy(
+                answer = if (result.isSuccess) com.duochat.app.data.InviteAnswer(uid, name, com.duochat.app.data.AnswerState.SENT)
+                else com.duochat.app.data.InviteAnswer(uid, name, com.duochat.app.data.AnswerState.FAILED, result.exceptionOrNull()?.message ?: "Could not reach them."),
+            )
+        }
+    }
+
+    fun retryAnswer() {
+        scope.launch { runAnswer() }
+    }
+
+    fun clearAnswer() {
+        _state.update { it.copy(answer = null) }
+    }
+
+    // ---------------------------------------------------------------------
+    // Six-word invites
+    // ---------------------------------------------------------------------
+
+    private class ActiveInviteState(val words: List<String>, val rv: InviteCode.Rendezvous, val hub: SignalingHub, val expiresAt: Long, val job: Job)
+
+    private var activeInvite: ActiveInviteState? = null
+    private val requestCards = linkedMapOf<String, Pair<Contact, String>>()
+    private val inviteMutex = kotlinx.coroutines.sync.Mutex()
+
+    private fun inviteHub(): SignalingHub {
+        val config = networkConfig()
+        if (config.signaling.isEmpty()) {
+            throw IllegalStateException("Six-word invites need a connection service (Settings > Connection). The QR code and the full invite text work without one.")
+        }
+        return SignalingHub(transportsFor(config, scope))
+    }
+
+    private suspend fun waitOnline(hub: SignalingHub, ms: Long = 8_000) {
+        val end = System.currentTimeMillis() + ms
+        while (hub.status() != SignalingStatus.ONLINE) {
+            if (System.currentTimeMillis() > end) {
+                hub.stop()
+                throw IllegalStateException("Could not reach the connection service. Check your internet and try again.")
+            }
+            delay(100)
+        }
+    }
+
+    /** Live copy (works on relays that store nothing) plus a stored copy (works for late arrivals where allowed). */
+    private suspend fun putEverywhere(hub: SignalingHub, mailbox: String, blob: SealedBlob) {
+        val live = runCatching { hub.put(mailbox, blob, "sig", 120) }
+        val stored = runCatching { hub.put(mailbox, blob, "msg", InviteCode.TTL_SEC) }
+        if (live.isFailure && stored.isFailure) throw IllegalStateException("Could not publish the invite.")
+    }
+
+    private fun inviteCard(): ContactCard {
+        val current = identity ?: throw IllegalStateException("Identity is not ready.")
+        return ContactCard(current.publicJwk, current.dhJwk, current.identityProof, ownName().ifBlank { null })
+    }
+
+    /** Show-your-words: publish our card under fresh words and listen for people who answer. */
+    suspend fun createInvite(): Result<ActiveInvite> = runCatching {
+        inviteMutex.withLock {
+            activeInvite?.takeIf { it.expiresAt > System.currentTimeMillis() + 30_000 }?.let {
+                return@runCatching ActiveInvite(it.words.joinToString(" "), it.expiresAt)
+            }
+            stopInvite()
+            val hub = inviteHub()
+            val words = InviteCode.newWords()
+            val rv = withContext(Dispatchers.Default) { InviteCode.derive(words) }
+            hub.start(rv.mailbox) { blob, _, _ -> scope.launch { onInviteBlob(rv, blob) } }
+            waitOnline(hub)
+            suspend fun publish() {
+                val blob = InviteCode.seal(rv, InviteCode.Kind.CARD, inviteCard(), selfUid) { identityManager.signRaw(it) }
+                putEverywhere(hub, rv.mailbox, blob)
+            }
+            publish()
+            val expiresAt = System.currentTimeMillis() + InviteCode.TTL_SEC * 1000L
+            // Relays differ in what they keep, so the card is also published again every few seconds.
+            val job = scope.launch {
+                while (System.currentTimeMillis() < expiresAt) {
+                    delay(8_000)
+                    runCatching { publish() }
+                }
+                inviteMutex.withLock { if (activeInvite?.rv === rv) stopInvite() }
+            }
+            activeInvite = ActiveInviteState(words, rv, hub, expiresAt, job)
+            val view = ActiveInvite(words.joinToString(" "), expiresAt)
+            _state.update { it.copy(invite = view) }
+            view
+        }
+    }
+
+    private fun stopInvite() {
+        activeInvite?.let {
+            it.job.cancel()
+            it.hub.stop()
+        }
+        activeInvite = null
+        _state.update { it.copy(invite = null) }
+    }
+
+    private suspend fun onInviteBlob(rv: InviteCode.Rendezvous, blob: SealedBlob) {
+        val message = withContext(Dispatchers.Default) { InviteCode.open(rv, blob) } ?: return
+        if (message.kind != InviteCode.Kind.REPLY) return
+        val contact = message.contact
+        if (contact.uid == selfUid || friends[contact.uid]?.trust == ContactTrust.VERIFIED) return
+        val current = identity ?: return
+        requestCards[contact.uid] = contact to runCatching { identityManager.deriveSafetyNumber(current.publicJwk, contact.card.sign) }.getOrDefault("")
+        emit()
+    }
+
+    /** Accept somebody who used our words. */
+    suspend fun acceptRequest(uid: String): Result<String> {
+        val request = requestCards.remove(uid) ?: return Result.failure(IllegalStateException("That request is no longer there."))
+        return addFriend(ContactCards.encode(request.first.card))
+    }
+
+    fun dismissRequest(uid: String) {
+        requestCards.remove(uid)
+        emit()
+    }
+
+    /** Enter-their-words: fetch their card from the meeting point. */
+    private suspend fun lookUpInvite(words: List<String>): Pair<InviteCode.Rendezvous, Contact> {
+        val rv = withContext(Dispatchers.Default) { InviteCode.derive(words) }
+        val hub = inviteHub()
+        val found = kotlinx.coroutines.CompletableDeferred<Contact?>()
+        hub.start(rv.mailbox) { blob, _, _ ->
+            scope.launch {
+                val m = withContext(Dispatchers.Default) { InviteCode.open(rv, blob) }
+                if (m != null && m.kind == InviteCode.Kind.CARD && m.contact.uid != selfUid) found.complete(m.contact)
+            }
+        }
+        val contact = kotlinx.coroutines.withTimeoutOrNull(15_000) { found.await() }
+        hub.stop()
+        return rv to (contact ?: throw IllegalStateException("Could not find that invite. Check the words, make sure your friend still has the invite open, and that you are both online."))
+    }
+
+    private suspend fun answerInvite(rv: InviteCode.Rendezvous) {
+        val hub = inviteHub()
+        hub.start(rv.mailbox) { _, _, _ -> }
+        try {
+            waitOnline(hub)
+            val blob = InviteCode.seal(rv, InviteCode.Kind.REPLY, inviteCard(), selfUid) { identityManager.signRaw(it) }
+            putEverywhere(hub, rv.mailbox, blob)
+            delay(1_500)
+        } finally {
+            hub.stop()
+        }
     }
 
     /** "Check it's really them": the safety numbers matched. */
@@ -1808,7 +1977,9 @@ class ChatEngine(
             it.copy(
                 contacts = contacts, groups = groups, chats = summaries, messages = shaped,
                 queuedCount = outbox.values.count { r -> r.deliveryState != DeliveryState.FAILED },
-                transfers = progress.toMap(), groupOnly = groupOnly, linkCount = links.values.count { l -> l.session.isReady },
+                transfers = progress.toMap(), groupOnly = groupOnly,
+                requests = requestCards.map { (uid, r) -> InviteRequest(uid, r.first.card.name ?: "Friend ${uid.take(4)}", r.second) },
+                linkCount = links.values.count { l -> l.session.isReady },
                 notice = notice ?: it.notice,
             )
         }

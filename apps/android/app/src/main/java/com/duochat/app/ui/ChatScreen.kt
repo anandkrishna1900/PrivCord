@@ -533,17 +533,15 @@ private fun FileContent(message: ChatMessage, color: Color, loadFile: suspend (S
             }
         }
     }
+    var viewing by remember { mutableStateOf(false) }
     val image by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, message.messageId) {
         if (!isInlineImage(meta.mime)) return@produceState
-        value = withContext(Dispatchers.IO) {
-            val bytes = loadFile(message.messageId)?.second ?: return@withContext null
-            // Only PNG/JPEG/GIF/WebP get here (never SVG). Decode a reduced copy: previews do not need full size.
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-            var sample = 1
-            while (bounds.outWidth / sample > 1200 || bounds.outHeight / sample > 1200) sample *= 2
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
-        }
+        value = withContext(Dispatchers.IO) { loadFile(message.messageId)?.second?.let { decodeUpright(it, 1200) } }
+    }
+    // Full-size copy, only decoded while the viewer is open.
+    val fullImage by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, viewing) {
+        if (!viewing) return@produceState
+        value = withContext(Dispatchers.IO) { loadFile(message.messageId)?.second?.let { decodeUpright(it, 2600) } }
     }
     // Video: decrypted to a short-lived cache file (the player needs a path), shown with a poster frame and
     // played in place when tapped. The file is deleted when the bubble leaves the screen.
@@ -572,8 +570,38 @@ private fun FileContent(message: ChatMessage, color: Color, loadFile: suspend (S
     var playing by remember { mutableStateOf(false) }
     Column {
         image?.let {
-            Image(bitmap = it, contentDescription = meta.name, contentScale = ContentScale.Fit, modifier = Modifier.heightIn(max = 260.dp).clip(RoundedCornerShape(10.dp)))
+            Image(
+                bitmap = it, contentDescription = "Open ${meta.name}", contentScale = ContentScale.Fit,
+                modifier = Modifier.heightIn(max = 260.dp).clip(RoundedCornerShape(10.dp)).clickable { viewing = true },
+            )
             Spacer(Modifier.height(6.dp))
+        }
+        if (viewing) {
+            androidx.compose.ui.window.Dialog(
+                onDismissRequest = { viewing = false },
+                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+            ) {
+                Surface(color = Color.Black, modifier = Modifier.fillMaxSize()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        val big = fullImage ?: image
+                        if (big != null) {
+                            Image(bitmap = big, contentDescription = meta.name, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize().clickable { viewing = false })
+                        } else {
+                            CircularProgressIndicator(color = Color.White)
+                        }
+                        Row(Modifier.align(Alignment.TopEnd).padding(12.dp)) {
+                            IconButton(onClick = {
+                                scope.launch {
+                                    val f = loadFile(message.messageId)
+                                    if (f == null) Toast.makeText(context, "No longer stored on this phone", Toast.LENGTH_SHORT).show()
+                                    else { pendingSave = f.second; saver.launch(f.first.name) }
+                                }
+                            }) { Icon(Icons.Filled.Download, contentDescription = "Save ${meta.name}", tint = Color.White) }
+                            IconButton(onClick = { viewing = false }) { Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color.White) }
+                        }
+                    }
+                }
+            }
         }
         videoFile?.let { file ->
             Box(Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 260.dp).clip(RoundedCornerShape(10.dp)).background(Color.Black), contentAlignment = Alignment.Center) {
@@ -821,4 +849,27 @@ private fun readPicked(context: android.content.Context, uri: Uri): PickedFile {
         out.toByteArray()
     } ?: throw IllegalStateException("Could not open that file.")
     return PickedFile(name, context.contentResolver.getType(uri) ?: "application/octet-stream", bytes)
+}
+
+/**
+ * Decodes a photo, no bigger than [maxSide] on its longest side, and turns it the way the camera meant it to be
+ * seen (the EXIF orientation tag), so phone photos are not sideways.
+ */
+private fun decodeUpright(bytes: ByteArray, maxSide: Int): androidx.compose.ui.graphics.ImageBitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    var sample = 1
+    while (bounds.outWidth / sample > maxSide || bounds.outHeight / sample > maxSide) sample *= 2
+    val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
+    val orientation = runCatching {
+        android.media.ExifInterface(java.io.ByteArrayInputStream(bytes))
+            .getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL)
+    }.getOrDefault(1)
+    val (degrees, mirror) = com.duochat.app.data.exifTransform(orientation)
+    if (degrees == 0 && !mirror) return decoded.asImageBitmap()
+    val matrix = android.graphics.Matrix().apply {
+        if (mirror) postScale(-1f, 1f)
+        postRotate(degrees.toFloat())
+    }
+    return android.graphics.Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true).asImageBitmap()
 }

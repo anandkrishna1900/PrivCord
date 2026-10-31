@@ -45,7 +45,19 @@ Local kill switch activation operates strictly within the local device boundary:
 - **Large groups and offline members.** Messages for a member you cannot reach yet are queued and sent
   when the link opens.
 
-## 5. App lock
+## 5. Six-word invites
+- The six words are a **meeting point**, not the identity itself (an identity card is far too big for six
+  words): 66 random bits from which both phones derive a relay mailbox and a key. The person showing the
+  words publishes their card there, encrypted; the other types the words, fetches it and answers with their
+  own card; the first person then **confirms who answered** with the safety numbers.
+- They need a connection service (a Nostr relay or your own relay) and the person showing the words must
+  keep the app open: the words stop working after 15 minutes or when the app closes. The QR code and the
+  full invite text (under "Full invite text") work with no service at all.
+- Anyone who learns the words while they are valid can read the card (public information) and can answer
+  it, which is why the answer is always confirmed by a person. A relay sees only a hash and encrypted bytes;
+  guessing 66 bits offline is not practical (each guess costs a 150,000-round key derivation).
+
+## 6. App lock
 - **Android** uses the system prompt (fingerprint, face or screen lock) every time the app opens and after
   30 seconds out of sight. **Windows** uses a Windows Hello passkey (WebAuthn, user verification required,
   the signature is checked against the stored public key) when the app opens, after 5 minutes out of
@@ -58,7 +70,7 @@ Local kill switch activation operates strictly within the local device boundary:
 - Video and image previews are decoded by the system's media components. Other file types are never
   opened by PrivCord, only saved.
 
-## 6. Not available
+## 7. Not available
 - Files are limited to **8 MB**, go **device to device** (never through a server or the offline
   relay) and need a WebRTC link, so they are not sent over Bluetooth. A file for someone offline waits
   on your device and is sent when they reconnect. In a group a file is sent separately to every member

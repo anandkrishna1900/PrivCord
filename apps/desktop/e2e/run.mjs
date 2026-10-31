@@ -546,6 +546,21 @@ await scenario(13, 'files: images preview, exactly 8 MB arrives intact, 8 MB + 1
   check(sha(got.bytes) === sha(png) && got.suggested === 'dot.png', 'PNG arrives byte for byte', { suggested: got.suggested });
   await A.page.waitForSelector('.bubble.own:has-text("dot.png") .delivery-indicator[aria-label="Delivered"], .bubble.own:has-text("dot.png") .delivery-indicator[aria-label="Read"]', { timeout: 30000 });
   ctx.note('image previewed inline, saved bytes identical, sender sees Delivered');
+  // 1b. a phone photo (40x20 pixels with EXIF orientation 6 = turn right) must show upright (20 wide, 40 tall)
+  const photo = Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/4QAiRXhpZgAATU0AKgAAAAgAAQESAAMAAAABAAYAAAAAAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAAUACgDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDkKKKK8U/TAooooAKKKKACiiigAooooAKKKKAP/9k=', 'base64');
+  await sendFile(A.page, { name: 'portrait.jpg', mime: 'image/jpeg', buffer: photo });
+  await B.page.waitForSelector('.file-bubble:has-text("portrait.jpg") img.file-image', { timeout: 30000 });
+  await B.page.waitForFunction(() => { const i = document.querySelector('.file-bubble img.file-image[alt="portrait.jpg"]'); return i && i.complete && i.naturalWidth > 0; });
+  const dims = await B.page.evaluate(() => { const i = document.querySelector('.file-bubble img.file-image[alt="portrait.jpg"]'); return [i.naturalWidth, i.naturalHeight]; });
+  check(dims[0] === 20 && dims[1] === 40, 'the photo is shown upright, not sideways', dims);
+  // clicking the preview opens it full size, with Save and Close
+  await B.page.click('button[aria-label="Open portrait.jpg"]');
+  await B.page.waitForSelector('.lightbox img.lightbox-image', { timeout: 5000 });
+  const [shot] = await Promise.all([B.page.waitForEvent('download', { timeout: 20000 }), B.page.click('.lightbox button:has-text("Save")')]);
+  check(shot.suggestedFilename() === 'portrait.jpg', 'Save in the viewer downloads the photo', shot.suggestedFilename());
+  await B.page.click('.lightbox button:has-text("Close")');
+  await B.page.waitForSelector('.lightbox', { state: 'detached' });
+  ctx.note('photo upright, opens full size from the preview, Save works');
   // 2. SVG: shown only as a file card (it can carry script), never rendered
   const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>window.__pwned = 1</script></svg>');
   await sendFile(A.page, { name: 'x.svg', mime: 'image/svg+xml', buffer: svg });
@@ -739,8 +754,12 @@ await scenario(16, 'six-word invite: words (not a long string) connect two peopl
   await B.page.waitForSelector('.verify-panel .safety-number', { timeout: 40000 });
   check((await B.page.locator('.verify-panel h3').innerText()).includes('Ann'), 'Ben sees it is Ann');
   await B.page.click('button:has-text("Skip for now")');
+  // Ben is told plainly that his own invite is being sent back, and when it arrived.
+  await B.page.waitForSelector('.verify-panel:has-text("Ann was added")', { timeout: 20000 });
+  await B.page.waitForSelector('.verify-panel:has-text("Your invite was sent to Ann")', { timeout: 40000 });
+  await B.page.click('.verify-panel button:has-text("Done")');
   await B.page.waitForSelector('.modal-backdrop', { state: 'detached' });
-  ctx.note('Ben typed the six words and added Ann');
+  ctx.note('Ben typed the six words, added Ann, and was told his invite was sent back to her');
   // Ann is asked to confirm who answered.
   await A.page.waitForSelector('.modal:has-text("Ben used your invite") .safety-number', { timeout: 40000 });
   await A.page.click('button:has-text("Add Ben")');

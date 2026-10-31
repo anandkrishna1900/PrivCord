@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { ChatEngine } from '../lib/engine';
+import type { ChatEngine, InviteAnswer } from '../lib/engine';
+import { parseInviteWords } from '@duochat/protocol';
 import { copyText } from '../lib/clipboard';
 import { Modal } from './Modal';
 import { QrCode } from './QrCode';
@@ -12,13 +13,17 @@ export function AddFriendDialog({
   open,
   onClose,
   engine,
+  answer,
   onAdded,
 }: {
   open: boolean;
   onClose: () => void;
   engine: ChatEngine | null;
+  /** Whether our own invite reached the friend whose words we typed. */
+  answer: InviteAnswer | null;
   onAdded: (uid: string) => void;
 }) {
+  const [done, setDone] = useState<{ uid: string; name: string } | null>(null);
   const [pasted, setPasted] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -34,6 +39,8 @@ export function AddFriendDialog({
     setError(null);
     setCopied(false);
     setFound(null);
+    setDone(null);
+    engine?.clearAnswer();
     setWords(null);
     setWordsError(null);
     if (!engine) return;
@@ -70,10 +77,16 @@ export function AddFriendDialog({
     if (!engine) return;
     setBusy(true);
     try {
+      const typedWords = parseInviteWords(pasted) !== null;
       const uid = await engine.addContact(pasted);
       if (checked) engine.setChecked(uid);
-      onClose();
-      onAdded(uid);
+      if (typedWords && found) {
+        // Say plainly whether our own invite reached them; they confirm us on their side.
+        setDone({ uid, name: found.name });
+      } else {
+        onClose();
+        onAdded(uid);
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not add this friend.');
     } finally {
@@ -83,7 +96,49 @@ export function AddFriendDialog({
 
   return (
     <Modal open={open} onClose={onClose} title="Add a friend" wide>
-      {found ? (
+      {done ? (
+        <div className="verify-panel">
+          <CheckIcon size={22} />
+          <h3>{done.name} was added</h3>
+          {!answer || answer.status === 'sending' ? (
+            <p className="muted" role="status">
+              Sending your invite to {done.name}…
+            </p>
+          ) : answer.status === 'sent' ? (
+            <p className="muted" role="status">
+              Your invite was sent to {done.name}. They will see a request to add you. As soon as they accept, you are
+              connected.
+            </p>
+          ) : (
+            <>
+              <p className="status-text error" role="alert">
+                Your invite did not reach {done.name}: {answer.error}
+              </p>
+              <p className="muted small">
+                Try again, or show {done.name} your own six words{words ? `: ${words}` : ''} so they can add you.
+              </p>
+              <button type="button" className="button secondary" onClick={() => engine?.retryAnswer()}>
+                Send it again
+              </button>
+            </>
+          )}
+          <div className="button-row">
+            <button
+              type="button"
+              className="button primary"
+              onClick={() => {
+                onClose();
+                onAdded(done.uid);
+              }}
+            >
+              Open chat
+            </button>
+            <button type="button" className="button ghost" onClick={onClose}>
+              Done
+            </button>
+          </div>
+        </div>
+      ) : found ? (
         <div className="verify-panel">
           <ShieldIcon size={22} />
           <h3>Add {found.name}?</h3>

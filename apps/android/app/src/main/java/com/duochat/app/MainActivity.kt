@@ -118,6 +118,27 @@ private fun RootScreen(viewModel: AppViewModel) {
         }
     }
 
+    // Somebody typed our six words and answered: we confirm who it is before adding them.
+    state?.requests?.firstOrNull()?.let { request ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { viewModel.dismissRequest(request.uid) },
+            title = { androidx.compose.material3.Text("${request.name} used your invite") },
+            text = {
+                androidx.compose.material3.Text(
+                    "Only add them if you expected this. To be sure it is really them, read these numbers to ${request.name} on a call or in person; they should see the same ones.\n\n${request.safetyNumber}",
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { viewModel.acceptRequest(request.uid) { r -> r.onSuccess { route = "chat:$it" } } }) {
+                    androidx.compose.material3.Text("Add ${request.name}")
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { viewModel.dismissRequest(request.uid) }) { androidx.compose.material3.Text("Not them") }
+            },
+        )
+    }
+
     when {
         locked -> com.duochat.app.ui.LockScreen(onUnlocked = viewModel::unlock)
 
@@ -148,6 +169,9 @@ private fun RootScreen(viewModel: AppViewModel) {
                         state = state,
                         ownCard = viewModel::ownCard,
                         onAdd = viewModel::addFriend,
+                        onCreateInvite = viewModel::createInvite,
+                        onRetryAnswer = viewModel::retryAnswer,
+                        onClearAnswer = viewModel::clearAnswer,
                         onChecked = viewModel::markChecked,
                         onBack = back,
                         onOpenChat = { route = "chat:$it" },

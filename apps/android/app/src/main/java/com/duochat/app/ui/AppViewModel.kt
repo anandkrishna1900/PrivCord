@@ -184,6 +184,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun addFriend(text: String, onResult: (Result<String>) -> Unit) = withEngine(onResult) { it.addFriend(text) }
 
+    fun createInvite(onResult: (Result<com.duochat.app.data.ActiveInvite>) -> Unit) = withEngine(onResult) { it.createInvite() }
+
+    fun acceptRequest(uid: String, onResult: (Result<String>) -> Unit) = withEngine(onResult) { it.acceptRequest(uid) }
+
+    fun retryAnswer() {
+        engine?.retryAnswer()
+    }
+
+    fun clearAnswer() {
+        engine?.clearAnswer()
+    }
+
+    fun dismissRequest(uid: String) {
+        engine?.dismissRequest(uid)
+    }
+
     fun markChecked(uid: String) {
         viewModelScope.launch { engine?.markChecked(uid) }
     }

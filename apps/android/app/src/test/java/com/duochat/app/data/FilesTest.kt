@@ -98,6 +98,17 @@ class FilesTest {
         assertNull(parseDeclined(JSONObject().put("kind", "declined").put("messageId", "m").put("reason", "nope")))
     }
 
+    @Test
+    fun `camera orientation tags map to the right rotation`() {
+        assertEquals(0 to false, exifTransform(1))
+        assertEquals(90 to false, exifTransform(6)) // the common portrait photo
+        assertEquals(180 to false, exifTransform(3))
+        assertEquals(270 to false, exifTransform(8))
+        assertEquals(0 to true, exifTransform(2))
+        assertEquals(0 to false, exifTransform(0))
+        assertEquals(0 to false, exifTransform(99))
+    }
+
     /** The 7-person case from the product rules: A opted out and paired only with C and F. */
     @Test
     fun `group-only opt-out leaves only manual pairs able to message`() {
@@ -185,5 +196,47 @@ class FileVectorsTest {
         val reply = ReplyRef.fromJson(frame.getJSONObject("replyTo"))!!
         assertEquals(MAX_REPLY_PREVIEW, reply.preview.length)
         assertEquals(v.getJSONObject("reply").getString("preview"), reply.preview)
+    }
+}
+
+/** Six-word invite codes against the TypeScript implementation (docs/file-vectors.json). */
+class InviteVectorsTest {
+    private val v: JSONObject by lazy {
+        val f = listOf("../../../docs/file-vectors.json", "../../docs/file-vectors.json", "docs/file-vectors.json").map(::File).first { it.exists() }
+        JSONObject(f.readText(Charsets.UTF_8)).getJSONObject("invite")
+    }
+
+    private fun words() = v.getJSONArray("words").let { a -> List(a.length()) { a.getString(it) } }
+
+    @Test
+    fun `the same words give the same mailbox as TypeScript`() {
+        val rv = com.duochat.app.security.InviteCode.derive(words())
+        assertEquals(v.getString("mailbox"), rv.mailbox)
+    }
+
+    @Test
+    fun `Kotlin opens the card a TypeScript phone published`() {
+        val rv = com.duochat.app.security.InviteCode.derive(words())
+        val j = v.getJSONObject("blob")
+        val blob = com.duochat.app.security.Seal.decode(
+            com.duochat.app.security.SignatureCodec.base64UrlEncode(j.toString().toByteArray(Charsets.UTF_8)),
+        )!!
+        val m = com.duochat.app.security.InviteCode.open(rv, blob)!!
+        assertEquals(com.duochat.app.security.InviteCode.Kind.CARD, m.kind)
+        assertEquals(v.getString("uid"), m.contact.uid)
+        assertEquals("Ivy", m.contact.card.name)
+        // wrong words and a tampered blob do not open
+        assertNull(com.duochat.app.security.InviteCode.open(com.duochat.app.security.InviteCode.derive(listOf("abandon", "ability", "able", "about", "above", "absent")), blob))
+    }
+
+    @Test
+    fun `words parse from messy typing and bad input is refused`() {
+        val w = words()
+        assertEquals(w, com.duochat.app.security.InviteCode.parse(w.joinToString(" - ").uppercase()))
+        assertNull(com.duochat.app.security.InviteCode.parse(w.take(5).joinToString(" ")))
+        assertNull(com.duochat.app.security.InviteCode.parse((w.take(5) + "notaword").joinToString(" ")))
+        val fresh = com.duochat.app.security.InviteCode.newWords()
+        assertEquals(6, fresh.size)
+        assertEquals(fresh, com.duochat.app.security.InviteCode.parse(fresh.joinToString(" ")))
     }
 }

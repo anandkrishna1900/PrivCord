@@ -157,7 +157,16 @@ export interface InviteRequest {
   safetyNumber: string;
 }
 
+/** After typing a friend's words: did our own invite reach them? (They then confirm us on their side.) */
+export interface InviteAnswer {
+  uid: string;
+  name: string;
+  status: 'sending' | 'sent' | 'failed';
+  error?: string;
+}
+
 export interface ChatState {
+  answer: InviteAnswer | null;
   /** Our current six-word invite, if one is being shown. */
   invite: { words: string; expiresAt: number } | null;
   /** People who used our words and are waiting for us to accept them. */
@@ -245,6 +254,7 @@ export class ChatEngine {
     this.identity = deps.identity;
     this.coord = this.newCoordinator();
     this.state = {
+      answer: null,
       invite: null,
       requests: [],
       phase: 'starting',
@@ -479,9 +489,36 @@ export class ChatEngine {
     this.emit({ notice: existing ? `${this.nameOf(contact.uid)} is already in your friends.` : `${this.nameOf(contact.uid)} added. Connecting…` });
     void this.tick();
     // Used someone's words: answer with our own card so they can accept us (they confirm it on their side).
-    if (answerWith) void this.answerInvite(answerWith).catch(() => undefined);
+    if (answerWith) {
+      this.lastAnswer = { rv: answerWith, uid: contact.uid };
+      void this.runAnswer();
+    }
     this.redeemed = null;
     return contact.uid;
+  }
+
+  private lastAnswer: { rv: InviteRendezvous; uid: string } | null = null;
+
+  /** Sends our invite back and keeps the result where the screen can show it. */
+  private async runAnswer(): Promise<void> {
+    const last = this.lastAnswer;
+    if (!last) return;
+    const name = this.nameOf(last.uid);
+    this.emit({ answer: { uid: last.uid, name, status: 'sending' } });
+    try {
+      await this.answerInvite(last.rv);
+      this.emit({ answer: { uid: last.uid, name, status: 'sent' } });
+    } catch (error) {
+      this.emit({ answer: { uid: last.uid, name, status: 'failed', error: errorMessage(error) } });
+    }
+  }
+
+  retryAnswer(): void {
+    void this.runAnswer();
+  }
+
+  clearAnswer(): void {
+    this.emit({ answer: null });
   }
 
   /* ---------------- six-word invites ---------------- */

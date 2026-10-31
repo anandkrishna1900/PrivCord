@@ -196,5 +196,32 @@
    "canStart": false,
    "accepts": false
   }
- ]
+ ],
+ "invite": {
+  "words": [
+   "apple",
+   "river",
+   "tiger",
+   "moon",
+   "cloud",
+   "seven"
+  ],
+  "mailbox": "ac2b5fd7bbf69b9e3609f80af399b9a57ed6d61ddbb24ca97b3e3b8468e53263",
+  "uid": "9aa565c895119ee8ef0389b8105bcd1088a3304e9c5957f8f39f787a025a60c9",
+  "name": "Ivy",
+  "blob": {
+   "v": 1,
+   "to": "invite",
+   "from": "9aa565c895119ee8ef0389b8105bcd1088a3304e9c5957f8f39f787a025a60c9",
+   "epk": {
+    "kty": "EC",
+    "crv": "P-256",
+    "x": "HHQiXOhderAnJsQL6_ecmPtYH08ZBlblwKXEjzKnS7s",
+    "y": "YsgZQI-uRc8kx4JlwTDH_pIt6hDvJef1NjSUv6mr-rc"
+   },
+   "iv": "GDyB7utxyBNHsCzH",
+   "ct": "X0mhm2NbVBwzwUdufgvcEEs42j_DJtiSgy0pbD-t0u5027kJZkFP732pBIJpZCyMNQ6cDpd_Xk99AixGewWRMyzlSgEP03WW2cpBX5uMgRXxz3UkSwqu54N6_vf-0ZFyzPmH9Kgaqqyz_Cwk2OcwKVhR3t6-U43fPAJMfwSMnp_jxyiW5_aO0DY07SkQmU2U__pHHC7DUrniuKyaw9lxHnigAwWddolakFXMFtxmGIaEyRbDuwhVjYBGZn_1QZzFO16viUQIIuikp8Ulc--jVBj22dQTz2Trdd0NMb6QSJmcZn0cjCswu8b_g8Obi0jWVtbtneylW_keWoJjAFyoI6zysZS68uztkpfc4B5XUJB34DfSN2Fq7a_dXsl8I5ZvhwfzFeUqzy5WvEjbXx9Cq3S0QN0UNHgxjK7cm8oq3MOUd8812h4HTyePaHGVgEGByFU5RtlI8bV_FSSTG2hoJJ1m7SfwPfaZG5Q602pqCLhrXm6MonQaPcKUOAnsa80LELxrBho6Zk5wRvAPuV631hUwAqis9iis_pjbovmmyWDuTSg-Ez1eg_ut8iwSIaUAYJ2jIFZJCCfmaPaAMzpHhiWO8nEuS8YSM3WP0D2Q54Nazy9V1QmPo4m4VOre6mr8tY7M4nsVM3llPXZNoqZklAyTiQzIzzR8s6XExOMGNEqpzg77m8ioLO-knHS-yaDVP12GsWvOEJY1XFJGo0I80kUG6zcyLjnNUO5lvQ",
+   "sig": "lh9Zt7pFWmiPCf6Lecm1XVntaJzgJ9wBs8agQqbqjMLOLjnR7ShapyloTjvx75RvjxReLd1RKVJ0_xH0Kd-mTA"
+  }
+ }
 }

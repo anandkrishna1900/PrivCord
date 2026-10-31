@@ -19,6 +19,10 @@ object Bip39 {
 
     private val index: Map<String, Int> by lazy { wordlist.withIndex().associate { it.value to it.index } }
 
+    fun wordAt(i: Int): String = wordlist[i]
+
+    fun isWord(word: String): Boolean = index.containsKey(word)
+
     fun generate(random: SecureRandom = SecureRandom()): String =
         fromEntropy(ByteArray(16).also { random.nextBytes(it) })
 
