@@ -26,9 +26,27 @@ class DuoBackgroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val notification = buildForegroundNotification()
-        startForeground(NOTIFICATION_ID, notification)
+        // Starting a foreground service can be refused (permission, background-start limits, vendor rules). That must
+        // never crash the app, and it must not repeat on every launch: give up and switch the setting off.
+        try {
+            val notification = buildForegroundNotification()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (_: Throwable) {
+            runCatching { com.duochat.app.data.SettingsRepository(applicationContext).update { copy(keepRunning = false) } }
+            stopSelf()
+            return START_NOT_STICKY
+        }
         return START_STICKY
+    }
+
+    /** Android 15 stops "data sync" services after about six hours: stop cleanly and start again. */
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        stopSelf(startId)
+        runCatching { start(applicationContext) }
     }
 
     private fun ensureForegroundNotificationChannel() {
@@ -73,10 +91,10 @@ class DuoBackgroundService : Service() {
 
         fun start(context: Context) {
             val intent = Intent(context, DuoBackgroundService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent) else context.startService(intent)
+            } catch (_: Throwable) {
+                // Not allowed right now: carry on without it.
             }
         }
 
