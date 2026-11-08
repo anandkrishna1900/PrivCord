@@ -116,6 +116,10 @@ class RustChatEngine(
     private val heardFrom = ConcurrentHashMap<String, Boolean>()
     private val progress = ConcurrentHashMap<String, Float>()
 
+    /** A file that has started to arrive but is not whole yet: shown in its chat with a progress bar. */
+    private class Incoming(val conversation: String, val sender: String, val name: String, val size: Long, val since: Long = System.currentTimeMillis())
+    private val incoming = ConcurrentHashMap<String, Incoming>()
+
     private class ManualHold {
         var transport: WebRtcTransport? = null
         var peerCard: String? = null
@@ -159,7 +163,11 @@ class RustChatEngine(
     private suspend fun handleInbound(e: PrivcordEngine, op: Inbound) {
         when (op) {
             is Inbound.Up -> deliver { e.linkUp(op.peer, op.path, op.kind) }
-            is Inbound.Down -> deliver { e.linkDown(op.peer) }
+            is Inbound.Down -> {
+                // A transfer cut by the link going down is not coming back as it was: its half-file bubble goes.
+                for ((id, f) in incoming.entries.toList()) if (f.conversation == op.peer) { incoming.remove(id); progress.remove(id) }
+                deliver { e.linkDown(op.peer) }
+            }
             is Inbound.Frame -> deliver { e.frameReceived(op.peer, op.text) }
             is Inbound.MeshUp -> deliver { e.meshLinkUp(op.link) }
             is Inbound.MeshDown -> deliver { e.meshLinkDown(op.link) }
@@ -173,6 +181,33 @@ class RustChatEngine(
      */
     private inner class Outbound(val peer: String) {
         private val queue = Channel<String>(Channel.UNLIMITED)
+        private val enqueued = java.util.concurrent.atomic.AtomicLong()
+        private val written = java.util.concurrent.atomic.AtomicLong()
+        /** The file being written out: its id, the count at which it is complete, and how many frames it is. */
+        @Volatile private var transfer: Triple<String, Long, Long>? = null
+        private var lastShown = -1
+
+        /** The engine has just queued a whole file of [frames] frames: show how far the link has got with it. */
+        fun beginTransfer(messageId: String, frames: Long) {
+            transfer = Triple(messageId, enqueued.get(), frames.coerceAtLeast(1))
+            showProgress()
+        }
+
+        private fun showProgress() {
+            val (id, end, frames) = transfer ?: return
+            val left = (end - written.get()).coerceAtLeast(0)
+            val percent = (((frames - left).coerceAtLeast(0)) * 100 / frames).toInt().coerceIn(0, 100)
+            if (left == 0L) {
+                transfer = null
+                lastShown = -1
+                progress.remove(id)
+            } else if (percent - lastShown >= 2 || lastShown < 0) {
+                lastShown = percent
+                progress[id] = percent / 100f
+            } else return
+            _state.update { it.copy(transfers = progress.toMap()) }
+        }
+
         private val job = scope.launch(Dispatchers.Default) {
             for (frame in queue) {
                 val web = links[peer]
@@ -181,7 +216,13 @@ class RustChatEngine(
                 } else {
                     bleLinks[peer]?.takeIf { it.isOpen }?.sendJson(frame) == true
                 }
+                if (ok) {
+                    written.incrementAndGet()
+                    if (transfer != null) showProgress()
+                }
                 if (!ok) {
+                    transfer?.let { progress.remove(it.first) }
+                    transfer = null
                     senders.remove(peer, this@Outbound)
                     inbound.trySend(Inbound.Down(peer))
                     links.remove(peer)?.close()
@@ -191,7 +232,7 @@ class RustChatEngine(
             }
         }
 
-        fun add(frame: String): Boolean = queue.trySend(frame).isSuccess
+        fun add(frame: String): Boolean = queue.trySend(frame).isSuccess.also { if (it) enqueued.incrementAndGet() }
 
         fun stop() {
             queue.close()
@@ -405,7 +446,16 @@ class RustChatEngine(
             is EventDto.FileProgress -> {
                 if (event.percent >= 100u) progress.remove(event.messageId) else progress[event.messageId] = event.percent.toInt() / 100f
                 _state.update { it.copy(transfers = progress.toMap()) }
+                // The last chunk is the file arriving whole (it is in the snapshot now); a refused one has no message at all.
+                if (event.percent >= 100u) { incoming.remove(event.messageId); requestRefresh() }
             }
+            is EventDto.FileIncoming -> {
+                incoming[event.messageId] = Incoming(event.conversation, event.conversation.removePrefix("chan:"), event.name, event.size.toLong())
+                progress.putIfAbsent(event.messageId, 0f)
+                _state.update { it.copy(transfers = progress.toMap()) }
+                requestRefresh()
+            }
+            is EventDto.FileQueued -> senders[event.peer]?.beginTransfer(event.messageId, event.frames.toLong())
             is EventDto.PeerStateChanged -> requestRefresh()
             else -> requestRefresh()
         }
@@ -786,6 +836,23 @@ class RustChatEngine(
             shaped[conv.id] = mapped
         }
 
+        // Files still arriving: a bubble per file with its progress bar, replaced by the real message when it is whole.
+        incoming.entries.removeIf { (id, f) ->
+            (System.currentTimeMillis() - f.since > 10 * 60_000L).also { old -> if (old) progress.remove(id) }
+        }
+        for ((id, f) in incoming) {
+            val have = shaped[f.conversation].orEmpty()
+            if (have.any { it.messageId == id }) continue
+            val sender = if (f.conversation.startsWith("chan:")) f.sender else f.conversation
+            val placeholder = ChatMessage(
+                messageId = id, clientMessageId = id, senderId = sender, text = f.name,
+                clientCreatedAt = System.currentTimeMillis(), deliveryState = DeliveryState.DELIVERED, readAt = null,
+                conversationId = f.conversation, type = MessageType.FILE,
+                file = FileMeta(f.name, "application/octet-stream", f.size.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), ""),
+            )
+            shaped[f.conversation] = have + placeholder
+        }
+
         val summaries = ArrayList<ChatSummary>()
         for (c in contacts.filter { it.direct }) {
             val conv = s.conversations.firstOrNull { it.id == c.uid }
@@ -815,7 +882,7 @@ class RustChatEngine(
             val conv = s.conversations.firstOrNull { it.id == id }
             summaries += ChatSummary(
                 id, true, "# $name", conv?.last?.takeIf { it.sender !in muted }?.let { channelLabel(it.sender) + ": " + it.text }, conv?.last?.at ?: 0L,
-                conv?.unread?.toInt() ?: 0, if (online) LinkStatus.CONNECTED else LinkStatus.OFFLINE, "Public channel",
+                conv?.unread?.toInt() ?: 0, if (online || (meshRadio?.linkCount ?: 0) > 0) LinkStatus.CONNECTED else LinkStatus.OFFLINE, "Public channel",
             )
         }
         summaries.sortByDescending { it.lastAt }

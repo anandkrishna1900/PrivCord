@@ -29,6 +29,14 @@ pub fn packet_id(blob: &SealedBlob) -> String {
 }
 
 impl MeshPacket {
+    /// What this phone remembers a packet by: the wire id plus a hash of the whole blob. The wire id is only a prefix of
+    /// the signature, so a neighbour could send junk with a real message's id first; keyed this way the junk and the
+    /// real message are different packets and the real one still gets through.
+    fn key(&self) -> String {
+        let body = serde_json::to_string(&self.blob).unwrap_or_default();
+        format!("{}:{}", self.id, crate::files::sha256_b64(body.as_bytes()))
+    }
+
     pub fn new(blob: SealedBlob, ttl: u32) -> Self {
         Self {
             v: 1,
@@ -153,7 +161,7 @@ impl MeshNode {
     /// A message we wrote: send it to every neighbour and keep it for ones that arrive later.
     pub fn inject(&mut self, blob: SealedBlob, now_ms: u64) -> Vec<Outgoing> {
         let packet = MeshPacket::new(blob, MESH_MAX_TTL);
-        self.remember(&packet.id);
+        self.remember(&packet.key());
         let links = self.sorted_links();
         self.carry(packet.clone(), now_ms, links.iter().cloned());
         links
@@ -170,13 +178,15 @@ impl MeshNode {
         let Some(packet) = MeshPacket::parse(raw) else {
             return HandleResult::default();
         };
-        if self.seen_set.contains(&packet.id) {
+        let key = packet.key();
+        if self.seen_set.contains(&key) {
             return HandleResult::default();
         }
-        self.remember(&packet.id);
+        // Over the sender's limit: not remembered, so it is accepted when it comes round again after the window.
         if !self.allow_sender(&packet.blob.from, now_ms) {
             return HandleResult::default();
         }
+        self.remember(&key);
         let mut forward = Vec::new();
         if packet.ttl > 1 {
             let next = MeshPacket {
@@ -254,10 +264,10 @@ impl MeshNode {
             return;
         }
         self.expire(now_ms);
-        let id = packet.id.clone();
-        self.carried.retain(|(k, _)| *k != id);
+        let key = packet.key();
+        self.carried.retain(|(k, _)| *k != key);
         self.carried.push((
-            id,
+            key,
             Carried {
                 packet,
                 stored_at: now_ms,

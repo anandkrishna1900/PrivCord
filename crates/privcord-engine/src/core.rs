@@ -72,6 +72,8 @@ pub const MAX_FRAME_BYTES: usize = 128 * 1024;
 pub const RETRY_AFTER_MS: i64 = 20_000;
 /// How long a file is left to arrive (and be acknowledged) before it is sent again.
 pub const FILE_RETRY_AFTER_MS: i64 = 120_000;
+/// How long to wait before offering a file again to someone who was busy receiving others.
+const BUSY_RETRY_MS: i64 = 8_000;
 /// How long a hello that arrived early stays valid.
 const EARLY_HELLO_MS: i64 = 10_000;
 /// A dial request counts as in progress for this long unless the link comes up or fails sooner.
@@ -141,6 +143,8 @@ struct Peer {
     /// Dial bookkeeping for the reconnect backoff.
     attempts: u32,
     last_attempt_at: i64,
+    /// Frames in a row that failed to decrypt: a link that only produces those is out of step and is restarted.
+    bad_frames: u32,
 }
 
 impl Peer {
@@ -156,6 +160,7 @@ impl Peer {
             last_ping_at: 0,
             attempts: 0,
             last_attempt_at: 0,
+            bad_frames: 0,
         }
     }
     fn ready(&self) -> bool {
@@ -751,7 +756,10 @@ impl Core {
                 };
                 match c.decrypt(&data) {
                     Ok(v) => v,
-                    Err(_) => return,
+                    Err(_) => {
+                        self.bad_frame(peer);
+                        return;
+                    }
                 }
             }
             Some(Session::Layered(l)) => {
@@ -760,7 +768,10 @@ impl Core {
                 };
                 match l.channel.decrypt(&data) {
                     Ok(v) => v,
-                    Err(_) => return,
+                    Err(_) => {
+                        self.bad_frame(peer);
+                        return;
+                    }
                 }
             }
             // Transport-encrypted: the frame is already plain JSON.
@@ -768,8 +779,25 @@ impl Core {
             None => return,
         };
         // Anything that decrypted and passed the counter check is proof the other side is alive.
+        if let Some(p) = self.peers.get_mut(peer) {
+            p.bad_frames = 0;
+        }
         self.heard_from(peer);
         self.dispatch(peer, &inner);
+    }
+
+    /// A frame would not decrypt. One is noise; several in a row mean the two ends are out of step (a lost frame, a
+    /// replayed counter), so the link is closed and made again instead of staying up and deaf.
+    fn bad_frame(&mut self, peer: &UserId) {
+        let Some(p) = self.peers.get_mut(peer) else {
+            return;
+        };
+        p.bad_frames += 1;
+        if p.bad_frames >= 5 {
+            p.bad_frames = 0;
+            self.fail(peer, ConnectionFailure::AuthenticationFailed);
+            self.ports.transport.close(peer);
+        }
     }
 
     fn heard_from(&mut self, peer: &UserId) {
@@ -1081,34 +1109,65 @@ impl Core {
     }
 
     fn on_declined(&mut self, peer: &UserId, frame: &Value) {
-        let Some((id, _reason)) = parse_declined_frame(frame) else {
+        let Some((id, reason)) = parse_declined_frame(frame) else {
             return;
         };
         let ours = self.is_ours_to(&id, peer);
         if !ours {
             return;
         }
-        let ops = [
-            StorageOp::SetDelivery {
+        // "Busy" is not a refusal of the message, only of this moment (they are already receiving other files): keep it
+        // queued and offer it again shortly.
+        if reason == DeclineReason::Busy {
+            let next_try = self.now() + BUSY_RETRY_MS;
+            if let Some(entry) = self
+                .outbox
+                .iter_mut()
+                .find(|o| o.message_id == id && &o.recipient == peer)
+            {
+                entry.next_try_ms = next_try;
+                let saved = entry.clone();
+                let _ = self.ports.storage.apply(&[StorageOp::PutOutbox(saved)]);
+            }
+            return;
+        }
+        let in_group = matches!(
+            self.messages.get(&id).map(|m| &m.conversation),
+            Some(ConversationId::Group(_))
+        );
+        let others_pending = self
+            .outbox
+            .iter()
+            .any(|o| o.message_id == id && &o.recipient != peer);
+        let current = self.messages.get(&id).map(|m| m.message.delivery_state);
+        // In a group one person refusing does not make the message a failure for everybody else: it only fails when
+        // nobody else has it and nobody else is still to get it.
+        let fail = !in_group
+            || (!others_pending
+                && matches!(current, Some(DeliveryState::Queued | DeliveryState::Sent)));
+        let mut ops = vec![StorageOp::RemoveOutbox {
+            message_id: id.clone(),
+            recipient: peer.clone(),
+        }];
+        if fail {
+            ops.push(StorageOp::SetDelivery {
                 id: id.clone(),
                 state: DeliveryState::Failed,
                 read_at: None,
-            },
-            StorageOp::RemoveOutbox {
-                message_id: id.clone(),
-                recipient: peer.clone(),
-            },
-        ];
+            });
+        }
         if self.ports.storage.apply(&ops).is_err() {
             return;
         }
         self.outbox
             .retain(|o| !(o.message_id == id && &o.recipient == peer));
-        if let Some(m) = self.messages.get_mut(&id) {
-            m.message.delivery_state = DeliveryState::Failed;
+        if fail {
+            if let Some(m) = self.messages.get_mut(&id) {
+                m.message.delivery_state = DeliveryState::Failed;
+            }
+            self.hub
+                .publish(EngineEvent::MessageRefused { message_id: id });
         }
-        self.hub
-            .publish(EngineEvent::MessageRefused { message_id: id });
     }
 
     /* ---------------------------------------------------------------- messaging and delivery */
@@ -1237,6 +1296,8 @@ impl Core {
                 }]
             };
             let was_queued = row.message.delivery_state == DeliveryState::Queued;
+            let file_frames = (row.message.kind == MessageKind::File)
+                .then(|| u32::try_from(frames.len()).unwrap_or(u32::MAX));
             // A file is hundreds of frames: give the whole transfer time to finish before sending it again.
             let wait = if row.message.kind == MessageKind::File {
                 FILE_RETRY_AFTER_MS
@@ -1246,6 +1307,13 @@ impl Core {
             let all_sent = frames.iter().all(|f| self.send_secure(peer, f));
             if !all_sent {
                 return;
+            }
+            if let Some(frames) = file_frames {
+                self.hub.publish(EngineEvent::FileQueued {
+                    peer: peer.clone(),
+                    message_id: entry.message_id.clone(),
+                    frames,
+                });
             }
             let next = OutboxEntry {
                 attempts: entry.attempts + 1,
@@ -1968,6 +2036,7 @@ impl Core {
             return;
         };
         let id = offer.message_id.clone();
+        let (group, name, size) = (offer.group_id.clone(), offer.name.clone(), offer.size);
         match &offer.group_id {
             None => {
                 let trust = self
@@ -2001,7 +2070,20 @@ impl Core {
             .map(|p| p.files.begin(offer))
             .unwrap_or(BeginOutcome::Busy);
         match outcome {
-            BeginOutcome::Ok => {}
+            BeginOutcome::Ok => {
+                let conversation = match group {
+                    None => Some(ConversationId::Direct(peer.clone())),
+                    Some(g) => GroupId::new(g.as_str()).ok().map(ConversationId::Group),
+                };
+                if let Some(conversation) = conversation {
+                    self.hub.publish(EngineEvent::FileIncoming {
+                        conversation,
+                        message_id: id,
+                        name,
+                        size,
+                    });
+                }
+            }
             BeginOutcome::TooLarge => self.decline(peer, &id, DeclineReason::TooLarge),
             BeginOutcome::Busy => self.decline(peer, &id, DeclineReason::Busy),
         }
@@ -2012,6 +2094,14 @@ impl Core {
             return;
         };
         let id = chunk.message_id.clone();
+        // A chunk of a transfer we are not receiving (left over from before a reconnect): nothing to refuse, just drop it.
+        if self
+            .peers
+            .get(peer)
+            .is_none_or(|p| p.files.progress(&id).is_none())
+        {
+            return;
+        }
         let result = match self.peers.get_mut(peer) {
             Some(p) => p.files.chunk(&chunk),
             None => return,

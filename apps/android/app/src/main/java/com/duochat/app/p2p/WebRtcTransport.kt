@@ -84,11 +84,20 @@ class WebRtcTransport(
         )
     }
 
+    /**
+     * Waits while the channel's buffer is full. A slow connection is not an error: the wait only gives up (and the link
+     * closes) when the buffer has not gone down at all for a minute.
+     */
     override suspend fun awaitWritable(): Boolean {
         val channel = dataChannel ?: return false
-        val deadline = System.currentTimeMillis() + 20_000
+        var lastLevel = channel.bufferedAmount()
+        var lastProgressAt = System.currentTimeMillis()
         while (isOpen && channel.bufferedAmount() > HIGH_WATER_BYTES) {
-            if (System.currentTimeMillis() > deadline) return false
+            val level = channel.bufferedAmount()
+            val now = System.currentTimeMillis()
+            if (level < lastLevel) lastProgressAt = now
+            lastLevel = level
+            if (now - lastProgressAt > STALL_LIMIT_MS) return false
             kotlinx.coroutines.delay(15)
         }
         return isOpen
@@ -396,3 +405,4 @@ object PeerConnectionFactoryHolder {
 }
 
 private const val HIGH_WATER_BYTES = 1_000_000L
+private const val STALL_LIMIT_MS = 60_000L

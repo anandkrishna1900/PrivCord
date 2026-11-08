@@ -321,3 +321,38 @@ fn a_random_30_phone_network_reaches_exactly_who_the_hop_limit_allows() {
         );
     }
 }
+
+#[test]
+fn junk_with_a_real_messages_id_does_not_block_the_real_message() {
+    let mut node = MeshNode::default();
+    node.link_up("n1", 0);
+    let real = blob(7, "alice");
+    let mut junk = real.clone();
+    junk.ct = "garbage".into(); // same signature prefix, so the same wire id
+    let first = node.handle(
+        &serde_json::to_value(MeshPacket::new(junk, 3)).unwrap(),
+        "n1",
+        10,
+    );
+    assert!(first.accepted.is_some());
+    let second = node.handle(
+        &serde_json::to_value(MeshPacket::new(real.clone(), 3)).unwrap(),
+        "n1",
+        20,
+    );
+    assert_eq!(second.accepted, Some(real));
+}
+
+#[test]
+fn a_message_over_the_sender_limit_is_taken_when_it_comes_round_again() {
+    let mut node = MeshNode::new(MeshOptions {
+        per_sender_per_minute: 1,
+        ..MeshOptions::default()
+    });
+    node.link_up("n1", 0);
+    let a = serde_json::to_value(MeshPacket::new(blob(1, "bob"), 3)).unwrap();
+    let b = serde_json::to_value(MeshPacket::new(blob(2, "bob"), 3)).unwrap();
+    assert!(node.handle(&a, "n1", 0).accepted.is_some());
+    assert!(node.handle(&b, "n1", 1_000).accepted.is_none());
+    assert!(node.handle(&b, "n1", 120_000).accepted.is_some());
+}

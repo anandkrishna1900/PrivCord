@@ -208,6 +208,19 @@ pub enum EngineEvent {
         message_id: MessageId,
         percent: u8,
     },
+    /// A file from `conversation` has started to arrive (so the chat can show it before it is whole).
+    FileIncoming {
+        conversation: ConversationId,
+        message_id: MessageId,
+        name: String,
+        size: usize,
+    },
+    /// A file has been handed to the link for `peer`: `frames` frames, the first of which is the offer.
+    FileQueued {
+        peer: UserId,
+        message_id: MessageId,
+        frames: u32,
+    },
     MessageRefused {
         message_id: MessageId,
     },

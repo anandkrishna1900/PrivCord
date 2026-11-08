@@ -6089,6 +6089,27 @@ sealed class EventDto {
     }
     
     /**
+     * A file has started to arrive in `conversation` (it is not stored until it is whole).
+     */
+    data class FileIncoming(
+        val `conversation`: kotlin.String, 
+        val `messageId`: kotlin.String, 
+        val `name`: kotlin.String, 
+        val `size`: kotlin.ULong) : EventDto() {
+        companion object
+    }
+    
+    /**
+     * A file was handed to the link to `peer`, as `frames` frames.
+     */
+    data class FileQueued(
+        val `peer`: kotlin.String, 
+        val `messageId`: kotlin.String, 
+        val `frames`: kotlin.UInt) : EventDto() {
+        companion object
+    }
+    
+    /**
      * An emergency deletion ran; ask for its report.
      */
     object Wiped : EventDto()
@@ -6172,11 +6193,22 @@ public object FfiConverterTypeEventDto : FfiConverterRustBuffer<EventDto>{
                 FfiConverterString.read(buf),
                 FfiConverterUInt.read(buf),
                 )
-            21 -> EventDto.Wiped
-            22 -> EventDto.Lagged(
+            21 -> EventDto.FileIncoming(
+                FfiConverterString.read(buf),
+                FfiConverterString.read(buf),
+                FfiConverterString.read(buf),
                 FfiConverterULong.read(buf),
                 )
-            23 -> EventDto.ShutDown
+            22 -> EventDto.FileQueued(
+                FfiConverterString.read(buf),
+                FfiConverterString.read(buf),
+                FfiConverterUInt.read(buf),
+                )
+            23 -> EventDto.Wiped
+            24 -> EventDto.Lagged(
+                FfiConverterULong.read(buf),
+                )
+            25 -> EventDto.ShutDown
             else -> throw RuntimeException("invalid enum value, something is very wrong!!")
         }
     }
@@ -6327,6 +6359,25 @@ public object FfiConverterTypeEventDto : FfiConverterRustBuffer<EventDto>{
                 + FfiConverterUInt.allocationSize(value.`percent`)
             )
         }
+        is EventDto.FileIncoming -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`conversation`)
+                + FfiConverterString.allocationSize(value.`messageId`)
+                + FfiConverterString.allocationSize(value.`name`)
+                + FfiConverterULong.allocationSize(value.`size`)
+            )
+        }
+        is EventDto.FileQueued -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`peer`)
+                + FfiConverterString.allocationSize(value.`messageId`)
+                + FfiConverterUInt.allocationSize(value.`frames`)
+            )
+        }
         is EventDto.Wiped -> {
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
@@ -6455,17 +6506,32 @@ public object FfiConverterTypeEventDto : FfiConverterRustBuffer<EventDto>{
                 FfiConverterUInt.write(value.`percent`, buf)
                 Unit
             }
-            is EventDto.Wiped -> {
+            is EventDto.FileIncoming -> {
                 buf.putInt(21)
+                FfiConverterString.write(value.`conversation`, buf)
+                FfiConverterString.write(value.`messageId`, buf)
+                FfiConverterString.write(value.`name`, buf)
+                FfiConverterULong.write(value.`size`, buf)
+                Unit
+            }
+            is EventDto.FileQueued -> {
+                buf.putInt(22)
+                FfiConverterString.write(value.`peer`, buf)
+                FfiConverterString.write(value.`messageId`, buf)
+                FfiConverterUInt.write(value.`frames`, buf)
+                Unit
+            }
+            is EventDto.Wiped -> {
+                buf.putInt(23)
                 Unit
             }
             is EventDto.Lagged -> {
-                buf.putInt(22)
+                buf.putInt(24)
                 FfiConverterULong.write(value.`missed`, buf)
                 Unit
             }
             is EventDto.ShutDown -> {
-                buf.putInt(23)
+                buf.putInt(25)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }

@@ -645,6 +645,19 @@ pub enum EventDto {
         message_id: String,
         percent: u32,
     },
+    /// A file has started to arrive in `conversation` (it is not stored until it is whole).
+    FileIncoming {
+        conversation: String,
+        message_id: String,
+        name: String,
+        size: u64,
+    },
+    /// A file was handed to the link to `peer`, as `frames` frames.
+    FileQueued {
+        peer: String,
+        message_id: String,
+        frames: u32,
+    },
     /// An emergency deletion ran; ask for its report.
     Wiped,
     Lagged {
@@ -721,6 +734,26 @@ fn event_dto(e: EngineEvent) -> EventDto {
         } => EventDto::FileProgress {
             message_id: message_id.to_string(),
             percent: u32::from(percent),
+        },
+        EngineEvent::FileIncoming {
+            conversation,
+            message_id,
+            name,
+            size,
+        } => EventDto::FileIncoming {
+            conversation: conversation.storage_key(),
+            message_id: message_id.to_string(),
+            name,
+            size: size as u64,
+        },
+        EngineEvent::FileQueued {
+            peer,
+            message_id,
+            frames,
+        } => EventDto::FileQueued {
+            peer: peer.to_string(),
+            message_id: message_id.to_string(),
+            frames,
         },
         EngineEvent::SignalReceived { peer, message } => {
             let (kind, sdp) = match message {
