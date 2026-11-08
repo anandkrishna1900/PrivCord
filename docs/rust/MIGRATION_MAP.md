@@ -9,8 +9,8 @@ Status meanings: **Ported, tested** = the Rust implementation exists and is chec
 | Status | Files | Lines |
 |---|---:|---:|
 | Ported, tested | 46 | 5302 |
-| Partly ported | 12 | 7644 |
-| Not yet ported | 26 | 4599 |
+| Partly ported | 14 | 8360 |
+| Not yet ported | 24 | 3883 |
 | Stays (UI) | 51 | 10663 |
 | Stays (platform adapter) | 26 | 3822 |
 | Replaced by a library | 3 | 208 |
@@ -39,7 +39,7 @@ Ported does not mean retired: the TypeScript and Kotlin versions stay in product
 | `packages/protocol/src/e2ee/ratchet.ts` | 438 | `MAX_SKIP`, `RatchetHeader`, `encodeHeader`, `SerializedRatchetState`, `EncryptResult`, `DoubleRatchet` | Double Ratchet, envelopes, group keys (not used by the apps today) | crypto (not ported) | Crypto | Not yet ported | M3b, only if kept; needs its own security review | n/a |
 | `packages/protocol/src/e2ee/x3dh.ts` | 402 | `X3DH_INFO`, `IDENTITY_PROOF_PREFIX`, `SIGNED_PREKEY_PREFIX`, `BUNDLE_VERSION`, `thumbJwk`, `identityFingerprintHex` +19 | Identity proof (used); X3DH bundles and prekeys (not used by the apps) | crypto::identity (proof ported); X3DH not ported | Crypto | Partly ported | Decide in M3b whether X3DH is kept; the apps do not call it | proof vectors |
 | `packages/protocol/src/files.ts` | 245 | `MAX_FILE_CHUNKS`, `MAX_FILE_NAME`, `MAX_INCOMING_PER_PEER`, `FileOfferFrame`, `FileChunkFrame`, `isInlineImage` +13 | File offers, chunks, sanitising, assembler | domain::files | Domain | Ported, tested | M7/M8 | vectors, properties |
-| `packages/protocol/src/groups/coordinator.ts` | 374 | `GroupPushFrame`, `GroupEventsFrame`, `GroupHaveFrame`, `GroupMessageFrame`, `RelayBlobFrame`, `GroupFrame` +9 | Group coordinator: frames, introductions, sync, group messages | engine::group (planned) | Engine | Not yet ported | M4 | docs/group-vectors.json frames |
+| `packages/protocol/src/groups/coordinator.ts` | 374 | `GroupPushFrame`, `GroupEventsFrame`, `GroupHaveFrame`, `GroupMessageFrame`, `RelayBlobFrame`, `GroupFrame` +9 | Group coordinator: frames, introductions, sync, gossip, group messages | crypto::group_coordinator (state machine); wiring into the engine planned | Engine | Partly ported | M7/M8 | TypeScript frame vectors; introduction, gossip, sync, cap, leave and spam scenarios |
 | `packages/protocol/src/groups/events.ts` | 156 | `GroupEventType`, `GroupEvent`, `UnsignedGroupEvent`, `MAX_GROUP_NAME`, `computeEventId`, `signGroupEvent` +4 | Group event log: signing, ids, deterministic fold, roster, 10-member cap | crypto::group | Crypto | Ported, tested | M7/M8 | every TypeScript trace in docs/group-vectors.json, any arrival order |
 | `packages/protocol/src/groups/log.ts` | 222 | `GroupMemberInfo`, `GroupState`, `AddStatus`, `MAX_EVENTS_PER_GROUP`, `MAX_PENDING_EVENTS`, `GroupLog` | Group event log: signing, ids, deterministic fold, roster, 10-member cap | crypto::group | Crypto | Ported, tested | M7/M8 | every TypeScript trace in docs/group-vectors.json, any arrival order |
 | `packages/protocol/src/index.ts` | 30 | (none) | Re-exports | n/a | Tooling | Replaced by a library | With the package | n/a |
@@ -155,7 +155,7 @@ Ported does not mean retired: the TypeScript and Kotlin versions stay in product
 | `apps/android/app/src/main/java/com/duochat/app/data/local/DuoDatabase.kt` | 358 | `MessageEntity`, `OutboxEntity`, `ContactEntity`, `KvEntity`, `GroupLogEntity`, `DuoDao` +1 | Room database | storage::SqliteStorage + importer (planned) | Storage | Partly ported | M6b: importer for existing Room databases, then delete | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/engine/ChatEngine.kt` | 2472 | `IncomingNotice`, `ChatEngine`, `sealedBlobFromJson` | The whole Android chat engine | engine | Engine | Partly ported | M8 then M9 | engine integration tests |
 | `apps/android/app/src/main/java/com/duochat/app/engine/LinkPolicy.kt` | 102 | `LinkInfo`, `isInitiator`, `LinkScheduler`, `PendingGroupBuffer`, `SeenSet`, `groupDeliveryDetail` | Who connects out, backoff, scheduler | engine::peer / connection manager (planned) | Engine | Not yet ported | M5b | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/groups/GroupCoordinator.kt` | 342 | `GroupFrame`, `parseGroupFrame`, `blobShapeOk`, `OutgoingFrame`, `NewContact`, `GroupResult` +3 | Group coordinator | engine::group (planned) | Engine | Not yet ported | M4 | n/a |
+| `apps/android/app/src/main/java/com/duochat/app/groups/GroupCoordinator.kt` | 342 | `GroupFrame`, `parseGroupFrame`, `blobShapeOk`, `OutgoingFrame`, `NewContact`, `GroupResult` +3 | Group coordinator | crypto::group_coordinator | Engine | Partly ported | M8 | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/groups/GroupEvents.kt` | 165 | `GroupEvent`, `GroupEvents` | Group event log duplicated from TypeScript | crypto::group | Crypto | Ported, tested | M8 | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/groups/GroupLog.kt` | 182 | `GroupMemberInfo`, `GroupState`, `AddStatus`, `GroupLog` | Group event log duplicated from TypeScript | crypto::group | Crypto | Ported, tested | M8 | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/notifications/DuoBackgroundService.kt` | 107 | `DuoBackgroundService` | Notifications and background service | Notifier adapter | Adapter | Stays (platform adapter) | Stays | n/a |
