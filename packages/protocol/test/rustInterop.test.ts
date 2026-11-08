@@ -1,8 +1,13 @@
 import { readFileSync } from 'node:fs';
+import { schnorr } from '@noble/curves/secp256k1.js';
+import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
+import { sha256 } from '@noble/hashes/sha2.js';
 import { describe, expect, it } from 'vitest';
 import {
   authChallenge,
   decodeBlob,
+  decodeManualSignal,
+  parsePairingState,
   parsePeerFrame,
   uidFromDh,
   decodeContactCard,
@@ -88,5 +93,23 @@ describe('artifacts produced by the Rust engine', () => {
     expect(await check(h.annProof[0], h.annHello, h.bobHello)).toBe(true);
     expect(await check(h.bobProof[0], h.bobHello, h.annHello)).toBe(true);
     expect(h.annOk[0]).toEqual({ v: 1, kind: 'auth_ok', uid: h.annHello.uid });
+  });
+
+  it('a Nostr event made by Rust has a valid id and BIP-340 signature and carries the blob', () => {
+    const e = v.nostr.event;
+    const id = bytesToHex(sha256(new TextEncoder().encode(JSON.stringify([0, e.pubkey, e.created_at, e.kind, e.tags, e.content]))));
+    expect(id).toBe(e.id);
+    expect(schnorr.verify(hexToBytes(e.sig), hexToBytes(e.id), hexToBytes(e.pubkey))).toBe(true);
+    expect(e.tags.find((t: string[]) => t[0] === 't')[1]).toBe(v.nostr.mailbox);
+    expect(decodeBlob(e.content)).toEqual(v.nostr.blob);
+  });
+
+  it('a manual connection code and a pairing record made by Rust are accepted', () => {
+    const r = decodeManualSignal(v.manual.code, v.manual.conversation);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.fromUid).toBe(v.manual.uid);
+    const state = parsePairingState(v.pairing.serialized, v.pairing.peer);
+    expect(state.record?.peerUid).toBe(v.pairing.peer);
+    expect(state.autoReconnect).toBe(true);
   });
 });

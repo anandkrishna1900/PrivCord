@@ -5,6 +5,7 @@
 //! protocol package (`packages/protocol`) that this crate replaces, and is checked against its test vectors
 //! (`docs/*-vectors.json`) in `tests/`.
 
+pub mod ble;
 pub mod blob;
 pub mod channel;
 pub mod codec;
@@ -12,13 +13,17 @@ pub mod diagnosis;
 pub mod error;
 pub mod files;
 pub mod ids;
+pub mod killswitch;
 pub mod limits;
+pub mod link_policy;
 pub mod mesh;
 pub mod message;
 pub mod network;
 pub mod ordering;
+pub mod pairing;
 pub mod peer;
 pub mod privacy;
+pub mod signaling;
 pub mod social;
 pub mod state;
 pub mod text;

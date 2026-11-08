@@ -565,3 +565,121 @@ fn secure_channel_matches_typescript_byte_for_byte() {
         ChannelError::NotEstablished
     );
 }
+
+#[test]
+fn ble_tags_match_the_shared_vectors() {
+    use privcord_crypto::ble::{ble_accept_tags, ble_tag};
+    let root = env!("CARGO_MANIFEST_DIR");
+    let text = std::fs::read_to_string(format!("{root}/../../docs/ble-vectors.json")).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let hex = |s: &str| -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    };
+    let secret = hex(v["tag"]["secretHex"].as_str().unwrap());
+    for t in v["tag"]["vectors"].as_array().unwrap() {
+        let tag = ble_tag(&secret, t["epoch"].as_u64().unwrap()).unwrap();
+        assert_eq!(tag.to_vec(), hex(t["tagHex"].as_str().unwrap()));
+    }
+    // Previous, current and next epoch are all accepted.
+    let epoch = 1_900_000u64;
+    let now_ms = epoch * 900 * 1000 + 5;
+    let tags = ble_accept_tags(&secret, now_ms).unwrap();
+    assert_eq!(tags.len(), 3);
+    assert_eq!(tags[1], ble_tag(&secret, epoch).unwrap());
+}
+
+#[test]
+fn nostr_events_match_typescript_and_the_relay_rules_hold() {
+    use privcord_crypto::{
+        nostr::{
+            accept_relay_message, event_frame, make_event, req_frame, verify_event, NostrEvent,
+            PutKind,
+        },
+        rng::SeededEntropy,
+    };
+    use privcord_domain::{blob::SealedBlob, signaling::SeenSet};
+    let root = env!("CARGO_MANIFEST_DIR");
+    let text = std::fs::read_to_string(format!("{root}/../../docs/misc-vectors.json")).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let n = &v["nostr"];
+
+    // The TypeScript event: our id computation reproduces its id, and its signature verifies; tampering does not.
+    let ts = NostrEvent::from_value(&n["event"]).unwrap();
+    assert_eq!(
+        privcord_crypto::nostr::event_id(&ts.pubkey, ts.created_at, ts.kind, &ts.tags, &ts.content),
+        n["expectId"].as_str().unwrap()
+    );
+    for case in n["verify"].as_array().unwrap() {
+        let e = NostrEvent::from_value(&case["event"]).unwrap();
+        assert_eq!(verify_event(&e), case["ok"].as_bool().unwrap());
+    }
+
+    // Our own event verifies, carries the blob, and is different every time (throwaway key).
+    let blob = SealedBlob::from_value(&n["blob"]).unwrap();
+    let mut rng = SeededEntropy::new("nostr-test");
+    let a = make_event("mb", &blob, PutKind::Sig, 120, 1_700_000_000, &mut rng).unwrap();
+    let b = make_event("mb", &blob, PutKind::Msg, 3600, 1_700_000_000, &mut rng).unwrap();
+    assert!(verify_event(&a) && verify_event(&b));
+    assert_ne!(a.pubkey, b.pubkey);
+    assert_eq!((a.kind, b.kind), (21733, 31733));
+    assert_eq!(a.tag("expiration"), Some("1700000120"));
+    assert_eq!(SealedBlob::decode(&a.content), Some(blob.clone()));
+    let mut bad = a.clone();
+    bad.content.push('A');
+    assert!(!verify_event(&bad));
+    assert!(req_frame("sub", "mb", 5).contains("\"#t\":[\"mb\"]"));
+    assert!(event_frame(&a).starts_with("[\"EVENT\","));
+
+    // Which relay messages become blobs: right subscription, valid, our mailbox, not expired, first time only.
+    let frame =
+        |sub: &str, e: &NostrEvent| serde_json::json!(["EVENT", sub, e.to_value()]).to_string();
+    let mut seen = SeenSet::default();
+    let now = 1_700_000_050;
+    assert!(accept_relay_message(&frame("sub", &a), "sub", "mb", &mut seen, now).is_some());
+    assert!(
+        accept_relay_message(&frame("sub", &a), "sub", "mb", &mut seen, now).is_none(),
+        "a repeat is dropped"
+    );
+    assert!(
+        accept_relay_message(&frame("other", &b), "sub", "mb", &mut seen, now).is_none(),
+        "wrong subscription"
+    );
+    assert!(
+        accept_relay_message(&frame("sub", &b), "sub", "elsewhere", &mut seen, now).is_none(),
+        "wrong mailbox"
+    );
+    assert!(
+        accept_relay_message(
+            &frame("sub", &a),
+            "sub",
+            "mb",
+            &mut SeenSet::default(),
+            1_700_000_121
+        )
+        .is_none(),
+        "expired"
+    );
+    assert!(
+        accept_relay_message(
+            &frame("sub", &bad),
+            "sub",
+            "mb",
+            &mut SeenSet::default(),
+            now
+        )
+        .is_none(),
+        "tampered"
+    );
+    assert!(accept_relay_message("not json", "sub", "mb", &mut SeenSet::default(), now).is_none());
+    assert!(accept_relay_message(
+        r#"["NOTICE","x"]"#,
+        "sub",
+        "mb",
+        &mut SeenSet::default(),
+        now
+    )
+    .is_none());
+}
