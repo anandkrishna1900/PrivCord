@@ -354,3 +354,22 @@ fn a_version_1_database_with_real_content_upgrades_to_the_current_schema_losing_
     db.apply(&[StorageOp::DeleteMessage(id.clone())]).unwrap();
     assert!(db.file(&id).unwrap().is_none());
 }
+
+#[test]
+fn file_info_reports_type_and_size_without_reading_the_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = SqliteStorage::open(&dir.path().join("a.db")).unwrap();
+    db.apply(&[
+        StorageOp::InsertMessage(msg("m1", 1, "photo.jpg")),
+        StorageOp::PutFile(privcord_ports::StoredFile {
+            message_id: mid("m1"),
+            name: "photo.jpg".into(),
+            mime: "image/jpeg".into(),
+            bytes: vec![7; 1234],
+        }),
+    ])
+    .unwrap();
+    let info = db.file_info(&mid("m1")).unwrap().unwrap();
+    assert_eq!((info.mime.as_str(), info.size), ("image/jpeg", 1234));
+    assert!(db.file_info(&mid("nope")).unwrap().is_none());
+}

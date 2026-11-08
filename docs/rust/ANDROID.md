@@ -36,3 +36,14 @@ File progress is shown for receiving only. Manual codes need both people to conf
 
 Stage 2, the rest (not done): move identity, contacts, direct messages, groups and files in `ChatEngine.kt` onto `PrivcordEngine`,
 with WebRTC, Bluetooth and the relay sockets staying as thin Kotlin adapters (for Bluetooth use `LinkKind::Layered`).
+
+## Phones on different networks (Wi-Fi to mobile data)
+
+Two phones can only link directly when their networks allow it. Many mobile networks do not (the app says so on the chat
+screen: "the two networks would not let a direct link through"). The fix is a TURN relay, which carries the encrypted
+stream and sees only that you are talking, not what you say. Without one, text still arrives when store-and-forward is on,
+but files and voice notes need the direct link.
+
+Set one up in the app on **both** phones: Settings > Connection > TURN. Run your own with
+[docs/turn-server](../turn-server/docker-compose.yml), or use a hosted TURN service. The credential is deliberately not
+baked into the CI-built APK: anyone who can download or receive the APK could read it out.

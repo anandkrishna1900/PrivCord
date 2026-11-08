@@ -561,6 +561,23 @@ impl Storage for SqliteStorage {
         Ok(out)
     }
 
+    fn file_info(&self, id: &MessageId) -> Result<Option<privcord_ports::FileInfo>, StorageError> {
+        self.lock()
+            .query_row(
+                "SELECT mime, length(bytes) FROM files WHERE message_id = ?1",
+                params![id.as_str()],
+                |r| {
+                    let size: i64 = r.get(1)?;
+                    Ok(privcord_ports::FileInfo {
+                        mime: r.get(0)?,
+                        size: u64::try_from(size).unwrap_or(0),
+                    })
+                },
+            )
+            .optional()
+            .map_err(unavailable)
+    }
+
     fn file(&self, id: &MessageId) -> Result<Option<StoredFile>, StorageError> {
         self.lock()
             .query_row(

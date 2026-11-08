@@ -134,6 +134,8 @@ pub struct Snapshot {
     pub lookup_pending: bool,
     pub messages: Vec<(ConversationId, Vec<ChatMessage>)>,
     pub queued: usize,
+    /// Type and size of every file message that is stored.
+    pub files: Vec<(MessageId, privcord_ports::FileInfo)>,
 }
 
 /// Something that happened. Each has a number; numbers rise by one, so a gap means events were missed.

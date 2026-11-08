@@ -2241,6 +2241,20 @@ impl Core {
         });
         let (invite, requests, answer, lookup_pending) = self.invite_views();
         let (summaries, deliveries) = self.summaries();
+        let files = self
+            .messages
+            .values()
+            .filter(|m| m.message.kind == MessageKind::File)
+            .filter_map(|m| {
+                let id = &m.message.message_id;
+                self.ports
+                    .storage
+                    .file_info(id)
+                    .ok()
+                    .flatten()
+                    .map(|i| (id.clone(), i))
+            })
+            .collect();
         Snapshot {
             seq: self.hub.seq(),
             own_uid: self.uid.clone(),
@@ -2258,6 +2272,7 @@ impl Core {
             lookup_pending,
             messages,
             queued: self.outbox.len(),
+            files,
         }
     }
 
