@@ -82,7 +82,7 @@ rule(r"src-tauri/src/(lib|main)\.rs", "Tauri shell: commands, keyring, notificat
 rule(r"src-tauri/src/ble\.rs", "Native BLE central", "BLE adapter", "Adapter", ADAPTER, "Stays")
 # ---- android
 rule(r"android/.*/ui/.*", "Compose screens", "UI", "UI", UI, "Stays")
-rule(r"android/.*/(MainActivity|DuoChatApp|AppConfig)\.kt", "Android shell", "UI / platform", "UI", UI, "Stays")
+rule(r"android/.*/(MainActivity|DuoChatApp|AppConfig|RustCore)\.kt", "Android shell and the loader for the Rust core", "UI / platform", "UI", UI, "Stays")
 rule(r"android/.*/ble/(AndroidMeshRadio|BleEnvironment|BlePermissions|BleTransport|MeshRadio|SecureBleLink)\.kt", "Android Bluetooth radio, permissions, link", "BLE adapter", "Adapter", ADAPTER, "Stays")
 rule(r"android/.*/ble/BleFraming\.kt", "BLE chunk framing", "domain::ble", "Domain", PORTED, "M8", "docs/ble-vectors.json")
 rule(r"android/.*/ble/MeshNode\.kt", "Mesh flood logic", "domain::mesh", "Domain", PORTED, "M8")
