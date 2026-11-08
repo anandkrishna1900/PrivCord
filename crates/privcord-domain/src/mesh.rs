@@ -83,7 +83,9 @@ impl MeshPacket {
 
 #[derive(Debug, Clone)]
 pub struct MeshOptions {
-    /// How many different messages one sender may put into the mesh per minute before we stop passing them on.
+    /// How many new messages one neighbour may hand us per minute before we stop taking them. This is counted per radio
+    /// link, not per sender name: the name inside a message is not verified by relays, so anyone could use up another
+    /// person's allowance by writing it into junk.
     pub per_sender_per_minute: usize,
     pub seen_capacity: usize,
     pub carry_ms: u64,
@@ -93,7 +95,7 @@ pub struct MeshOptions {
 impl Default for MeshOptions {
     fn default() -> Self {
         Self {
-            per_sender_per_minute: 30,
+            per_sender_per_minute: 60,
             seen_capacity: 4000,
             carry_ms: MESH_CARRY_MS,
             carry_capacity: 300,
@@ -183,7 +185,7 @@ impl MeshNode {
             return HandleResult::default();
         }
         // Over the sender's limit: not remembered, so it is accepted when it comes round again after the window.
-        if !self.allow_sender(&packet.blob.from, now_ms) {
+        if !self.allow_sender(from, now_ms) {
             return HandleResult::default();
         }
         self.remember(&key);
