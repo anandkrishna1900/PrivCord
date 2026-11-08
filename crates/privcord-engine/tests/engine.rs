@@ -892,3 +892,21 @@ fn the_legacy_handshake_refuses_a_stranger_and_ignores_frames_before_it_finishes
         }
     );
 }
+
+#[test]
+fn a_friend_can_be_given_a_name_of_your_own_and_it_can_be_cleared() {
+    let (mut a, _b, _au, bu) = pair();
+    let shown = |n: &Node| {
+        n.core
+            .snapshot()
+            .contacts
+            .iter()
+            .find(|c| c.uid == bu)
+            .map(|c| c.display_name.clone())
+            .unwrap()
+    };
+    a.core.rename_contact(&bu, "  Mum  ").unwrap();
+    assert_eq!(shown(&a), "Mum");
+    a.core.rename_contact(&bu, "   ").unwrap();
+    assert!(shown(&a).starts_with("Friend"), "{}", shown(&a));
+}

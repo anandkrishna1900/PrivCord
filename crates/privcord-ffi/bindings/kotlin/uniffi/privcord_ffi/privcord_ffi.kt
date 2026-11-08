@@ -1010,6 +1010,12 @@ internal open class UniffiVTableCallbackInterfaceTransportCallbacks(
 
 
 
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1072,6 +1078,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_method_privcordengine_add_group_member(`ptr`: Pointer,`group`: RustBuffer.ByValue,`uid`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_ble_secret(`ptr`: Pointer,`peer`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_method_privcordengine_clear_answer(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_create_group(`ptr`: Pointer,`name`: RustBuffer.ByValue,`members`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1104,6 +1112,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_load_file(`ptr`: Pointer,`messageId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_method_privcordengine_mark_conversation_read(`ptr`: Pointer,`conversation`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_mark_read(`ptr`: Pointer,`peer`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_mesh_frame(`ptr`: Pointer,`link`: RustBuffer.ByValue,`frame`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1125,6 +1135,8 @@ internal interface UniffiLib : Library {
     fun uniffi_privcord_ffi_fn_method_privcordengine_remove_contact(`ptr`: Pointer,`uid`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_remove_group_member(`ptr`: Pointer,`group`: RustBuffer.ByValue,`uid`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_rename_contact(`ptr`: Pointer,`uid`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_rename_group(`ptr`: Pointer,`group`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
@@ -1340,6 +1352,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_add_group_member(
     ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_ble_secret(
+    ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_clear_answer(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_create_group(
@@ -1372,6 +1386,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_load_file(
     ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_mark_conversation_read(
+    ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_mark_read(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_mesh_frame(
@@ -1393,6 +1409,8 @@ internal interface UniffiLib : Library {
     fun uniffi_privcord_ffi_checksum_method_privcordengine_remove_contact(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_remove_group_member(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_rename_contact(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_rename_group(
     ): Short
@@ -1506,6 +1524,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_add_group_member() != 42035.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_ble_secret() != 10999.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_clear_answer() != 55739.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1554,6 +1575,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_load_file() != 9945.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_mark_conversation_read() != 59089.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_mark_read() != 53077.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1585,6 +1609,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_remove_group_member() != 4702.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_rename_contact() != 45171.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_rename_group() != 8179.toShort()) {
@@ -2932,6 +2959,12 @@ public interface PrivcordEngineInterface {
     
     fun `addGroupMember`(`group`: kotlin.String, `uid`: kotlin.String)
     
+    /**
+     * The 32-byte secret shared with a friend. Bluetooth uses it only to choose which advertisements to accept; do not
+     * store it or send it anywhere.
+     */
+    fun `bleSecret`(`peer`: kotlin.String): kotlin.ByteArray
+    
     fun `clearAnswer`()
     
     /**
@@ -2997,6 +3030,11 @@ public interface PrivcordEngineInterface {
      */
     fun `loadFile`(`messageId`: kotlin.String): FileDto?
     
+    /**
+     * Mark a group or channel (`chan:` plus its name) as read. For a person use `mark_read`.
+     */
+    fun `markConversationRead`(`conversation`: kotlin.String)
+    
     fun `markRead`(`peer`: kotlin.String)
     
     /**
@@ -3038,6 +3076,11 @@ public interface PrivcordEngineInterface {
     fun `removeContact`(`uid`: kotlin.String)
     
     fun `removeGroupMember`(`group`: kotlin.String, `uid`: kotlin.String)
+    
+    /**
+     * Give a friend a name of your own; an empty name goes back to the one on their card.
+     */
+    fun `renameContact`(`uid`: kotlin.String, `name`: kotlin.String)
     
     fun `renameGroup`(`group`: kotlin.String, `name`: kotlin.String)
     
@@ -3265,6 +3308,23 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
 }
     }
     
+    
+
+    
+    /**
+     * The 32-byte secret shared with a friend. Bluetooth uses it only to choose which advertisements to accept; do not
+     * store it or send it anywhere.
+     */
+    @Throws(FfiException::class)override fun `bleSecret`(`peer`: kotlin.String): kotlin.ByteArray {
+            return FfiConverterByteArray.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_ble_secret(
+        it, FfiConverterString.lower(`peer`),_status)
+}
+    }
+    )
+    }
     
 
     
@@ -3501,6 +3561,21 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
     
 
     
+    /**
+     * Mark a group or channel (`chan:` plus its name) as read. For a person use `mark_read`.
+     */
+    @Throws(FfiException::class)override fun `markConversationRead`(`conversation`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_mark_conversation_read(
+        it, FfiConverterString.lower(`conversation`),_status)
+}
+    }
+    
+    
+
+    
     @Throws(FfiException::class)override fun `markRead`(`peer`: kotlin.String)
         = 
     callWithPointer {
@@ -3649,6 +3724,21 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_remove_group_member(
         it, FfiConverterString.lower(`group`),FfiConverterString.lower(`uid`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Give a friend a name of your own; an empty name goes back to the one on their card.
+     */
+    @Throws(FfiException::class)override fun `renameContact`(`uid`: kotlin.String, `name`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_rename_contact(
+        it, FfiConverterString.lower(`uid`),FfiConverterString.lower(`name`),_status)
 }
     }
     

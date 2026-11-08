@@ -8,7 +8,7 @@ use crate::{
     error::ErrorCode,
 };
 use privcord_domain::{
-    message::MessageKind,
+    message::{DeliveryState, MessageKind},
     social::{delete_frame, parse_delete_frame, parse_react_frame, react_frame, REACTION_EMOJI},
     ConversationId, MessageId, UserId,
 };
@@ -96,6 +96,61 @@ impl Core {
                 self.send_secure(&peer, &delete_frame(id));
             }
         }
+        Ok(())
+    }
+
+    /// Give a friend a name of your own (shown instead of the one on their card). An empty name clears it.
+    pub fn rename_contact(&mut self, uid: &UserId, name: &str) -> Result<(), ErrorCode> {
+        self.require_live()?;
+        let name =
+            privcord_domain::text::take_code_points(privcord_domain::text::js_trim(name), 64);
+        let c = self
+            .contacts
+            .get_mut(uid)
+            .ok_or(ErrorCode::UnknownContact)?;
+        let mut stored = c.stored.clone();
+        stored.name = if name.is_empty() { None } else { Some(name) };
+        self.ports
+            .storage
+            .apply(&[StorageOp::PutContact(stored.clone())])?;
+        c.stored = stored;
+        self.hub.publish(crate::EngineEvent::SettingsChanged);
+        Ok(())
+    }
+
+    /// Mark every message in a group (or channel) as read. No receipts go out: only direct chats send those.
+    pub fn mark_conversation_read(
+        &mut self,
+        conversation: &ConversationId,
+    ) -> Result<(), ErrorCode> {
+        self.require_live()?;
+        let me = self.uid.clone();
+        let ids: Vec<MessageId> = self
+            .messages
+            .values()
+            .filter(|m| {
+                &m.conversation == conversation
+                    && Some(&m.message.sender_id) != me.as_ref()
+                    && m.message.read_at.is_none()
+            })
+            .map(|m| m.message.message_id.clone())
+            .collect();
+        let now = self.now();
+        for id in ids {
+            let state = self
+                .messages
+                .get(&id)
+                .map_or(DeliveryState::Read, |m| m.message.delivery_state);
+            self.ports.storage.apply(&[StorageOp::SetDelivery {
+                id: id.clone(),
+                state,
+                read_at: Some(now),
+            }])?;
+            if let Some(m) = self.messages.get_mut(&id) {
+                m.message.read_at = Some(now);
+            }
+        }
+        self.hub.publish(crate::EngineEvent::SettingsChanged);
         Ok(())
     }
 

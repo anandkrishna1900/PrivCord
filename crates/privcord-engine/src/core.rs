@@ -466,6 +466,14 @@ impl Core {
         Ok(())
     }
 
+    /// The 32-byte secret shared with a contact. Bluetooth uses it only to pick which advertisements to accept; it is
+    /// never sent anywhere.
+    pub fn ble_secret(&self, uid: &UserId) -> Result<Vec<u8>, ErrorCode> {
+        let c = self.contacts.get(uid).ok_or(ErrorCode::UnknownContact)?;
+        let shared = self.identity()?.agree(&c.contact.card.dh)?;
+        Ok(shared.to_vec())
+    }
+
     pub fn safety_number(&self, uid: &UserId) -> Result<String, ErrorCode> {
         let c = self.contacts.get(uid).ok_or(ErrorCode::UnknownContact)?;
         Ok(derive_safety_number(

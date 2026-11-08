@@ -142,6 +142,16 @@ pub enum Op {
         uid: UserId,
         muted: bool,
     },
+    RenameContact {
+        uid: UserId,
+        name: String,
+    },
+    BleSecret {
+        peer: UserId,
+    },
+    MarkConversationRead {
+        conversation: ConversationId,
+    },
     Search {
         query: String,
         limit: usize,
@@ -174,6 +184,7 @@ pub enum Answer {
     Hits(Vec<crate::core::SearchHit>),
     Text(String),
     Restored(crate::core::RestoreSummary),
+    Bytes(Vec<u8>),
 }
 
 /// A channel operation. Returns the channel's normalised name or the new message's id, else an empty string.
@@ -295,6 +306,13 @@ fn pump(core: &mut Core, cmd: Command) -> bool {
                 }
                 Op::React { id, emoji } => core.react(&id, &emoji).map(|()| Answer::Done),
                 Op::SetMuted { uid, muted } => core.set_muted(&uid, muted).map(|()| Answer::Done),
+                Op::BleSecret { peer } => core.ble_secret(&peer).map(Answer::Bytes),
+                Op::RenameContact { uid, name } => {
+                    core.rename_contact(&uid, &name).map(|()| Answer::Done)
+                }
+                Op::MarkConversationRead { conversation } => core
+                    .mark_conversation_read(&conversation)
+                    .map(|()| Answer::Done),
                 Op::Search { query, limit } => Ok(Answer::Hits(core.search(&query, limit))),
                 Op::ExportBackup(p) => core.export_backup(&p).map(Answer::Text),
                 Op::ImportBackup { text, passphrase } => {

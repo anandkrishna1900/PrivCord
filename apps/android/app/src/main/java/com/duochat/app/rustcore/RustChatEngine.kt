@@ -20,6 +20,13 @@ import com.duochat.app.data.InviteRequest
 import com.duochat.app.data.LinkStatus
 import com.duochat.app.data.MemberView
 import com.duochat.app.data.MessageType
+import com.duochat.app.data.TransportMode
+import com.duochat.app.ble.AndroidBleEnvironment
+import com.duochat.app.ble.AndroidMeshRadio
+import com.duochat.app.ble.BleAvailability
+import com.duochat.app.ble.BleTransport
+import com.duochat.app.ble.MeshRadio
+import com.duochat.app.ble.bluetoothStatusFor
 import com.duochat.app.data.NetworkConfig
 import com.duochat.app.data.ReplyRef
 import com.duochat.app.data.filePreviewText
@@ -96,28 +103,45 @@ class RustChatEngine(
 
     // ------------------------------------------------------------------ platform side: links and signaling
 
+    private val bleEnv = AndroidBleEnvironment(app)
+    private val bleLinks = ConcurrentHashMap<String, BleTransport>()
+    private val bleLastAttempt = ConcurrentHashMap<String, Long>()
+    private var meshRadio: MeshRadio? = null
     private val links = ConcurrentHashMap<String, WebRtcTransport>()
     private val dialStartedAt = ConcurrentHashMap<String, Long>()
-    private var hub: SignalingHub? = null
-    private var hubMailbox: String? = null
+    /** One signaling hub per mailbox: our own, plus any the engine asks for (invites, channels). */
+    private val hubs = ConcurrentHashMap<String, SignalingHub>()
+
+    private fun hubStatus(): SignalingStatus {
+        val all = hubs.values.map { it.status() }
+        return when {
+            all.any { it == SignalingStatus.ONLINE } -> SignalingStatus.ONLINE
+            all.isEmpty() -> SignalingStatus.IDLE
+            else -> all.first()
+        }
+    }
 
     private val transport = object : TransportCallbacks {
-        override fun send(peer: String, frame: String): Boolean = links[peer]?.sendJson(frame) == true
+        override fun send(peer: String, frame: String): Boolean {
+            val web = links[peer]
+            if (web != null && web.isOpen) return web.sendJson(frame)
+            return bleLinks[peer]?.takeIf { it.isOpen }?.sendJson(frame) == true
+        }
 
-        override fun sendRaw(link: String, frame: String): Boolean = false // the Bluetooth mesh is not in this build yet
+        override fun sendRaw(link: String, frame: String): Boolean = meshRadio?.send(link, frame) == true
 
         override fun close(peer: String) {
             links.remove(peer)?.close()
+            bleLinks.remove(peer)?.close()
         }
 
         override fun signalAvailable(): Boolean = networkConfig().signaling.isNotEmpty()
 
         override fun signalSubscribe(mailbox: String): Boolean {
             if (networkConfig().signaling.isEmpty()) return false
-            hub?.stop()
+            hubs.remove(mailbox)?.stop()
             val created = SignalingHub(transportsFor(networkConfig(), scope))
-            hub = created
-            hubMailbox = mailbox
+            hubs[mailbox] = created
             created.start(mailbox) { blob, id, via ->
                 scope.launch {
                     withContext(Dispatchers.IO) { runCatching { engine?.signalBlob(mailbox, Seal.encode(blob)) } }
@@ -129,15 +153,11 @@ class RustChatEngine(
         }
 
         override fun signalUnsubscribe(mailbox: String) {
-            if (hubMailbox == mailbox) {
-                hub?.stop()
-                hub = null
-                hubMailbox = null
-            }
+            hubs.remove(mailbox)?.stop()
         }
 
         override fun signalPut(mailbox: String, blob: String, kind: SignalKind, ttlSec: UInt): Boolean {
-            val current = hub ?: SignalingHub(transportsFor(networkConfig(), scope)).also { hub = it }
+            val current = hubs.values.firstOrNull() ?: SignalingHub(transportsFor(networkConfig(), scope)).also { hubs["put"] = it }
             val decoded = Seal.decode(blob) ?: return false
             val wire = if (kind == SignalKind.LIVE) "sig" else "msg"
             scope.launch {
@@ -202,8 +222,12 @@ class RustChatEngine(
         refreshRequests.close()
         for (t in links.values) runCatching { t.close() }
         links.clear()
-        hub?.stop()
-        hub = null
+        for (t in bleLinks.values) runCatching { t.close() }
+        bleLinks.clear()
+        runCatching { meshRadio?.stop() }
+        meshRadio = null
+        for (h in hubs.values) runCatching { h.stop() }
+        hubs.clear()
         val e = engine
         engine = null
         Thread {
@@ -273,6 +297,9 @@ class RustChatEngine(
         val now = System.currentTimeMillis()
         if (now - (dialStartedAt[peer] ?: 0L) < OFFER_TIMEOUT_MS && links[peer] != null) return
         dialStartedAt[peer] = now
+        val mode = networkConfig().transportMode
+        if (mode != TransportMode.INTERNET_ONLY) tryBluetooth(peer)
+        if (mode == TransportMode.BLUETOOTH_ONLY) return
         if (initiator) {
             offer(peer)
         } else {
@@ -337,6 +364,119 @@ class RustChatEngine(
         }
     }
 
+    // ------------------------------------------------------------------ Bluetooth (platform adapter)
+
+    /** Automatic attempts: one friend at a time, never more than once a minute per friend, only when already allowed. */
+    private fun tryBluetooth(peer: String) {
+        if (!networkConfig().bluetooth || bleLinks.isNotEmpty()) return
+        if (bleEnv.availability() != BleAvailability.READY) return
+        val now = System.currentTimeMillis()
+        if (now - (bleLastAttempt[peer] ?: 0L) < BLE_RETRY_MS) return
+        bleLastAttempt[peer] = now
+        scope.launch { connectBluetooth(peer, manual = false) }
+    }
+
+    override suspend fun connectBluetooth(uid: String, manual: Boolean): Result<Unit> {
+        val failure = { message: String -> Result.failure<Unit>(IllegalStateException(message)) }
+        val own = last?.ownUid ?: return failure("Identity is not ready yet.")
+        if (last?.contacts?.none { it.uid == uid } != false) return failure("Add your friend first.")
+        if (bleLinks[uid]?.isOpen == true) return Result.success(Unit)
+        if (bleLinks.isNotEmpty() && !bleLinks.containsKey(uid)) return failure("Bluetooth is already in use for another friend.")
+        when (bleEnv.availability()) {
+            BleAvailability.UNSUPPORTED -> return failure("This phone has no Bluetooth LE.")
+            BleAvailability.NEEDS_PERMISSION -> return failure("Bluetooth permission is needed. Allow it in Settings.")
+            BleAvailability.ADAPTER_OFF -> return failure("Bluetooth is off. Turn it on, then try again.")
+            BleAvailability.READY -> Unit
+        }
+        val secret = call { bleSecret(uid) }.getOrElse { return failure("Bluetooth could not start.") }
+        return try {
+            bleLinks.remove(uid)?.close()
+            val created = BleTransport(
+                app, { secret },
+                // Two phones: the lower uid scans, the higher one is found.
+                own < uid,
+                object : BleTransport.Handlers {
+                    override fun onOpen() {
+                        scope.launch {
+                            io { engine?.linkUp(uid, PathKind.BLUETOOTH, LinkKind.LAYERED) }
+                            requestRefresh()
+                        }
+                    }
+
+                    override fun onClose() {
+                        bleLinks.remove(uid)
+                        scope.launch {
+                            io { runCatching { engine?.linkDown(uid) } }
+                            requestRefresh()
+                        }
+                    }
+
+                    override fun onFrame(data: String) {
+                        scope.launch { io { runCatching { engine?.frameReceived(uid, data) } } }
+                    }
+
+                    override fun onError(message: String) {
+                        if (manual) say(message)
+                    }
+                },
+            )
+            bleLinks[uid] = created
+            created.start()
+            scope.launch {
+                delay(BLE_SEARCH_MS)
+                val t = bleLinks[uid]
+                if (t != null && !t.isOpen) {
+                    bleLinks.remove(uid)
+                    t.close()
+                    if (manual) say("No friend found nearby over Bluetooth. Check that they have DuoChat open with Bluetooth on.")
+                    requestRefresh()
+                }
+            }
+            requestRefresh()
+            Result.success(Unit)
+        } catch (error: Exception) {
+            bleLinks.remove(uid)?.close()
+            failure("Bluetooth could not start: ${error.message ?: error.javaClass.simpleName}")
+        }
+    }
+
+    override fun refreshBluetooth() {
+        val open = bleLinks.values.any { it.isOpen }
+        val status = bluetoothStatusFor(
+            enabledInSettings = networkConfig().bluetooth,
+            hasEnvironment = true,
+            linkIsBluetooth = bleLinks.isNotEmpty(),
+            linkReady = open,
+            availability = bleEnv.availability(),
+            paired = (last?.contacts?.isNotEmpty() == true),
+        )
+        if (_state.value.bluetooth != status) _state.update { it.copy(bluetooth = status) }
+    }
+
+    override fun setMeshEnabled(on: Boolean) {
+        if (on && meshRadio == null) {
+            val radio = AndroidMeshRadio(app)
+            meshRadio = radio
+            radio.start(object : MeshRadio.Listener {
+                override fun onLinkUp(link: String) {
+                    scope.launch { io { runCatching { engine?.meshLinkUp(link) } }; requestRefresh() }
+                }
+
+                override fun onLinkDown(link: String) {
+                    scope.launch { io { runCatching { engine?.meshLinkDown(link) } }; requestRefresh() }
+                }
+
+                override fun onPacket(link: String, json: String) {
+                    scope.launch { io { runCatching { engine?.meshFrame(link, json) } }; requestRefresh() }
+                }
+            })
+        } else if (!on) {
+            meshRadio?.stop()
+            meshRadio = null
+        }
+        _state.update { it.copy(meshLinks = meshRadio?.linkCount ?: 0) }
+    }
+
     private fun ConnectionPath?.toKind(): PathKind = when (this) {
         ConnectionPath.DIRECT_LAN -> PathKind.DIRECT_LAN
         ConnectionPath.DIRECT_P2P -> PathKind.DIRECT_NAT
@@ -378,6 +518,7 @@ class RustChatEngine(
 
     private fun publish(s: SnapshotDto) {
         val self = s.ownUid ?: return
+        refreshBluetooth()
         val contacts = s.contacts.sortedBy { it.displayName.lowercase() }.map { c ->
             ContactView(
                 c.uid, c.displayName, if (c.verified) ContactTrust.VERIFIED else ContactTrust.INTRODUCED,
@@ -452,7 +593,7 @@ class RustChatEngine(
                 g.exitNote ?: "${g.members.size} members" + if (others > 0) " · ${g.connectedCount} connected" else "",
             )
         }
-        val online = hub?.status() == SignalingStatus.ONLINE
+        val online = hubStatus() == SignalingStatus.ONLINE
         for (name in s.channels) {
             val id = "chan:$name"
             val conv = s.conversations.firstOrNull { it.id == id }
@@ -480,8 +621,8 @@ class RustChatEngine(
                     )
                 },
                 linkCount = s.contacts.count { c -> c.link is LinkState.Connected },
-                signaling = hub?.status() ?: SignalingStatus.IDLE,
-                bluetooth = BluetoothStatus.UNSUPPORTED,
+                signaling = hubStatus(),
+                meshLinks = meshRadio?.linkCount ?: 0,
                 notice = notice ?: it.notice,
             )
         }
@@ -518,14 +659,20 @@ class RustChatEngine(
         if (name.isNotBlank()) runCatching { engine?.setDisplayName(name) }
     }
 
+    private fun markOpen(id: String) {
+        scope.launch {
+            if (id.startsWith("chan:") || isGroup(id)) call { markConversationRead(id) } else call { markRead(id) }
+        }
+    }
+
     override fun setVisible(isVisible: Boolean) {
         visible = isVisible
-        openChat?.let { id -> if (isVisible) scope.launch { call { markRead(id) } } }
+        openChat?.let { id -> if (isVisible) markOpen(id) }
     }
 
     override fun setOpenChat(conversationId: String?) {
         openChat = conversationId
-        if (conversationId != null) scope.launch { call { markRead(conversationId) } }
+        if (conversationId != null) markOpen(conversationId)
     }
 
     override fun clearNotice() {
@@ -574,19 +721,13 @@ class RustChatEngine(
     override fun leaveChannel(conversationId: String) { scope.launch { call { leaveChannel(conversationId.removePrefix("chan:")) } } }
     override fun muteSender(uid: String) { scope.launch { call { setMuted(uid, true) } } }
 
-    override fun setMeshEnabled(on: Boolean) {
-        if (on) say("The Bluetooth mesh is not in the Rust build yet.")
-    }
-
     override suspend fun createInvite(): Result<ActiveInvite> = call { createInvite() }.map { ActiveInvite(it.words, it.expiresAt) }
     override suspend fun acceptRequest(uid: String): Result<String> = call { acceptRequest(uid) }
     override fun dismissRequest(uid: String) { scope.launch { call { dismissRequest(uid) } } }
 
     override suspend fun markChecked(uid: String) { call { setChecked(uid, true) } }
 
-    override suspend fun renameFriend(uid: String, name: String) {
-        say("Renaming friends is not in the Rust build yet.")
-    }
+    override suspend fun renameFriend(uid: String, name: String) { call { renameContact(uid, name) } }
 
     override fun removeBlocker(uid: String): String? = null
 
@@ -625,37 +766,43 @@ class RustChatEngine(
     override suspend fun getFile(messageId: String): Pair<FileMeta, ByteArray>? =
         call { loadFile(messageId) }.getOrNull()?.let { FileMeta(it.name, it.mime, it.data.size, "") to it.data }
 
-    override suspend fun retry(messageId: String) { /* the engine resends on its own when the link opens */ }
+    override suspend fun retry(messageId: String) {
+        // The engine resends on its own when the link opens; nudge it to dial now instead of waiting out the backoff.
+        onNetworkAvailable()
+        requestRefresh()
+    }
 
     override suspend fun clearChat(conversationId: String) { call { wipeConversation(conversationId, false) } }
 
     override suspend fun clearLocalData() {
         call { wipeEverything() }
         secure.deleteIdentity()
+        // The engine's database (erased in place above) is removed as well once it is closed.
+        scope.launch(Dispatchers.IO) {
+            delay(1500)
+            for (suffix in listOf("", "-wal", "-shm", "-journal")) runCatching { File(app.noBackupFilesDir, "privcord.db$suffix").delete() }
+        }
     }
 
     override fun confirmManual() {}
     override fun reloadNetwork() {
-        // Signaling picks up the new settings the next time the engine asks to listen; restart it now.
-        val mailbox = hubMailbox ?: return
-        transport.signalUnsubscribe(mailbox)
-        transport.signalSubscribe(mailbox)
+        // The sockets follow the new settings the next time they are opened: reopen every mailbox now.
+        for (mailbox in hubs.keys.toList()) {
+            if (mailbox == "put") continue
+            transport.signalSubscribe(mailbox)
+        }
     }
 
-    override fun onNetworkAvailable() {
-        val mailbox = hubMailbox ?: return
-        transport.signalSubscribe(mailbox)
-    }
+    override fun onNetworkAvailable() = reloadNetwork()
 
     override suspend fun createManualOffer(): String = throw UnsupportedOperationException("Manual codes are not in the Rust build yet.")
     override suspend fun applyManualAnswer(code: String) { throw UnsupportedOperationException("Manual codes are not in the Rust build yet.") }
     override suspend fun acceptManualOffer(code: String): String = throw UnsupportedOperationException("Manual codes are not in the Rust build yet.")
     override fun cancelManual() {}
-    override fun refreshBluetooth() {}
-    override suspend fun connectBluetooth(uid: String, manual: Boolean): Result<Unit> =
-        Result.failure(UnsupportedOperationException("Bluetooth is not in the Rust build yet."))
 
     private companion object {
         const val OFFER_TIMEOUT_MS = 40_000L
+        const val BLE_SEARCH_MS = 30_000L
+        const val BLE_RETRY_MS = 60_000L
     }
 }

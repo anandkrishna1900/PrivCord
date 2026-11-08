@@ -1065,6 +1065,29 @@ impl PrivcordEngine {
         self.misc(Op::React { id, emoji })
     }
 
+    /// The 32-byte secret shared with a friend. Bluetooth uses it only to choose which advertisements to accept; do not
+    /// store it or send it anywhere.
+    pub fn ble_secret(&self, peer: String) -> Result<Vec<u8>, FfiError> {
+        match pollster::block_on(self.handle.op(Op::BleSecret { peer: user(&peer)? }))? {
+            Answer::Bytes(b) => Ok(b),
+            _ => Err(FfiError::InvalidArgument),
+        }
+    }
+
+    /// Give a friend a name of your own; an empty name goes back to the one on their card.
+    pub fn rename_contact(&self, uid: String, name: String) -> Result<(), FfiError> {
+        self.misc(Op::RenameContact {
+            uid: user(&uid)?,
+            name,
+        })
+    }
+
+    /// Mark a group or channel (`chan:` plus its name) as read. For a person use `mark_read`.
+    pub fn mark_conversation_read(&self, conversation: String) -> Result<(), FfiError> {
+        let conversation = self.conversation_id(&conversation)?;
+        self.misc(Op::MarkConversationRead { conversation })
+    }
+
     /// Hide (or show again) a person's channel messages, on this device only.
     pub fn set_muted(&self, uid: String, muted: bool) -> Result<(), FfiError> {
         self.misc(Op::SetMuted {
