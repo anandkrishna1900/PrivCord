@@ -41,7 +41,7 @@ impl EcdhKeypair {
     pub fn agree(&self, peer: &PublicJwk) -> Result<SharedSecret, CryptoError> {
         let peer = public_key_from_jwk(peer)?;
         let shared = diffie_hellman(self.secret.to_nonzero_scalar(), peer.as_affine());
-        let mut out = [0u8; 32];
+        let mut out = crate::kdf::blank::<32>();
         out.copy_from_slice(shared.raw_secret_bytes());
         Ok(Zeroizing::new(out))
     }

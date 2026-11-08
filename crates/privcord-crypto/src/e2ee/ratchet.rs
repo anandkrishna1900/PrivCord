@@ -31,8 +31,8 @@ const fn err(msg: &'static str) -> CryptoError {
 
 fn kdf_rk(root: &[u8; 32], dh_output: &[u8; 32]) -> Result<(Key32, Key32), CryptoError> {
     let material = Zeroizing::new(hkdf_sha256::<64>(dh_output, root, RK_INFO)?);
-    let mut rk = [0u8; 32];
-    let mut ck = [0u8; 32];
+    let mut rk = crate::kdf::blank::<32>();
+    let mut ck = crate::kdf::blank::<32>();
     let (first, second) = material.split_at(32);
     rk.copy_from_slice(first);
     ck.copy_from_slice(second);
@@ -54,8 +54,8 @@ fn message_material(message_key: &[u8; 32]) -> Result<(Key32, [u8; 12]), CryptoE
         &blank::<32>(),
         MSG_EXPAND_INFO,
     )?);
-    let mut key = [0u8; 32];
-    let mut iv = [0u8; 12];
+    let mut key = crate::kdf::blank::<32>();
+    let mut iv = crate::kdf::blank::<12>();
     let (first, second) = m.split_at(32);
     key.copy_from_slice(first);
     iv.copy_from_slice(second);
@@ -144,7 +144,7 @@ fn pub_bytes(jwk: &PublicJwk) -> Result<[u8; 64], CryptoError> {
     let (Some(x), Some(y)) = (x, y) else {
         return Err(err("Malformed ratchet public key."));
     };
-    let mut out = [0u8; 64];
+    let mut out = crate::kdf::blank::<64>();
     let (left, right) = out.split_at_mut(32);
     left.copy_from_slice(&x);
     right.copy_from_slice(&y);
