@@ -6705,7 +6705,12 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
 enum class LinkKind {
     
     ENCRYPTED,
-    OPEN;
+    OPEN,
+    /**
+     * Not encrypted (Bluetooth), the way the TypeScript and Kotlin apps run it today: the secure-channel handshake,
+     * then the legacy peer handshake inside it, then encrypted frames. This is what talks to those apps.
+     */
+    LAYERED;
     companion object
 }
 

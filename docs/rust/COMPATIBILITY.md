@@ -80,8 +80,11 @@ difference: a hub whose services are all stopped reports `idle` (the TypeScript 
 * Disappearing messages and translations were removed from the apps and are not in the engine.
 * The WebRTC session, the raw sockets, the Bluetooth radio, the keychain and all UI stay in the platform adapters by design. The only application files still marked partly ported are `engine.ts` and `ChatEngine.kt`, which still start and drive the WebRTC and Bluetooth links, turn events into screen state, and show notices.
 
-**What this means for talking to the existing apps.** The engine can authenticate with the existing apps over a WebRTC data channel (`LinkSecurity::TransportEncrypted`) and exchange messages, receipts, groups, files and pings with them. That is checked at the level of handshake transcripts, frame shapes and shared vectors; **it has not been run against a live TypeScript or Kotlin app**.
+**What this means for talking to the existing apps.** The engine can authenticate with the existing apps over a WebRTC data channel (`LinkSecurity::TransportEncrypted`) and over Bluetooth (`LinkSecurity::Layered`: the secure-channel handshake, then the legacy peer handshake inside it, then encrypted frames; Bluetooth is what the TypeScript and Kotlin apps do today). `EngineEncrypted` (secure channel only) is not what the existing apps speak and is for engine-to-engine links.
 
+**Run live against the real desktop app (Bluetooth only).** `apps/desktop/e2e/rust-peer.mjs` builds the desktop app, runs it in headless Chromium, and connects it over the simulated Bluetooth radio to `crates/privcord-engine/examples/peer.rs`, a separate Rust engine process. It pairs by exchanging invites in the app's real Add-friend dialog, connects, sends a message each way, checks the receipt reaches the Rust side, and checks that no message text and no handshake appears in the recorded radio chunks. Writing it found a real mismatch: the engine's first Bluetooth mode ran only the secure channel, which the apps do not accept, so the app timed out ("could not be verified in time"). `Layered` fixed it. This is CI-run.
+
+What that does **not** cover: the WebRTC path against the live app, groups, files and channels against a live app, the real Bluetooth radio, and **any Kotlin app** (no emulator here; the Kotlin side is checked by shared vectors only).
 ## Data
 
 Existing installs are brought over by `privcord-import` (desktop SQLite and Android Room). See [IMPORTERS.md](IMPORTERS.md) for what is checked, what is left behind and why, and what has not been tried on a real device.

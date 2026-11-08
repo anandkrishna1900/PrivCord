@@ -103,11 +103,22 @@ pub enum LinkSecurity {
     /// The link is already encrypted (a WebRTC data channel): the engine uses the legacy peer handshake the existing apps
     /// speak and sends plain frames afterwards, so it can talk to them.
     TransportEncrypted,
+    /// What the existing apps do over Bluetooth: the secure-channel handshake first, then the legacy peer handshake
+    /// inside the encrypted channel, then encrypted frames.
+    Layered,
+}
+
+/// A secure channel with the legacy peer handshake running inside it.
+struct Layered {
+    channel: SecureChannel,
+    auth: PeerAuth,
+    auth_sent: bool,
 }
 
 enum Session {
     Secure(Box<SecureChannel>),
     Legacy(Box<PeerAuth>),
+    Layered(Box<Layered>),
 }
 
 struct Peer {
@@ -147,6 +158,7 @@ impl Peer {
         match &self.session {
             Some(Session::Secure(c)) => c.ready(),
             Some(Session::Legacy(a)) => a.authenticated(),
+            Some(Session::Layered(l)) => l.channel.ready() && l.auth.authenticated(),
             None => false,
         }
     }
@@ -544,6 +556,37 @@ impl Core {
             self.link_down(peer);
         }
         let (session, hello) = match security {
+            LinkSecurity::Layered => {
+                let channel = SecureChannel::new(
+                    own.as_str(),
+                    peer.as_str(),
+                    card.sign.clone(),
+                    &mut *self.ports.entropy,
+                )?;
+                let hello = channel.hello(self.identity()?)?.to_value();
+                let device = self.device_id()?;
+                let expected = Expected {
+                    uid: peer.to_string(),
+                    sign: card.sign,
+                    dh: card.dh,
+                };
+                let id = self.identity.as_ref().ok_or(ErrorCode::NoIdentity)?;
+                let auth = PeerAuth::new(
+                    &self.context,
+                    id,
+                    &device,
+                    expected,
+                    &mut *self.ports.entropy,
+                )?;
+                (
+                    Session::Layered(Box::new(Layered {
+                        channel,
+                        auth,
+                        auth_sent: false,
+                    })),
+                    hello,
+                )
+            }
             LinkSecurity::EngineEncrypted => {
                 let channel = SecureChannel::new(
                     own.as_str(),
@@ -682,6 +725,15 @@ impl Core {
                     Err(_) => return,
                 }
             }
+            Some(Session::Layered(l)) => {
+                let Some(data) = Data::from_value(&value) else {
+                    return;
+                };
+                match l.channel.decrypt(&data) {
+                    Ok(v) => v,
+                    Err(_) => return,
+                }
+            }
             // Transport-encrypted: the frame is already plain JSON.
             Some(Session::Legacy(_)) => value,
             None => return,
@@ -695,6 +747,44 @@ impl Core {
         let now = self.now();
         if let Some(p) = self.peers.get_mut(peer) {
             p.liveness.on_inbound(now);
+        }
+    }
+
+    /// One handshake frame on a layered link: the channel's hello first, then the peer handshake, encrypted. Returns the
+    /// frames to send (already encrypted), or `Err` when the other side failed to prove itself.
+    fn layered_step(
+        l: &mut Layered,
+        own: &privcord_crypto::identity::Identity,
+        value: &Value,
+    ) -> Option<Result<Vec<Value>, ()>> {
+        if !l.channel.ready() {
+            let hello = Hello::from_value(value)?;
+            if l.channel.accept(&hello).is_err() {
+                return Some(Err(()));
+            }
+            // The channel is up: our peer-handshake hello goes inside it.
+            let first = l.auth.hello(own).ok()?;
+            l.auth_sent = true;
+            let data = l.channel.encrypt(&first).ok()?;
+            return Some(Ok(vec![data.to_value()]));
+        }
+        let inner = match Data::from_value(value).map(|d| l.channel.decrypt(&d)) {
+            Some(Ok(v)) => v,
+            _ => return Some(Err(())),
+        };
+        match l.auth.on_frame(own, &inner) {
+            Ok(Some(out)) => {
+                let mut sealed = Vec::with_capacity(out.len());
+                for f in out {
+                    match l.channel.encrypt(&f) {
+                        Ok(d) => sealed.push(d.to_value()),
+                        Err(_) => return Some(Err(())),
+                    }
+                }
+                Some(Ok(sealed))
+            }
+            Ok(None) => None,
+            Err(_) => Some(Err(())),
         }
     }
 
@@ -715,10 +805,17 @@ impl Core {
                     Err(_) => Some(Err(())),
                 }
             }
+            Session::Layered(l) => {
+                let Some(own) = self.identity.as_ref() else {
+                    return;
+                };
+                Self::layered_step(l, own, value)
+            }
         };
         let ready = match &session {
             Session::Secure(c) => c.ready(),
             Session::Legacy(a) => a.authenticated(),
+            Session::Layered(l) => l.channel.ready() && l.auth.authenticated(),
         };
         if let Some(p) = self.peers.get_mut(peer) {
             p.session = Some(session);
@@ -763,6 +860,12 @@ impl Core {
                 Err(_) => return false,
             },
             Some(Session::Legacy(a)) if a.authenticated() => frame.to_string(),
+            Some(Session::Layered(l)) if l.channel.ready() && l.auth.authenticated() => {
+                match l.channel.encrypt(frame) {
+                    Ok(data) => data.to_value().to_string(),
+                    Err(_) => return false,
+                }
+            }
             _ => return false,
         };
         if self.ports.transport.send(peer, &text).is_err() {

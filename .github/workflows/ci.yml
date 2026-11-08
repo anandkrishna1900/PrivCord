@@ -124,6 +124,10 @@ jobs:
           npm install -g playwright
           npx playwright install --with-deps chromium
       - run: npm run e2e --workspace @duochat/desktop
+      # The built desktop app against the Rust engine as a separate process, over the simulated Bluetooth radio.
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build -p privcord-engine --example peer --locked
+      - run: node apps/desktop/e2e/rust-peer.mjs
 
   android:
     name: Android unit tests and debug build

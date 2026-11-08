@@ -819,6 +819,34 @@ fn over_an_already_encrypted_link_the_engine_uses_the_legacy_handshake_and_plain
 }
 
 #[test]
+fn a_layered_link_runs_the_peer_handshake_inside_the_secure_channel_and_encrypts_frames() {
+    use privcord_engine::LinkSecurity;
+    let (mut a, mut b, au, bu) = pair();
+    connect_with(&mut a, &mut b, &au, &bu, LinkSecurity::Layered);
+    for (node, peer) in [(&a, &bu), (&b, &au)] {
+        assert_eq!(
+            state_of(node, peer),
+            ConnectionState::Connected {
+                path: ConnectionPath::DirectNat
+            }
+        );
+    }
+    let id = a
+        .core
+        .send_message(&bu, "secret over bluetooth", None)
+        .unwrap();
+    let frames = a.transport.drain();
+    assert_eq!(frames.len(), 1);
+    assert!(!frames[0].1.contains("secret over bluetooth"));
+    let v: Value = serde_json::from_str(&frames[0].1).unwrap();
+    assert_eq!(v["kind"], "sc_data");
+    b.core.frame_received(&au, &frames[0].1);
+    pump(&mut a, &mut b, &au, &bu);
+    assert_eq!(texts(&b, &au), vec!["secret over bluetooth"]);
+    assert_eq!(status(&a, &id), DeliveryState::Delivered);
+}
+
+#[test]
 fn the_legacy_handshake_refuses_a_stranger_and_ignores_frames_before_it_finishes() {
     use privcord_crypto::peer_auth::{Expected, PeerAuth};
     use privcord_engine::LinkSecurity;

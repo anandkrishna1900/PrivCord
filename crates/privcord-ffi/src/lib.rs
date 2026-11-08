@@ -339,6 +339,9 @@ impl From<ConnectionPath> for PathKind {
 pub enum LinkKind {
     Encrypted,
     Open,
+    /// Not encrypted (Bluetooth), the way the TypeScript and Kotlin apps run it today: the secure-channel handshake,
+    /// then the legacy peer handshake inside it, then encrypted frames. This is what talks to those apps.
+    Layered,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
@@ -1112,6 +1115,7 @@ impl PrivcordEngine {
         let security = match kind {
             LinkKind::Encrypted => LinkSecurity::TransportEncrypted,
             LinkKind::Open => LinkSecurity::EngineEncrypted,
+            LinkKind::Layered => LinkSecurity::Layered,
         };
         Ok(pollster::block_on(self.handle.link_up_with(
             &user(&peer)?,
