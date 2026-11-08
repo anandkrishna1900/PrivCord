@@ -19,8 +19,8 @@ use privcord_domain::{
     ConversationId, MessageId, UserId,
 };
 use privcord_engine::{
-    ChannelOp, EngineEvent, EngineHandle, ErrorCode, EventStream, FileTarget, GroupOp,
-    LinkSecurity, Ports,
+    Answer, ChannelOp, EngineEvent, EngineHandle, ErrorCode, EventStream, FileTarget, GroupOp,
+    LinkSecurity, Op, Ports,
 };
 use privcord_ports::{
     Clock, IdentitySecrets, Notification, Notifier, SecureStore, SecureStoreError, Transport,
@@ -81,6 +81,16 @@ pub enum FfiError {
     BadChannel,
     #[error("channel not joined")]
     NotJoined,
+    #[error("no signaling service")]
+    NoSignaling,
+    #[error("invalid invite")]
+    InvalidInvite,
+    #[error("invite not found")]
+    InviteNotFound,
+    #[error("own invite")]
+    OwnInvite,
+    #[error("still in a shared group")]
+    StillInGroup,
 }
 
 impl From<ErrorCode> for FfiError {
@@ -107,6 +117,11 @@ impl From<ErrorCode> for FfiError {
             ErrorCode::BadFile => Self::BadFile,
             ErrorCode::BadChannel => Self::BadChannel,
             ErrorCode::NotJoined => Self::NotJoined,
+            ErrorCode::NoSignaling => Self::NoSignaling,
+            ErrorCode::InvalidInvite => Self::InvalidInvite,
+            ErrorCode::InviteNotFound => Self::InviteNotFound,
+            ErrorCode::OwnInvite => Self::OwnInvite,
+            ErrorCode::StillInGroup => Self::StillInGroup,
         }
     }
 }
@@ -127,6 +142,24 @@ pub trait TransportCallbacks: Send + Sync {
     fn send(&self, peer: String, frame: String) -> bool;
     /// Send a frame to a Bluetooth mesh neighbour (not a contact). Returns false if the link is gone.
     fn send_raw(&self, link: String, frame: String) -> bool;
+    /// The engine decided this link is dead (nothing heard for 14 s): close it so it can be dialed again.
+    fn close(&self, peer: String);
+    /// Is a signaling service (relay or Nostr) configured?
+    fn signal_available(&self) -> bool;
+    /// Listen on a mailbox. Blobs that arrive go back through `signal_blob`.
+    fn signal_subscribe(&self, mailbox: String) -> bool;
+    fn signal_unsubscribe(&self, mailbox: String);
+    /// Publish an encoded sealed blob. True if at least one service took it.
+    fn signal_put(&self, mailbox: String, blob: String, kind: SignalKind, ttl_sec: u32) -> bool;
+}
+
+/// How long a published blob should live.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum SignalKind {
+    /// Short-lived live signaling.
+    Live,
+    /// Held for someone who is offline.
+    Stored,
 }
 
 #[uniffi::export(with_foreign)]
@@ -175,6 +208,42 @@ impl Transport for TransportAdapter {
     }
     fn send_raw(&self, link: &str, frame: &str) -> Result<(), TransportError> {
         if self.0.send_raw(link.to_owned(), frame.to_owned()) {
+            Ok(())
+        } else {
+            Err(TransportError::NotConnected)
+        }
+    }
+    fn close(&self, peer: &UserId) {
+        self.0.close(peer.to_string());
+    }
+    fn signal_available(&self) -> bool {
+        self.0.signal_available()
+    }
+    fn signal_subscribe(&self, mailbox: &str) -> Result<(), TransportError> {
+        if self.0.signal_subscribe(mailbox.to_owned()) {
+            Ok(())
+        } else {
+            Err(TransportError::NotConnected)
+        }
+    }
+    fn signal_unsubscribe(&self, mailbox: &str) {
+        self.0.signal_unsubscribe(mailbox.to_owned());
+    }
+    fn signal_put(
+        &self,
+        mailbox: &str,
+        blob: &str,
+        kind: privcord_domain::signaling::PutKind,
+        ttl_sec: u32,
+    ) -> Result<(), TransportError> {
+        let kind = match kind {
+            privcord_domain::signaling::PutKind::Sig => SignalKind::Live,
+            privcord_domain::signaling::PutKind::Msg => SignalKind::Stored,
+        };
+        if self
+            .0
+            .signal_put(mailbox.to_owned(), blob.to_owned(), kind, ttl_sec)
+        {
             Ok(())
         } else {
             Err(TransportError::NotConnected)
@@ -337,7 +406,71 @@ pub struct SnapshotDto {
     pub conversations: Vec<ConversationDto>,
     pub groups: Vec<GroupDto>,
     pub channels: Vec<String>,
+    pub invite: Option<InviteDto>,
+    pub requests: Vec<RequestDto>,
+    pub answer: Option<AnswerDto>,
+    pub lookup_pending: bool,
     pub queued: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct InviteDto {
+    pub words: String,
+    pub expires_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct RequestDto {
+    pub uid: String,
+    pub name: String,
+    pub safety_number: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum AnswerState {
+    Sent,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct AnswerDto {
+    pub uid: String,
+    pub status: AnswerState,
+}
+
+/// What a person sees before saving a friend.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct PreviewDto {
+    pub uid: String,
+    pub name: String,
+    pub safety_number: String,
+    pub already: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum WipeStatus {
+    Erased,
+    Skipped,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct WipeStepDto {
+    pub step_id: String,
+    pub status: WipeStatus,
+    pub details: Option<String>,
+}
+
+/// The truthful result of an emergency deletion. Show exactly this, never a false "complete".
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct WipeReportDto {
+    pub application: bool,
+    pub steps: Vec<WipeStepDto>,
+    pub complete: bool,
+    pub partial: bool,
+    pub failed_step_ids: Vec<String>,
+    pub skipped_step_ids: Vec<String>,
+    pub finished: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -381,6 +514,28 @@ pub enum EventDto {
     GroupChanged {
         group_id: String,
     },
+    InviteChanged,
+    InviteRequest {
+        uid: String,
+    },
+    InviteFound {
+        uid: String,
+        name: String,
+        safety_number: String,
+        already: bool,
+    },
+    InviteLookupFailed,
+    AnswerChanged,
+    ContactRemoved {
+        uid: String,
+    },
+    /// Time to dial this person (their link is down and the backoff has passed).
+    DialRequested {
+        peer: String,
+        initiator: bool,
+    },
+    /// An emergency deletion ran; ask for its report.
+    Wiped,
     Lagged {
         missed: u64,
     },
@@ -417,6 +572,31 @@ fn event_dto(e: EngineEvent) -> EventDto {
             link: state.into(),
         },
         EngineEvent::GroupChanged { group_id } => EventDto::GroupChanged { group_id },
+        EngineEvent::InviteChanged => EventDto::InviteChanged,
+        EngineEvent::InviteRequest { uid } => EventDto::InviteRequest {
+            uid: uid.to_string(),
+        },
+        EngineEvent::InviteFound {
+            uid,
+            name,
+            safety_number,
+            already,
+        } => EventDto::InviteFound {
+            uid: uid.to_string(),
+            name,
+            safety_number,
+            already,
+        },
+        EngineEvent::InviteLookupFailed => EventDto::InviteLookupFailed,
+        EngineEvent::AnswerChanged => EventDto::AnswerChanged,
+        EngineEvent::ContactRemoved { uid } => EventDto::ContactRemoved {
+            uid: uid.to_string(),
+        },
+        EngineEvent::DialRequested { peer, initiator } => EventDto::DialRequested {
+            peer: peer.to_string(),
+            initiator,
+        },
+        EngineEvent::Wiped => EventDto::Wiped,
         EngineEvent::Lagged { missed } => EventDto::Lagged { missed },
         EngineEvent::ShutDown => EventDto::ShutDown,
     }
@@ -639,6 +819,99 @@ impl PrivcordEngine {
         Ok(self.handle.mesh_frame(link, frame)?)
     }
 
+    /// Make a six-word invite and publish it. Returns the words and when they stop working (ms since 1970).
+    pub fn create_invite(&self) -> Result<InviteDto, FfiError> {
+        match pollster::block_on(self.handle.op(Op::CreateInvite))? {
+            Answer::Invite { words, expires_at } => Ok(InviteDto { words, expires_at }),
+            _ => Err(FfiError::InvalidArgument),
+        }
+    }
+
+    pub fn stop_invite(&self) -> Result<(), FfiError> {
+        self.misc(Op::StopInvite)
+    }
+
+    /// Look at an invite (six words or a full card) without saving it. A card answers at once; words start a search
+    /// that ends with an `InviteFound` or `InviteLookupFailed` event.
+    pub fn preview_invite(&self, text: String) -> Result<Option<PreviewDto>, FfiError> {
+        match pollster::block_on(self.handle.op(Op::PreviewInvite(text)))? {
+            Answer::Preview(p) => Ok(p.map(|p| PreviewDto {
+                uid: p.uid.to_string(),
+                name: p.name,
+                safety_number: p.safety_number,
+                already: p.already,
+            })),
+            _ => Err(FfiError::InvalidArgument),
+        }
+    }
+
+    /// Save a friend from their invite. Returns their id.
+    pub fn accept_invite(&self, text: String) -> Result<String, FfiError> {
+        self.person(Op::AcceptInvite(text))
+    }
+
+    pub fn retry_answer(&self) -> Result<(), FfiError> {
+        self.misc(Op::RetryAnswer)
+    }
+
+    pub fn clear_answer(&self) -> Result<(), FfiError> {
+        self.misc(Op::ClearAnswer)
+    }
+
+    pub fn accept_request(&self, uid: String) -> Result<String, FfiError> {
+        self.person(Op::AcceptRequest(user(&uid)?))
+    }
+
+    pub fn dismiss_request(&self, uid: String) -> Result<(), FfiError> {
+        self.misc(Op::DismissRequest(user(&uid)?))
+    }
+
+    /// Forget a friend and their chat. Refused while they share a group with you.
+    pub fn remove_contact(&self, uid: String) -> Result<(), FfiError> {
+        self.misc(Op::RemoveContact(user(&uid)?))
+    }
+
+    /// Keep invites on the relay for 15 minutes as well as publishing them live.
+    pub fn set_store_forward(&self, value: bool) -> Result<(), FfiError> {
+        self.misc(Op::SetStoreForward(value))
+    }
+
+    /// The name put on invite cards.
+    pub fn set_display_name(&self, name: String) -> Result<(), FfiError> {
+        self.misc(Op::SetDisplayName(name))
+    }
+
+    /// The signaling service delivered a blob on a mailbox we listen on.
+    pub fn signal_blob(&self, mailbox: String, blob: String) -> Result<(), FfiError> {
+        Ok(self.handle.signal_blob(mailbox, blob)?)
+    }
+
+    /// Delete one chat here. `conversation` is a person's id, a group id or `chan:` plus a channel name.
+    pub fn wipe_conversation(
+        &self,
+        conversation: String,
+        erase_session: bool,
+    ) -> Result<WipeReportDto, FfiError> {
+        let conversation = self.conversation_id(&conversation)?;
+        self.report(Op::KillSwitchConversation {
+            conversation,
+            erase_session,
+        })?
+        .ok_or(FfiError::InvalidArgument)
+    }
+
+    /// Emergency deletion of everything the engine holds. Returns the report; a crash part-way is continued on the
+    /// next call.
+    pub fn wipe_everything(&self) -> Result<WipeReportDto, FfiError> {
+        self.report(Op::KillSwitchApp)?
+            .ok_or(FfiError::InvalidArgument)
+    }
+
+    /// The report of the last deletion that was started, if any.
+    pub fn last_wipe_report(&self) -> Result<Option<WipeReportDto>, FfiError> {
+        self.report(Op::LastKillSwitchReport)
+    }
+
     pub fn mark_read(&self, peer: String) -> Result<(), FfiError> {
         Ok(pollster::block_on(self.handle.mark_read(&user(&peer)?))?)
     }
@@ -685,6 +958,27 @@ impl PrivcordEngine {
                 })
                 .collect(),
             channels: s.channels,
+            invite: s.invite.map(|i| InviteDto {
+                words: i.words,
+                expires_at: i.expires_at,
+            }),
+            requests: s
+                .requests
+                .into_iter()
+                .map(|r| RequestDto {
+                    uid: r.uid.to_string(),
+                    name: r.name,
+                    safety_number: r.safety_number,
+                })
+                .collect(),
+            answer: s.answer.map(|a| AnswerDto {
+                uid: a.uid.to_string(),
+                status: match a.status {
+                    privcord_engine::AnswerStatus::Sent => AnswerState::Sent,
+                    privcord_engine::AnswerStatus::Failed => AnswerState::Failed,
+                },
+            }),
+            lookup_pending: s.lookup_pending,
             groups: s
                 .groups
                 .into_iter()
@@ -757,5 +1051,66 @@ impl PrivcordEngine {
             pollster::block_on(self.handle.send_file(to, name, mime, data, reply.as_ref()))?
                 .to_string(),
         )
+    }
+}
+
+impl PrivcordEngine {
+    fn misc(&self, op: Op) -> Result<(), FfiError> {
+        pollster::block_on(self.handle.op(op))?;
+        Ok(())
+    }
+
+    fn person(&self, op: Op) -> Result<String, FfiError> {
+        match pollster::block_on(self.handle.op(op))? {
+            Answer::Person(u) => Ok(u.to_string()),
+            _ => Err(FfiError::InvalidArgument),
+        }
+    }
+
+    fn report(&self, op: Op) -> Result<Option<WipeReportDto>, FfiError> {
+        match pollster::block_on(self.handle.op(op))? {
+            Answer::Report(r) => Ok(r.map(wipe_dto)),
+            _ => Err(FfiError::InvalidArgument),
+        }
+    }
+
+    /// A person (known contact), a group, or a channel, from the string the apps use.
+    fn conversation_id(&self, key: &str) -> Result<ConversationId, FfiError> {
+        if let Some(name) = key.strip_prefix("chan:") {
+            return Ok(ConversationId::Channel(name.to_owned()));
+        }
+        let snap = pollster::block_on(self.handle.snapshot())?;
+        if snap.groups.iter().any(|g| g.group_id == key) {
+            return Ok(ConversationId::Group(
+                privcord_domain::GroupId::new(key).map_err(|_| FfiError::InvalidArgument)?,
+            ));
+        }
+        Ok(ConversationId::Direct(user(key)?))
+    }
+}
+
+fn wipe_dto(r: privcord_domain::killswitch::KillSwitchReport) -> WipeReportDto {
+    use privcord_domain::killswitch::{KillSwitchScope, StepStatus};
+    let summary = r.summarize();
+    WipeReportDto {
+        application: r.scope == KillSwitchScope::Application,
+        finished: r.finished_at.is_some(),
+        steps: r
+            .steps
+            .into_iter()
+            .map(|s| WipeStepDto {
+                step_id: s.step_id,
+                status: match s.status {
+                    StepStatus::Erased => WipeStatus::Erased,
+                    StepStatus::Skipped => WipeStatus::Skipped,
+                    StepStatus::Failed => WipeStatus::Failed,
+                },
+                details: s.details,
+            })
+            .collect(),
+        complete: summary.complete,
+        partial: summary.partial,
+        failed_step_ids: summary.failed_step_ids,
+        skipped_step_ids: summary.skipped_step_ids,
     }
 }

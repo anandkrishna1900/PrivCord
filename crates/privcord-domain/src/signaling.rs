@@ -132,6 +132,22 @@ impl ManualSignal {
     }
 }
 
+/// `Sig`: short-lived live signaling. `Msg`: held for an offline contact.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PutKind {
+    Sig,
+    Msg,
+}
+
+impl PutKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Sig => "sig",
+            Self::Msg => "msg",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SignalingStatus {
     Idle,

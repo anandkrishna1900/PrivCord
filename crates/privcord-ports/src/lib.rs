@@ -11,6 +11,7 @@
 use privcord_domain::{
     message::{ChatMessage, DeliveryState},
     privacy::ContactTrust,
+    signaling::PutKind,
     state::ConnectionPath,
     ConversationId, MessageId, UserId,
 };
@@ -76,6 +77,20 @@ pub struct OutboxEntry {
     pub next_try_ms: i64,
 }
 
+/// What an erase removes (emergency deletion and "delete this chat").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EraseScope {
+    /// One conversation's messages, with their files and outbox entries.
+    Conversation(ConversationId),
+    /// Every message (and so every file and outbox entry).
+    Messages,
+    Contacts,
+    Files,
+    Outbox,
+    /// Everything this storage holds, settings included.
+    All,
+}
+
 /// One change. A batch of these is applied all together or not at all.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StorageOp {
@@ -100,6 +115,7 @@ pub enum StorageOp {
     },
     /// Keeps a file's bytes with its (already stored, or same-batch) message.
     PutFile(StoredFile),
+    Erase(EraseScope),
 }
 
 /// Persistent state. `apply` is the only way to change it, and it is atomic: a crash or an error part-way leaves
@@ -148,6 +164,29 @@ pub trait Transport: Send + Sync {
     /// Queue one frame on a radio link that is not a known contact (a Bluetooth mesh neighbour). Links are named by
     /// whatever the adapter uses. A transport with no mesh radio keeps this default and the mesh simply has no links.
     fn send_raw(&self, _link: &str, _frame: &str) -> Result<(), TransportError> {
+        Err(TransportError::NotConnected)
+    }
+
+    /// The engine decided a link is dead (nothing heard for too long): drop it so the adapter can dial again.
+    fn close(&self, _peer: &UserId) {}
+
+    /// Is a signaling service (relay or Nostr) configured? Six-word invites need one.
+    fn signal_available(&self) -> bool {
+        false
+    }
+    /// Start listening on a mailbox. Blobs that arrive are handed to the engine with `signal_blob`.
+    fn signal_subscribe(&self, _mailbox: &str) -> Result<(), TransportError> {
+        Err(TransportError::NotConnected)
+    }
+    fn signal_unsubscribe(&self, _mailbox: &str) {}
+    /// Publish an encoded sealed blob. Ok if at least one service took it.
+    fn signal_put(
+        &self,
+        _mailbox: &str,
+        _blob: &str,
+        _kind: PutKind,
+        _ttl_sec: u32,
+    ) -> Result<(), TransportError> {
         Err(TransportError::NotConnected)
     }
 }

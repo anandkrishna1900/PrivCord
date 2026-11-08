@@ -5,13 +5,17 @@
 //! around the engine. A timer drives retries. `shutdown` stops accepting commands, ends every session, joins the thread
 //! and reports whether it ended cleanly.
 
+use crate::core::InvitePreview;
 use crate::{
     api::Snapshot,
     core::{Core, LinkSecurity, Ports},
     error::ErrorCode,
     events::EventStream,
 };
-use privcord_domain::{privacy::ContactTrust, state::ConnectionPath, MessageId, UserId};
+use privcord_domain::{
+    killswitch::KillSwitchReport, privacy::ContactTrust, state::ConnectionPath, ConversationId,
+    MessageId, UserId,
+};
 use privcord_ports::StoredFile;
 use std::{sync::Mutex, thread::JoinHandle, time::Duration};
 use tokio::sync::{mpsc, oneshot};
@@ -70,6 +74,14 @@ enum Command {
         id: MessageId,
         reply: Reply<Option<StoredFile>>,
     },
+    Misc {
+        op: Op,
+        reply: Reply<Answer>,
+    },
+    SignalBlob {
+        mailbox: String,
+        blob: String,
+    },
     Channel {
         op: ChannelOp,
         reply: Reply<String>,
@@ -102,6 +114,38 @@ enum Command {
     },
     Snapshot(Reply<Snapshot>),
     Shutdown(oneshot::Sender<()>),
+}
+
+/// Invites, friends and emergency deletion.
+#[derive(Debug)]
+pub enum Op {
+    CreateInvite,
+    StopInvite,
+    PreviewInvite(String),
+    AcceptInvite(String),
+    RetryAnswer,
+    ClearAnswer,
+    AcceptRequest(UserId),
+    DismissRequest(UserId),
+    RemoveContact(UserId),
+    SetStoreForward(bool),
+    SetDisplayName(String),
+    KillSwitchConversation {
+        conversation: ConversationId,
+        erase_session: bool,
+    },
+    KillSwitchApp,
+    LastKillSwitchReport,
+}
+
+/// What an [`Op`] returns.
+#[derive(Debug)]
+pub enum Answer {
+    Done,
+    Invite { words: String, expires_at: i64 },
+    Preview(Option<InvitePreview>),
+    Person(UserId),
+    Report(Option<KillSwitchReport>),
 }
 
 /// A channel operation. Returns the channel's normalised name or the new message's id, else an empty string.
@@ -194,6 +238,41 @@ fn pump(core: &mut Core, cmd: Command) -> bool {
             }
         })),
         Command::LoadFile { id, reply } => drop(reply.send(core.file(&id))),
+        Command::Misc { op, reply } => drop(
+            reply.send(match op {
+                Op::CreateInvite => core
+                    .create_invite()
+                    .map(|(words, expires_at)| Answer::Invite { words, expires_at }),
+                Op::StopInvite => {
+                    core.stop_invite();
+                    Ok(Answer::Done)
+                }
+                Op::PreviewInvite(t) => core.preview_invite(&t).map(Answer::Preview),
+                Op::AcceptInvite(t) => core.accept_invite(&t).map(Answer::Person),
+                Op::RetryAnswer => core.retry_answer().map(|()| Answer::Done),
+                Op::ClearAnswer => {
+                    core.clear_answer();
+                    Ok(Answer::Done)
+                }
+                Op::AcceptRequest(u) => core.accept_request(&u).map(Answer::Person),
+                Op::DismissRequest(u) => {
+                    core.dismiss_request(&u);
+                    Ok(Answer::Done)
+                }
+                Op::RemoveContact(u) => core.remove_contact(&u).map(|()| Answer::Done),
+                Op::SetStoreForward(v) => core.set_store_forward(v).map(|()| Answer::Done),
+                Op::SetDisplayName(n) => core.set_display_name(&n).map(|()| Answer::Done),
+                Op::KillSwitchConversation {
+                    conversation,
+                    erase_session,
+                } => Ok(Answer::Report(Some(
+                    core.kill_switch_conversation(conversation, erase_session),
+                ))),
+                Op::KillSwitchApp => Ok(Answer::Report(Some(core.kill_switch_app()))),
+                Op::LastKillSwitchReport => Ok(Answer::Report(core.last_kill_switch_report())),
+            }),
+        ),
+        Command::SignalBlob { mailbox, blob } => core.signal_blob(&mailbox, &blob),
         Command::Channel { op, reply } => drop(
             reply.send(match op {
                 ChannelOp::Join(n) => core.join_channel(&n),
@@ -391,6 +470,14 @@ impl EngineHandle {
         .await
     }
 
+    /// Invites, friends and emergency deletion.
+    pub async fn op(&self, op: Op) -> Result<Answer, ErrorCode> {
+        self.ask(|reply| Command::Misc { op, reply }).await
+    }
+    /// A blob arrived from the signaling service on a mailbox we listen on. Fire and forget.
+    pub fn signal_blob(&self, mailbox: String, blob: String) -> Result<(), ErrorCode> {
+        self.push(Command::SignalBlob { mailbox, blob })
+    }
     pub async fn channel(&self, op: ChannelOp) -> Result<String, ErrorCode> {
         self.ask(|reply| Command::Channel { op, reply }).await
     }

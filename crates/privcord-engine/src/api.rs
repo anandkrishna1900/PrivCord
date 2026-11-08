@@ -30,6 +30,34 @@ pub struct GroupView {
     pub members: Vec<(String, bool)>,
 }
 
+/// Our open six-word invite.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InviteView {
+    pub words: String,
+    pub expires_at: i64,
+}
+
+/// Someone who used our words and waits for us to accept them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequestView {
+    pub uid: UserId,
+    pub name: String,
+    pub safety_number: String,
+}
+
+/// Did our own card reach the friend whose words we typed?
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnswerStatus {
+    Sent,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnswerView {
+    pub uid: UserId,
+    pub status: AnswerStatus,
+}
+
 /// Everything a recreated UI needs, so it never depends on having seen every historical event.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Snapshot {
@@ -40,6 +68,11 @@ pub struct Snapshot {
     pub groups: Vec<GroupView>,
     /// Names of the public channels joined.
     pub channels: Vec<String>,
+    pub invite: Option<InviteView>,
+    pub requests: Vec<RequestView>,
+    pub answer: Option<AnswerView>,
+    /// We are looking for the card behind words we typed.
+    pub lookup_pending: bool,
     pub messages: Vec<(ConversationId, Vec<ChatMessage>)>,
     pub queued: usize,
 }
@@ -65,6 +98,30 @@ pub enum EngineEvent {
     GroupChanged {
         group_id: String,
     },
+    /// Our open invite appeared, changed or closed, or the list of requests changed.
+    InviteChanged,
+    InviteRequest {
+        uid: UserId,
+    },
+    InviteFound {
+        uid: UserId,
+        name: String,
+        safety_number: String,
+        already: bool,
+    },
+    InviteLookupFailed,
+    AnswerChanged,
+    ContactRemoved {
+        uid: UserId,
+    },
+    /// Time to dial this person: their link is down and the backoff has passed. `initiator` is true when we are the
+    /// side that sends the offer (the lower uid).
+    DialRequested {
+        peer: UserId,
+        initiator: bool,
+    },
+    /// An emergency deletion ran (the report says how far it got).
+    Wiped,
     MessageRefused {
         message_id: MessageId,
     },

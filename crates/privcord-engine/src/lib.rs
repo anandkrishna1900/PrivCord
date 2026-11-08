@@ -10,8 +10,12 @@ pub mod error;
 pub mod events;
 pub mod runtime;
 
-pub use api::{ContactView, EngineEvent, GroupView, Snapshot};
+pub use api::{
+    AnswerStatus, AnswerView, ContactView, EngineEvent, GroupView, InviteView, RequestView,
+    Snapshot,
+};
+pub use core::InvitePreview;
 pub use core::{Core, LinkSecurity, Ports};
 pub use error::ErrorCode;
 pub use events::EventStream;
-pub use runtime::{ChannelOp, EngineHandle, FileTarget, GroupOp};
+pub use runtime::{Answer, ChannelOp, EngineHandle, FileTarget, GroupOp, Op};

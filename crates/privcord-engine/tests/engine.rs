@@ -123,6 +123,20 @@ fn pump(a: &mut Node, b: &mut Node, au: &UserId, bu: &UserId) -> usize {
     }
 }
 
+/// Let time pass the way it does in life: in small steps, with both sides ticking and their pings and pongs delivered.
+/// (Jumping the clock in one go would look like a silent link, which the engine rightly declares dead.)
+fn pass_time(a: &mut Node, b: &mut Node, au: &UserId, bu: &UserId, ms: i64) {
+    let mut left = ms;
+    while left > 0 {
+        let step = left.min(2_000);
+        a.clock.advance(step);
+        left -= step;
+        a.core.tick();
+        b.core.tick();
+        pump(a, b, au, bu);
+    }
+}
+
 fn state_of(n: &Node, who: &UserId) -> ConnectionState {
     n.core
         .snapshot()
@@ -318,9 +332,7 @@ fn a_lost_receipt_causes_a_resend_that_is_stored_once() {
     // Nothing happens until the retry time; then Alice sends again.
     a.core.tick();
     assert!(a.transport.drain().is_empty());
-    a.clock.advance(RETRY_AFTER_MS + 1);
-    a.core.tick();
-    pump(&mut a, &mut b, &au, &bu);
+    pass_time(&mut a, &mut b, &au, &bu, RETRY_AFTER_MS + 1);
     assert_eq!(
         texts(&b, &au),
         vec!["once only"],
@@ -536,9 +548,7 @@ fn a_failed_write_changes_nothing_and_a_failed_receive_is_not_acknowledged() {
     connect(&mut a, &mut b, &au, &bu);
     assert!(texts(&b, &au).is_empty());
     assert_ne!(status(&a, &id2), DeliveryState::Delivered);
-    a.clock.advance(RETRY_AFTER_MS + 1);
-    a.core.tick();
-    pump(&mut a, &mut b, &au, &bu);
+    pass_time(&mut a, &mut b, &au, &bu, RETRY_AFTER_MS + 1);
     assert_eq!(texts(&b, &au), vec!["will retry"]);
     assert_eq!(status(&a, &id2), DeliveryState::Delivered);
     let _ = id;

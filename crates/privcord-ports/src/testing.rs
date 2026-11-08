@@ -2,11 +2,11 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use crate::{
-    Clock, IdentitySecrets, Notification, Notifier, OutboxEntry, SecureStore, SecureStoreError,
-    Storage, StorageError, StorageOp, StoredContact, StoredFile, StoredMessage, Transport,
-    TransportError,
+    Clock, EraseScope, IdentitySecrets, Notification, Notifier, OutboxEntry, SecureStore,
+    SecureStoreError, Storage, StorageError, StorageOp, StoredContact, StoredFile, StoredMessage,
+    Transport, TransportError,
 };
-use privcord_domain::{MessageId, UserId};
+use privcord_domain::{signaling::PutKind, MessageId, UserId};
 use std::{
     collections::HashMap,
     sync::{
@@ -52,6 +52,7 @@ struct Data {
 pub struct MemoryStorage {
     data: Mutex<Data>,
     fail_next: AtomicUsize,
+    fail_at: AtomicUsize,
     applied: AtomicUsize,
 }
 
@@ -61,6 +62,11 @@ impl MemoryStorage {
     }
 
     /// The next `n` calls to `apply` fail (as a crash or a full disk would), leaving nothing written.
+    /// Make only the `n`th next `apply` fail (1 is the very next one); the others succeed.
+    pub fn fail_apply_at(&self, n: usize) {
+        self.fail_at.store(n, Ordering::SeqCst);
+    }
+
     pub fn fail_next_applies(&self, n: usize) {
         self.fail_next.store(n, Ordering::SeqCst);
     }
@@ -72,6 +78,11 @@ impl MemoryStorage {
 
 impl Storage for MemoryStorage {
     fn apply(&self, batch: &[StorageOp]) -> Result<(), StorageError> {
+        if self.fail_at.load(Ordering::SeqCst) > 0
+            && self.fail_at.fetch_sub(1, Ordering::SeqCst) == 1
+        {
+            return Err(StorageError::Unavailable);
+        }
         if self.fail_next.load(Ordering::SeqCst) > 0 {
             self.fail_next.fetch_sub(1, Ordering::SeqCst);
             return Err(StorageError::Unavailable);
@@ -128,6 +139,28 @@ impl Storage for MemoryStorage {
                     next.outbox
                         .retain(|o| !(&o.message_id == message_id && &o.recipient == recipient));
                 }
+                StorageOp::Erase(scope) => match scope {
+                    EraseScope::Conversation(c) => {
+                        let ids: Vec<MessageId> = next
+                            .messages
+                            .iter()
+                            .filter(|m| &m.conversation == c)
+                            .map(|m| m.message.message_id.clone())
+                            .collect();
+                        next.messages.retain(|m| &m.conversation != c);
+                        next.outbox.retain(|o| !ids.contains(&o.message_id));
+                        next.files.retain(|k, _| !ids.contains(k));
+                    }
+                    EraseScope::Messages => {
+                        next.messages.clear();
+                        next.outbox.clear();
+                        next.files.clear();
+                    }
+                    EraseScope::Contacts => next.contacts.clear(),
+                    EraseScope::Files => next.files.clear(),
+                    EraseScope::Outbox => next.outbox.clear(),
+                    EraseScope::All => next = Data::default(),
+                },
                 StorageOp::PutFile(f) => {
                     if !next
                         .messages
@@ -196,6 +229,23 @@ pub struct RecordingTransport {
     sent: Mutex<Vec<(UserId, String)>>,
     connected: Mutex<Vec<UserId>>,
     raw: Mutex<Vec<(String, String)>>,
+    closed: Mutex<Vec<UserId>>,
+    signals: Mutex<Vec<SignalOp>>,
+    signaling_up: std::sync::atomic::AtomicBool,
+    signal_fails: std::sync::atomic::AtomicBool,
+}
+
+/// What the engine asked of the signaling service.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SignalOp {
+    Subscribe(String),
+    Unsubscribe(String),
+    Put {
+        mailbox: String,
+        blob: String,
+        kind: PutKind,
+        ttl_sec: u32,
+    },
 }
 
 impl RecordingTransport {
@@ -208,6 +258,21 @@ impl RecordingTransport {
         if up {
             c.push(peer.clone());
         }
+    }
+    /// Pretend a signaling service is (not) configured.
+    pub fn set_signaling(&self, up: bool) {
+        self.signaling_up.store(up, Ordering::SeqCst);
+    }
+    /// Make publishing fail (the service is unreachable).
+    pub fn set_signal_fails(&self, fails: bool) {
+        self.signal_fails.store(fails, Ordering::SeqCst);
+    }
+    pub fn drain_signals(&self) -> Vec<SignalOp> {
+        std::mem::take(&mut *lock(&self.signals))
+    }
+    /// Peers the engine asked to be closed since the last call.
+    pub fn drain_closed(&self) -> Vec<UserId> {
+        std::mem::take(&mut *lock(&self.closed))
     }
     /// Everything sent over raw (mesh) links since the last call.
     pub fn drain_raw(&self) -> Vec<(String, String)> {
@@ -229,6 +294,40 @@ impl Transport for RecordingTransport {
     }
     fn send_raw(&self, link: &str, frame: &str) -> Result<(), TransportError> {
         lock(&self.raw).push((link.to_owned(), frame.to_owned()));
+        Ok(())
+    }
+    fn close(&self, peer: &UserId) {
+        lock(&self.closed).push(peer.clone());
+    }
+    fn signal_available(&self) -> bool {
+        self.signaling_up.load(Ordering::SeqCst)
+    }
+    fn signal_subscribe(&self, mailbox: &str) -> Result<(), TransportError> {
+        if !self.signal_available() {
+            return Err(TransportError::NotConnected);
+        }
+        lock(&self.signals).push(SignalOp::Subscribe(mailbox.to_owned()));
+        Ok(())
+    }
+    fn signal_unsubscribe(&self, mailbox: &str) {
+        lock(&self.signals).push(SignalOp::Unsubscribe(mailbox.to_owned()));
+    }
+    fn signal_put(
+        &self,
+        mailbox: &str,
+        blob: &str,
+        kind: PutKind,
+        ttl_sec: u32,
+    ) -> Result<(), TransportError> {
+        if !self.signal_available() || self.signal_fails.load(Ordering::SeqCst) {
+            return Err(TransportError::NotConnected);
+        }
+        lock(&self.signals).push(SignalOp::Put {
+            mailbox: mailbox.to_owned(),
+            blob: blob.to_owned(),
+            kind,
+            ttl_sec,
+        });
         Ok(())
     }
 }

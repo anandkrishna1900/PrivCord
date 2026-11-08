@@ -15,7 +15,8 @@ use privcord_domain::{
     ConversationId, GroupId, MessageId, UserId,
 };
 use privcord_ports::{
-    OutboxEntry, Storage, StorageError, StorageOp, StoredContact, StoredFile, StoredMessage,
+    EraseScope, OutboxEntry, Storage, StorageError, StorageOp, StoredContact, StoredFile,
+    StoredMessage,
 };
 use rusqlite::{params, Connection, OptionalExtension};
 use std::{
@@ -94,6 +95,9 @@ fn init(
     conn.pragma_update(None, "foreign_keys", true)
         .map_err(unavailable)?;
     conn.pragma_update(None, "journal_mode", "WAL")
+        .map_err(unavailable)?;
+    // Deleted rows are overwritten, not just unlinked, so an erase leaves nothing readable in the free pages.
+    conn.pragma_update(None, "secure_delete", true)
         .map_err(unavailable)?;
     conn.pragma_update(None, "synchronous", "FULL")
         .map_err(unavailable)?;
@@ -279,6 +283,32 @@ fn apply_op(tx: &rusqlite::Transaction<'_>, op: &StorageOp) -> Result<(), Storag
                 .map_err(rej)?;
             if n == 0 {
                 return Err(StorageError::Rejected);
+            }
+        }
+        StorageOp::Erase(scope) => {
+            let sql: &[&str] = match scope {
+                EraseScope::Conversation(c) => {
+                    tx.execute(
+                        "DELETE FROM messages WHERE conversation = ?1",
+                        params![conversation_key(c)],
+                    )
+                    .map_err(rej)?;
+                    &[]
+                }
+                EraseScope::Messages => &["DELETE FROM messages"],
+                EraseScope::Contacts => &["DELETE FROM contacts"],
+                EraseScope::Files => &["DELETE FROM files"],
+                EraseScope::Outbox => &["DELETE FROM outbox"],
+                EraseScope::All => &[
+                    "DELETE FROM messages",
+                    "DELETE FROM contacts",
+                    "DELETE FROM kv",
+                    "DELETE FROM outbox",
+                    "DELETE FROM files",
+                ],
+            };
+            for q in sql {
+                tx.execute(q, []).map_err(rej)?;
             }
         }
         StorageOp::PutFile(f) => {

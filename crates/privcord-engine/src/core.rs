@@ -29,6 +29,10 @@ use privcord_domain::{
     channel::normalize_channel_name,
     files::{file_chunks, AssembleResult, BeginOutcome, FileAssembler, FileChunk, FileOffer},
     limits::PROTOCOL_VERSION,
+    link_policy::{
+        due_links, is_initiator, LinkInfo, LivenessMonitor, LivenessTick, MAX_CONNECTING,
+        MAX_LINKS, PING_INTERVAL_MS,
+    },
     mesh::{MeshNode, Outgoing as MeshOutgoing},
     message::{
         declined_frame, parse_declined_frame, ChatMessage, DeclineReason, DeliveryState,
@@ -50,12 +54,19 @@ use std::{
 };
 use zeroize::Zeroizing;
 
+mod invites;
+mod privacy;
+
+pub use invites::InvitePreview;
+
 /// A frame larger than this is dropped before it is parsed (SEC-04, SEC-09).
 pub const MAX_FRAME_BYTES: usize = 128 * 1024;
 /// How long to wait for a delivery receipt before sending a message again.
 pub const RETRY_AFTER_MS: i64 = 20_000;
 /// How long a hello that arrived early stays valid.
 const EARLY_HELLO_MS: i64 = 10_000;
+/// A dial request counts as in progress for this long unless the link comes up or fails sooner.
+const DIAL_GRACE_MS: i64 = 8_000;
 const KV_DEVICE_ID: &str = "device_id";
 const KV_GROUP_ONLY: &str = "settings.group_only";
 const KV_GROUPS: &str = "groups.v1";
@@ -103,6 +114,12 @@ struct Peer {
     early_hello: Option<(Value, i64)>,
     /// Files arriving from them right now.
     files: FileAssembler,
+    /// When anything last arrived on this link.
+    liveness: LivenessMonitor,
+    last_ping_at: i64,
+    /// Dial bookkeeping for the reconnect backoff.
+    attempts: u32,
+    last_attempt_at: i64,
 }
 
 impl Peer {
@@ -114,6 +131,10 @@ impl Peer {
             group_only: None,
             early_hello: None,
             files: FileAssembler::new(),
+            liveness: LivenessMonitor::new(0),
+            last_ping_at: 0,
+            attempts: 0,
+            last_attempt_at: 0,
         }
     }
     fn ready(&self) -> bool {
@@ -144,6 +165,9 @@ pub struct Core {
     channels: BTreeMap<String, ChannelKeys>,
     /// Our place in the Bluetooth mesh (neighbours are anonymous radio links, not contacts).
     mesh: MeshNode,
+    invites: invites::InviteState,
+    /// The name on our invite cards.
+    display_name: Option<String>,
 }
 
 struct StoredContactState {
@@ -183,6 +207,8 @@ impl Core {
             groups: None,
             channels: BTreeMap::new(),
             mesh: MeshNode::default(),
+            invites: invites::InviteState::default(),
+            display_name: None,
         };
         if let Some(secrets) = core.ports.secure.load_identity()? {
             let mut stored = StoredSecrets {
@@ -227,6 +253,12 @@ impl Core {
                 }
             }
         }
+        core.display_name = core
+            .ports
+            .storage
+            .kv(invites::KV_NAME)?
+            .and_then(|b| String::from_utf8(b).ok())
+            .filter(|n| !n.is_empty());
         core.hub.publish(EngineEvent::Ready);
         Ok(core)
     }
@@ -586,6 +618,7 @@ impl Core {
         }
         let ready = self.peers.get(peer).is_some_and(Peer::ready);
         if !ready {
+            self.heard_from(peer);
             self.handshake_frame(peer, &value);
             return;
         }
@@ -604,7 +637,16 @@ impl Core {
             Some(Session::Legacy(_)) => value,
             None => return,
         };
+        // Anything that decrypted and passed the counter check is proof the other side is alive.
+        self.heard_from(peer);
         self.dispatch(peer, &inner);
+    }
+
+    fn heard_from(&mut self, peer: &UserId) {
+        let now = self.now();
+        if let Some(p) = self.peers.get_mut(peer) {
+            p.liveness.on_inbound(now);
+        }
     }
 
     fn handshake_frame(&mut self, peer: &UserId, value: &Value) {
@@ -645,6 +687,12 @@ impl Core {
                         .peers
                         .get(peer)
                         .map_or(ConnectionPath::Unknown, |p| p.path);
+                    let now = self.now();
+                    if let Some(p) = self.peers.get_mut(peer) {
+                        p.liveness = LivenessMonitor::new(now);
+                        p.last_ping_at = now;
+                        p.attempts = 0;
+                    }
                     self.step(peer, ConnectionEvent::Established(path));
                     self.send_privacy(peer);
                     self.send_group_hello(peer);
@@ -1060,19 +1108,80 @@ impl Core {
         Ok(())
     }
 
-    /// Time passes: resend what was never acknowledged.
+    /// Time passes: ping live links, drop silent ones, ask adapters to dial what is due, resend what was never
+    /// acknowledged, and keep invites moving.
     pub fn tick(&mut self) {
         if self.shut_down {
             return;
         }
-        let peers: Vec<UserId> = self
+        let now = self.now();
+        let ready: Vec<UserId> = self
             .peers
             .iter()
             .filter(|(_, p)| p.ready())
             .map(|(u, _)| u.clone())
             .collect();
-        for p in peers {
-            self.flush(&p);
+        for peer in ready {
+            let Some(p) = self.peers.get_mut(&peer) else {
+                continue;
+            };
+            if p.liveness.tick(now) == LivenessTick::Lost {
+                // Nothing at all for too long: the link is dead even if the radio never said so.
+                self.fail(&peer, ConnectionFailure::Timeout);
+                self.ports.transport.close(&peer);
+                continue;
+            }
+            if now - p.last_ping_at >= PING_INTERVAL_MS {
+                p.last_ping_at = now;
+                self.send_secure(
+                    &peer,
+                    &json!({ "v": PROTOCOL_VERSION, "kind": "ping", "at": now }),
+                );
+            }
+            self.flush(&peer);
+        }
+        self.request_dials(now);
+        self.tick_invites();
+    }
+
+    /// Ask for a dial to each person whose link is down and whose backoff has passed (5 s doubling to 2 minutes, a few
+    /// at a time, never past the open-link cap).
+    fn request_dials(&mut self, now: i64) {
+        let links: Vec<LinkInfo> = self
+            .contacts
+            .keys()
+            .map(|uid| {
+                let p = self.peers.get(uid);
+                LinkInfo {
+                    uid: uid.to_string(),
+                    ready: p.is_some_and(Peer::ready),
+                    // A dial the adapter has not reported yet still takes up a slot for a few seconds.
+                    connecting: p.is_some_and(|p| {
+                        p.state == ConnectionState::Connecting
+                            || (!p.ready()
+                                && p.attempts > 0
+                                && now - p.last_attempt_at < DIAL_GRACE_MS)
+                    }),
+                    last_attempt_at: p.map_or(0, |p| p.last_attempt_at),
+                    attempts: p.map_or(0, |p| p.attempts),
+                    dialable: true,
+                }
+            })
+            .collect();
+        let Some(own) = self.uid.clone() else {
+            return;
+        };
+        for uid in due_links(&links, now, MAX_CONNECTING, MAX_LINKS) {
+            let Ok(peer) = UserId::new(uid.as_str()) else {
+                continue;
+            };
+            let p = self.peers.entry(peer.clone()).or_insert_with(Peer::offline);
+            p.last_attempt_at = now;
+            p.attempts = p.attempts.saturating_add(1);
+            self.hub.publish(EngineEvent::DialRequested {
+                initiator: is_initiator(own.as_str(), uid.as_str()),
+                peer,
+            });
         }
     }
 
@@ -1878,12 +1987,17 @@ impl Core {
                 })
                 .collect()
         });
+        let (invite, requests, answer, lookup_pending) = self.invite_views();
         Snapshot {
             seq: self.hub.seq(),
             own_uid: self.uid.clone(),
             contacts,
             groups,
             channels: self.channels.keys().cloned().collect(),
+            invite,
+            requests,
+            answer,
+            lookup_pending,
             messages,
             queued: self.outbox.len(),
         }

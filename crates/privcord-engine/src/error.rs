@@ -35,6 +35,16 @@ pub enum ErrorCode {
     BadChannel,
     #[error("You have not joined that channel.")]
     NotJoined,
+    #[error("Six-word invites need a connection service (Settings, Connection). The QR code and the full invite text work without one.")]
+    NoSignaling,
+    #[error("That does not look like a PrivCord invite. Check the words, or ask your friend to share it again.")]
+    InvalidInvite,
+    #[error("Could not find that invite. Check the words, make sure your friend still has the invite open, and that you are both online.")]
+    InviteNotFound,
+    #[error("That is your own invite. Send it to a friend instead.")]
+    OwnInvite,
+    #[error("Leave the groups you share first, then you can remove this friend.")]
+    StillInGroup,
     #[error("Storage failed; nothing was changed.")]
     Storage,
     #[error("Secure storage failed.")]

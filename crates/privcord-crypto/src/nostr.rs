@@ -16,21 +16,7 @@ pub const NOSTR_KIND_SIGNAL: u64 = 21733;
 /// Parameterised replaceable range: relays store it.
 pub const NOSTR_KIND_MESSAGE: u64 = 31733;
 
-/// `sig`: short-lived live signaling. `msg`: held for an offline contact.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PutKind {
-    Sig,
-    Msg,
-}
-
-impl PutKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Sig => "sig",
-            Self::Msg => "msg",
-        }
-    }
-}
+pub use privcord_domain::signaling::PutKind;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NostrEvent {

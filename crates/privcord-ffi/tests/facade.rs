@@ -39,6 +39,23 @@ impl TransportCallbacks for Wire {
     fn send_raw(&self, _link: String, _frame: String) -> bool {
         false
     }
+    fn close(&self, _peer: String) {}
+    fn signal_available(&self) -> bool {
+        false
+    }
+    fn signal_subscribe(&self, _mailbox: String) -> bool {
+        false
+    }
+    fn signal_unsubscribe(&self, _mailbox: String) {}
+    fn signal_put(
+        &self,
+        _mailbox: String,
+        _blob: String,
+        _kind: SignalKind,
+        _ttl_sec: u32,
+    ) -> bool {
+        false
+    }
 }
 
 /// A radio for the mesh test: each engine knows its neighbours by name and delivers straight into them.
@@ -57,6 +74,23 @@ impl TransportCallbacks for MeshWire {
             (Some(p), Some(me)) => p.mesh_frame(me.clone(), frame).is_ok(),
             _ => false,
         }
+    }
+    fn close(&self, _peer: String) {}
+    fn signal_available(&self) -> bool {
+        false
+    }
+    fn signal_subscribe(&self, _mailbox: String) -> bool {
+        false
+    }
+    fn signal_unsubscribe(&self, _mailbox: String) {}
+    fn signal_put(
+        &self,
+        _mailbox: String,
+        _blob: String,
+        _kind: SignalKind,
+        _ttl_sec: u32,
+    ) -> bool {
+        false
     }
 }
 
