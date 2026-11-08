@@ -63,10 +63,15 @@ fun diagnoseConnection(f: ConnectionFacts, friend: String = "your friend"): Diag
     return null
 }
 
-private val CANDIDATE = Regex("a=candidate:[^\\r\\n]* typ (host|srflx|relay)\\b")
+private val CANDIDATE_TYPE = Regex(" typ (host|srflx|relay)\\b")
 
 fun countSdpCandidates(sdp: String): CandidateCounts {
     var host = 0; var srflx = 0; var relay = 0
-    for (m in CANDIDATE.findAll(sdp)) when (m.groupValues[1]) { "host" -> host++; "srflx" -> srflx++; else -> relay++ }
+    // Line by line, with a pattern that has no leading wildcard: linear time however long the blob is.
+    for (line in sdp.lineSequence()) {
+        if (!line.startsWith("a=candidate:")) continue
+        val m = CANDIDATE_TYPE.find(line) ?: continue
+        when (m.groupValues[1]) { "host" -> host++; "srflx" -> srflx++; else -> relay++ }
+    }
     return CandidateCounts(host, srflx, relay)
 }

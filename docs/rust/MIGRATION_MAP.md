@@ -8,13 +8,13 @@ Status meanings: **Ported, tested** = the Rust implementation exists and is chec
 
 | Status | Files | Lines |
 |---|---:|---:|
-| Ported, tested | 75 | 11094 |
+| Ported, tested | 75 | 11099 |
 | Partly ported | 2 | 4633 |
 | Not yet ported | 0 | 0 |
 | Stays (UI) | 53 | 10807 |
 | Stays (platform adapter) | 35 | 6598 |
 | Replaced by a library | 4 | 333 |
-| **All mapped files** | **169** | **33465** |
+| **All mapped files** | **169** | **33470** |
 
 Ported does not mean retired: the TypeScript and Kotlin versions stay in production until the apps call the Rust engine (M7 desktop, M8 Android) and the compatibility gates pass (PRD section 16).
 
@@ -144,7 +144,7 @@ Ported does not mean retired: the TypeScript and Kotlin versions stay in product
 | `apps/android/app/src/main/java/com/duochat/app/ble/MeshNode.kt` | 138 | `MeshPacket`, `MeshOutgoing`, `MeshHandled`, `MeshNode` | Mesh flood logic | domain::mesh | Domain | Ported, tested | M8 | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ble/MeshRadio.kt` | 25 | `MeshRadio` | Android Bluetooth radio, permissions, link | BLE adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ble/SecureBleLink.kt` | 131 | `SecureBleLink` | Android Bluetooth radio, permissions, link | BLE adapter | Adapter | Stays (platform adapter) | Stays | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/data/Diagnosis.kt` | 72 | `CandidateCounts`, `ConnectionFacts`, `DiagnosisAction`, `Diagnosis`, `diagnoseConnection`, `countSdpCandidates` | Domain rules duplicated from TypeScript | domain | Domain | Ported, tested | M8 | n/a |
+| `apps/android/app/src/main/java/com/duochat/app/data/Diagnosis.kt` | 77 | `CandidateCounts`, `ConnectionFacts`, `DiagnosisAction`, `Diagnosis`, `diagnoseConnection`, `countSdpCandidates` | Domain rules duplicated from TypeScript | domain | Domain | Ported, tested | M8 | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/data/Files.kt` | 270 | `MessageType`, `ReplyRef`, `makeReplyRef`, `FileMeta`, `DeclineReason`, `declinedFrame` +15 | Domain rules duplicated from TypeScript | domain | Domain | Ported, tested | M8 | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/data/MessageStore.kt` | 243 | `MessageStore` | Chat state models and the in-memory message store over Room | engine state (snapshot, events) and storage::SqliteStorage | Engine | Ported, tested | M8: the engine owns this state | engine and storage tests |
 | `apps/android/app/src/main/java/com/duochat/app/data/Models.kt` | 346 | `DeliveryState`, `TransportKind`, `needsDelivery`, `ChatMessage`, `OutboxRow`, `EnginePhase` +30 | Chat state models and the in-memory message store over Room | engine state (snapshot, events) and storage::SqliteStorage | Engine | Ported, tested | M8: the engine owns this state | engine and storage tests |
