@@ -75,6 +75,8 @@ blob); backoff (1 s doubling to 30 s), put timeouts (8 s), reconnect from the ne
 services and the Nostr acceptance rules are tested against small fake servers speaking the same protocols. One
 difference: a hub whose services are all stopped reports `idle` (the TypeScript says `error`).
 
+The Nostr client is also run against a real, independent relay (Python `nostr-relay`, which verifies BIP-340 signatures and event age): a stored event is handed over on subscribe, a live event reaches an online listener, and a damaged signature is not accepted (`tests/real_nostr.rs`). It was not run against public Nostr relays, whose policies differ, and the size-limit refusal is not tested for that reason. The refusal check also treats silence as refusal.
+
 ## Not yet compatible (not ported)
 
 * Disappearing messages and translations were removed from the apps and are not in the engine.
