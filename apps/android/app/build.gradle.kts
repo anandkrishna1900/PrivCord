@@ -102,6 +102,22 @@ android {
         getByName("main") { java.srcDir("../../../crates/privcord-ffi/bindings/kotlin") }
     }
 
+    // Two builds from one codebase: "classic" is the original Kotlin engine; "rust" runs the shared Rust engine. The
+    // rust build installs next to the classic one (its own app id and its own data), so trying it risks nothing.
+    flavorDimensions += "engine"
+    productFlavors {
+        create("classic") {
+            dimension = "engine"
+            buildConfigField("boolean", "RUST_ENGINE", "false")
+        }
+        create("rust") {
+            dimension = "engine"
+            applicationIdSuffix = ".rust"
+            versionNameSuffix = "-rust"
+            buildConfigField("boolean", "RUST_ENGINE", "true")
+        }
+    }
+
     buildFeatures {
         compose = true
         buildConfig = true

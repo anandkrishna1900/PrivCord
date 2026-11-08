@@ -789,6 +789,13 @@ impl PrivcordEngine {
         Ok(pollster::block_on(self.handle.add_contact(&card, trust))?.to_string())
     }
 
+    /// Record that you compared the safety number with this person (or took it back).
+    pub fn set_checked(&self, uid: String, checked: bool) -> Result<(), FfiError> {
+        Ok(pollster::block_on(
+            self.handle.set_checked(&user(&uid)?, checked),
+        )?)
+    }
+
     pub fn set_group_only(&self, value: bool) -> Result<(), FfiError> {
         Ok(pollster::block_on(self.handle.set_group_only(value))?)
     }

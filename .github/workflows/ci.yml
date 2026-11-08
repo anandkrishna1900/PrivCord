@@ -173,15 +173,19 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Test and assemble
         working-directory: apps/android
-        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug --console=plain
+        run: ./gradlew :app:testClassicDebugUnitTest :app:assembleClassicDebug :app:assembleRustDebug --console=plain
       - name: The APK contains the Rust core for every CPU type
         run: |
-          unzip -l apps/android/app/build/outputs/apk/debug/app-debug.apk | grep libprivcord_ffi.so | tee /tmp/libs.txt
+          unzip -l apps/android/app/build/outputs/apk/classic/debug/app-classic-debug.apk | grep libprivcord_ffi.so | tee /tmp/libs.txt
           test "$(wc -l < /tmp/libs.txt)" -eq 4
       - uses: actions/upload-artifact@v4
         with:
           name: duochat-android-debug
-          path: apps/android/app/build/outputs/apk/debug/app-debug.apk
+          path: apps/android/app/build/outputs/apk/classic/debug/app-classic-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: duochat-android-rust-preview
+          path: apps/android/app/build/outputs/apk/rust/debug/app-rust-debug.apk
 
   windows-installer:
     name: Windows installer (unsigned) build
