@@ -93,6 +93,7 @@ rule(r"android/.*/data/(Models|MessageStore)\.kt", "Chat state models and the in
 rule(r"android/.*/data/Preferences\.kt", "App settings storage", "UI state (stays)", "UI", UI, "Stays")
 rule(r"android/.*/data/Themes\.kt", "Themes", "UI", "UI", UI, "Stays")
 rule(r"android/.*/data/local/DuoDatabase\.kt", "Room database", "storage::SqliteStorage; privcord-import (Room importer, Keystore decryptor supplied by the app)", "Storage", PORTED, "M8: after the importer has run on every install", "importer tests on generated Room v7 fixtures")
+rule(r"android/.*/engine/ChatEngineApi\.kt", "The interface the screens use to talk to a chat engine (Kotlin or Rust)", "Platform seam (stays)", "Adapter", ADAPTER, "Stays")
 rule(r"android/.*/engine/ChatEngine\.kt", "The Android chat engine", "engine (same coverage as the desktop engine). Left in Kotlin: driving WebRTC and Bluetooth, screen state, notifications, settings", "Engine/Adapter", PARTIAL, "M8 then M9", "engine integration tests")
 rule(r"android/.*/engine/LinkPolicy\.kt", "Who connects out, backoff, scheduler, buffers", "domain::link_policy; engine::core (dial requests)", "Engine", PORTED, "M8", "engine lifecycle tests, misc vectors")
 rule(r"android/.*/groups/(GroupEvents|GroupLog)\.kt", "Group event log duplicated from TypeScript", "crypto::group", "Crypto", PORTED, "M8")
