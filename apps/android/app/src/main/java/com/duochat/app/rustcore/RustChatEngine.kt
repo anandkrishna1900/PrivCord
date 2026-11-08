@@ -20,6 +20,11 @@ import com.duochat.app.data.InviteRequest
 import com.duochat.app.data.LinkStatus
 import com.duochat.app.data.MemberView
 import com.duochat.app.data.MessageType
+import com.duochat.app.data.ConnectionFacts
+import com.duochat.app.data.ManualState
+import com.duochat.app.data.P2PState
+import com.duochat.app.data.PeerTrust
+import com.duochat.app.data.diagnoseConnection
 import com.duochat.app.data.TransportMode
 import com.duochat.app.ble.AndroidBleEnvironment
 import com.duochat.app.ble.AndroidMeshRadio
@@ -103,6 +108,18 @@ class RustChatEngine(
 
     // ------------------------------------------------------------------ platform side: links and signaling
 
+    private val attempts = ConcurrentHashMap<String, Int>()
+    private val heardFrom = ConcurrentHashMap<String, Boolean>()
+    private val progress = ConcurrentHashMap<String, Float>()
+
+    private class ManualHold {
+        var transport: WebRtcTransport? = null
+        var peerCard: String? = null
+        var bound: String? = null
+        val pending = ArrayDeque<String>()
+    }
+
+    private val manual = ManualHold()
     private val bleEnv = AndroidBleEnvironment(app)
     private val bleLinks = ConcurrentHashMap<String, BleTransport>()
     private val bleLastAttempt = ConcurrentHashMap<String, Long>()
@@ -197,6 +214,7 @@ class RustChatEngine(
                 }
             }
             runCatching { withContext(Dispatchers.IO) { started.setGroupOnly(groupOnly) } }
+            runCatching { withContext(Dispatchers.IO) { started.setStoreForward(networkConfig().storeForward) } }
             requestRefresh()
         } catch (error: Throwable) {
             if (!stopped) _state.update { it.copy(phase = EnginePhase.ERROR, error = error.message ?: "Startup failed.") }
@@ -271,6 +289,10 @@ class RustChatEngine(
                 if (!event.own) notifyIncoming(event.conversation, event.messageId)
                 requestRefresh()
             }
+            is EventDto.FileProgress -> {
+                if (event.percent >= 100u) progress.remove(event.messageId) else progress[event.messageId] = event.percent.toInt() / 100f
+                _state.update { it.copy(transfers = progress.toMap()) }
+            }
             is EventDto.PeerStateChanged -> requestRefresh()
             else -> requestRefresh()
         }
@@ -297,6 +319,7 @@ class RustChatEngine(
         val now = System.currentTimeMillis()
         if (now - (dialStartedAt[peer] ?: 0L) < OFFER_TIMEOUT_MS && links[peer] != null) return
         dialStartedAt[peer] = now
+        attempts.merge(peer, 1, Int::plus)
         val mode = networkConfig().transportMode
         if (mode != TransportMode.INTERNET_ONLY) tryBluetooth(peer)
         if (mode == TransportMode.BLUETOOTH_ONLY) return
@@ -349,6 +372,7 @@ class RustChatEngine(
     }
 
     private suspend fun onSignal(peer: String, kind: SignalKindDto, sdp: String?) {
+        heardFrom[peer] = true
         when (kind) {
             SignalKindDto.READY -> if (isInitiator(peer)) offer(peer)
             SignalKindDto.OFFER -> {
@@ -516,6 +540,29 @@ class RustChatEngine(
         Delivery.FAILED -> DeliveryState.FAILED
     }
 
+    private fun diagnosisOf(c: uniffi.privcord_ffi.ContactDto): com.duochat.app.data.Diagnosis? {
+        if (c.link is LinkState.Connected) {
+            attempts.remove(c.uid)
+            heardFrom.remove(c.uid)
+            return null
+        }
+        val tried = attempts[c.uid] ?: return null
+        val web = links[c.uid]
+        val cfg = networkConfig()
+        return diagnoseConnection(
+            ConnectionFacts(
+                signaling = hubStatus(),
+                attempts = tried,
+                sawPeerReply = heardFrom[c.uid] == true,
+                localCandidates = web?.lastCandidates,
+                iceState = web?.iceState,
+                hasTurn = cfg.turn.isNotEmpty(),
+                storeForward = cfg.storeForward,
+            ),
+            c.displayName,
+        )
+    }
+
     private fun publish(s: SnapshotDto) {
         val self = s.ownUid ?: return
         refreshBluetooth()
@@ -524,6 +571,7 @@ class RustChatEngine(
                 c.uid, c.displayName, if (c.verified) ContactTrust.VERIFIED else ContactTrust.INTRODUCED,
                 c.introducedBy?.let { nameOf(s, it) }, c.checked, linkOf(c.link), pathOf(c.link), c.safetyNumber,
                 direct = c.canMessage,
+                diagnosis = diagnosisOf(c),
             )
         }
         val groups = s.groups.map { g ->
@@ -622,6 +670,7 @@ class RustChatEngine(
                 },
                 linkCount = s.contacts.count { c -> c.link is LinkState.Connected },
                 signaling = hubStatus(),
+                transfers = progress.toMap(),
                 meshLinks = meshRadio?.linkCount ?: 0,
                 notice = notice ?: it.notice,
             )
@@ -784,24 +833,146 @@ class RustChatEngine(
         }
     }
 
-    override fun confirmManual() {}
-    override fun reloadNetwork() {
-        // The sockets follow the new settings the next time they are opened: reopen every mailbox now.
-        for (mailbox in hubs.keys.toList()) {
-            if (mailbox == "put") continue
-            transport.signalSubscribe(mailbox)
+    // ------------------------------------------------------------------ manual connection codes
+
+    private fun encodeCode(kind: String, sdp: String, card: String): String {
+        val json = org.json.JSONObject().put("v", 1).put("kind", kind).put("sdp", sdp).put("card", card).toString()
+        return MANUAL_PREFIX + android.util.Base64.encodeToString(
+            json.toByteArray(Charsets.UTF_8), android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING,
+        )
+    }
+
+    private fun decodeCode(code: String, expected: String): Pair<String, String> {
+        val text = code.trim()
+        if (!text.startsWith(MANUAL_PREFIX)) {
+            throw IllegalArgumentException("That is not a code from the Rust build. Both phones need the Rust build for manual codes.")
+        }
+        val json = try {
+            org.json.JSONObject(
+                String(android.util.Base64.decode(text.removePrefix(MANUAL_PREFIX), android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP), Charsets.UTF_8),
+            )
+        } catch (e: Exception) {
+            throw IllegalArgumentException("That code is damaged. Copy it again, in full.")
+        }
+        if (json.optString("kind") != expected) {
+            throw IllegalArgumentException(
+                if (expected == "answer") "This code is an offer. The other user must paste your offer and send back an answer."
+                else "This code is an answer. Paste the offer from the other user instead.",
+            )
+        }
+        return json.getString("sdp") to json.getString("card")
+    }
+
+    private fun manualTransport(): WebRtcTransport {
+        manual.transport?.close()
+        manual.pending.clear()
+        manual.bound = null
+        val created = WebRtcTransport(
+            networkConfig().iceServers(), networkConfig().forceRelay,
+            object : WebRtcTransport.Handlers {
+                override fun onOpen() { scope.launch { onManualOpen() } }
+
+                override fun onClose() {
+                    scope.launch {
+                        val bound = manual.bound
+                        if (bound != null) io { runCatching { engine?.linkDown(bound) } } else _state.update { it.copy(manual = ManualState()) }
+                        requestRefresh()
+                    }
+                }
+
+                override fun onFrame(data: String) {
+                    val bound = manual.bound
+                    if (bound != null) scope.launch { io { runCatching { engine?.frameReceived(bound, data) } } }
+                    else if (manual.pending.size < 20) manual.pending.addLast(data)
+                }
+
+                override fun onError(message: String) { say(message) }
+            },
+        )
+        manual.transport = created
+        return created
+    }
+
+    private suspend fun onManualOpen() {
+        val card = manual.peerCard ?: return
+        val preview = call { previewInvite(card) }.getOrNull()
+        _state.update {
+            it.copy(
+                manual = ManualState(
+                    p2pState = P2PState.CONNECTED, connected = true, trust = PeerTrust.UNVERIFIED,
+                    safetyNumber = preview?.safetyNumber, peerName = preview?.name,
+                ),
+            )
         }
     }
 
-    override fun onNetworkAvailable() = reloadNetwork()
+    override suspend fun createManualOffer(): String {
+        val card = engine?.ownCard(ownName().ifBlank { null }) ?: throw IllegalStateException("Identity is not ready.")
+        val t = manualTransport()
+        manual.peerCard = null
+        return try {
+            encodeCode("offer", t.createOffer(), card)
+        } catch (e: Exception) {
+            manual.transport?.close()
+            throw e
+        }
+    }
 
-    override suspend fun createManualOffer(): String = throw UnsupportedOperationException("Manual codes are not in the Rust build yet.")
-    override suspend fun applyManualAnswer(code: String) { throw UnsupportedOperationException("Manual codes are not in the Rust build yet.") }
-    override suspend fun acceptManualOffer(code: String): String = throw UnsupportedOperationException("Manual codes are not in the Rust build yet.")
-    override fun cancelManual() {}
+    override suspend fun applyManualAnswer(code: String) {
+        val (sdp, card) = decodeCode(code, "answer")
+        val t = manual.transport ?: throw IllegalStateException("Create an offer before pasting an answer.")
+        manual.peerCard = card
+        t.applyAnswer(sdp)
+    }
+
+    override suspend fun acceptManualOffer(code: String): String {
+        val (sdp, card) = decodeCode(code, "offer")
+        val own = engine?.ownCard(ownName().ifBlank { null }) ?: throw IllegalStateException("Identity is not ready.")
+        val t = manualTransport()
+        manual.peerCard = card
+        return try {
+            encodeCode("answer", t.acceptOffer(sdp), own)
+        } catch (e: Exception) {
+            manual.transport?.close()
+            throw e
+        }
+    }
+
+    /** The user compared the safety number: save the friend and hand the open channel to the engine. */
+    override fun confirmManual() {
+        scope.launch {
+            val card = manual.peerCard ?: return@launch
+            val t = manual.transport ?: return@launch
+            val uid = call { acceptInvite(card) }.getOrElse { say(it.message ?: "Could not add them."); return@launch }
+            call { setChecked(uid, true) }
+            links.remove(uid)?.close()
+            links[uid] = t
+            manual.bound = uid
+            manual.transport = null
+            val path = runCatching { t.connectionPath() }.getOrNull()
+            io { engine?.linkUp(uid, path.toKind(), LinkKind.ENCRYPTED) }
+            // Frames the other side sent while we were still comparing numbers.
+            while (manual.pending.isNotEmpty()) {
+                val frame = manual.pending.removeFirst()
+                io { runCatching { engine?.frameReceived(uid, frame) } }
+            }
+            _state.update { it.copy(manual = ManualState()) }
+            say("Added. Both phones have to confirm within a few seconds for the secure link to finish.")
+            requestRefresh()
+        }
+    }
+
+    override fun cancelManual() {
+        manual.transport?.close()
+        manual.transport = null
+        manual.pending.clear()
+        manual.peerCard = null
+        _state.update { it.copy(manual = ManualState()) }
+    }
 
     private companion object {
         const val OFFER_TIMEOUT_MS = 40_000L
+        const val MANUAL_PREFIX = "RUST1:"
         const val BLE_SEARCH_MS = 30_000L
         const val BLE_RETRY_MS = 60_000L
     }

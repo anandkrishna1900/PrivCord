@@ -5943,6 +5943,15 @@ sealed class EventDto {
     
     
     /**
+     * A file is arriving: `percent` is how much of it is here.
+     */
+    data class FileProgress(
+        val `messageId`: kotlin.String, 
+        val `percent`: kotlin.UInt) : EventDto() {
+        companion object
+    }
+    
+    /**
      * An emergency deletion ran; ask for its report.
      */
     object Wiped : EventDto()
@@ -6022,11 +6031,15 @@ public object FfiConverterTypeEventDto : FfiConverterRustBuffer<EventDto>{
                 FfiConverterString.read(buf),
                 )
             19 -> EventDto.SnapshotChanged
-            20 -> EventDto.Wiped
-            21 -> EventDto.Lagged(
+            20 -> EventDto.FileProgress(
+                FfiConverterString.read(buf),
+                FfiConverterUInt.read(buf),
+                )
+            21 -> EventDto.Wiped
+            22 -> EventDto.Lagged(
                 FfiConverterULong.read(buf),
                 )
-            22 -> EventDto.ShutDown
+            23 -> EventDto.ShutDown
             else -> throw RuntimeException("invalid enum value, something is very wrong!!")
         }
     }
@@ -6169,6 +6182,14 @@ public object FfiConverterTypeEventDto : FfiConverterRustBuffer<EventDto>{
                 4UL
             )
         }
+        is EventDto.FileProgress -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`messageId`)
+                + FfiConverterUInt.allocationSize(value.`percent`)
+            )
+        }
         is EventDto.Wiped -> {
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
@@ -6291,17 +6312,23 @@ public object FfiConverterTypeEventDto : FfiConverterRustBuffer<EventDto>{
                 buf.putInt(19)
                 Unit
             }
-            is EventDto.Wiped -> {
+            is EventDto.FileProgress -> {
                 buf.putInt(20)
+                FfiConverterString.write(value.`messageId`, buf)
+                FfiConverterUInt.write(value.`percent`, buf)
+                Unit
+            }
+            is EventDto.Wiped -> {
+                buf.putInt(21)
                 Unit
             }
             is EventDto.Lagged -> {
-                buf.putInt(21)
+                buf.putInt(22)
                 FfiConverterULong.write(value.`missed`, buf)
                 Unit
             }
             is EventDto.ShutDown -> {
-                buf.putInt(22)
+                buf.putInt(23)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }

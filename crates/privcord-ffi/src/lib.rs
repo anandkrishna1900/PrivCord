@@ -629,6 +629,11 @@ pub enum EventDto {
     },
     /// A backup was restored, or a setting changed: ask for a snapshot.
     SnapshotChanged,
+    /// A file is arriving: `percent` is how much of it is here.
+    FileProgress {
+        message_id: String,
+        percent: u32,
+    },
     /// An emergency deletion ran; ask for its report.
     Wiped,
     Lagged {
@@ -699,6 +704,13 @@ fn event_dto(e: EngineEvent) -> EventDto {
             message_id: message_id.to_string(),
         },
         EngineEvent::Restored | EngineEvent::SettingsChanged => EventDto::SnapshotChanged,
+        EngineEvent::FileProgress {
+            message_id,
+            percent,
+        } => EventDto::FileProgress {
+            message_id: message_id.to_string(),
+            percent: u32::from(percent),
+        },
         EngineEvent::SignalReceived { peer, message } => {
             let (kind, sdp) = match message {
                 privcord_engine::SignalMessage::Ready => (SignalKindDto::Ready, None),

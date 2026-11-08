@@ -199,6 +199,11 @@ pub enum EngineEvent {
     Restored,
     /// A setting the snapshot shows changed (the muted list).
     SettingsChanged,
+    /// A file is arriving: how much of it is here, in percent.
+    FileProgress {
+        message_id: MessageId,
+        percent: u8,
+    },
     MessageRefused {
         message_id: MessageId,
     },

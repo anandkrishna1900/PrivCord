@@ -22,5 +22,17 @@ round-trips through the Android Keystore (`rustcore/KeystoreSecureStore.kt`), th
 engine, its SQLite storage and the Keystore adapter work on that device. It never touches your real data. The chat
 screens are still on the Kotlin engine.
 
+**Stage 2, the Rust build flavor.** `./gradlew :app:assembleRustDebug` builds "DuoChat Rust" (app id `com.duochat.app.rust`),
+which installs beside the classic app with its own data. Everything the screens do goes through `RustChatEngine`:
+identity from the recovery phrase, contacts and six-word invites, messages, groups, files (with receive progress),
+reactions, delete, search, backup and restore, channels, wipe, WebRTC links, relay and Nostr signaling (one connection per
+mailbox), Bluetooth links (layered mode) and the Bluetooth mesh, manual connection codes (format `RUST1:`, so they only
+work between two Rust builds), friend renaming, read marks for groups, "why isn't it connecting" hints (from the same
+pure function as the classic app) and store-and-forward through mutual friends (inside the engine).
+
+Known limits: not run on a phone by the author (CI compiles it; the self-test and engine probe have run on a real
+phone). Old chats from the classic app come over by backup export and restore, because the two apps keep separate data.
+File progress is shown for receiving only. Manual codes need both people to confirm within a few seconds.
+
 Stage 2, the rest (not done): move identity, contacts, direct messages, groups and files in `ChatEngine.kt` onto `PrivcordEngine`,
 with WebRTC, Bluetooth and the relay sockets staying as thin Kotlin adapters (for Bluetooth use `LinkKind::Layered`).

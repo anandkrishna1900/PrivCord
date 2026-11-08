@@ -1900,7 +1900,19 @@ impl Core {
             None => return,
         };
         match result {
-            AssembleResult::More => {}
+            AssembleResult::More => {
+                let fraction = self
+                    .peers
+                    .get(peer)
+                    .and_then(|p| p.files.progress(&id))
+                    .unwrap_or(0.0);
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                let percent = (fraction.clamp(0.0, 1.0) * 100.0) as u8;
+                self.hub.publish(EngineEvent::FileProgress {
+                    message_id: id,
+                    percent,
+                });
+            }
             AssembleResult::Failed(reason) => self.decline(peer, &id, reason),
             AssembleResult::Done { offer, bytes } => self.store_received_file(peer, *offer, bytes),
         }
