@@ -18,7 +18,7 @@ jobs:
     name: Typecheck, unit tests, build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -44,14 +44,14 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - name: Install the Rust toolchain
         run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy && rustup default stable
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -122,7 +122,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: node
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -143,8 +143,8 @@ jobs:
     name: Android unit tests and debug build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
@@ -179,11 +179,11 @@ jobs:
         run: |
           unzip -l apps/android/app/build/outputs/apk/classic/debug/app-classic-debug.apk | grep libprivcord_ffi.so | tee /tmp/libs.txt
           test "$(wc -l < /tmp/libs.txt)" -eq 4
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: duochat-android-debug
           path: apps/android/app/build/outputs/apk/classic/debug/app-classic-debug.apk
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: duochat-android-rust-preview
           path: apps/android/app/build/outputs/apk/rust/debug/app-rust-debug.apk
@@ -192,7 +192,7 @@ jobs:
     name: Windows installer (unsigned) build
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -214,7 +214,7 @@ jobs:
             Start-Sleep -Seconds 60
           }
           exit 1
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: duochat-windows-unsigned
           path: apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
