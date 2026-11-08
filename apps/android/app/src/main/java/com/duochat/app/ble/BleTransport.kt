@@ -206,11 +206,17 @@ class BleTransport(
         if (ok) {
             outbound.removeFirst()
             writeBusy = true
+            // If the radio never reports this write as done, the link would stall for good: release it after a while.
+            val turn = ++writeTurn
+            handler.postDelayed({ if (writeBusy && writeTurn == turn) writeDone() }, WRITE_WATCHDOG_MS)
         } else {
             fail("Bluetooth write failed.")
             close()
         }
     }
+
+    private var writeTurn = 0
+    private val WRITE_WATCHDOG_MS = 3_000L
 
     private fun writeDone() {
         writeBusy = false

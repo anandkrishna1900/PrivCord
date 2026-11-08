@@ -119,6 +119,8 @@ pub struct HandleResult {
 #[derive(Debug)]
 struct Carried {
     packet: MeshPacket,
+    /// Who handed it to us ("" for a message we wrote ourselves).
+    via: String,
     stored_at: u64,
     sent_to: HashSet<String>,
 }
@@ -165,7 +167,7 @@ impl MeshNode {
         let packet = MeshPacket::new(blob, MESH_MAX_TTL);
         self.remember(&packet.key());
         let links = self.sorted_links();
-        self.carry(packet.clone(), now_ms, links.iter().cloned());
+        self.carry(packet.clone(), "", now_ms, links.iter().cloned());
         links
             .into_iter()
             .map(|link| Outgoing {
@@ -202,7 +204,7 @@ impl MeshNode {
                 .collect();
             let mut sent: Vec<String> = vec![from.to_owned()];
             sent.extend(targets.iter().cloned());
-            self.carry(next.clone(), now_ms, sent);
+            self.carry(next.clone(), from, now_ms, sent);
             forward.extend(targets.into_iter().map(|link| Outgoing {
                 link,
                 packet: next.clone(),
@@ -259,6 +261,7 @@ impl MeshNode {
     fn carry(
         &mut self,
         packet: MeshPacket,
+        via: &str,
         now_ms: u64,
         sent_to: impl IntoIterator<Item = String>,
     ) {
@@ -272,12 +275,28 @@ impl MeshNode {
             key,
             Carried {
                 packet,
+                via: via.to_owned(),
                 stored_at: now_ms,
                 sent_to: sent_to.into_iter().collect(),
             },
         ));
+        // Full: drop the oldest packet of whichever neighbour has handed us the most, so one noisy (or hostile) neighbour
+        // cannot push everybody else's messages out of the buffer. Messages we wrote ourselves go last.
         while self.carried.len() > self.options.carry_capacity {
-            self.carried.remove(0);
+            let mut count: HashMap<&str, usize> = HashMap::new();
+            for (_, c) in &self.carried {
+                if !c.via.is_empty() {
+                    *count.entry(c.via.as_str()).or_default() += 1;
+                }
+            }
+            let heaviest = count
+                .into_iter()
+                .max_by_key(|(via, n)| (*n, std::cmp::Reverse(*via)))
+                .map(|(via, _)| via.to_owned());
+            let at = heaviest
+                .and_then(|v| self.carried.iter().position(|(_, c)| c.via == v))
+                .unwrap_or(0);
+            self.carried.remove(at);
         }
     }
 

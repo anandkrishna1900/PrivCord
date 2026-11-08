@@ -1723,11 +1723,15 @@ impl Core {
         };
         let id = self.new_message_id()?;
         let now = self.now();
-        let message =
+        let mut message =
             ChatMessage::outgoing(own, text, now, id.clone(), reply).map_err(|e| match e {
                 privcord_domain::DomainError::EmptyMessage => ErrorCode::EmptyMessage,
                 _ => ErrorCode::MessageTooLong,
             })?;
+        // Alone in the group: there is nobody to wait for, so it must not sit "waiting to send" forever.
+        if recipients.is_empty() {
+            message.delivery_state = DeliveryState::Sent;
+        }
         let conversation = ConversationId::Group(gid);
         let row = StoredMessage {
             conversation: conversation.clone(),

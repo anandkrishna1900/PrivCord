@@ -48,6 +48,8 @@ class AndroidMeshRadio(private val context: Context) : MeshRadio {
         const val MAX_LINKS = 5
         const val REQUESTED_MTU = 247
         const val PACE_TIMEOUT_MS = 600L
+        const val RETRY_CHUNK_MS = 80L
+        const val RECHECK_MS = 10_000L
     }
 
     private class Link(val id: String, val device: BluetoothDevice, val viaServer: Boolean) {
@@ -58,6 +60,8 @@ class AndroidMeshRadio(private val context: Context) : MeshRadio {
         val reassembler = BleReassembler()
         val outbound = ArrayDeque<ByteArray>()
         var busy = false
+        /** Bumped on every chunk sent, so a late "radio is slow" timer for an earlier chunk cannot release a later one. */
+        var turn = 0
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -74,20 +78,30 @@ class AndroidMeshRadio(private val context: Context) : MeshRadio {
 
     override val linkCount: Int get() = links.values.count { it.ready }
 
+    private var wanted = false
+
     override fun start(listener: MeshRadio.Listener) {
-        handler.post {
-            if (started) return@post
-            val adapter = manager?.adapter ?: return@post
-            if (!adapter.isEnabled || !BlePermissions.granted(context)) return@post
-            this.listener = listener
-            started = true
-            startServer()
-            startAdvertising()
-            startScan()
+        wanted = true
+        this.listener = listener
+        handler.post { tryStart() }
+    }
+
+    /** Starts the radio if Bluetooth is on and permitted; otherwise looks again soon (the user may turn it on later). */
+    private fun tryStart() {
+        if (started || !wanted) return
+        val adapter = manager?.adapter
+        if (adapter == null || !adapter.isEnabled || !BlePermissions.granted(context)) {
+            handler.postDelayed({ tryStart() }, RECHECK_MS)
+            return
         }
+        started = true
+        startServer()
+        startAdvertising()
+        startScan()
     }
 
     override fun stop() {
+        wanted = false
         handler.post {
             started = false
             runCatching { manager?.adapter?.bluetoothLeAdvertiser?.stopAdvertising(advertiseCallback) }
@@ -309,14 +323,23 @@ class AndroidMeshRadio(private val context: Context) : MeshRadio {
         listener?.onPacket(l.id, String(bytes, Charsets.UTF_8))
     }
 
-    /** One chunk at a time; the next goes out when the radio says the last one is done (or after a short wait). */
+    /**
+     * One chunk at a time; the next goes out when the radio says the last one is done (or after a short wait). A chunk the
+     * radio refused is put back and tried again: dropping it would leave the other phone with half a packet.
+     */
     private fun pump(l: Link) {
         if (l.busy || !l.ready) return
         val chunk = l.outbound.removeFirstOrNull() ?: return
         l.busy = true
+        val mine = ++l.turn
         val ok = if (l.viaServer) notify(l, chunk) else write(l, chunk)
-        if (!ok) l.busy = false
-        handler.postDelayed({ if (l.busy) { l.busy = false; pump(l) } }, PACE_TIMEOUT_MS)
+        if (!ok) {
+            l.outbound.addFirst(chunk)
+            // Not accepted (the radio is busy with something else): wait the pace time and try this same chunk again.
+            handler.postDelayed({ if (l.turn == mine) { l.busy = false; pump(l) } }, RETRY_CHUNK_MS)
+            return
+        }
+        handler.postDelayed({ if (l.busy && l.turn == mine) { l.busy = false; pump(l) } }, PACE_TIMEOUT_MS)
     }
 
     private fun notify(l: Link, chunk: ByteArray): Boolean {

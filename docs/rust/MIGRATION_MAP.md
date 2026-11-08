@@ -12,9 +12,9 @@ Status meanings: **Ported, tested** = the Rust implementation exists and is chec
 | Partly ported | 2 | 4633 |
 | Not yet ported | 0 | 0 |
 | Stays (UI) | 53 | 10857 |
-| Stays (platform adapter) | 36 | 6957 |
+| Stays (platform adapter) | 36 | 6986 |
 | Replaced by a library | 4 | 333 |
-| **All mapped files** | **170** | **33879** |
+| **All mapped files** | **170** | **33908** |
 
 Ported does not mean retired: the TypeScript and Kotlin versions stay in production until the apps call the Rust engine (M7 desktop, M8 Android) and the compatibility gates pass (PRD section 16).
 
@@ -136,11 +136,11 @@ Ported does not mean retired: the TypeScript and Kotlin versions stay in product
 | `apps/android/app/src/main/java/com/duochat/app/DuoChatApp.kt` | 14 | `DuoChatApp` | Android shell and the loader for the Rust core | UI / platform | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/MainActivity.kt` | 334 | `MainActivity`, `RootScreen` | Android shell and the loader for the Rust core | UI / platform | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/RustCore.kt` | 16 | `RustCore` | Android shell and the loader for the Rust core | UI / platform | UI | Stays (UI) | Stays | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/ble/AndroidMeshRadio.kt` | 359 | `AndroidMeshRadio` | Android Bluetooth radio, permissions, link | BLE adapter | Adapter | Stays (platform adapter) | Stays | n/a |
+| `apps/android/app/src/main/java/com/duochat/app/ble/AndroidMeshRadio.kt` | 382 | `AndroidMeshRadio` | Android Bluetooth radio, permissions, link | BLE adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ble/BleEnvironment.kt` | 71 | `BleAvailability`, `bluetoothStatusFor`, `BleEnvironment`, `AndroidBleEnvironment` | Android Bluetooth radio, permissions, link | BLE adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ble/BleFraming.kt` | 114 | `BleFramingException`, `BleFraming`, `BleReassembler`, `BleTag` | BLE chunk framing | domain::ble | Domain | Ported, tested | M8 | docs/ble-vectors.json |
 | `apps/android/app/src/main/java/com/duochat/app/ble/BlePermissions.kt` | 23 | `BlePermissions`, `bleReconnectDelayMs` | Android Bluetooth radio, permissions, link | BLE adapter | Adapter | Stays (platform adapter) | Stays | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/ble/BleTransport.kt` | 522 | `BleConstants`, `RawLink`, `BleTransport` | Android Bluetooth radio, permissions, link | BLE adapter | Adapter | Stays (platform adapter) | Stays | n/a |
+| `apps/android/app/src/main/java/com/duochat/app/ble/BleTransport.kt` | 528 | `BleConstants`, `RawLink`, `BleTransport` | Android Bluetooth radio, permissions, link | BLE adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ble/MeshNode.kt` | 138 | `MeshPacket`, `MeshOutgoing`, `MeshHandled`, `MeshNode` | Mesh flood logic | domain::mesh | Domain | Ported, tested | M8 | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ble/MeshRadio.kt` | 25 | `MeshRadio` | Android Bluetooth radio, permissions, link | BLE adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ble/SecureBleLink.kt` | 131 | `SecureBleLink` | Android Bluetooth radio, permissions, link | BLE adapter | Adapter | Stays (platform adapter) | Stays | n/a |
