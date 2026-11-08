@@ -18,7 +18,7 @@ use privcord_domain::{
     state::{ConnectionFailure, ConnectionPath, ConnectionState},
     ConversationId, MessageId, UserId,
 };
-use privcord_engine::{EngineEvent, EngineHandle, ErrorCode, EventStream, Ports};
+use privcord_engine::{EngineEvent, EngineHandle, ErrorCode, EventStream, LinkSecurity, Ports};
 use privcord_ports::{
     Clock, IdentitySecrets, Notification, Notifier, SecureStore, SecureStoreError, Transport,
     TransportError,
@@ -210,6 +210,15 @@ impl From<ConnectionPath> for PathKind {
     }
 }
 
+/// How a link is protected. `Encrypted` is a WebRTC data channel (already encrypted by DTLS): the engine uses the
+/// handshake the existing apps speak and plain frames. `Open` is a link that is not encrypted (Bluetooth): the engine
+/// encrypts every frame itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum LinkKind {
+    Encrypted,
+    Open,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
 pub enum LinkState {
     Offline,
@@ -376,9 +385,11 @@ impl std::fmt::Debug for PrivcordEngine {
 #[uniffi::export]
 impl PrivcordEngine {
     /// Start an engine on the database at `db_path` (the platform picks the folder; the schema is the same everywhere).
+    /// `context` is the app's conversation id ("duo" unless the build sets another); it must match the other app's.
     #[uniffi::constructor]
     pub fn start(
         db_path: String,
+        context: String,
         secure: Arc<dyn SecureStoreCallbacks>,
         transport: Arc<dyn TransportCallbacks>,
         notifier: Arc<dyn NotifierCallbacks>,
@@ -393,7 +404,7 @@ impl PrivcordEngine {
             notifier: Arc::new(NotifierAdapter(notifier)),
             entropy: Box::new(OsEntropy),
         };
-        let (handle, events) = EngineHandle::start(ports)?;
+        let (handle, events) = EngineHandle::start_with_context(ports, &context)?;
         Ok(Arc::new(Self {
             handle,
             events: Mutex::new(events),
@@ -449,11 +460,17 @@ impl PrivcordEngine {
         Ok(pollster::block_on(self.handle.mark_read(&user(&peer)?))?)
     }
 
-    /// The platform's link to `peer` is up.
-    pub fn link_up(&self, peer: String, path: PathKind) -> Result<(), FfiError> {
-        Ok(pollster::block_on(
-            self.handle.link_up(&user(&peer)?, path.into()),
-        )?)
+    /// The platform's link to `peer` is up, protected the way `kind` says.
+    pub fn link_up(&self, peer: String, path: PathKind, kind: LinkKind) -> Result<(), FfiError> {
+        let security = match kind {
+            LinkKind::Encrypted => LinkSecurity::TransportEncrypted,
+            LinkKind::Open => LinkSecurity::EngineEncrypted,
+        };
+        Ok(pollster::block_on(self.handle.link_up_with(
+            &user(&peer)?,
+            path.into(),
+            security,
+        ))?)
     }
 
     pub fn link_down(&self, peer: String) -> Result<(), FfiError> {

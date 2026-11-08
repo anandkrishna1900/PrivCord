@@ -17,6 +17,7 @@ pub mod mesh;
 pub mod message;
 pub mod network;
 pub mod ordering;
+pub mod peer;
 pub mod privacy;
 pub mod social;
 pub mod state;

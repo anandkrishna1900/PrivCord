@@ -14,6 +14,7 @@ use crate::{
 use privcord_crypto::{
     card::{Contact, ContactCard},
     identity::{Identity, StoredSecrets},
+    peer_auth::{Expected, PeerAuth},
     rng::Entropy,
     safety::derive_safety_number,
     secure_channel::{Data, Hello, SecureChannel},
@@ -46,6 +47,7 @@ pub const MAX_FRAME_BYTES: usize = 128 * 1024;
 pub const RETRY_AFTER_MS: i64 = 20_000;
 /// How long a hello that arrived early stays valid.
 const EARLY_HELLO_MS: i64 = 10_000;
+const KV_DEVICE_ID: &str = "device_id";
 const KV_GROUP_ONLY: &str = "settings.group_only";
 
 /// Everything the engine reaches the outside world through.
@@ -64,28 +66,48 @@ impl std::fmt::Debug for Ports {
     }
 }
 
+/// How the link to a person is protected and authenticated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkSecurity {
+    /// The adapter's link is not encrypted (Bluetooth): the engine authenticates with the secure-channel handshake and
+    /// encrypts every frame itself.
+    EngineEncrypted,
+    /// The link is already encrypted (a WebRTC data channel): the engine uses the legacy peer handshake the existing apps
+    /// speak and sends plain frames afterwards, so it can talk to them.
+    TransportEncrypted,
+}
+
+enum Session {
+    Secure(Box<SecureChannel>),
+    Legacy(Box<PeerAuth>),
+}
+
 struct Peer {
     state: ConnectionState,
-    channel: Option<SecureChannel>,
+    session: Option<Session>,
     path: ConnectionPath,
     /// Their "stay group-only" choice, once they have told us.
     group_only: Option<bool>,
     /// Their hello, if it arrived a moment before the adapter told us the link was up (and when).
-    early_hello: Option<(Hello, i64)>,
+    early_hello: Option<(Value, i64)>,
 }
 
 impl Peer {
     fn offline() -> Self {
         Self {
             state: ConnectionState::Offline,
-            channel: None,
+            session: None,
             path: ConnectionPath::Unknown,
             group_only: None,
             early_hello: None,
         }
     }
     fn ready(&self) -> bool {
-        self.channel.as_ref().is_some_and(SecureChannel::ready)
+        match &self.session {
+            Some(Session::Secure(c)) => c.ready(),
+            Some(Session::Legacy(a)) => a.authenticated(),
+            None => false,
+        }
     }
 }
 
@@ -100,6 +122,8 @@ pub struct Core {
     group_only: bool,
     hub: EventHub,
     shut_down: bool,
+    /// Names the conversation in the legacy handshake challenge. Must equal the other app's setting ("duo" by default).
+    context: String,
 }
 
 struct StoredContactState {
@@ -119,6 +143,11 @@ impl std::fmt::Debug for Core {
 impl Core {
     /// Load everything persisted. Corrupt or unverifiable contact records are skipped, never trusted.
     pub fn new(ports: Ports) -> Result<Self, ErrorCode> {
+        Self::new_with_context(ports, "duo")
+    }
+
+    /// Like `new`, with the conversation context used by the legacy handshake (the apps' `conversationId` setting).
+    pub fn new_with_context(ports: Ports, context: &str) -> Result<Self, ErrorCode> {
         let mut core = Self {
             ports,
             identity: None,
@@ -130,6 +159,7 @@ impl Core {
             group_only: false,
             hub: EventHub::default(),
             shut_down: false,
+            context: context.to_owned(),
         };
         if let Some(secrets) = core.ports.secure.load_identity()? {
             let mut stored = StoredSecrets {
@@ -359,17 +389,26 @@ impl Core {
         }
     }
 
-    /// A link to a known contact is up (the adapter reports it). The engine authenticates it before trusting it.
+    /// A link to a known contact is up (the adapter reports it), protected by the engine's own channel.
     pub fn link_up(&mut self, peer: &UserId, path: ConnectionPath) -> Result<(), ErrorCode> {
+        self.link_up_with(peer, path, LinkSecurity::EngineEncrypted)
+    }
+
+    /// A link is up. The engine authenticates it before trusting it, in the way `security` says.
+    pub fn link_up_with(
+        &mut self,
+        peer: &UserId,
+        path: ConnectionPath,
+        security: LinkSecurity,
+    ) -> Result<(), ErrorCode> {
         self.require_live()?;
         let own = self.uid.clone().ok_or(ErrorCode::NoIdentity)?;
-        let sign = self
+        let card = self
             .contacts
             .get(peer)
             .ok_or(ErrorCode::UnknownContact)?
             .contact
             .card
-            .sign
             .clone();
         // A new link replaces any older state for this person.
         if self
@@ -379,22 +418,44 @@ impl Core {
         {
             self.link_down(peer);
         }
-        let channel =
-            SecureChannel::new(own.as_str(), peer.as_str(), sign, &mut *self.ports.entropy)?;
-        let hello = channel.hello(self.identity()?)?;
+        let (session, hello) = match security {
+            LinkSecurity::EngineEncrypted => {
+                let channel = SecureChannel::new(
+                    own.as_str(),
+                    peer.as_str(),
+                    card.sign,
+                    &mut *self.ports.entropy,
+                )?;
+                let hello = channel.hello(self.identity()?)?.to_value();
+                (Session::Secure(Box::new(channel)), hello)
+            }
+            LinkSecurity::TransportEncrypted => {
+                let device = self.device_id()?;
+                let expected = Expected {
+                    uid: peer.to_string(),
+                    sign: card.sign,
+                    dh: card.dh,
+                };
+                let id = self.identity.as_ref().ok_or(ErrorCode::NoIdentity)?;
+                let auth = PeerAuth::new(
+                    &self.context,
+                    id,
+                    &device,
+                    expected,
+                    &mut *self.ports.entropy,
+                )?;
+                let hello = auth.hello(id)?;
+                (Session::Legacy(Box::new(auth)), hello)
+            }
+        };
         {
             let p = self.peers.entry(peer.clone()).or_insert_with(Peer::offline);
-            p.channel = Some(channel);
+            p.session = Some(session);
             p.path = path;
         }
         self.step(peer, ConnectionEvent::Dial);
-        // The handshake travels in the clear by design: it is signed, and carries only a fresh key and a nonce.
-        if self
-            .ports
-            .transport
-            .send(peer, &hello.to_value().to_string())
-            .is_err()
-        {
+        // The handshake travels in the clear by design: it is signed, and carries only keys and a nonce.
+        if self.ports.transport.send(peer, &hello.to_string()).is_err() {
             self.fail(peer, ConnectionFailure::TransportClosed);
             return Ok(());
         }
@@ -405,15 +466,31 @@ impl Core {
             .and_then(|p| p.early_hello.take())
             .filter(|(_, at)| now - at <= EARLY_HELLO_MS);
         if let Some((hello, _)) = early {
-            self.handshake_frame(peer, &hello.to_value());
+            self.handshake_frame(peer, &hello);
         }
         Ok(())
+    }
+
+    /// A stable random id for this installation, made on first use (the legacy handshake carries one).
+    fn device_id(&mut self) -> Result<String, ErrorCode> {
+        if let Some(existing) = self.ports.storage.kv(KV_DEVICE_ID)? {
+            if let Ok(text) = String::from_utf8(existing) {
+                return Ok(text);
+            }
+        }
+        let bytes: [u8; 16] = privcord_crypto::rng::random_array(&mut *self.ports.entropy)?;
+        let id = privcord_domain::codec::hex(&bytes);
+        self.ports.storage.apply(&[StorageOp::SetKv {
+            key: KV_DEVICE_ID.into(),
+            value: id.clone().into_bytes(),
+        }])?;
+        Ok(id)
     }
 
     /// The adapter lost the link. Identity and message state are untouched; only the session ends.
     pub fn link_down(&mut self, peer: &UserId) {
         if let Some(p) = self.peers.get_mut(peer) {
-            p.channel = None;
+            p.session = None;
             p.early_hello = None;
         }
         self.step(peer, ConnectionEvent::Closed);
@@ -428,7 +505,7 @@ impl Core {
 
     fn fail(&mut self, peer: &UserId, reason: ConnectionFailure) {
         if let Some(p) = self.peers.get_mut(peer) {
-            p.channel = None;
+            p.session = None;
         }
         self.step(peer, ConnectionEvent::Failed(reason));
         if !matches!(
@@ -448,13 +525,16 @@ impl Core {
             return;
         };
         // A hello can overtake the adapter's own "link is up" report. Keep one for a few seconds instead of losing it.
-        if self.peers.get(peer).is_none_or(|p| p.channel.is_none()) {
-            if let Some(hello) = Hello::from_value(&value) {
+        if self.peers.get(peer).is_none_or(|p| p.session.is_none()) {
+            if matches!(
+                value.get("kind").and_then(Value::as_str),
+                Some("sc_hello" | "hello")
+            ) {
                 let now = self.now();
                 self.peers
                     .entry(peer.clone())
                     .or_insert_with(Peer::offline)
-                    .early_hello = Some((hello, now));
+                    .early_hello = Some((value, now));
             }
             return;
         }
@@ -463,64 +543,84 @@ impl Core {
             self.handshake_frame(peer, &value);
             return;
         }
-        let Some(data) = Data::from_value(&value) else {
-            return;
-        };
-        let inner = match self
-            .peers
-            .get_mut(peer)
-            .and_then(|p| p.channel.as_mut())
-            .map(|c| c.decrypt(&data))
-        {
-            Some(Ok(v)) => v,
-            _ => return,
+        let inner = match self.peers.get_mut(peer).and_then(|p| p.session.as_mut()) {
+            // Engine-encrypted: decrypt and check the counter.
+            Some(Session::Secure(c)) => {
+                let Some(data) = Data::from_value(&value) else {
+                    return;
+                };
+                match c.decrypt(&data) {
+                    Ok(v) => v,
+                    Err(_) => return,
+                }
+            }
+            // Transport-encrypted: the frame is already plain JSON.
+            Some(Session::Legacy(_)) => value,
+            None => return,
         };
         self.dispatch(peer, &inner);
     }
 
     fn handshake_frame(&mut self, peer: &UserId, value: &Value) {
-        let Some(hello) = Hello::from_value(value) else {
+        let Some(mut session) = self.peers.get_mut(peer).and_then(|p| p.session.take()) else {
             return;
         };
-        let accepted = self
-            .peers
-            .get_mut(peer)
-            .and_then(|p| p.channel.as_mut())
-            .map(|c| c.accept(&hello));
-        match accepted {
-            Some(Ok(())) => {
-                let path = self
-                    .peers
-                    .get(peer)
-                    .map_or(ConnectionPath::Unknown, |p| p.path);
-                self.step(peer, ConnectionEvent::Established(path));
-                self.send_privacy(peer);
-                self.flush(peer);
+        let outcome = match &mut session {
+            Session::Secure(channel) => Hello::from_value(value)
+                .map(|hello| channel.accept(&hello).map(|()| Vec::new()).map_err(|_| ())),
+            Session::Legacy(auth) => {
+                let Some(own) = self.identity.as_ref() else {
+                    return;
+                };
+                match auth.on_frame(own, value) {
+                    Ok(Some(out)) => Some(Ok(out)),
+                    Ok(None) => None,
+                    Err(_) => Some(Err(())),
+                }
             }
-            Some(Err(_)) => self.fail(peer, ConnectionFailure::AuthenticationFailed),
+        };
+        let ready = match &session {
+            Session::Secure(c) => c.ready(),
+            Session::Legacy(a) => a.authenticated(),
+        };
+        if let Some(p) = self.peers.get_mut(peer) {
+            p.session = Some(session);
+        }
+        match outcome {
+            Some(Ok(out)) => {
+                for frame in out {
+                    if self.ports.transport.send(peer, &frame.to_string()).is_err() {
+                        self.link_down(peer);
+                        return;
+                    }
+                }
+                if ready {
+                    let path = self
+                        .peers
+                        .get(peer)
+                        .map_or(ConnectionPath::Unknown, |p| p.path);
+                    self.step(peer, ConnectionEvent::Established(path));
+                    self.send_privacy(peer);
+                    self.flush(peer);
+                }
+            }
+            Some(Err(())) => self.fail(peer, ConnectionFailure::AuthenticationFailed),
             None => {}
         }
     }
 
-    /// Encrypt and send one inner frame. A transport that refuses ends the session (it will be re-established).
+    /// Send one inner frame: encrypted by the engine on a link that is not encrypted, plain on one that is. A transport
+    /// that refuses ends the session (it will be re-established).
     fn send_secure(&mut self, peer: &UserId, frame: &Value) -> bool {
-        let Some(channel) = self
-            .peers
-            .get_mut(peer)
-            .and_then(|p| p.channel.as_mut())
-            .filter(|c| c.ready())
-        else {
-            return false;
+        let text = match self.peers.get_mut(peer).and_then(|p| p.session.as_mut()) {
+            Some(Session::Secure(c)) if c.ready() => match c.encrypt(frame) {
+                Ok(data) => data.to_value().to_string(),
+                Err(_) => return false,
+            },
+            Some(Session::Legacy(a)) if a.authenticated() => frame.to_string(),
+            _ => return false,
         };
-        let Ok(data) = channel.encrypt(frame) else {
-            return false;
-        };
-        if self
-            .ports
-            .transport
-            .send(peer, &data.to_value().to_string())
-            .is_err()
-        {
+        if self.ports.transport.send(peer, &text).is_err() {
             self.link_down(peer);
             return false;
         }
@@ -932,7 +1032,7 @@ impl Core {
         }
         self.shut_down = true;
         for p in self.peers.values_mut() {
-            p.channel = None;
+            p.session = None;
         }
         self.hub.publish(EngineEvent::ShutDown);
     }

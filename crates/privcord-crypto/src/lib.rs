@@ -20,6 +20,7 @@ pub mod group;
 pub mod identity;
 pub mod invite;
 pub mod kdf;
+pub mod peer_auth;
 pub mod rng;
 pub mod safety;
 pub mod seal;

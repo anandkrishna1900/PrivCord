@@ -7,7 +7,7 @@
 
 use crate::{
     api::Snapshot,
-    core::{Core, Ports},
+    core::{Core, LinkSecurity, Ports},
     error::ErrorCode,
     events::EventStream,
 };
@@ -60,6 +60,7 @@ enum Command {
     LinkUp {
         peer: UserId,
         path: ConnectionPath,
+        security: LinkSecurity,
         reply: Reply<()>,
     },
     LinkDown {
@@ -105,7 +106,12 @@ fn pump(core: &mut Core, cmd: Command) -> bool {
             reply,
         } => drop(reply.send(core.send_message(&peer, &text, reply_to.as_ref()))),
         Command::MarkRead { peer, reply } => drop(reply.send(core.mark_read(&peer))),
-        Command::LinkUp { peer, path, reply } => drop(reply.send(core.link_up(&peer, path))),
+        Command::LinkUp {
+            peer,
+            path,
+            security,
+            reply,
+        } => drop(reply.send(core.link_up_with(&peer, path, security))),
         Command::LinkDown { peer } => core.link_down(&peer),
         Command::Frame { peer, text } => core.frame_received(&peer, &text),
         Command::Snapshot(r) => drop(r.send(Ok(core.snapshot()))),
@@ -121,7 +127,15 @@ fn pump(core: &mut Core, cmd: Command) -> bool {
 impl EngineHandle {
     /// Start an engine. Loads persisted state first, so a failure to read storage is reported here.
     pub fn start(ports: Ports) -> Result<(Self, EventStream), ErrorCode> {
-        let mut core = Core::new(ports)?;
+        Self::start_with_context(ports, "duo")
+    }
+
+    /// Start with the conversation context the legacy handshake uses (the apps' `conversationId` setting).
+    pub fn start_with_context(
+        ports: Ports,
+        context: &str,
+    ) -> Result<(Self, EventStream), ErrorCode> {
+        let mut core = Core::new_with_context(ports, context)?;
         let events = core.subscribe();
         let (tx, mut rx) = mpsc::channel::<Command>(COMMAND_QUEUE);
         let thread = std::thread::Builder::new()
@@ -228,11 +242,23 @@ impl EngineHandle {
         self.ask(Command::Snapshot).await
     }
 
-    /// An adapter reports that a link to a contact is up.
+    /// An adapter reports that a link to a contact is up and that the engine must encrypt the frames itself.
     pub async fn link_up(&self, peer: &UserId, path: ConnectionPath) -> Result<(), ErrorCode> {
+        self.link_up_with(peer, path, LinkSecurity::EngineEncrypted)
+            .await
+    }
+
+    /// An adapter reports that a link to a contact is up, and says how it is protected.
+    pub async fn link_up_with(
+        &self,
+        peer: &UserId,
+        path: ConnectionPath,
+        security: LinkSecurity,
+    ) -> Result<(), ErrorCode> {
         self.ask(|reply| Command::LinkUp {
             peer: peer.clone(),
             path,
+            security,
             reply,
         })
         .await

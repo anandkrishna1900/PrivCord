@@ -8,8 +8,8 @@ Status meanings: **Ported, tested** = the Rust implementation exists and is chec
 
 | Status | Files | Lines |
 |---|---:|---:|
-| Ported, tested | 45 | 5124 |
-| Partly ported | 13 | 7822 |
+| Ported, tested | 46 | 5302 |
+| Partly ported | 12 | 7644 |
 | Not yet ported | 26 | 4599 |
 | Stays (UI) | 51 | 10663 |
 | Stays (platform adapter) | 26 | 3822 |
@@ -49,7 +49,7 @@ Ported does not mean retired: the TypeScript and Kotlin versions stay in product
 | `packages/protocol/src/message.ts` | 243 | `DeliveryState`, `TransportKind`, `MessageType`, `ReplyRef`, `makeReplyRef`, `validateReply` +18 | Message model, text rules, reply refs, peer message frame, declined frame | domain::message | Domain | Ported, tested | M7/M8 | domain vectors, properties |
 | `packages/protocol/src/ordering.ts` | 54 | `compareMessages`, `sortMessages`, `mergeMessages`, `isRetryable` | Message order and merge | domain::ordering | Domain | Ported, tested | M7/M8 | properties |
 | `packages/protocol/src/pairing.ts` | 164 | `PAIRING_RECORD_VERSION`, `PairingStatus`, `PairingRecord`, `PairingStoreState`, `PairingStatusInput`, `ReconnectBackoffOptions` +12 | Manual pairing codes | engine (planned) | Engine | Not yet ported | M4 | n/a |
-| `packages/protocol/src/peerAuth.ts` | 178 | `AuthHello`, `AuthProof`, `AuthAck`, `AckFrame`, `ReadFrame`, `PingFrame` +4 | Legacy hello/auth_proof handshake, ack/read/ping frames | engine::core (ack, ping ported); handshake replaced by secure channel | Engine | Partly ported | M4: wire-compatible handshake for old clients | engine tests |
+| `packages/protocol/src/peerAuth.ts` | 178 | `AuthHello`, `AuthProof`, `AuthAck`, `AckFrame`, `ReadFrame`, `PingFrame` +4 | Legacy hello/auth_proof/auth_ok handshake; ack, read, ping, pong frames | crypto::peer_auth, domain::peer; engine::core (LinkSecurity::TransportEncrypted) | Crypto/Engine | Ported, tested | M7/M8 | TypeScript transcript accepted in Rust and Rust transcript accepted by TypeScript checks; engine tests |
 | `packages/protocol/src/privacy.ts` | 18 | `ContactTrustLevel`, `canStartDirect`, `acceptsDirect` | Group-only direct-message rule | domain::privacy | Domain | Ported, tested | M7/M8 | vectors |
 | `packages/protocol/src/recovery/identity.ts` | 179 | `RECOVERY_DERIVATION_VERSION`, `REQUIRED_WORDS`, `DerivationPurpose`, `generateRecoveryPhrase`, `RecoveryWordValidation`, `validateRecoveryPhrase` +4 | Recovery phrase, seed, derivation, identity | crypto::identity | Crypto | Ported, tested | M7/M8 | vectors for 4 phrases |
 | `packages/protocol/src/recovery/index.ts` | 3 | (none) | Re-exports | n/a | Tooling | Replaced by a library | With the package | n/a |
@@ -162,9 +162,9 @@ Ported does not mean retired: the TypeScript and Kotlin versions stay in product
 | `apps/android/app/src/main/java/com/duochat/app/notifications/DuoNotifications.kt` | 94 | `DuoNotifications` | Notifications and background service | Notifier adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/p2p/IceServers.kt` | 16 | `iceServers` | ICE servers, WebRTC data channel | WebRTC adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/p2p/LinkTransport.kt` | 22 | `LinkTransport` | ICE servers, WebRTC data channel | WebRTC adapter | Adapter | Stays (platform adapter) | Stays | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/p2p/Liveness.kt` | 46 | `Liveness`, `LivenessMonitor` | Peer session, liveness, manual signal | engine::peer (session ported; liveness and manual codes planned) | Engine | Partly ported | M5b/M8 | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/p2p/ManualSignal.kt` | 140 | `ManualSignal`, `ManualSignalCodec` | Peer session, liveness, manual signal | engine::peer (session ported; liveness and manual codes planned) | Engine | Partly ported | M5b/M8 | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/p2p/PeerSession.kt` | 569 | `PeerSession` | Peer session, liveness, manual signal | engine::peer (session ported; liveness and manual codes planned) | Engine | Partly ported | M5b/M8 | n/a |
+| `apps/android/app/src/main/java/com/duochat/app/p2p/Liveness.kt` | 46 | `Liveness`, `LivenessMonitor` | Peer session, liveness, manual signal | crypto::peer_auth + engine (handshake, receipts, ping ported; manual codes and dead-link timer planned) | Engine | Partly ported | M5b/M8 | n/a |
+| `apps/android/app/src/main/java/com/duochat/app/p2p/ManualSignal.kt` | 140 | `ManualSignal`, `ManualSignalCodec` | Peer session, liveness, manual signal | crypto::peer_auth + engine (handshake, receipts, ping ported; manual codes and dead-link timer planned) | Engine | Partly ported | M5b/M8 | n/a |
+| `apps/android/app/src/main/java/com/duochat/app/p2p/PeerSession.kt` | 569 | `PeerSession` | Peer session, liveness, manual signal | crypto::peer_auth + engine (handshake, receipts, ping ported; manual codes and dead-link timer planned) | Engine | Partly ported | M5b/M8 | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/p2p/WebRtcTransport.kt` | 398 | `WebRtcTransport`, `PeerConnectionFactoryHolder` | ICE servers, WebRTC data channel | WebRTC adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/security/AndroidIdentity.kt` | 252 | `PublicJwk`, `DeviceIdentity`, `PinnedPeer`, `AndroidIdentityManager` | Keystore identity storage, at-rest encryption, biometric lock | SecureStore adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/security/AppLock.kt` | 51 | `AppLock` | Keystore identity storage, at-rest encryption, biometric lock | SecureStore adapter | Adapter | Stays (platform adapter) | Stays | n/a |

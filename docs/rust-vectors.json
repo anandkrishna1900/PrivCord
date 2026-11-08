@@ -81,6 +81,79 @@
       "sig": "bxVQ_8YVPoaCLSDs5mIC--Boo6f3xDoC1WzGh0P6Qf3Jv-eoPGL-7j5l4BP02L_iGaWYUAQyodb5ZPBPZ3EHjg"
     }
   },
+  "peerAuth": {
+    "context": "duo",
+    "annHello": {
+      "v": 1,
+      "kind": "hello",
+      "uid": "bf9861c45fd771142637ca6a8ec6b22ba848e4f0758311f9b173bc546aae65de",
+      "deviceId": "device-ann",
+      "publicKeyJwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "Uc8IF7pvcRozSRkkKdFCb5slOPsdIBqXIhdgofU7S80",
+        "y": "tKBDXXrCyNVxGKO1z3TGzL0r-PT4nukAWfmE1ptutdk"
+      },
+      "dhJwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "OyVbnLBhsYLY9xRJkEXDYQz_L532SLotLsmv-PKstiQ",
+        "y": "wJX41dT23t_LnQYG6RhIrWrupy2J4uw32tcwu90-reg"
+      },
+      "identityProof": "Wx3d3K1z5Ox5c4q0i2Q5GacB0rs1naScFF4wQ0iziy5QyY2UBbFVYZgFxihTeDMU_O49J-0cu0uu3IWzpeLguA",
+      "nonce": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+    },
+    "bobHello": {
+      "v": 1,
+      "kind": "hello",
+      "uid": "83f73744bf8a8006334ba2a309be5c27a4f05fe081897de3266f37238dea1170",
+      "deviceId": "device-bob",
+      "publicKeyJwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "6FuZPlrFou-tgfeRIYH6TGDLvMRoqPwU7HBP7hlcjdA",
+        "y": "whVjT1kBuYn2gDuSfBq2z2r1lbxqOillhJbTWOUsuDk"
+      },
+      "dhJwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "zYcBKuj3Ij1qQqN-liw_a8DhfZvDG6tKgxCfRFG6uxU",
+        "y": "5mMzHrj708RGhJ15I1IYdy4cL8RFJxq9HeU0bjRmBl0"
+      },
+      "identityProof": "ApJGPFV7FD8vLpQccXtJVRMYPSToyV3cMrNgeXy9XQQxP9w8Ckt_LFWrG4z1SnPQdjeBAAnV-sz0qLTmlPYlGA",
+      "nonce": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+    },
+    "annProof": [
+      {
+        "v": 1,
+        "kind": "auth_proof",
+        "uid": "bf9861c45fd771142637ca6a8ec6b22ba848e4f0758311f9b173bc546aae65de",
+        "signature": "oFpmeHkGOgmnShrxMxMFHPlzmPj6nYnYo1Ey-2yUlLRsOINIaSJplE32Xypd5SLRWGRhLclujG7r55w1Kg69Xw"
+      }
+    ],
+    "bobProof": [
+      {
+        "v": 1,
+        "kind": "auth_proof",
+        "uid": "83f73744bf8a8006334ba2a309be5c27a4f05fe081897de3266f37238dea1170",
+        "signature": "NXE9wOryWfDVDFUs-swoDiSV0_nnuOb4tPPF2_v7BV426ebpJ1zVyqVyvdx0x8AwRXaamebc2kSoAxGARmnO6w"
+      }
+    ],
+    "annOk": [
+      {
+        "v": 1,
+        "kind": "auth_ok",
+        "uid": "bf9861c45fd771142637ca6a8ec6b22ba848e4f0758311f9b173bc546aae65de"
+      }
+    ],
+    "bobOk": [
+      {
+        "v": 1,
+        "kind": "auth_ok",
+        "uid": "83f73744bf8a8006334ba2a309be5c27a4f05fe081897de3266f37238dea1170"
+      }
+    ]
+  },
   "channel": {
     "name": "general",
     "text": "hello from Rust",

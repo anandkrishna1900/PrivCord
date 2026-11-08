@@ -21,6 +21,7 @@ The Rust code changes no algorithm, parameter or wire format. Everything below i
 | Backup | `PRIVCORD-BACKUP1:` + base64url JSON; PBKDF2-HMAC-SHA-256 300,000 rounds over the NFKC passphrase; AES-256-GCM, aad `privcord-backup-v1`; iteration count accepted 100,000 to 2,000,000 | TypeScript backup opens in Rust and the reverse |
 | Files | 12 KiB chunks, SHA-256 of the whole file, base64url, in-order chunks, 8 MiB cap, name and MIME sanitising | offer and all chunks re-created identically; properties for any size |
 | Mesh | packet id = first 24 characters of the signature; TTL at most 7; 8 KB packet cap; 30 min carry; per-sender rate limit | simulations including flaky links |
+| Legacy peer handshake | `hello` (uid, deviceId, both public keys, identity proof, 24-byte hex nonce), then `auth_proof` = ECDSA over `duochat-peer-auth-v1\n<context>\n<uid>\n<deviceId>\n<own nonce>\n<peer nonce>`, then `auth_ok`; trusted only once the peer proved itself and acknowledged ours; plain JSON frames afterwards | a complete TypeScript transcript (fixed nonces) is accepted in Rust, our proof verifies against TypeScript's challenge, and a Rust-made transcript passes the TypeScript checks |
 | Canonical JSON | keys sorted by UTF-16 code unit, no spaces, JSON string escaping | 8 vectors |
 
 ## Deliberate differences
@@ -38,7 +39,9 @@ These are stricter than TypeScript, and none can affect a peer that behaves like
 
 ## Not yet compatible (not ported)
 
-The legacy WebRTC handshake (`hello` / `auth_proof` / `auth_ok` in `peerAuth.ts`), group frames and the event log, file frames inside the engine, signaling frames and Nostr events, manual pairing codes, BLE chunk framing, and the kill-switch report. Until they are ported the Rust engine's links authenticate with the secure-channel handshake, which an old client does not speak; so **the Rust engine cannot yet talk to the existing apps over WebRTC**. The secure channel is the same protocol the apps already use over Bluetooth.
+Group frames and the group coordinator (the event log itself is ported), file frames inside the engine, signaling frames and Nostr events, manual pairing codes, BLE chunk framing, the dead-link timer, and the kill-switch report.
+
+**What this means for talking to the existing apps.** The engine can now authenticate with the existing apps over a WebRTC data channel (`LinkSecurity::TransportEncrypted`) and exchange direct messages, receipts, privacy frames and pings with them. That is checked at the level of handshake transcripts and frame shapes; **it has not been run against a live TypeScript or Kotlin app**, and anything the old apps send that Rust does not know yet (group sync, files) is ignored.
 
 ## Data
 

@@ -196,3 +196,26 @@ fn channel_names_normalise_like_typescript() {
         Some("general")
     );
 }
+
+#[test]
+fn liveness_and_receipt_frames_parse_like_typescript() {
+    use privcord_domain::peer::PeerFrame;
+    let root = env!("CARGO_MANIFEST_DIR");
+    let v: Value = serde_json::from_str(
+        &std::fs::read_to_string(format!("{root}/../../docs/peerauth-vectors.json")).unwrap(),
+    )
+    .unwrap();
+    for o in v["other"].as_array().unwrap() {
+        let parsed = PeerFrame::parse(&o["frame"]).expect("parses");
+        assert_eq!(parsed.to_value(), o["frame"], "round trip");
+        assert!(!o["parsed"].is_null());
+    }
+    for r in v["rejected"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|r| r["frame"]["kind"] == "ack")
+    {
+        assert!(PeerFrame::parse(&r["frame"]).is_none() && r["parsed"].is_null());
+    }
+}
