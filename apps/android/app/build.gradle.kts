@@ -55,6 +55,14 @@ android {
     }
 
     signingConfigs {
+        // One fixed DEBUG key, committed on purpose, so every CI-built debug APK can update the previous one in place.
+        // It protects nothing: never use it for a release build.
+        getByName("debug") {
+            storeFile = rootProject.file("keystore/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
         if (releaseKeystore != null) {
             create("release") {
                 storeFile = releaseKeystore

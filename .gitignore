@@ -40,3 +40,4 @@ Thumbs.db
 apps/desktop/e2e/last-results.json
 apps/android/.kotlin/
 apps/android/app/src/main/jniLibs/
+!apps/android/keystore/debug.keystore
