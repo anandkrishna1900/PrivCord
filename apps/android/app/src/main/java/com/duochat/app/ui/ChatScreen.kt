@@ -772,12 +772,20 @@ private fun FileContent(message: ChatMessage, color: Color, loadFile: suspend (S
                     val f = audioFile ?: return@IconButton
                     if (isPlaying) { player?.pause(); isPlaying = false }
                     else {
-                        val p = player ?: android.media.MediaPlayer().also { mp ->
-                            mp.setDataSource(f.path); mp.prepare()
-                            mp.setOnCompletionListener { isPlaying = false }
-                            player = mp
-                        }
-                        p.start(); isPlaying = true
+                        // A damaged or unsupported recording must not take the app down with it.
+                        val p = player ?: runCatching {
+                            android.media.MediaPlayer().also { mp ->
+                                try {
+                                    mp.setDataSource(f.path); mp.prepare()
+                                } catch (t: Throwable) { mp.release(); throw t }
+                                mp.setOnCompletionListener { isPlaying = false }
+                                mp.setOnErrorListener { _, _, _ -> isPlaying = false; true }
+                                player = mp
+                            }
+                        }.getOrNull()
+                        if (p == null) {
+                            Toast.makeText(context, "This voice note can't be played", Toast.LENGTH_SHORT).show()
+                        } else runCatching { p.start(); isPlaying = true }
                     }
                 }) { Icon(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, contentDescription = if (isPlaying) "Pause" else "Play voice note", tint = color) }
                 Text("Voice note · ${formatBytes(meta.size)}", style = MaterialTheme.typography.bodyMedium, color = color)

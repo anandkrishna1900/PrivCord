@@ -300,3 +300,30 @@ fn ble_chunking_and_reassembly_match_the_shared_vectors() {
         Err(BleFramingError::ChunkSizeTooSmall)
     );
 }
+
+#[test]
+fn a_repeated_offer_restarts_the_transfer_instead_of_breaking_it() {
+    let id = MessageId::new("restart-1").unwrap();
+    let bytes: Vec<u8> = (0..40_000u32).map(|i| (i % 251) as u8).collect();
+    let offer = FileOffer::make(
+        id.clone(),
+        None,
+        "a.bin",
+        "application/octet-stream",
+        &bytes,
+        1,
+        None,
+    )
+    .unwrap();
+    let chunks: Vec<FileChunk> = file_chunks(&id, &bytes).collect();
+    let mut a = FileAssembler::new();
+    assert_eq!(a.begin(offer.clone()), BeginOutcome::Ok);
+    assert!(matches!(a.chunk(&chunks[0]), AssembleResult::More));
+    // The sender's retry timer fired: the same offer and the chunks again from the start.
+    assert_eq!(a.begin(offer), BeginOutcome::Ok);
+    let mut last = AssembleResult::More;
+    for c in &chunks {
+        last = a.chunk(c);
+    }
+    assert!(matches!(last, AssembleResult::Done { .. }), "{last:?}");
+}

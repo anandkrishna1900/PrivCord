@@ -70,6 +70,8 @@ pub use invites::InvitePreview;
 pub const MAX_FRAME_BYTES: usize = 128 * 1024;
 /// How long to wait for a delivery receipt before sending a message again.
 pub const RETRY_AFTER_MS: i64 = 20_000;
+/// How long a file is left to arrive (and be acknowledged) before it is sent again.
+pub const FILE_RETRY_AFTER_MS: i64 = 120_000;
 /// How long a hello that arrived early stays valid.
 const EARLY_HELLO_MS: i64 = 10_000;
 /// A dial request counts as in progress for this long unless the link comes up or fails sooner.
@@ -1235,13 +1237,19 @@ impl Core {
                 }]
             };
             let was_queued = row.message.delivery_state == DeliveryState::Queued;
+            // A file is hundreds of frames: give the whole transfer time to finish before sending it again.
+            let wait = if row.message.kind == MessageKind::File {
+                FILE_RETRY_AFTER_MS
+            } else {
+                RETRY_AFTER_MS
+            };
             let all_sent = frames.iter().all(|f| self.send_secure(peer, f));
             if !all_sent {
                 return;
             }
             let next = OutboxEntry {
                 attempts: entry.attempts + 1,
-                next_try_ms: now + RETRY_AFTER_MS,
+                next_try_ms: now + wait,
                 ..entry.clone()
             };
             let mut ops = vec![StorageOp::PutOutbox(next.clone())];
