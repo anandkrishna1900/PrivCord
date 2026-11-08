@@ -46,7 +46,9 @@ import com.duochat.app.signaling.SignalingStatus
 import com.duochat.app.signaling.transportsFor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -108,6 +110,8 @@ class RustChatEngine(
 
     // ------------------------------------------------------------------ platform side: links and signaling
 
+    /** Waits for the engine's answer when six words are looked up (it ends with InviteFound or InviteLookupFailed). */
+    @Volatile private var lookup: CompletableDeferred<Boolean>? = null
     private val attempts = ConcurrentHashMap<String, Int>()
     private val heardFrom = ConcurrentHashMap<String, Boolean>()
     private val progress = ConcurrentHashMap<String, Float>()
@@ -174,11 +178,20 @@ class RustChatEngine(
         }
 
         override fun signalPut(mailbox: String, blob: String, kind: SignalKind, ttlSec: UInt): Boolean {
-            val current = hubs.values.firstOrNull() ?: SignalingHub(transportsFor(networkConfig(), scope)).also { hubs["put"] = it }
             val decoded = Seal.decode(blob) ?: return false
             val wire = if (kind == SignalKind.LIVE) "sig" else "msg"
+            // Right after start (or a network change) the sockets are still opening and a put would be refused. Keep the blob
+            // and send it as soon as a relay is online, for up to LIVE_PUT_WAIT_MS; the engine republishes what matters.
             scope.launch {
-                runCatching { current.put(mailbox, decoded, wire, ttlSec.toInt()) }
+                val deadline = System.currentTimeMillis() + PUT_WAIT_MS
+                while (System.currentTimeMillis() < deadline && !stopped) {
+                    val online = hubs.values.firstOrNull { it.status() == SignalingStatus.ONLINE }
+                    if (online != null && runCatching { online.put(mailbox, decoded, wire, ttlSec.toInt()) }.isSuccess) {
+                        android.util.Log.i("RustEngine", "put $wire to ${mailbox.take(8)} ok")
+                        break
+                    }
+                    delay(PUT_RETRY_MS)
+                }
                 requestRefresh()
             }
             return true
@@ -283,12 +296,20 @@ class RustChatEngine(
 
     private suspend fun onEvent(event: EventDto) {
         when (event) {
-            is EventDto.DialRequested -> dial(event.peer, event.initiator)
-            is EventDto.SignalReceived -> onSignal(event.peer, event.kind, event.sdp)
+            is EventDto.DialRequested -> {
+                android.util.Log.i("RustEngine", "dial ${event.peer.take(8)} initiator=${event.initiator} signaling=${hubStatus()}")
+                dial(event.peer, event.initiator)
+            }
+            is EventDto.SignalReceived -> {
+                android.util.Log.i("RustEngine", "signal ${event.kind} from ${event.peer.take(8)}")
+                onSignal(event.peer, event.kind, event.sdp)
+            }
             is EventDto.MessageAdded -> {
                 if (!event.own) notifyIncoming(event.conversation, event.messageId)
                 requestRefresh()
             }
+            is EventDto.InviteFound -> { lookup?.complete(true); requestRefresh() }
+            is EventDto.InviteLookupFailed -> { lookup?.complete(false); requestRefresh() }
             is EventDto.FileProgress -> {
                 if (event.percent >= 100u) progress.remove(event.messageId) else progress[event.messageId] = event.percent.toInt() / 100f
                 _state.update { it.copy(transfers = progress.toMap()) }
@@ -317,7 +338,8 @@ class RustChatEngine(
 
     private suspend fun dial(peer: String, initiator: Boolean) {
         val now = System.currentTimeMillis()
-        if (now - (dialStartedAt[peer] ?: 0L) < OFFER_TIMEOUT_MS && links[peer] != null) return
+        val existing = links[peer]
+        if (existing != null && !existing.isOpen && now - (dialStartedAt[peer] ?: 0L) < OFFER_TIMEOUT_MS) return
         dialStartedAt[peer] = now
         attempts.merge(peer, 1, Int::plus)
         val mode = networkConfig().transportMode
@@ -695,6 +717,9 @@ class RustChatEngine(
         is uniffi.privcord_ffi.FfiException.InvalidCard -> "That is not a valid invite. Check the words, or ask your friend to share it again."
         is uniffi.privcord_ffi.FfiException.OwnCard -> "That is your own invite. Send it to a friend instead."
         is uniffi.privcord_ffi.FfiException.UnknownContact -> "Unknown friend."
+        is uniffi.privcord_ffi.FfiException.InviteNotFound -> "Could not find that invite. Check the words, or ask your friend to share it again."
+        is uniffi.privcord_ffi.FfiException.InvalidInvite -> "That is not a valid invite. Check the words, or ask your friend to share it again."
+        is uniffi.privcord_ffi.FfiException.NoSignaling -> "No connection service is set up, so six words cannot be looked up. Turn one on in Settings > Connection, or use the long invite."
         else -> t.message ?: "That did not work."
     }
 
@@ -735,8 +760,34 @@ class RustChatEngine(
 
     override fun ownCard(): String = engine?.ownCard(ownName().ifBlank { null }) ?: ""
 
-    override suspend fun addFriend(text: String): Result<String> = call { acceptInvite(text) }.also {
-        if (it.isSuccess) say("Added. Connecting automatically whenever you are both online.")
+    /**
+     * A full invite (long text) is accepted at once. Six words start a search on the signaling relays: the engine tells
+     * us with InviteFound or InviteLookupFailed (15 seconds at most), and only then can the words be accepted.
+     */
+    override suspend fun addFriend(text: String): Result<String> {
+        val waiter = CompletableDeferred<Boolean>()
+        lookup = waiter
+        try {
+            val preview = call { previewInvite(text) }
+            if (preview.isFailure) return Result.failure(preview.exceptionOrNull() ?: IllegalStateException("That did not work."))
+            if (preview.getOrNull() == null) {
+                // Six words: the search is running.
+                val found = withTimeoutOrNull(LOOKUP_WAIT_MS) { waiter.await() } ?: false
+                if (!found) {
+                    return Result.failure(
+                        IllegalStateException(
+                            if (hubStatus() == SignalingStatus.ONLINE) "Could not find that invite. Check the words, or ask your friend to share it again."
+                            else "Could not reach the connection service to look up those words. Check your internet, then try again.",
+                        ),
+                    )
+                }
+            }
+            return call { acceptInvite(text) }.also {
+                if (it.isSuccess) say("Added. Connecting automatically whenever you are both online.")
+            }
+        } finally {
+            lookup = null
+        }
     }
 
     override fun retryAnswer() { scope.launch { call { retryAnswer() } } }
@@ -833,16 +884,21 @@ class RustChatEngine(
         }
     }
 
+    /** Settings changed: the sockets follow the new settings, so reopen every mailbox. */
     override fun reloadNetwork() {
         scope.launch { call { setStoreForward(networkConfig().storeForward) } }
-        // The sockets follow the new settings the next time they are opened: reopen every mailbox now.
-        for (mailbox in hubs.keys.toList()) {
-            if (mailbox == "put") continue
-            transport.signalSubscribe(mailbox)
-        }
+        for (mailbox in hubs.keys.toList()) transport.signalSubscribe(mailbox)
     }
 
-    override fun onNetworkAvailable() = reloadNetwork()
+    /**
+     * A network came up (Android also reports this once at start-up). Only mailboxes whose sockets failed are reopened:
+     * tearing down sockets that are online or still connecting would drop signals that are in flight.
+     */
+    override fun onNetworkAvailable() {
+        for ((mailbox, h) in hubs.entries.toList()) {
+            if (h.status() == SignalingStatus.ERROR) transport.signalSubscribe(mailbox)
+        }
+    }
 
     // ------------------------------------------------------------------ manual connection codes
 
@@ -982,7 +1038,10 @@ class RustChatEngine(
     }
 
     private companion object {
-        const val OFFER_TIMEOUT_MS = 40_000L
+        const val OFFER_TIMEOUT_MS = 25_000L
+        const val LOOKUP_WAIT_MS = 17_000L
+        const val PUT_WAIT_MS = 30_000L
+        const val PUT_RETRY_MS = 400L
         const val MANUAL_PREFIX = "RUST1:"
         const val BLE_SEARCH_MS = 30_000L
         const val BLE_RETRY_MS = 60_000L
