@@ -130,7 +130,7 @@ pub fn seal_invite(
         v: 1,
         to: "invite".into(),
         from: uid.to_string(),
-        epk: placeholder_epk(entropy),
+        epk: placeholder_epk(entropy)?,
         iv: codec::encode(&iv),
         ct: codec::encode(&ct),
         sig: String::new(),

@@ -20,7 +20,8 @@ use privcord_domain::{
 };
 use privcord_engine::{EngineEvent, EngineHandle, ErrorCode, EventStream, Ports};
 use privcord_ports::{
-    Clock, IdentitySecrets, Notification, Notifier, SecureStore, SecureStoreError, Transport, TransportError,
+    Clock, IdentitySecrets, Notification, Notifier, SecureStore, SecureStoreError, Transport,
+    TransportError,
 };
 use std::{
     sync::{Arc, Mutex},
@@ -154,15 +155,24 @@ impl Transport for TransportAdapter {
 struct NotifierAdapter(Arc<dyn NotifierCallbacks>);
 impl Notifier for NotifierAdapter {
     fn notify(&self, n: Notification) {
-        let Notification::MessageReceived { conversation, sender, preview } = n;
-        self.0.message_received(conversation.storage_key(), sender.to_string(), preview);
+        let Notification::MessageReceived {
+            conversation,
+            sender,
+            preview,
+        } = n;
+        self.0
+            .message_received(conversation.storage_key(), sender.to_string(), preview);
     }
 }
 
 struct SystemClock;
 impl Clock for SystemClock {
     fn now_ms(&self) -> i64 {
-        SystemTime::now().duration_since(UNIX_EPOCH).ok().and_then(|d| i64::try_from(d.as_millis()).ok()).unwrap_or(0)
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .ok()
+            .and_then(|d| i64::try_from(d.as_millis()).ok())
+            .unwrap_or(0)
     }
 }
 
@@ -216,7 +226,9 @@ impl From<ConnectionState> for LinkState {
             ConnectionState::Connecting => Self::Connecting,
             ConnectionState::Connected { path } => Self::Connected { path: path.into() },
             ConnectionState::Reconnecting { attempt } => Self::Reconnecting { attempt },
-            ConnectionState::Failed { reason } => Self::Failed { authentication: reason == ConnectionFailure::AuthenticationFailed },
+            ConnectionState::Failed { reason } => Self::Failed {
+                authentication: reason == ConnectionFailure::AuthenticationFailed,
+            },
         }
     }
 }
@@ -282,13 +294,29 @@ pub struct SnapshotDto {
 pub enum EventDto {
     Ready,
     IdentityCreated,
-    ContactAdded { uid: String },
-    MessageAdded { conversation: String, message_id: String, own: bool },
-    MessageStatusChanged { message_id: String, delivery: Delivery },
-    MessageRefused { message_id: String },
-    PeerStateChanged { peer: String, link: LinkState },
+    ContactAdded {
+        uid: String,
+    },
+    MessageAdded {
+        conversation: String,
+        message_id: String,
+        own: bool,
+    },
+    MessageStatusChanged {
+        message_id: String,
+        delivery: Delivery,
+    },
+    MessageRefused {
+        message_id: String,
+    },
+    PeerStateChanged {
+        peer: String,
+        link: LinkState,
+    },
     /// This reader fell behind; ask for a snapshot.
-    Lagged { missed: u64 },
+    Lagged {
+        missed: u64,
+    },
     ShutDown,
 }
 
@@ -296,15 +324,31 @@ fn event_dto(e: EngineEvent) -> EventDto {
     match e {
         EngineEvent::Ready => EventDto::Ready,
         EngineEvent::IdentityCreated => EventDto::IdentityCreated,
-        EngineEvent::ContactAdded { uid } => EventDto::ContactAdded { uid: uid.to_string() },
-        EngineEvent::MessageAdded { conversation, message_id, own } => {
-            EventDto::MessageAdded { conversation: conversation.storage_key(), message_id: message_id.to_string(), own }
-        }
+        EngineEvent::ContactAdded { uid } => EventDto::ContactAdded {
+            uid: uid.to_string(),
+        },
+        EngineEvent::MessageAdded {
+            conversation,
+            message_id,
+            own,
+        } => EventDto::MessageAdded {
+            conversation: conversation.storage_key(),
+            message_id: message_id.to_string(),
+            own,
+        },
         EngineEvent::MessageStatusChanged { message_id, status } => {
-            EventDto::MessageStatusChanged { message_id: message_id.to_string(), delivery: status.into() }
+            EventDto::MessageStatusChanged {
+                message_id: message_id.to_string(),
+                delivery: status.into(),
+            }
         }
-        EngineEvent::MessageRefused { message_id } => EventDto::MessageRefused { message_id: message_id.to_string() },
-        EngineEvent::PeerStateChanged { peer, state } => EventDto::PeerStateChanged { peer: peer.to_string(), link: state.into() },
+        EngineEvent::MessageRefused { message_id } => EventDto::MessageRefused {
+            message_id: message_id.to_string(),
+        },
+        EngineEvent::PeerStateChanged { peer, state } => EventDto::PeerStateChanged {
+            peer: peer.to_string(),
+            link: state.into(),
+        },
         EngineEvent::Lagged { missed } => EventDto::Lagged { missed },
         EngineEvent::ShutDown => EventDto::ShutDown,
     }
@@ -339,7 +383,8 @@ impl PrivcordEngine {
         transport: Arc<dyn TransportCallbacks>,
         notifier: Arc<dyn NotifierCallbacks>,
     ) -> Result<Arc<Self>, FfiError> {
-        let storage = privcord_storage::SqliteStorage::open(std::path::Path::new(&db_path)).map_err(|_| FfiError::Storage)?;
+        let storage = privcord_storage::SqliteStorage::open(std::path::Path::new(&db_path))
+            .map_err(|_| FfiError::Storage)?;
         let ports = Ports {
             storage: Arc::new(storage),
             secure: Arc::new(SecureAdapter(secure)),
@@ -349,7 +394,10 @@ impl PrivcordEngine {
             entropy: Box::new(OsEntropy),
         };
         let (handle, events) = EngineHandle::start(ports)?;
-        Ok(Arc::new(Self { handle, events: Mutex::new(events) }))
+        Ok(Arc::new(Self {
+            handle,
+            events: Mutex::new(events),
+        }))
     }
 
     /// Make a new identity. Returns the 12 recovery words, once. Show them, make the person save them, then drop them.
@@ -358,7 +406,9 @@ impl PrivcordEngine {
     }
 
     pub fn recover_identity(&self, phrase: String, passphrase: String) -> Result<(), FfiError> {
-        Ok(pollster::block_on(self.handle.recover_identity(&phrase, &passphrase))?)
+        Ok(pollster::block_on(
+            self.handle.recover_identity(&phrase, &passphrase),
+        )?)
     }
 
     pub fn own_card(&self, name: Option<String>) -> Result<String, FfiError> {
@@ -367,7 +417,11 @@ impl PrivcordEngine {
 
     /// Add a contact from their card. `verified` is true when the cards were swapped directly.
     pub fn add_contact(&self, card: String, verified: bool) -> Result<String, FfiError> {
-        let trust = if verified { ContactTrust::Verified } else { ContactTrust::Introduced };
+        let trust = if verified {
+            ContactTrust::Verified
+        } else {
+            ContactTrust::Introduced
+        };
         Ok(pollster::block_on(self.handle.add_contact(&card, trust))?.to_string())
     }
 
@@ -375,9 +429,20 @@ impl PrivcordEngine {
         Ok(pollster::block_on(self.handle.set_group_only(value))?)
     }
 
-    pub fn send_message(&self, peer: String, text: String, reply_to: Option<String>) -> Result<String, FfiError> {
-        let reply = reply_to.map(|r| MessageId::new(r).map_err(|_| FfiError::InvalidArgument)).transpose()?;
-        Ok(pollster::block_on(self.handle.send_message(&user(&peer)?, &text, reply.as_ref()))?.to_string())
+    pub fn send_message(
+        &self,
+        peer: String,
+        text: String,
+        reply_to: Option<String>,
+    ) -> Result<String, FfiError> {
+        let reply = reply_to
+            .map(|r| MessageId::new(r).map_err(|_| FfiError::InvalidArgument))
+            .transpose()?;
+        Ok(pollster::block_on(
+            self.handle
+                .send_message(&user(&peer)?, &text, reply.as_ref()),
+        )?
+        .to_string())
     }
 
     pub fn mark_read(&self, peer: String) -> Result<(), FfiError> {
@@ -386,7 +451,9 @@ impl PrivcordEngine {
 
     /// The platform's link to `peer` is up.
     pub fn link_up(&self, peer: String, path: PathKind) -> Result<(), FfiError> {
-        Ok(pollster::block_on(self.handle.link_up(&user(&peer)?, path.into()))?)
+        Ok(pollster::block_on(
+            self.handle.link_up(&user(&peer)?, path.into()),
+        )?)
     }
 
     pub fn link_down(&self, peer: String) -> Result<(), FfiError> {
@@ -442,8 +509,14 @@ impl PrivcordEngine {
     /// Wait up to `timeout_ms` for the next event. `None` means nothing happened. Call it from a background thread
     /// and turn it into a Flow; each call takes the next event in order.
     pub fn next_event(&self, timeout_ms: u32) -> Option<EventDto> {
-        let mut events = self.events.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        events.recv_timeout(Duration::from_millis(u64::from(timeout_ms))).ok().map(|(_, e)| event_dto(e))
+        let mut events = self
+            .events
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        events
+            .recv_timeout(Duration::from_millis(u64::from(timeout_ms)))
+            .ok()
+            .map(|(_, e)| event_dto(e))
     }
 
     /// Stop the engine and wait for it to finish. Safe to call more than once.

@@ -698,9 +698,14 @@ fn the_engine_runs_on_real_sqlite_and_recovers_after_a_restart() {
     let secure = MemorySecureStore::new();
     let (bu, bob_card, mut b) = {
         let b = fresh("bob", &clock);
-        (b.core.own_uid().unwrap().clone(), b.core.own_card(Some("Bob")).unwrap(), b)
+        (
+            b.core.own_uid().unwrap().clone(),
+            b.core.own_card(Some("Bob")).unwrap(),
+            b,
+        )
     };
-    let sqlite = |p: &std::path::Path| -> Arc<dyn Storage> { Arc::new(SqliteStorage::open(p).unwrap()) };
+    let sqlite =
+        |p: &std::path::Path| -> Arc<dyn Storage> { Arc::new(SqliteStorage::open(p).unwrap()) };
     let make = |storage: Arc<dyn Storage>, seed: &str| {
         let transport = RecordingTransport::new();
         let ports = Ports {
@@ -728,7 +733,12 @@ fn the_engine_runs_on_real_sqlite_and_recovers_after_a_restart() {
     assert_eq!(snap.messages[0].1[0].message_id, id);
 
     // And it delivers to a live peer once the link is up.
-    b.core.add_contact(&core.own_card(Some("Alice")).unwrap(), ContactTrust::Verified).unwrap();
+    b.core
+        .add_contact(
+            &core.own_card(Some("Alice")).unwrap(),
+            ContactTrust::Verified,
+        )
+        .unwrap();
     transport.set_connected(&bu, true);
     b.transport.set_connected(&au, true);
     core.link_up(&bu, ConnectionPath::DirectLan).unwrap();
@@ -743,5 +753,8 @@ fn the_engine_runs_on_real_sqlite_and_recovers_after_a_restart() {
     }
     assert_eq!(texts(&b, &au), vec!["stored in sqlite"]);
     assert_eq!(core.snapshot().queued, 0);
-    assert_eq!(core.snapshot().messages[0].1[0].delivery_state, DeliveryState::Delivered);
+    assert_eq!(
+        core.snapshot().messages[0].1[0].delivery_state,
+        DeliveryState::Delivered
+    );
 }

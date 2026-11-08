@@ -82,7 +82,7 @@ pub fn seal_channel_message(
         v: 1,
         to: channel.tag.clone(),
         from: uid.to_string(),
-        epk: placeholder_epk(entropy),
+        epk: placeholder_epk(entropy)?,
         iv: codec::encode(&iv),
         ct: codec::encode(&ct),
         sig: String::new(),

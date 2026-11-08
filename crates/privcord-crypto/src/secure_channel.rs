@@ -9,7 +9,7 @@ use crate::{
     error::CryptoError,
     identity::{jwk_of, public_key_from_jwk, verify_signature, Identity},
     kdf::hkdf_sha256,
-    rng::{random_array, Entropy, RngAdapter},
+    rng::{random_array, random_secret_key, Entropy},
 };
 use p256::{ecdh::diffie_hellman, SecretKey};
 use privcord_domain::{blob::PublicJwk, codec, text::cmp_utf16};
@@ -141,7 +141,7 @@ impl SecureChannel {
         peer_sign: PublicJwk,
         entropy: &mut dyn Entropy,
     ) -> Result<Self, CryptoError> {
-        let ephemeral = SecretKey::random(&mut RngAdapter(entropy));
+        let ephemeral = random_secret_key(entropy)?;
         let nonce = codec::encode(&random_array::<16>(entropy)?);
         Ok(Self::with_parts(
             own_uid, peer_uid, peer_sign, ephemeral, nonce,

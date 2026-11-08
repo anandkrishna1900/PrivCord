@@ -1,0 +1,3 @@
+# ADR-007: Preserve every algorithm, parameter and wire format
+**Decision.** No cryptographic change during the rewrite. Compatibility is tested in both directions against the TypeScript implementation (vectors in `docs/`), including byte-for-byte reproduction where the inputs are deterministic, and the few deliberate differences are listed in COMPATIBILITY.md. Randomness comes only from the operating system; deterministic randomness exists for tests only.
+**Consequences.** The Rust implementation inherits any weakness of the existing design. Changing a protocol needs its own reviewed decision.

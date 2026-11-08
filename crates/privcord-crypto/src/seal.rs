@@ -10,9 +10,9 @@ use crate::{
     error::CryptoError,
     identity::{jwk_of, public_key_from_jwk, thumb, verify_signature, Identity},
     kdf::{hkdf_sha256, sha256_hex},
-    rng::{random_array, Entropy, RngAdapter},
+    rng::{random_array, random_secret_key, Entropy},
 };
-use p256::{ecdh::diffie_hellman, SecretKey};
+use p256::ecdh::diffie_hellman;
 use privcord_domain::{
     blob::{PublicJwk, SealedBlob, MAX_SEALED_BLOB_BYTES},
     codec,
@@ -43,7 +43,7 @@ pub fn seal(
     entropy: &mut dyn Entropy,
 ) -> Result<SealedBlob, CryptoError> {
     let from = identity.uid()?;
-    let ephemeral = SecretKey::random(&mut RngAdapter(entropy));
+    let ephemeral = random_secret_key(entropy)?;
     let peer = public_key_from_jwk(to_dh)?;
     let shared = diffie_hellman(ephemeral.to_nonzero_scalar(), peer.as_affine());
     let key = hkdf_sha256::<32>(
@@ -117,6 +117,6 @@ pub fn open(
 
 /// A fresh throwaway key whose public half fills the `epk` slot of blobs that are not ECDH-sealed (invites, channels),
 /// so they keep the shape every relay and client already validates.
-pub(crate) fn placeholder_epk(entropy: &mut dyn Entropy) -> PublicJwk {
-    jwk_of(&SecretKey::random(&mut RngAdapter(entropy)).public_key())
+pub(crate) fn placeholder_epk(entropy: &mut dyn Entropy) -> Result<PublicJwk, CryptoError> {
+    Ok(jwk_of(&random_secret_key(entropy)?.public_key()))
 }

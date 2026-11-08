@@ -8,7 +8,7 @@ use crate::{
     canonical::canonical_json,
     error::CryptoError,
     kdf::hkdf_sha256,
-    rng::{Entropy, RngAdapter},
+    rng::{random_secret_key, Entropy},
 };
 use p256::{
     ecdh::diffie_hellman,
@@ -16,8 +16,8 @@ use p256::{
         signature::{Signer, Verifier},
         Signature, SigningKey, VerifyingKey,
     },
-    elliptic_curve::{ops::Reduce, sec1::ToEncodedPoint},
-    EncodedPoint, FieldBytes, NonZeroScalar, PublicKey, Scalar, SecretKey,
+    elliptic_curve::{ops::Reduce, sec1::ToSec1Point},
+    NonZeroScalar, PublicKey, Scalar, SecretKey, U256,
 };
 use privcord_domain::{blob::PublicJwk, codec, ids::UserId};
 use serde_json::json;
@@ -126,15 +126,21 @@ pub fn derive_key_material(
 }
 
 fn secret_from_material(material: &[u8; 32]) -> Result<SecretKey, CryptoError> {
-    let scalar = <Scalar as Reduce<p256::U256>>::reduce_bytes(FieldBytes::from_slice(material));
+    let scalar = <Scalar as Reduce<U256>>::reduce(&U256::from_be_slice(material));
     let nonzero: Option<NonZeroScalar> = NonZeroScalar::new(scalar).into();
     nonzero.map(SecretKey::from).ok_or(CryptoError::InvalidKey)
 }
 
 pub(crate) fn jwk_of(public: &PublicKey) -> PublicJwk {
-    let point = public.to_encoded_point(false);
-    let x = point.x().map(|v| codec::encode(v)).unwrap_or_default();
-    let y = point.y().map(|v| codec::encode(v)).unwrap_or_default();
+    let point = public.to_sec1_point(false);
+    let x = point
+        .x()
+        .map(|v| codec::encode(v.as_slice()))
+        .unwrap_or_default();
+    let y = point
+        .y()
+        .map(|v| codec::encode(v.as_slice()))
+        .unwrap_or_default();
     PublicJwk::p256(x, y)
 }
 
@@ -149,12 +155,12 @@ pub fn public_key_from_jwk(jwk: &PublicJwk) -> Result<PublicKey, CryptoError> {
     let y = codec::decode(&jwk.y)
         .filter(|b| b.len() == 32)
         .ok_or(CryptoError::InvalidKey)?;
-    let point = EncodedPoint::from_affine_coordinates(
-        FieldBytes::from_slice(&x),
-        FieldBytes::from_slice(&y),
-        false,
-    );
-    PublicKey::from_sec1_bytes(point.as_bytes()).map_err(|_| CryptoError::InvalidKey)
+    // SEC1 uncompressed point: 0x04 || x || y. The library checks the point is on the curve.
+    let mut sec1 = Vec::with_capacity(65);
+    sec1.push(0x04);
+    sec1.extend_from_slice(&x);
+    sec1.extend_from_slice(&y);
+    PublicKey::from_sec1_bytes(&sec1).map_err(|_| CryptoError::InvalidKey)
 }
 
 pub(crate) fn thumb(jwk: &PublicJwk) -> serde_json::Value {
@@ -246,9 +252,8 @@ impl Identity {
 
     /// A fresh random identity (not recoverable from a phrase).
     pub fn generate(entropy: &mut dyn Entropy) -> Result<Self, CryptoError> {
-        let mut a = RngAdapter(entropy);
-        let sign = SecretKey::random(&mut a);
-        let dh = SecretKey::random(&mut a);
+        let sign = random_secret_key(entropy)?;
+        let dh = random_secret_key(entropy)?;
         Ok(Self {
             sign: SigningKey::from(&sign),
             dh,

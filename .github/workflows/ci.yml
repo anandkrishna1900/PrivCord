@@ -32,6 +32,66 @@ jobs:
         run: npm test
       - run: npm audit --omit=dev --audit-level=high
 
+  rust:
+    name: Rust engine (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install the Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component rustfmt clippy && rustup default stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: rust-${{ matrix.os }}-${{ hashFiles('Cargo.lock') }}
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - run: cargo test --workspace --all-features --locked
+      # The Rust-made vectors must be reproducible, and the TypeScript tests must still open them.
+      - name: Rust vectors are up to date
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cargo run -q --locked -p privcord-crypto --features test-support --example gen_vectors > /tmp/rust-vectors.json
+          diff /tmp/rust-vectors.json docs/rust-vectors.json
+      - name: TypeScript opens what Rust produced
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          npm ci
+          npm test --workspace @duochat/protocol -- rustInterop
+      - name: Kotlin bindings match the committed API snapshot
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cargo build --locked -p privcord-ffi --features cli
+          target/debug/uniffi-bindgen generate --library target/debug/libprivcord_ffi.so --language kotlin --out-dir /tmp/bindings
+          diff -r /tmp/bindings crates/privcord-ffi/bindings/kotlin
+      - name: Migration map is complete and current
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          python3 docs/rust/tools/gen_migration_map.py
+          git diff --exit-code docs/rust/MIGRATION_MAP.md
+      - name: Pure crates build for the other declared targets
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          rustup target add aarch64-linux-android x86_64-pc-windows-gnu aarch64-unknown-linux-gnu
+          for t in aarch64-linux-android x86_64-pc-windows-gnu aarch64-unknown-linux-gnu; do
+            cargo check --locked --target "$t" -p privcord-domain -p privcord-crypto -p privcord-ports -p privcord-engine
+          done
+      - name: Dependency audit
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit
+
   e2e:
     name: End-to-end (real browsers, relay, Nostr, TURN)
     runs-on: ubuntu-latest

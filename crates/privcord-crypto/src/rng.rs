@@ -18,32 +18,18 @@ impl Entropy for OsEntropy {
     }
 }
 
-/// Adapter so the elliptic-curve crates can draw from an [`Entropy`].
-pub(crate) struct RngAdapter<'a>(pub &'a mut dyn Entropy);
-
-impl rand_core::RngCore for RngAdapter<'_> {
-    fn next_u32(&mut self) -> u32 {
-        let mut b = [0u8; 4];
-        self.fill_bytes(&mut b);
-        u32::from_le_bytes(b)
-    }
-    fn next_u64(&mut self) -> u64 {
-        let mut b = [0u8; 8];
-        self.fill_bytes(&mut b);
-        u64::from_le_bytes(b)
-    }
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        // The trait cannot report failure; a failing system generator is unrecoverable, so output stays zero and the
-        // curve crate rejects the all-zero scalar. Callers check `try_fill_bytes` first where it matters.
-        if self.0.fill(dest).is_err() {
-            dest.fill(0);
+/// A fresh P-256 private key drawn from `entropy`. Rejection sampling: 32 random bytes are a valid key unless they are
+/// zero or not below the curve order, which happens with probability about 2^-32, so a retry is practically never needed.
+pub fn random_secret_key(entropy: &mut dyn Entropy) -> Result<p256::SecretKey, CryptoError> {
+    for _ in 0..16 {
+        let mut bytes = zeroize::Zeroizing::new([0u8; 32]);
+        entropy.fill(&mut *bytes)?;
+        if let Ok(key) = p256::SecretKey::from_slice(&*bytes) {
+            return Ok(key);
         }
     }
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core::Error> {
-        self.0.fill(dest).map_err(rand_core::Error::new)
-    }
+    Err(CryptoError::Random)
 }
-impl rand_core::CryptoRng for RngAdapter<'_> {}
 
 /// Random bytes as a fixed-size array.
 pub fn random_array<const N: usize>(entropy: &mut dyn Entropy) -> Result<[u8; N], CryptoError> {
