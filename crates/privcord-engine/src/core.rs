@@ -2030,9 +2030,23 @@ impl Core {
                     percent,
                 });
             }
-            AssembleResult::Failed(reason) => self.decline(peer, &id, reason),
-            AssembleResult::Done { offer, bytes } => self.store_received_file(peer, *offer, bytes),
+            AssembleResult::Failed(reason) => {
+                self.finish_progress(&id);
+                self.decline(peer, &id, reason);
+            }
+            AssembleResult::Done { offer, bytes } => {
+                self.finish_progress(&id);
+                self.store_received_file(peer, *offer, bytes);
+            }
         }
+    }
+
+    /// Tell the app a transfer is over (arrived or abandoned) so it stops showing a progress bar.
+    fn finish_progress(&mut self, id: &MessageId) {
+        self.hub.publish(EngineEvent::FileProgress {
+            message_id: id.clone(),
+            percent: 100,
+        });
     }
 
     fn store_received_file(&mut self, peer: &UserId, offer: FileOffer, bytes: Vec<u8>) {
