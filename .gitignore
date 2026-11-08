@@ -39,3 +39,4 @@ Thumbs.db
 .idea/
 apps/desktop/e2e/last-results.json
 apps/android/.kotlin/
+apps/android/app/src/main/jniLibs/

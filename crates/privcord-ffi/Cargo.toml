@@ -38,6 +38,7 @@ privcord-storage.workspace = true
 uniffi = "0.28"
 pollster = "0.4"
 thiserror.workspace = true
+serde_json.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]

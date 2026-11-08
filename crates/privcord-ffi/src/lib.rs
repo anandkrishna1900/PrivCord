@@ -1519,3 +1519,45 @@ fn chips(
             .collect()
     })
 }
+
+/* ------------------------------------------------------------------ on-device self-test */
+
+/// Version of the Rust core inside this build.
+#[uniffi::export]
+pub fn core_version() -> String {
+    env!("CARGO_PKG_VERSION").to_owned()
+}
+
+/// A quick check that the native library really works on this device: it makes two throwaway identities, seals a
+/// message from one to the other and opens it (P-256, HKDF, AES-GCM, signatures), then opens an in-memory SQLite
+/// database and runs the schema. Returns "ok", or says which step failed. It touches no stored data.
+#[uniffi::export]
+pub fn self_test() -> String {
+    fn run() -> Result<(), &'static str> {
+        use privcord_crypto::{identity::Identity, seal};
+        let mut rng = OsEntropy;
+        let a = Identity::generate(&mut rng).map_err(|_| "identity")?;
+        let b = Identity::generate(&mut rng).map_err(|_| "identity")?;
+        let (au, bu) = (
+            a.uid().map_err(|_| "identity")?,
+            b.uid().map_err(|_| "identity")?,
+        );
+        let payload = serde_json_probe();
+        let blob = seal::seal(&a, &bu, &b.dh_public(), &payload, &mut rng).map_err(|_| "seal")?;
+        let opened = seal::open(&blob, &bu, &b, &a.sign_public(), &au).ok_or("open")?;
+        if opened != payload {
+            return Err("roundtrip");
+        }
+        privcord_storage::SqliteStorage::open(std::path::Path::new(":memory:"))
+            .map_err(|_| "sqlite")?;
+        Ok(())
+    }
+    match run() {
+        Ok(()) => "ok".to_owned(),
+        Err(step) => format!("failed at {step}"),
+    }
+}
+
+fn serde_json_probe() -> serde_json::Value {
+    serde_json::json!({ "probe": "self-test" })
+}

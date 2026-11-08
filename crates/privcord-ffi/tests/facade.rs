@@ -353,3 +353,9 @@ fn a_channel_message_crosses_the_mesh_over_two_hops_and_a_stranger_in_the_middle
         e.shutdown().unwrap();
     }
 }
+
+#[test]
+fn the_on_device_self_test_passes_here_too() {
+    assert_eq!(self_test(), "ok");
+    assert!(!core_version().is_empty());
+}

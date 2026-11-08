@@ -1004,6 +1004,10 @@ internal open class UniffiVTableCallbackInterfaceTransportCallbacks(
 
 
 
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1190,9 +1194,13 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_privcord_ffi_fn_method_transportcallbacks_signal_put(`ptr`: Pointer,`mailbox`: RustBuffer.ByValue,`blob`: RustBuffer.ByValue,`kind`: RustBuffer.ByValue,`ttlSec`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    fun uniffi_privcord_ffi_fn_func_core_version(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_func_import_legacy_android(`oldDbPath`: RustBuffer.ByValue,`decryptor`: Pointer,`newDbPath`: RustBuffer.ByValue,`ownUid`: RustBuffer.ByValue,`files`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_func_import_legacy_desktop(`oldDbPath`: RustBuffer.ByValue,`aesKey`: RustBuffer.ByValue,`newDbPath`: RustBuffer.ByValue,`ownUid`: RustBuffer.ByValue,`files`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_func_self_test(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun ffi_privcord_ffi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1306,9 +1314,13 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_privcord_ffi_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_privcord_ffi_checksum_func_core_version(
+    ): Short
     fun uniffi_privcord_ffi_checksum_func_import_legacy_android(
     ): Short
     fun uniffi_privcord_ffi_checksum_func_import_legacy_desktop(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_func_self_test(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_legacydecryptor_decrypt_text(
     ): Short
@@ -1455,10 +1467,16 @@ private fun uniffiCheckContractApiVersion(lib: UniffiLib) {
 
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: UniffiLib) {
+    if (lib.uniffi_privcord_ffi_checksum_func_core_version() != 14917.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_privcord_ffi_checksum_func_import_legacy_android() != 37759.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_func_import_legacy_desktop() != 52917.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_func_self_test() != 39236.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_legacydecryptor_decrypt_text() != 19749.toShort()) {
@@ -7585,6 +7603,18 @@ public object FfiConverterSequenceTypeWipeStepDto: FfiConverterRustBuffer<List<W
     }
 }
         /**
+         * Version of the Rust core inside this build.
+         */ fun `coreVersion`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_func_core_version(
+        _status)
+}
+    )
+    }
+    
+
+        /**
          * Bring over an Android install: its Room database file, with a decryptor that calls the Android Keystore.
          */
     @Throws(FfiException::class) fun `importLegacyAndroid`(`oldDbPath`: kotlin.String, `decryptor`: LegacyDecryptor, `newDbPath`: kotlin.String, `ownUid`: kotlin.String, `files`: LegacyFiles): ImportSummary {
@@ -7606,6 +7636,20 @@ public object FfiConverterSequenceTypeWipeStepDto: FfiConverterRustBuffer<List<W
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_func_import_legacy_desktop(
         FfiConverterString.lower(`oldDbPath`),FfiConverterByteArray.lower(`aesKey`),FfiConverterString.lower(`newDbPath`),FfiConverterString.lower(`ownUid`),FfiConverterTypeLegacyFiles.lower(`files`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * A quick check that the native library really works on this device: it makes two throwaway identities, seals a
+         * message from one to the other and opens it (P-256, HKDF, AES-GCM, signatures), then opens an in-memory SQLite
+         * database and runs the schema. Returns "ok", or says which step failed. It touches no stored data.
+         */ fun `selfTest`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_func_self_test(
+        _status)
 }
     )
     }
