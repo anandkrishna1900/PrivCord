@@ -12,6 +12,10 @@ use privcord_domain::{
 pub struct ContactView {
     pub uid: UserId,
     pub name: Option<String>,
+    /// What to show: their name, or "Friend" and the start of their id.
+    pub display_name: String,
+    /// Who introduced them (an introduced contact), if known.
+    pub introduced_by: Option<UserId>,
     pub trust: ContactTrust,
     pub checked: bool,
     pub safety_number: String,
@@ -28,6 +32,42 @@ pub struct GroupView {
     pub created_by: String,
     /// Each member and whether they are an admin.
     pub members: Vec<(String, bool)>,
+    /// You are an admin (you may remove others).
+    pub am_admin: bool,
+    /// The group has reached its member limit.
+    pub full: bool,
+    pub max_members: usize,
+    /// How many of the other members are connected right now.
+    pub connected: usize,
+}
+
+/// The newest message of a conversation, as the list shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LastMessage {
+    /// The text, or "Message deleted", or a paperclip and the file's name.
+    pub text: String,
+    pub at: i64,
+    pub own: bool,
+    pub sender: UserId,
+}
+
+/// One conversation as a chat list shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationSummary {
+    pub conversation: ConversationId,
+    pub last: Option<LastMessage>,
+    /// Messages from others you have not read.
+    pub unread: usize,
+}
+
+/// How far a message of yours has got with each person it is for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeliveryDetail {
+    pub message_id: MessageId,
+    /// People it has still to reach.
+    pub pending: usize,
+    /// People it is for (the others in the chat).
+    pub total: usize,
 }
 
 /// Connection setup carried in sealed messages. The platform's WebRTC code produces and consumes the descriptions.
@@ -75,6 +115,10 @@ pub struct Snapshot {
     pub own_uid: Option<UserId>,
     pub contacts: Vec<ContactView>,
     pub groups: Vec<GroupView>,
+    /// Last message and unread count per conversation (only conversations with messages).
+    pub summaries: Vec<ConversationSummary>,
+    /// Delivery detail for your own messages that still have people to reach.
+    pub deliveries: Vec<DeliveryDetail>,
     /// Names of the public channels joined.
     pub channels: Vec<String>,
     /// Reactions per message: who reacted with what.

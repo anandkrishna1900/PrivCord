@@ -4,6 +4,12 @@ import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { describe, expect, it } from 'vitest';
 import {
+  GroupSessionManager,
+  acceptInitialEnvelope,
+  decryptEnvelope,
+  restoreSession,
+  validateBundle,
+  validateEnvelope,
   authChallenge,
   decodeBlob,
   decodeManualSignal,
@@ -111,5 +117,30 @@ describe('artifacts produced by the Rust engine', () => {
     const state = parsePairingState(v.pairing.serialized, v.pairing.peer);
     expect(state.record?.peerUid).toBe(v.pairing.peer);
     expect(state.autoReconnect).toBe(true);
+  });
+
+  it('an X3DH session, ratchet messages and a group message made by Rust are read by TypeScript', async () => {
+    const e = v.e2ee;
+    const dec = (b: Uint8Array) => new TextDecoder().decode(b);
+    expect((await validateBundle(e.bundle)).ok).toBe(true);
+    expect(validateEnvelope(e.first)).toBe(true);
+    // Bob (TypeScript) accepts the first envelope using his identity and the prekeys Rust generated.
+    const bob = (await deriveIdentityFromPhrase(v.people.bob.phrase)).identity as never;
+    const inventory = {
+      getSignedPrekey: (id: number) => (id === e.prekeys.signed.id ? { ...e.prekeys.signed } : null),
+      getOneTimePrekey: (id: number) => (id === e.prekeys.oneTime.id ? { ...e.prekeys.oneTime } : null),
+    };
+    const accepted = await acceptInitialEnvelope(bob, inventory as never, e.first);
+    expect(dec(accepted.payload)).toBe('hello from Rust');
+    // Alice's side as Rust saved it reads Bob's reply (a DH ratchet step), then Bob reads Alice's next message.
+    const alice = restoreSession(e.aliceAfterInit);
+    expect(dec(await decryptEnvelope(alice, e.reply))).toBe('reply from Rust');
+    const bobSession = restoreSession(e.bobAfterReply);
+    expect(dec(await decryptEnvelope(bobSession, e.second))).toBe('second from Rust');
+    // Group message.
+    const gm = new GroupSessionManager();
+    gm.setGroup({ groupId: 'g-rust', name: 'x', createdBy: 'u', createdAt: 1, epoch: 2, members: {} });
+    gm.setEpochKey('g-rust', 2, Uint8Array.from(Buffer.from(e.group.epochKeyHex, 'hex')));
+    expect(await gm.decrypt(e.group.message)).toEqual({ t: 'group hello from Rust' });
   });
 });

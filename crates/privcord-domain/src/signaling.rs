@@ -167,7 +167,9 @@ pub fn aggregate_status(states: &[SignalingStatus]) -> SignalingStatus {
         SignalingStatus::Online
     } else if states.contains(&SignalingStatus::Connecting) {
         SignalingStatus::Connecting
-    } else if states.is_empty() {
+    } else if states.iter().all(|s| *s == SignalingStatus::Idle) {
+        // Nothing configured, or everything stopped. (The TypeScript says "error" for stopped services; a stopped hub
+        // is simply idle.)
         SignalingStatus::Idle
     } else {
         SignalingStatus::Error

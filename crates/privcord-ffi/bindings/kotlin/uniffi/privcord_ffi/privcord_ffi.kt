@@ -4786,6 +4786,14 @@ public object FfiConverterTypeAnswerDto: FfiConverterRustBuffer<AnswerDto> {
 data class ContactDto (
     var `uid`: kotlin.String, 
     var `name`: kotlin.String?, 
+    /**
+     * What to show: their name, or "Friend" and the start of their id.
+     */
+    var `displayName`: kotlin.String, 
+    /**
+     * Who introduced them, if they came through a group.
+     */
+    var `introducedBy`: kotlin.String?, 
     var `verified`: kotlin.Boolean, 
     var `checked`: kotlin.Boolean, 
     var `safetyNumber`: kotlin.String, 
@@ -4804,6 +4812,8 @@ public object FfiConverterTypeContactDto: FfiConverterRustBuffer<ContactDto> {
         return ContactDto(
             FfiConverterString.read(buf),
             FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterString.read(buf),
@@ -4815,6 +4825,8 @@ public object FfiConverterTypeContactDto: FfiConverterRustBuffer<ContactDto> {
     override fun allocationSize(value: ContactDto) = (
             FfiConverterString.allocationSize(value.`uid`) +
             FfiConverterOptionalString.allocationSize(value.`name`) +
+            FfiConverterString.allocationSize(value.`displayName`) +
+            FfiConverterOptionalString.allocationSize(value.`introducedBy`) +
             FfiConverterBoolean.allocationSize(value.`verified`) +
             FfiConverterBoolean.allocationSize(value.`checked`) +
             FfiConverterString.allocationSize(value.`safetyNumber`) +
@@ -4825,6 +4837,8 @@ public object FfiConverterTypeContactDto: FfiConverterRustBuffer<ContactDto> {
     override fun write(value: ContactDto, buf: ByteBuffer) {
             FfiConverterString.write(value.`uid`, buf)
             FfiConverterOptionalString.write(value.`name`, buf)
+            FfiConverterString.write(value.`displayName`, buf)
+            FfiConverterOptionalString.write(value.`introducedBy`, buf)
             FfiConverterBoolean.write(value.`verified`, buf)
             FfiConverterBoolean.write(value.`checked`, buf)
             FfiConverterString.write(value.`safetyNumber`, buf)
@@ -4837,7 +4851,15 @@ public object FfiConverterTypeContactDto: FfiConverterRustBuffer<ContactDto> {
 
 data class ConversationDto (
     var `id`: kotlin.String, 
-    var `messages`: List<MessageDto>
+    var `messages`: List<MessageDto>, 
+    /**
+     * The newest message as the chat list shows it (the text, "Message deleted", or a paperclip and a file name).
+     */
+    var `last`: LastMessageDto?, 
+    /**
+     * Messages from others you have not read.
+     */
+    var `unread`: kotlin.UInt
 ) {
     
     companion object
@@ -4851,17 +4873,23 @@ public object FfiConverterTypeConversationDto: FfiConverterRustBuffer<Conversati
         return ConversationDto(
             FfiConverterString.read(buf),
             FfiConverterSequenceTypeMessageDto.read(buf),
+            FfiConverterOptionalTypeLastMessageDto.read(buf),
+            FfiConverterUInt.read(buf),
         )
     }
 
     override fun allocationSize(value: ConversationDto) = (
             FfiConverterString.allocationSize(value.`id`) +
-            FfiConverterSequenceTypeMessageDto.allocationSize(value.`messages`)
+            FfiConverterSequenceTypeMessageDto.allocationSize(value.`messages`) +
+            FfiConverterOptionalTypeLastMessageDto.allocationSize(value.`last`) +
+            FfiConverterUInt.allocationSize(value.`unread`)
     )
 
     override fun write(value: ConversationDto, buf: ByteBuffer) {
             FfiConverterString.write(value.`id`, buf)
             FfiConverterSequenceTypeMessageDto.write(value.`messages`, buf)
+            FfiConverterOptionalTypeLastMessageDto.write(value.`last`, buf)
+            FfiConverterUInt.write(value.`unread`, buf)
     }
 }
 
@@ -4907,7 +4935,14 @@ data class GroupDto (
     var `id`: kotlin.String, 
     var `name`: kotlin.String, 
     var `createdBy`: kotlin.String, 
-    var `members`: List<GroupMemberDto>
+    var `members`: List<GroupMemberDto>, 
+    var `amAdmin`: kotlin.Boolean, 
+    var `full`: kotlin.Boolean, 
+    var `maxMembers`: kotlin.UInt, 
+    /**
+     * How many of the other members are connected right now.
+     */
+    var `connected`: kotlin.UInt
 ) {
     
     companion object
@@ -4923,6 +4958,10 @@ public object FfiConverterTypeGroupDto: FfiConverterRustBuffer<GroupDto> {
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
             FfiConverterSequenceTypeGroupMemberDto.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
         )
     }
 
@@ -4930,7 +4969,11 @@ public object FfiConverterTypeGroupDto: FfiConverterRustBuffer<GroupDto> {
             FfiConverterString.allocationSize(value.`id`) +
             FfiConverterString.allocationSize(value.`name`) +
             FfiConverterString.allocationSize(value.`createdBy`) +
-            FfiConverterSequenceTypeGroupMemberDto.allocationSize(value.`members`)
+            FfiConverterSequenceTypeGroupMemberDto.allocationSize(value.`members`) +
+            FfiConverterBoolean.allocationSize(value.`amAdmin`) +
+            FfiConverterBoolean.allocationSize(value.`full`) +
+            FfiConverterUInt.allocationSize(value.`maxMembers`) +
+            FfiConverterUInt.allocationSize(value.`connected`)
     )
 
     override fun write(value: GroupDto, buf: ByteBuffer) {
@@ -4938,6 +4981,10 @@ public object FfiConverterTypeGroupDto: FfiConverterRustBuffer<GroupDto> {
             FfiConverterString.write(value.`name`, buf)
             FfiConverterString.write(value.`createdBy`, buf)
             FfiConverterSequenceTypeGroupMemberDto.write(value.`members`, buf)
+            FfiConverterBoolean.write(value.`amAdmin`, buf)
+            FfiConverterBoolean.write(value.`full`, buf)
+            FfiConverterUInt.write(value.`maxMembers`, buf)
+            FfiConverterUInt.write(value.`connected`, buf)
     }
 }
 
@@ -5069,6 +5116,46 @@ public object FfiConverterTypeInviteDto: FfiConverterRustBuffer<InviteDto> {
 
 
 
+data class LastMessageDto (
+    var `text`: kotlin.String, 
+    var `at`: kotlin.Long, 
+    var `own`: kotlin.Boolean, 
+    var `sender`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeLastMessageDto: FfiConverterRustBuffer<LastMessageDto> {
+    override fun read(buf: ByteBuffer): LastMessageDto {
+        return LastMessageDto(
+            FfiConverterString.read(buf),
+            FfiConverterLong.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: LastMessageDto) = (
+            FfiConverterString.allocationSize(value.`text`) +
+            FfiConverterLong.allocationSize(value.`at`) +
+            FfiConverterBoolean.allocationSize(value.`own`) +
+            FfiConverterString.allocationSize(value.`sender`)
+    )
+
+    override fun write(value: LastMessageDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`text`, buf)
+            FfiConverterLong.write(value.`at`, buf)
+            FfiConverterBoolean.write(value.`own`, buf)
+            FfiConverterString.write(value.`sender`, buf)
+    }
+}
+
+
+
 data class MessageDto (
     var `id`: kotlin.String, 
     var `sender`: kotlin.String, 
@@ -5087,7 +5174,12 @@ data class MessageDto (
     /**
      * Reactions in the fixed emoji order: how many, and whether you reacted.
      */
-    var `reactions`: List<ReactionChipDto>
+    var `reactions`: List<ReactionChipDto>, 
+    /**
+     * Your own message: how many people it has still to reach, and how many it is for (0 and 0 once delivered).
+     */
+    var `pending`: kotlin.UInt, 
+    var `total`: kotlin.UInt
 ) {
     
     companion object
@@ -5108,6 +5200,8 @@ public object FfiConverterTypeMessageDto: FfiConverterRustBuffer<MessageDto> {
             FfiConverterBoolean.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterSequenceTypeReactionChipDto.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
         )
     }
 
@@ -5120,7 +5214,9 @@ public object FfiConverterTypeMessageDto: FfiConverterRustBuffer<MessageDto> {
             FfiConverterOptionalString.allocationSize(value.`replyTo`) +
             FfiConverterBoolean.allocationSize(value.`isFile`) +
             FfiConverterBoolean.allocationSize(value.`deleted`) +
-            FfiConverterSequenceTypeReactionChipDto.allocationSize(value.`reactions`)
+            FfiConverterSequenceTypeReactionChipDto.allocationSize(value.`reactions`) +
+            FfiConverterUInt.allocationSize(value.`pending`) +
+            FfiConverterUInt.allocationSize(value.`total`)
     )
 
     override fun write(value: MessageDto, buf: ByteBuffer) {
@@ -5133,6 +5229,8 @@ public object FfiConverterTypeMessageDto: FfiConverterRustBuffer<MessageDto> {
             FfiConverterBoolean.write(value.`isFile`, buf)
             FfiConverterBoolean.write(value.`deleted`, buf)
             FfiConverterSequenceTypeReactionChipDto.write(value.`reactions`, buf)
+            FfiConverterUInt.write(value.`pending`, buf)
+            FfiConverterUInt.write(value.`total`, buf)
     }
 }
 
@@ -7042,6 +7140,38 @@ public object FfiConverterOptionalTypeInviteDto: FfiConverterRustBuffer<InviteDt
         } else {
             buf.put(1)
             FfiConverterTypeInviteDto.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeLastMessageDto: FfiConverterRustBuffer<LastMessageDto?> {
+    override fun read(buf: ByteBuffer): LastMessageDto? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeLastMessageDto.read(buf)
+    }
+
+    override fun allocationSize(value: LastMessageDto?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeLastMessageDto.allocationSize(value)
+        }
+    }
+
+    override fun write(value: LastMessageDto?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeLastMessageDto.write(value, buf)
         }
     }
 }

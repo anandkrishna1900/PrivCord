@@ -3,12 +3,16 @@
 //! None of this can be enforced against a modified app: a receiver who wants to keep a message can. The apps say so.
 
 use super::{Core, Peer, StorageOp};
-use crate::{api::EngineEvent, error::ErrorCode};
+use crate::{
+    api::{ConversationSummary, DeliveryDetail, EngineEvent, LastMessage},
+    error::ErrorCode,
+};
 use privcord_domain::{
     message::MessageKind,
     social::{delete_frame, parse_delete_frame, parse_react_frame, react_frame, REACTION_EMOJI},
     ConversationId, MessageId, UserId,
 };
+use privcord_ports::StoredMessage;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -292,6 +296,65 @@ impl Core {
         self.muted = next;
         self.hub.publish(EngineEvent::SettingsChanged);
         Ok(())
+    }
+
+    /// The chat list: newest message and unread count per conversation, and who is still owed each message of ours.
+    pub(super) fn summaries(&self) -> (Vec<ConversationSummary>, Vec<DeliveryDetail>) {
+        let own = self.uid.as_ref();
+        let mut by_conv: BTreeMap<ConversationId, (Option<&StoredMessage>, usize)> =
+            BTreeMap::new();
+        for m in self.messages.values() {
+            let entry = by_conv.entry(m.conversation.clone()).or_default();
+            if Some(&m.message.sender_id) != own && m.message.read_at.is_none() {
+                entry.1 += 1;
+            }
+            let newer = entry.0.is_none_or(|best| {
+                privcord_domain::ordering::compare_messages(&best.message, &m.message)
+                    == std::cmp::Ordering::Less
+            });
+            if newer {
+                entry.0 = Some(m);
+            }
+        }
+        let summaries = by_conv
+            .into_iter()
+            .map(|(conversation, (best, unread))| ConversationSummary {
+                last: best.map(|m| LastMessage {
+                    text: if self.deleted.contains(&m.message.message_id) {
+                        "Message deleted".to_owned()
+                    } else if m.message.kind == MessageKind::File {
+                        privcord_domain::files::file_preview_text(&m.message.text)
+                    } else {
+                        m.message.text.clone()
+                    },
+                    at: m.message.client_created_at,
+                    own: Some(&m.message.sender_id) == own,
+                    sender: m.message.sender_id.clone(),
+                }),
+                conversation,
+                unread,
+            })
+            .collect();
+        let mut pending: BTreeMap<&MessageId, usize> = BTreeMap::new();
+        for o in &self.outbox {
+            *pending.entry(&o.message_id).or_default() += 1;
+        }
+        let deliveries = pending
+            .into_iter()
+            .filter_map(|(id, pending)| {
+                let m = self.messages.get(id)?;
+                let total = match &m.conversation {
+                    ConversationId::Group(_) => self.conversation_others(&m.conversation).len(),
+                    _ => 1,
+                };
+                Some(DeliveryDetail {
+                    message_id: id.clone(),
+                    pending,
+                    total,
+                })
+            })
+            .collect();
+        (summaries, deliveries)
     }
 
     pub(super) fn reaction_views(&self) -> Vec<(MessageId, Vec<(UserId, String)>)> {

@@ -30,8 +30,8 @@ use privcord_domain::{
     files::{file_chunks, AssembleResult, BeginOutcome, FileAssembler, FileChunk, FileOffer},
     limits::PROTOCOL_VERSION,
     link_policy::{
-        due_links, is_initiator, LinkInfo, LivenessMonitor, LivenessTick, MAX_CONNECTING,
-        MAX_LINKS, PING_INTERVAL_MS,
+        due_links, is_initiator, LinkInfo, LivenessMonitor, LivenessTick, PendingGroupBuffer,
+        MAX_CONNECTING, MAX_LINKS, PING_INTERVAL_MS,
     },
     mesh::{MeshNode, Outgoing as MeshOutgoing},
     message::{
@@ -173,6 +173,8 @@ pub struct Core {
     mesh: MeshNode,
     invites: invites::InviteState,
     sealed: signaling::SealedState,
+    /// Group messages that arrived before we knew the group: held for a minute, then dropped.
+    pending_group: PendingGroupBuffer<Value>,
     /// Everyone's reactions, per message.
     reactions: HashMap<MessageId, BTreeMap<UserId, String>>,
     /// Messages deleted for everyone (only a tombstone is kept).
@@ -224,6 +226,7 @@ impl Core {
             mesh: MeshNode::default(),
             invites: invites::InviteState::default(),
             sealed: signaling::SealedState::default(),
+            pending_group: PendingGroupBuffer::default(),
             reactions: HashMap::new(),
             deleted: std::collections::HashSet::new(),
             muted: BTreeSet::new(),
@@ -904,7 +907,18 @@ impl Core {
         let Some(current) = self.messages.get(&id).map(|m| m.message.delivery_state) else {
             return;
         };
-        let next = DeliveryState::highest(current, state);
+        let mut next = DeliveryState::highest(current, state);
+        // A group message counts as delivered when everyone has it, not when the first person does.
+        let others_pending = matches!(
+            self.messages.get(&id).map(|m| &m.conversation),
+            Some(ConversationId::Group(_))
+        ) && self
+            .outbox
+            .iter()
+            .any(|o| o.message_id == id && &o.recipient != peer);
+        if others_pending && matches!(next, DeliveryState::Delivered | DeliveryState::Read) {
+            next = current;
+        }
         let read_at = (next == DeliveryState::Read).then(|| self.now());
         let ops = [
             StorageOp::SetDelivery {
@@ -1191,6 +1205,7 @@ impl Core {
             }
             self.flush(&peer);
         }
+        self.pending_group.expire(now);
         self.request_dials(now);
         self.tick_invites();
         self.tick_sealed();
@@ -1319,7 +1334,28 @@ impl Core {
                 group_id: group_id.clone(),
             });
         }
+        self.release_pending_group();
         saved
+    }
+
+    /// Messages that waited for their group: handle them now that it is known (expired ones are dropped).
+    fn release_pending_group(&mut self) {
+        if self.pending_group.is_empty() {
+            return;
+        }
+        let now = self.now();
+        let mut buffer = std::mem::take(&mut self.pending_group);
+        let ready = buffer.release(now, |group, from| {
+            self.groups
+                .as_ref()
+                .is_some_and(|g| g.check_message(from, group) == MessageVerdict::Ok)
+        });
+        self.pending_group = buffer;
+        for (_, from, frame) in ready {
+            if let Ok(from) = UserId::new(from.as_str()) {
+                self.on_group_message(&from, &frame);
+            }
+        }
     }
 
     /// Tell a newly authenticated peer which groups we share and what we hold, so both sides catch up.
@@ -1493,8 +1529,17 @@ impl Core {
         let Some(groups) = self.groups.as_ref() else {
             return;
         };
-        if groups.check_message(peer.as_str(), &m.group_id) != MessageVerdict::Ok {
-            return;
+        match groups.check_message(peer.as_str(), &m.group_id) {
+            MessageVerdict::Ok => {}
+            MessageVerdict::UnknownGroup => {
+                // The group's history may be a moment behind the message: hold it. A full buffer drops it, and with no
+                // acknowledgement the sender sends it again.
+                let now = self.now();
+                self.pending_group
+                    .hold(&m.group_id, peer.as_str(), value.clone(), now);
+                return;
+            }
+            MessageVerdict::NotMember => return,
         }
         let Ok(gid) = GroupId::new(m.group_id.as_str()) else {
             return;
@@ -1998,6 +2043,18 @@ impl Core {
             .map(|c| ContactView {
                 uid: c.stored.uid.clone(),
                 name: c.stored.name.clone(),
+                display_name: c
+                    .stored
+                    .name
+                    .clone()
+                    .filter(|n| !n.is_empty())
+                    .unwrap_or_else(|| {
+                        format!(
+                            "Friend {}",
+                            c.stored.uid.as_str().chars().take(8).collect::<String>()
+                        )
+                    }),
+                introduced_by: c.stored.introduced_by.clone(),
                 trust: c.stored.trust,
                 checked: c.stored.checked,
                 safety_number: own
@@ -2028,6 +2085,26 @@ impl Core {
             g.my_groups()
                 .into_iter()
                 .map(|s| GroupView {
+                    am_admin: self
+                        .uid
+                        .as_ref()
+                        .and_then(|u| s.members.get(u.as_str()))
+                        .is_some_and(|m| m.role == Role::Admin),
+                    full: s.members.len() >= privcord_domain::limits::MAX_GROUP_MEMBERS,
+                    max_members: privcord_domain::limits::MAX_GROUP_MEMBERS,
+                    connected: s
+                        .members
+                        .keys()
+                        .filter(|u| Some(u.as_str()) != self.uid.as_ref().map(UserId::as_str))
+                        .filter(|u| {
+                            UserId::new(u.as_str()).is_ok_and(|u| {
+                                matches!(
+                                    self.peers.get(&u).map(|p| p.state),
+                                    Some(ConnectionState::Connected { .. })
+                                )
+                            })
+                        })
+                        .count(),
                     group_id: s.group_id.clone(),
                     name: s.name.clone(),
                     created_by: s.created_by.clone(),
@@ -2040,11 +2117,14 @@ impl Core {
                 .collect()
         });
         let (invite, requests, answer, lookup_pending) = self.invite_views();
+        let (summaries, deliveries) = self.summaries();
         Snapshot {
             seq: self.hub.seq(),
             own_uid: self.uid.clone(),
             contacts,
             groups,
+            summaries,
+            deliveries,
             channels: self.channels.keys().cloned().collect(),
             reactions: self.reaction_views(),
             deleted: self.deleted.iter().cloned().collect(),

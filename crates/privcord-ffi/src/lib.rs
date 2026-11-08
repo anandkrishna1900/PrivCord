@@ -389,6 +389,10 @@ impl From<DeliveryState> for Delivery {
 pub struct ContactDto {
     pub uid: String,
     pub name: Option<String>,
+    /// What to show: their name, or "Friend" and the start of their id.
+    pub display_name: String,
+    /// Who introduced them, if they came through a group.
+    pub introduced_by: Option<String>,
     pub verified: bool,
     pub checked: bool,
     pub safety_number: String,
@@ -410,6 +414,9 @@ pub struct MessageDto {
     pub deleted: bool,
     /// Reactions in the fixed emoji order: how many, and whether you reacted.
     pub reactions: Vec<ReactionChipDto>,
+    /// Your own message: how many people it has still to reach, and how many it is for (0 and 0 once delivered).
+    pub pending: u32,
+    pub total: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -446,6 +453,18 @@ pub struct FileDto {
 pub struct ConversationDto {
     pub id: String,
     pub messages: Vec<MessageDto>,
+    /// The newest message as the chat list shows it (the text, "Message deleted", or a paperclip and a file name).
+    pub last: Option<LastMessageDto>,
+    /// Messages from others you have not read.
+    pub unread: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct LastMessageDto {
+    pub text: String,
+    pub at: i64,
+    pub own: bool,
+    pub sender: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -537,6 +556,11 @@ pub struct GroupDto {
     pub name: String,
     pub created_by: String,
     pub members: Vec<GroupMemberDto>,
+    pub am_admin: bool,
+    pub full: bool,
+    pub max_members: u32,
+    /// How many of the other members are connected right now.
+    pub connected: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
@@ -1113,6 +1137,19 @@ impl PrivcordEngine {
             .as_ref()
             .map(ToString::to_string)
             .unwrap_or_default();
+        let summaries: std::collections::HashMap<
+            ConversationId,
+            privcord_engine::ConversationSummary,
+        > = s
+            .summaries
+            .iter()
+            .map(|x| (x.conversation.clone(), x.clone()))
+            .collect();
+        let deliveries: std::collections::HashMap<privcord_domain::MessageId, (usize, usize)> = s
+            .deliveries
+            .iter()
+            .map(|d| (d.message_id.clone(), (d.pending, d.total)))
+            .collect();
         let deleted: std::collections::HashSet<_> = s.deleted.iter().cloned().collect();
         let reactions: std::collections::HashMap<_, _> = s
             .reactions
@@ -1135,6 +1172,8 @@ impl PrivcordEngine {
                 .map(|c| ContactDto {
                     uid: c.uid.to_string(),
                     name: c.name,
+                    display_name: c.display_name,
+                    introduced_by: c.introduced_by.map(|u| u.to_string()),
                     verified: c.trust == ContactTrust::Verified,
                     checked: c.checked,
                     safety_number: c.safety_number,
@@ -1177,12 +1216,27 @@ impl PrivcordEngine {
                         .into_iter()
                         .map(|(uid, admin)| GroupMemberDto { uid, admin })
                         .collect(),
+                    am_admin: g.am_admin,
+                    full: g.full,
+                    max_members: u32::try_from(g.max_members).unwrap_or(u32::MAX),
+                    connected: u32::try_from(g.connected).unwrap_or(u32::MAX),
                 })
                 .collect(),
             conversations: s
                 .messages
                 .into_iter()
                 .map(|(conv, msgs): (ConversationId, _)| ConversationDto {
+                    last: summaries.get(&conv).and_then(|x| x.last.as_ref()).map(|l| {
+                        LastMessageDto {
+                            text: l.text.clone(),
+                            at: l.at,
+                            own: l.own,
+                            sender: l.sender.to_string(),
+                        }
+                    }),
+                    unread: summaries
+                        .get(&conv)
+                        .map_or(0, |x| u32::try_from(x.unread).unwrap_or(u32::MAX)),
                     id: conv.storage_key(),
                     messages: msgs
                         .into_iter()
@@ -1196,6 +1250,12 @@ impl PrivcordEngine {
                             is_file: m.kind == privcord_domain::message::MessageKind::File,
                             deleted: deleted.contains(&m.message_id),
                             reactions: chips(reactions.get(&m.message_id), &own),
+                            pending: deliveries
+                                .get(&m.message_id)
+                                .map_or(0, |d| u32::try_from(d.0).unwrap_or(u32::MAX)),
+                            total: deliveries
+                                .get(&m.message_id)
+                                .map_or(0, |d| u32::try_from(d.1).unwrap_or(u32::MAX)),
                         })
                         .collect(),
                 })

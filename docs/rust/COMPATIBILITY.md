@@ -50,11 +50,35 @@ These are stricter than TypeScript, and none can affect a peer that behaves like
 
 Additional deliberate differences: the kill-switch runner takes a clock instead of reading one, and failure text is cut to 160 UTF-16 units without splitting a character; pairing timestamps are whole milliseconds like every other timestamp here; a relayed (`relay_blob`) frame is passed on at most twice, as in the apps.
 
+## The pairwise end-to-end layer (X3DH, Double Ratchet, envelopes, group messages)
+
+Ported to `crypto::e2ee` and checked both ways with `docs/e2ee-vectors.json` (made by `scripts/gen-e2ee-vectors.ts`) and
+`rust-vectors.json`:
+
+* every bundle verdict and error message; the responder derives exactly the secret and associated data the TypeScript
+  initiator derived;
+* TypeScript conversations (first message, replies, out-of-order delivery across a DH ratchet, a replayed position, a
+  changed byte, a rewritten context) are read by Rust from the TypeScript's own session snapshots;
+* a Rust X3DH session, its ratchet messages and a group message are read by the TypeScript code (`rustInterop.test.ts`);
+* serialised sessions restore across languages.
+
+Deliberate differences: **decrypting is atomic in Rust** (a refused message leaves the ratchet exactly as it was; the
+TypeScript documents this but may leave a half-advanced state behind); ratchet public keys must have 32-byte
+coordinates (the TypeScript only fails later); prekey ids are whole numbers; the group manager takes `(group_id, epoch)`
+instead of the TypeScript's metadata object, which is only a carrier.
+
+## The signaling clients
+
+`engine::signaling` holds the relay client, the Nostr transport and the hub as state machines with no sockets. The relay
+client is tested against the real `relay/server.js` (live delivery, stored delivery on subscribe, refusal of an oversize
+blob); backoff (1 s doubling to 30 s), put timeouts (8 s), reconnect from the newest timestamp, de-duplication across
+services and the Nostr acceptance rules are tested against small fake servers speaking the same protocols. One
+difference: a hub whose services are all stopped reports `idle` (the TypeScript says `error`).
+
 ## Not yet compatible (not ported)
 
 * Disappearing messages and translations were removed from the apps and are not in the engine.
-* The Double Ratchet and X3DH code in `packages/protocol/src/e2ee` is not used by either app and is not ported (ADR-009).
-* The WebRTC session, sockets, the Bluetooth radio, the keychain and all UI stay in the platform adapters by design.
+* The WebRTC session, the raw sockets, the Bluetooth radio, the keychain and all UI stay in the platform adapters by design. The only application files still marked partly ported are `engine.ts` and `ChatEngine.kt`, which still start and drive the WebRTC and Bluetooth links, turn events into screen state, and show notices.
 
 **What this means for talking to the existing apps.** The engine can authenticate with the existing apps over a WebRTC data channel (`LinkSecurity::TransportEncrypted`) and exchange messages, receipts, groups, files and pings with them. That is checked at the level of handshake transcripts, frame shapes and shared vectors; **it has not been run against a live TypeScript or Kotlin app**.
 

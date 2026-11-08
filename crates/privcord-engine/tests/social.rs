@@ -498,3 +498,126 @@ fn a_backup_restores_friends_groups_channels_messages_reactions_and_deletes_with
         Err(ErrorCode::BackupNotYours)
     );
 }
+
+/// Deliver every frame in flight between all nodes until quiet.
+fn pump_all(nodes: &mut [&mut Node]) {
+    loop {
+        let mut moved = false;
+        let uids: Vec<UserId> = nodes.iter().map(|n| n.uid.clone()).collect();
+        for i in 0..nodes.len() {
+            for (to, frame) in nodes[i].transport.drain() {
+                moved = true;
+                if let Some(j) = uids.iter().position(|u| *u == to) {
+                    let from = uids[i].clone();
+                    nodes[j].core.frame_received(&from, &frame);
+                }
+            }
+        }
+        if !moved {
+            return;
+        }
+    }
+}
+
+fn link_nodes(nodes: &mut [&mut Node], i: usize, j: usize) {
+    let (ui, uj) = (nodes[i].uid.clone(), nodes[j].uid.clone());
+    nodes[i].transport.set_connected(&uj, true);
+    nodes[j].transport.set_connected(&ui, true);
+    nodes[i]
+        .core
+        .link_up(&uj, ConnectionPath::DirectLan)
+        .unwrap();
+    nodes[j]
+        .core
+        .link_up(&ui, ConnectionPath::DirectLan)
+        .unwrap();
+    pump_all(nodes);
+}
+
+#[test]
+fn the_chat_list_knows_the_newest_message_and_unread_and_a_group_message_is_delivered_only_when_everyone_has_it(
+) {
+    use privcord_domain::{message::DeliveryState, ConversationId};
+    let clock = FakeClock::at(1_700_000_000_000);
+    let (mut a, mut b, mut c) = (
+        node("alice", &clock),
+        node("bob", &clock),
+        node("carol", &clock),
+    );
+    befriend(&mut a, &mut b);
+    befriend(&mut a, &mut c);
+    let gid = a
+        .core
+        .create_group("Trip", &[b.uid.clone(), c.uid.clone()])
+        .unwrap();
+    let mut all = [&mut a, &mut b, &mut c];
+    link_nodes(&mut all, 0, 1);
+    let [a, b, c] = all;
+
+    // Group: one member is connected, the other is not.
+    let id = a
+        .core
+        .send_group_message(&gid, "who is coming", None)
+        .unwrap();
+    let mut all = [&mut *a, &mut *b, &mut *c];
+    pump_all(&mut all);
+    let snap = a.core.snapshot();
+    let g = &snap.groups[0];
+    assert_eq!(
+        (g.am_admin, g.full, g.max_members, g.connected),
+        (true, false, 10, 1)
+    );
+    let state = |n: &Node| {
+        n.core
+            .snapshot()
+            .messages
+            .iter()
+            .flat_map(|(_, v)| v.iter())
+            .find(|m| m.message_id == id)
+            .unwrap()
+            .delivery_state
+    };
+    assert_eq!(
+        state(a),
+        DeliveryState::Sent,
+        "Bob has it, Carol has not: not delivered yet"
+    );
+    let d = snap.deliveries.iter().find(|d| d.message_id == id).unwrap();
+    assert_eq!((d.pending, d.total), (1, 2));
+    // Carol connects and gets it: now it is delivered, and nothing is owed.
+    let mut all = [&mut *a, &mut *b, &mut *c];
+    link_nodes(&mut all, 0, 2);
+    assert_eq!(state(a), DeliveryState::Delivered);
+    assert!(a.core.snapshot().deliveries.is_empty());
+
+    // The chat list: newest message, unread count, a deleted message and a file show as the apps show them.
+    let conv = ConversationId::Group(privcord_domain::GroupId::new(gid.as_str()).unwrap());
+    let summary = |n: &Node| {
+        n.core
+            .snapshot()
+            .summaries
+            .into_iter()
+            .find(|s| s.conversation == conv)
+            .unwrap()
+    };
+    assert_eq!(summary(b).last.as_ref().unwrap().text, "who is coming");
+    assert_eq!(
+        (summary(b).unread, summary(a).unread),
+        (1, 0),
+        "Bob has not read it; Alice wrote it"
+    );
+    clock.advance(10);
+    let f = a
+        .core
+        .send_group_file(&gid, "map.png", "image/png", vec![1, 2, 3], None)
+        .unwrap();
+    let mut all = [&mut *a, &mut *b, &mut *c];
+    pump_all(&mut all);
+    assert_eq!(summary(b).last.as_ref().unwrap().text, "\u{1F4CE} map.png");
+    assert_eq!(summary(b).unread, 2);
+    a.core.delete_message(&f, true).unwrap();
+    let mut all = [&mut *a, &mut *b, &mut *c];
+    pump_all(&mut all);
+    assert_eq!(summary(b).last.as_ref().unwrap().text, "Message deleted");
+    assert!(!b.core.snapshot().contacts[0].display_name.is_empty());
+}

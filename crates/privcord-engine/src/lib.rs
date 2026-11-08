@@ -9,10 +9,11 @@ pub mod core;
 pub mod error;
 pub mod events;
 pub mod runtime;
+pub mod signaling;
 
 pub use api::{
-    AnswerStatus, AnswerView, ContactView, EngineEvent, GroupView, InviteView, RequestView,
-    SignalMessage, Snapshot,
+    AnswerStatus, AnswerView, ContactView, ConversationSummary, DeliveryDetail, EngineEvent,
+    GroupView, InviteView, LastMessage, RequestView, SignalMessage, Snapshot,
 };
 pub use core::{Core, LinkSecurity, Ports};
 pub use core::{InvitePreview, RestoreSummary, SearchHit};
