@@ -12,6 +12,7 @@ use crate::{
     events::EventStream,
 };
 use privcord_domain::{privacy::ContactTrust, state::ConnectionPath, MessageId, UserId};
+use privcord_ports::StoredFile;
 use std::{sync::Mutex, thread::JoinHandle, time::Duration};
 use tokio::sync::{mpsc, oneshot};
 use zeroize::Zeroizing;
@@ -57,6 +58,18 @@ enum Command {
         peer: UserId,
         reply: Reply<()>,
     },
+    SendFile {
+        to: FileTarget,
+        name: String,
+        mime: String,
+        bytes: Vec<u8>,
+        reply_to: Option<MessageId>,
+        reply: Reply<MessageId>,
+    },
+    LoadFile {
+        id: MessageId,
+        reply: Reply<Option<StoredFile>>,
+    },
     Group {
         op: GroupOp,
         /// The new group's id, or the new message's id; empty for operations that return nothing.
@@ -77,6 +90,13 @@ enum Command {
     },
     Snapshot(Reply<Snapshot>),
     Shutdown(oneshot::Sender<()>),
+}
+
+/// Who a file goes to.
+#[derive(Debug)]
+pub enum FileTarget {
+    Person(UserId),
+    Group(String),
 }
 
 /// A group operation (one command variant for all of them keeps the queue's shape small).
@@ -140,6 +160,20 @@ fn pump(core: &mut Core, cmd: Command) -> bool {
             reply,
         } => drop(reply.send(core.send_message(&peer, &text, reply_to.as_ref()))),
         Command::MarkRead { peer, reply } => drop(reply.send(core.mark_read(&peer))),
+        Command::SendFile {
+            to,
+            name,
+            mime,
+            bytes,
+            reply_to,
+            reply,
+        } => drop(reply.send(match to {
+            FileTarget::Person(p) => core.send_file(&p, &name, &mime, bytes, reply_to.as_ref()),
+            FileTarget::Group(g) => {
+                core.send_group_file(&g, &name, &mime, bytes, reply_to.as_ref())
+            }
+        })),
+        Command::LoadFile { id, reply } => drop(reply.send(core.file(&id))),
         Command::Group { op, reply } => drop(
             reply.send(match op {
                 GroupOp::Create { name, members } => core.create_group(&name, &members),
@@ -294,6 +328,32 @@ impl EngineHandle {
         })
         .await
     }
+    pub async fn send_file(
+        &self,
+        to: FileTarget,
+        name: &str,
+        mime: &str,
+        bytes: Vec<u8>,
+        reply_to: Option<&MessageId>,
+    ) -> Result<MessageId, ErrorCode> {
+        self.ask(|reply| Command::SendFile {
+            to,
+            name: name.to_owned(),
+            mime: mime.to_owned(),
+            bytes,
+            reply_to: reply_to.cloned(),
+            reply,
+        })
+        .await
+    }
+    pub async fn load_file(&self, id: &MessageId) -> Result<Option<StoredFile>, ErrorCode> {
+        self.ask(|reply| Command::LoadFile {
+            id: id.clone(),
+            reply,
+        })
+        .await
+    }
+
     /// Run one group operation. Returns the new group's or message's id where there is one, else an empty string.
     pub async fn group(&self, op: GroupOp) -> Result<String, ErrorCode> {
         self.ask(|reply| Command::Group { op, reply }).await

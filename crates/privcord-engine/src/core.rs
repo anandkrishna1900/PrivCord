@@ -25,9 +25,11 @@ use privcord_crypto::{
     CryptoError,
 };
 use privcord_domain::{
+    files::{file_chunks, AssembleResult, BeginOutcome, FileAssembler, FileChunk, FileOffer},
     limits::PROTOCOL_VERSION,
     message::{
-        declined_frame, parse_declined_frame, ChatMessage, DeclineReason, DeliveryState, ReplyRef,
+        declined_frame, parse_declined_frame, ChatMessage, DeclineReason, DeliveryState,
+        MessageKind, ReplyRef, TransportKind,
     },
     ordering::sort_messages,
     privacy::{accepts_direct, can_start_direct, ContactTrust},
@@ -36,7 +38,7 @@ use privcord_domain::{
 };
 use privcord_ports::{
     Clock, Notification, Notifier, OutboxEntry, SecureStore, Storage, StorageOp, StoredContact,
-    StoredMessage, Transport,
+    StoredFile, StoredMessage, Transport,
 };
 use serde_json::{json, Value};
 use std::{
@@ -95,6 +97,8 @@ struct Peer {
     group_only: Option<bool>,
     /// Their hello, if it arrived a moment before the adapter told us the link was up (and when).
     early_hello: Option<(Value, i64)>,
+    /// Files arriving from them right now.
+    files: FileAssembler,
 }
 
 impl Peer {
@@ -105,6 +109,7 @@ impl Peer {
             path: ConnectionPath::Unknown,
             group_only: None,
             early_hello: None,
+            files: FileAssembler::new(),
         }
     }
     fn ready(&self) -> bool {
@@ -512,6 +517,7 @@ impl Core {
         if let Some(p) = self.peers.get_mut(peer) {
             p.session = None;
             p.early_hello = None;
+            p.files.clear();
         }
         self.step(peer, ConnectionEvent::Closed);
         if self
@@ -526,6 +532,7 @@ impl Core {
     fn fail(&mut self, peer: &UserId, reason: ConnectionFailure) {
         if let Some(p) = self.peers.get_mut(peer) {
             p.session = None;
+            p.files.clear();
         }
         self.step(peer, ConnectionEvent::Failed(reason));
         if !matches!(
@@ -663,6 +670,8 @@ impl Core {
             Some("declined") => self.on_declined(peer, frame),
             Some("group_push" | "group_events" | "group_have") => self.on_group_frame(peer, frame),
             Some("gmsg") => self.on_group_message(peer, frame),
+            Some("file_offer") => self.on_file_offer(peer, frame),
+            Some("file_chunk") => self.on_file_chunk(peer, frame),
             Some("privacy") => {
                 if let Some(g) = frame.get("groupOnly").and_then(Value::as_bool) {
                     if let Some(p) = self.peers.get_mut(peer) {
@@ -740,6 +749,22 @@ impl Core {
         ack(self, &id);
     }
 
+    /// Is this a message we sent to `peer` (directly, or as one member of a group)?
+    fn is_ours_to(&self, id: &MessageId, peer: &UserId) -> bool {
+        self.messages.get(id).is_some_and(|m| {
+            Some(&m.message.sender_id) == self.uid.as_ref()
+                && match &m.conversation {
+                    ConversationId::Direct(p) => p == peer,
+                    // A group message went to each member separately: that member (and only they) may answer for it.
+                    ConversationId::Group(_) => self
+                        .outbox
+                        .iter()
+                        .any(|o| &o.message_id == id && &o.recipient == peer),
+                    ConversationId::Channel(_) => false,
+                }
+        })
+    }
+
     fn on_ack(&mut self, peer: &UserId, frame: &Value) {
         let Some(id) = frame
             .get("messageId")
@@ -754,18 +779,7 @@ impl Core {
             _ => return,
         };
         // Only the person we sent it to may acknowledge it.
-        let ours = self.messages.get(&id).is_some_and(|m| {
-            Some(&m.message.sender_id) == self.uid.as_ref()
-                && match &m.conversation {
-                    ConversationId::Direct(p) => p == peer,
-                    // A group message was sent to each member separately: that member (and only they) may acknowledge.
-                    ConversationId::Group(_) => self
-                        .outbox
-                        .iter()
-                        .any(|o| o.message_id == id && &o.recipient == peer),
-                    ConversationId::Channel(_) => false,
-                }
-        });
+        let ours = self.is_ours_to(&id, peer);
         if !ours {
             return;
         }
@@ -806,10 +820,7 @@ impl Core {
         let Some((id, _reason)) = parse_declined_frame(frame) else {
             return;
         };
-        let ours = self
-            .messages
-            .get(&id)
-            .is_some_and(|m| m.conversation == ConversationId::Direct(peer.clone()));
+        let ours = self.is_ours_to(&id, peer);
         if !ours {
             return;
         }
@@ -926,19 +937,44 @@ impl Core {
             let Some(row) = self.messages.get(&entry.message_id) else {
                 continue;
             };
-            let frame = match &row.conversation {
-                ConversationId::Group(g) => GroupFrame::Message(GroupMessage {
-                    group_id: g.as_str().to_owned(),
-                    message_id: row.message.message_id.clone(),
-                    text: row.message.text.clone(),
-                    client_created_at: row.message.client_created_at,
-                    reply_to: row.message.reply_to.clone(),
-                })
-                .to_value(),
-                _ => row.message.to_peer_frame(),
+            let frames: Vec<Value> = if row.message.kind == MessageKind::File {
+                let Ok(Some(file)) = self.ports.storage.file(&entry.message_id) else {
+                    continue;
+                };
+                let group = match &row.conversation {
+                    ConversationId::Group(g) => Some(g.as_str().to_owned()),
+                    _ => None,
+                };
+                let Ok(offer) = FileOffer::make(
+                    entry.message_id.clone(),
+                    group,
+                    &file.name,
+                    &file.mime,
+                    &file.bytes,
+                    row.message.client_created_at,
+                    row.message.reply_to.clone(),
+                ) else {
+                    continue;
+                };
+                std::iter::once(offer.to_frame())
+                    .chain(file_chunks(&entry.message_id, &file.bytes).map(|c| c.to_frame()))
+                    .collect()
+            } else {
+                vec![match &row.conversation {
+                    ConversationId::Group(g) => GroupFrame::Message(GroupMessage {
+                        group_id: g.as_str().to_owned(),
+                        message_id: row.message.message_id.clone(),
+                        text: row.message.text.clone(),
+                        client_created_at: row.message.client_created_at,
+                        reply_to: row.message.reply_to.clone(),
+                    })
+                    .to_value(),
+                    _ => row.message.to_peer_frame(),
+                }]
             };
             let was_queued = row.message.delivery_state == DeliveryState::Queued;
-            if !self.send_secure(peer, &frame) {
+            let all_sent = frames.iter().all(|f| self.send_secure(peer, f));
+            if !all_sent {
                 return;
             }
             let next = OutboxEntry {
@@ -1328,6 +1364,262 @@ impl Core {
             preview: message.text.chars().take(80).collect(),
         });
         ack(self, &message.message_id);
+    }
+
+    /* ---------------------------------------------------------------- files */
+
+    /// Keep a file message and its bytes together with one outbox entry per recipient, then try to send.
+    fn queue_file(
+        &mut self,
+        conversation: ConversationId,
+        recipients: Vec<UserId>,
+        name: &str,
+        mime: &str,
+        bytes: Vec<u8>,
+        reply_to: Option<&MessageId>,
+    ) -> Result<MessageId, ErrorCode> {
+        let own = self.uid.clone().ok_or(ErrorCode::NoIdentity)?;
+        let reply = match reply_to {
+            None => None,
+            Some(id) => {
+                let m = self.messages.get(id).ok_or(ErrorCode::UnknownMessage)?;
+                Some(ReplyRef::quoting(
+                    &m.message.message_id,
+                    &m.message.sender_id,
+                    &m.message.text,
+                ))
+            }
+        };
+        let id = self.new_message_id()?;
+        let now = self.now();
+        let offer = FileOffer::make(id.clone(), None, name, mime, &bytes, now, reply.clone())
+            .map_err(|_| ErrorCode::BadFile)?;
+        let message = ChatMessage {
+            message_id: id.clone(),
+            client_message_id: id.clone(),
+            sender_id: own,
+            // As in the apps, a file message's text is its (cleaned) name.
+            text: offer.name.clone(),
+            client_created_at: now,
+            kind: MessageKind::File,
+            transport: TransportKind::P2p,
+            delivery_state: DeliveryState::Queued,
+            reply_to: reply,
+            read_at: None,
+        };
+        let row = StoredMessage {
+            conversation: conversation.clone(),
+            message,
+        };
+        let entries: Vec<OutboxEntry> = recipients
+            .iter()
+            .map(|r| OutboxEntry {
+                message_id: id.clone(),
+                recipient: r.clone(),
+                attempts: 0,
+                next_try_ms: now,
+            })
+            .collect();
+        let mut ops = vec![
+            StorageOp::InsertMessage(row.clone()),
+            StorageOp::PutFile(StoredFile {
+                message_id: id.clone(),
+                name: offer.name,
+                mime: offer.mime,
+                bytes,
+            }),
+        ];
+        ops.extend(entries.iter().cloned().map(StorageOp::PutOutbox));
+        self.ports.storage.apply(&ops)?;
+        self.messages.insert(id.clone(), row);
+        self.outbox.extend(entries);
+        self.hub.publish(EngineEvent::MessageAdded {
+            conversation,
+            message_id: id.clone(),
+            own: true,
+        });
+        for r in &recipients {
+            self.flush(r);
+        }
+        Ok(id)
+    }
+
+    /// Send a file (at most 8 MB) to one person.
+    pub fn send_file(
+        &mut self,
+        peer: &UserId,
+        name: &str,
+        mime: &str,
+        bytes: Vec<u8>,
+        reply_to: Option<&MessageId>,
+    ) -> Result<MessageId, ErrorCode> {
+        self.require_live()?;
+        if !self.contacts.contains_key(peer) {
+            return Err(ErrorCode::UnknownContact);
+        }
+        if !self.may_start_direct(peer) {
+            return Err(ErrorCode::DirectNotAllowed);
+        }
+        self.queue_file(
+            ConversationId::Direct(peer.clone()),
+            vec![peer.clone()],
+            name,
+            mime,
+            bytes,
+            reply_to,
+        )
+    }
+
+    /// Send a file to every other member of a group.
+    pub fn send_group_file(
+        &mut self,
+        group_id: &str,
+        name: &str,
+        mime: &str,
+        bytes: Vec<u8>,
+        reply_to: Option<&MessageId>,
+    ) -> Result<MessageId, ErrorCode> {
+        self.require_live()?;
+        let own = self.uid.clone().ok_or(ErrorCode::NoIdentity)?;
+        let groups = self.groups.as_ref().ok_or(ErrorCode::NoIdentity)?;
+        if !groups.is_member(group_id, own.as_str()) {
+            return Err(ErrorCode::NoSuchGroup);
+        }
+        let recipients = groups
+            .recipients(group_id)
+            .iter()
+            .filter_map(|u| UserId::new(u.as_str()).ok())
+            .collect();
+        let gid = GroupId::new(group_id).map_err(|_| ErrorCode::NoSuchGroup)?;
+        self.queue_file(
+            ConversationId::Group(gid),
+            recipients,
+            name,
+            mime,
+            bytes,
+            reply_to,
+        )
+    }
+
+    /// The bytes of a stored file message.
+    pub fn file(&self, id: &MessageId) -> Result<Option<StoredFile>, ErrorCode> {
+        Ok(self.ports.storage.file(id)?)
+    }
+
+    fn decline(&mut self, peer: &UserId, id: &MessageId, reason: DeclineReason) {
+        self.send_secure(peer, &declined_frame(id, reason));
+    }
+
+    fn on_file_offer(&mut self, peer: &UserId, frame: &Value) {
+        let Some(offer) = FileOffer::from_frame(frame) else {
+            return;
+        };
+        let id = offer.message_id.clone();
+        match &offer.group_id {
+            None => {
+                let trust = self
+                    .contacts
+                    .get(peer)
+                    .map_or(ContactTrust::Introduced, |c| c.stored.trust);
+                if !accepts_direct(trust, self.group_only) {
+                    self.decline(peer, &id, DeclineReason::DirectNotAccepted);
+                    return;
+                }
+            }
+            Some(g) => {
+                let ok = self
+                    .groups
+                    .as_ref()
+                    .is_some_and(|c| c.check_message(peer.as_str(), g) == MessageVerdict::Ok);
+                if !ok {
+                    return;
+                }
+            }
+        }
+        // Already have it (a retry): acknowledge again and store nothing.
+        if self.messages.contains_key(&id) {
+            let at = self.now();
+            self.send_secure(peer, &json!({ "v": PROTOCOL_VERSION, "kind": "ack", "messageId": id, "state": "DELIVERED", "at": at }));
+            return;
+        }
+        let outcome = self
+            .peers
+            .get_mut(peer)
+            .map(|p| p.files.begin(offer))
+            .unwrap_or(BeginOutcome::Busy);
+        match outcome {
+            BeginOutcome::Ok => {}
+            BeginOutcome::TooLarge => self.decline(peer, &id, DeclineReason::TooLarge),
+            BeginOutcome::Busy => self.decline(peer, &id, DeclineReason::Busy),
+        }
+    }
+
+    fn on_file_chunk(&mut self, peer: &UserId, frame: &Value) {
+        let Some(chunk) = FileChunk::from_frame(frame) else {
+            return;
+        };
+        let id = chunk.message_id.clone();
+        let result = match self.peers.get_mut(peer) {
+            Some(p) => p.files.chunk(&chunk),
+            None => return,
+        };
+        match result {
+            AssembleResult::More => {}
+            AssembleResult::Failed(reason) => self.decline(peer, &id, reason),
+            AssembleResult::Done { offer, bytes } => self.store_received_file(peer, *offer, bytes),
+        }
+    }
+
+    fn store_received_file(&mut self, peer: &UserId, offer: FileOffer, bytes: Vec<u8>) {
+        let conversation = match &offer.group_id {
+            None => ConversationId::Direct(peer.clone()),
+            Some(g) => match GroupId::new(g.as_str()) {
+                Ok(g) => ConversationId::Group(g),
+                Err(_) => return,
+            },
+        };
+        let message = ChatMessage {
+            message_id: offer.message_id.clone(),
+            client_message_id: offer.message_id.clone(),
+            sender_id: peer.clone(),
+            text: offer.name.clone(),
+            client_created_at: offer.client_created_at,
+            kind: MessageKind::File,
+            transport: TransportKind::P2p,
+            delivery_state: DeliveryState::Delivered,
+            reply_to: offer.reply_to.clone(),
+            read_at: None,
+        };
+        let row = StoredMessage {
+            conversation: conversation.clone(),
+            message: message.clone(),
+        };
+        let ops = [
+            StorageOp::InsertMessage(row.clone()),
+            StorageOp::PutFile(StoredFile {
+                message_id: offer.message_id.clone(),
+                name: offer.name.clone(),
+                mime: offer.mime,
+                bytes,
+            }),
+        ];
+        // Not stored, so not acknowledged: the sender will send it again.
+        if self.ports.storage.apply(&ops).is_err() {
+            return;
+        }
+        self.messages.insert(message.message_id.clone(), row);
+        self.hub.publish(EngineEvent::MessageAdded {
+            conversation: conversation.clone(),
+            message_id: message.message_id.clone(),
+            own: false,
+        });
+        self.ports.notifier.notify(Notification::MessageReceived {
+            conversation,
+            sender: peer.clone(),
+            preview: privcord_domain::files::file_preview_text(&offer.name),
+        });
+        let at = self.now();
+        self.send_secure(peer, &json!({ "v": PROTOCOL_VERSION, "kind": "ack", "messageId": message.message_id, "state": "DELIVERED", "at": at }));
     }
 
     /* ---------------------------------------------------------------- state */

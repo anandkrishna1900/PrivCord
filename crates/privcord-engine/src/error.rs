@@ -29,6 +29,8 @@ pub enum ErrorCode {
     GroupRefused,
     #[error("The group is full.")]
     GroupFull,
+    #[error("That file is empty, too large or not valid.")]
+    BadFile,
     #[error("Storage failed; nothing was changed.")]
     Storage,
     #[error("Secure storage failed.")]

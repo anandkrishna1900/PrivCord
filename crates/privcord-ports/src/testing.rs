@@ -3,9 +3,10 @@
 
 use crate::{
     Clock, IdentitySecrets, Notification, Notifier, OutboxEntry, SecureStore, SecureStoreError,
-    Storage, StorageError, StorageOp, StoredContact, StoredMessage, Transport, TransportError,
+    Storage, StorageError, StorageOp, StoredContact, StoredFile, StoredMessage, Transport,
+    TransportError,
 };
-use privcord_domain::UserId;
+use privcord_domain::{MessageId, UserId};
 use std::{
     collections::HashMap,
     sync::{
@@ -43,6 +44,7 @@ struct Data {
     messages: Vec<StoredMessage>,
     outbox: Vec<OutboxEntry>,
     kv: HashMap<String, Vec<u8>>,
+    files: HashMap<MessageId, StoredFile>,
 }
 
 /// Atomic in-memory storage: a batch is applied to a copy and swapped in only if every op succeeds.
@@ -105,6 +107,7 @@ impl Storage for MemoryStorage {
                 StorageOp::DeleteMessage(id) => {
                     next.messages.retain(|x| &x.message.message_id != id);
                     next.outbox.retain(|o| &o.message_id != id);
+                    next.files.remove(id);
                 }
                 StorageOp::PutOutbox(e) => {
                     if !next
@@ -124,6 +127,16 @@ impl Storage for MemoryStorage {
                 } => {
                     next.outbox
                         .retain(|o| !(&o.message_id == message_id && &o.recipient == recipient));
+                }
+                StorageOp::PutFile(f) => {
+                    if !next
+                        .messages
+                        .iter()
+                        .any(|x| x.message.message_id == f.message_id)
+                    {
+                        return Err(StorageError::Rejected);
+                    }
+                    next.files.insert(f.message_id.clone(), f.clone());
                 }
                 StorageOp::SetKv { key, value } => {
                     next.kv.insert(key.clone(), value.clone());
@@ -145,6 +158,9 @@ impl Storage for MemoryStorage {
     }
     fn outbox(&self) -> Result<Vec<OutboxEntry>, StorageError> {
         Ok(lock(&self.data).outbox.clone())
+    }
+    fn file(&self, id: &MessageId) -> Result<Option<StoredFile>, StorageError> {
+        Ok(lock(&self.data).files.get(id).cloned())
     }
     fn kv(&self, key: &str) -> Result<Option<Vec<u8>>, StorageError> {
         Ok(lock(&self.data).kv.get(key).cloned())

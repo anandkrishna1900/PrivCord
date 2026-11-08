@@ -58,6 +58,15 @@ pub struct StoredMessage {
     pub message: ChatMessage,
 }
 
+/// The bytes of a file message, kept apart from the message row so lists stay cheap.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredFile {
+    pub message_id: MessageId,
+    pub name: String,
+    pub mime: String,
+    pub bytes: Vec<u8>,
+}
+
 /// A message waiting to reach one recipient.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutboxEntry {
@@ -89,6 +98,8 @@ pub enum StorageOp {
         key: String,
         value: Vec<u8>,
     },
+    /// Keeps a file's bytes with its (already stored, or same-batch) message.
+    PutFile(StoredFile),
 }
 
 /// Persistent state. `apply` is the only way to change it, and it is atomic: a crash or an error part-way leaves
@@ -99,6 +110,7 @@ pub trait Storage: Send + Sync {
     fn messages(&self) -> Result<Vec<StoredMessage>, StorageError>;
     fn outbox(&self) -> Result<Vec<OutboxEntry>, StorageError>;
     fn kv(&self, key: &str) -> Result<Option<Vec<u8>>, StorageError>;
+    fn file(&self, id: &MessageId) -> Result<Option<StoredFile>, StorageError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

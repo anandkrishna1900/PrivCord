@@ -842,6 +842,12 @@ internal open class UniffiVTableCallbackInterfaceTransportCallbacks(
 
 
 
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -894,6 +900,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_link_up(`ptr`: Pointer,`peer`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,`kind`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_load_file(`ptr`: Pointer,`messageId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_method_privcordengine_mark_read(`ptr`: Pointer,`peer`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_next_event(`ptr`: Pointer,`timeoutMs`: Int,uniffi_out_err: UniffiRustCallStatus, 
@@ -906,6 +914,10 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_rename_group(`ptr`: Pointer,`group`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_send_file(`ptr`: Pointer,`peer`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,`mime`: RustBuffer.ByValue,`data`: RustBuffer.ByValue,`replyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_method_privcordengine_send_group_file(`ptr`: Pointer,`group`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,`mime`: RustBuffer.ByValue,`data`: RustBuffer.ByValue,`replyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_method_privcordengine_send_group_message(`ptr`: Pointer,`group`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`replyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_method_privcordengine_send_message(`ptr`: Pointer,`peer`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`replyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1066,6 +1078,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_link_up(
     ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_load_file(
+    ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_mark_read(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_next_event(
@@ -1077,6 +1091,10 @@ internal interface UniffiLib : Library {
     fun uniffi_privcord_ffi_checksum_method_privcordengine_remove_group_member(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_rename_group(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_send_file(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_send_group_file(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_send_group_message(
     ): Short
@@ -1142,6 +1160,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_link_up() != 12869.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_load_file() != 9945.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_mark_read() != 53077.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1158,6 +1179,12 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_rename_group() != 8179.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_send_file() != 52032.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_send_group_file() != 47013.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_send_group_message() != 844.toShort()) {
@@ -1905,6 +1932,11 @@ public interface PrivcordEngineInterface {
      */
     fun `linkUp`(`peer`: kotlin.String, `path`: PathKind, `kind`: LinkKind)
     
+    /**
+     * The bytes of a file message, if we have them.
+     */
+    fun `loadFile`(`messageId`: kotlin.String): FileDto?
+    
     fun `markRead`(`peer`: kotlin.String)
     
     /**
@@ -1920,6 +1952,16 @@ public interface PrivcordEngineInterface {
     fun `removeGroupMember`(`group`: kotlin.String, `uid`: kotlin.String)
     
     fun `renameGroup`(`group`: kotlin.String, `name`: kotlin.String)
+    
+    /**
+     * Send a file (at most 8 MB) to a person.
+     */
+    fun `sendFile`(`peer`: kotlin.String, `name`: kotlin.String, `mime`: kotlin.String, `data`: kotlin.ByteArray, `replyTo`: kotlin.String?): kotlin.String
+    
+    /**
+     * Send a file to every other member of a group.
+     */
+    fun `sendGroupFile`(`group`: kotlin.String, `name`: kotlin.String, `mime`: kotlin.String, `data`: kotlin.ByteArray, `replyTo`: kotlin.String?): kotlin.String
     
     fun `sendGroupMessage`(`group`: kotlin.String, `text`: kotlin.String, `replyTo`: kotlin.String?): kotlin.String
     
@@ -2139,6 +2181,22 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
     
 
     
+    /**
+     * The bytes of a file message, if we have them.
+     */
+    @Throws(FfiException::class)override fun `loadFile`(`messageId`: kotlin.String): FileDto? {
+            return FfiConverterOptionalTypeFileDto.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_load_file(
+        it, FfiConverterString.lower(`messageId`),_status)
+}
+    }
+    )
+    }
+    
+
+    
     @Throws(FfiException::class)override fun `markRead`(`peer`: kotlin.String)
         = 
     callWithPointer {
@@ -2213,6 +2271,38 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
 }
     }
     
+    
+
+    
+    /**
+     * Send a file (at most 8 MB) to a person.
+     */
+    @Throws(FfiException::class)override fun `sendFile`(`peer`: kotlin.String, `name`: kotlin.String, `mime`: kotlin.String, `data`: kotlin.ByteArray, `replyTo`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_send_file(
+        it, FfiConverterString.lower(`peer`),FfiConverterString.lower(`name`),FfiConverterString.lower(`mime`),FfiConverterByteArray.lower(`data`),FfiConverterOptionalString.lower(`replyTo`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Send a file to every other member of a group.
+     */
+    @Throws(FfiException::class)override fun `sendGroupFile`(`group`: kotlin.String, `name`: kotlin.String, `mime`: kotlin.String, `data`: kotlin.ByteArray, `replyTo`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_send_group_file(
+        it, FfiConverterString.lower(`group`),FfiConverterString.lower(`name`),FfiConverterString.lower(`mime`),FfiConverterByteArray.lower(`data`),FfiConverterOptionalString.lower(`replyTo`),_status)
+}
+    }
+    )
+    }
     
 
     
@@ -3026,6 +3116,42 @@ public object FfiConverterTypeConversationDto: FfiConverterRustBuffer<Conversati
 
 
 
+data class FileDto (
+    var `name`: kotlin.String, 
+    var `mime`: kotlin.String, 
+    var `data`: kotlin.ByteArray
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFileDto: FfiConverterRustBuffer<FileDto> {
+    override fun read(buf: ByteBuffer): FileDto {
+        return FileDto(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterByteArray.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FileDto) = (
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterString.allocationSize(value.`mime`) +
+            FfiConverterByteArray.allocationSize(value.`data`)
+    )
+
+    override fun write(value: FileDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterString.write(value.`mime`, buf)
+            FfiConverterByteArray.write(value.`data`, buf)
+    }
+}
+
+
+
 data class GroupDto (
     var `id`: kotlin.String, 
     var `name`: kotlin.String, 
@@ -3104,7 +3230,11 @@ data class MessageDto (
     var `text`: kotlin.String, 
     var `createdAt`: kotlin.Long, 
     var `delivery`: Delivery, 
-    var `replyTo`: kotlin.String?
+    var `replyTo`: kotlin.String?, 
+    /**
+     * A file message: `text` is the file's name and `load_file` returns its bytes.
+     */
+    var `isFile`: kotlin.Boolean
 ) {
     
     companion object
@@ -3122,6 +3252,7 @@ public object FfiConverterTypeMessageDto: FfiConverterRustBuffer<MessageDto> {
             FfiConverterLong.read(buf),
             FfiConverterTypeDelivery.read(buf),
             FfiConverterOptionalString.read(buf),
+            FfiConverterBoolean.read(buf),
         )
     }
 
@@ -3131,7 +3262,8 @@ public object FfiConverterTypeMessageDto: FfiConverterRustBuffer<MessageDto> {
             FfiConverterString.allocationSize(value.`text`) +
             FfiConverterLong.allocationSize(value.`createdAt`) +
             FfiConverterTypeDelivery.allocationSize(value.`delivery`) +
-            FfiConverterOptionalString.allocationSize(value.`replyTo`)
+            FfiConverterOptionalString.allocationSize(value.`replyTo`) +
+            FfiConverterBoolean.allocationSize(value.`isFile`)
     )
 
     override fun write(value: MessageDto, buf: ByteBuffer) {
@@ -3141,6 +3273,7 @@ public object FfiConverterTypeMessageDto: FfiConverterRustBuffer<MessageDto> {
             FfiConverterLong.write(value.`createdAt`, buf)
             FfiConverterTypeDelivery.write(value.`delivery`, buf)
             FfiConverterOptionalString.write(value.`replyTo`, buf)
+            FfiConverterBoolean.write(value.`isFile`, buf)
     }
 }
 
@@ -3579,6 +3712,12 @@ sealed class FfiException: kotlin.Exception() {
             get() = ""
     }
     
+    class BadFile(
+        ) : FfiException() {
+        override val message
+            get() = ""
+    }
+    
 
     companion object ErrorHandler : UniffiRustCallStatusErrorHandler<FfiException> {
         override fun lift(error_buf: RustBuffer.ByValue): FfiException = FfiConverterTypeFfiError.lift(error_buf)
@@ -3614,6 +3753,7 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
             17 -> FfiException.NoSuchGroup()
             18 -> FfiException.GroupRefused()
             19 -> FfiException.GroupFull()
+            20 -> FfiException.BadFile()
             else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
         }
     }
@@ -3696,6 +3836,10 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4UL
             )
+            is FfiException.BadFile -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
         }
     }
 
@@ -3775,6 +3919,10 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
             }
             is FfiException.GroupFull -> {
                 buf.putInt(19)
+                Unit
+            }
+            is FfiException.BadFile -> {
+                buf.putInt(20)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -4028,6 +4176,38 @@ public object FfiConverterOptionalByteArray: FfiConverterRustBuffer<kotlin.ByteA
         } else {
             buf.put(1)
             FfiConverterByteArray.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeFileDto: FfiConverterRustBuffer<FileDto?> {
+    override fun read(buf: ByteBuffer): FileDto? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeFileDto.read(buf)
+    }
+
+    override fun allocationSize(value: FileDto?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeFileDto.allocationSize(value)
+        }
+    }
+
+    override fun write(value: FileDto?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeFileDto.write(value, buf)
         }
     }
 }

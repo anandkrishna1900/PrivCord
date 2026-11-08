@@ -251,3 +251,35 @@ fn bad_rows_are_reported_as_corruption_not_trusted() {
     }
     assert_eq!(db.messages().unwrap_err(), StorageError::Corrupt);
 }
+
+#[test]
+fn file_bytes_round_trip_and_go_with_their_message() {
+    use privcord_ports::StoredFile;
+    let db = SqliteStorage::in_memory().unwrap();
+    let alice = UserId::new("alice").unwrap();
+    let id = MessageId::new("11111111-1111-4111-8111-111111111111").unwrap();
+    let msg = ChatMessage::outgoing(alice.clone(), "x", 1, id.clone(), None).unwrap();
+    let file = StoredFile {
+        message_id: id.clone(),
+        name: "a.bin".into(),
+        mime: "application/octet-stream".into(),
+        bytes: vec![1, 2, 3, 0, 255],
+    };
+    // A file cannot exist without its message.
+    assert!(db.apply(&[StorageOp::PutFile(file.clone())]).is_err());
+    db.apply(&[
+        StorageOp::InsertMessage(StoredMessage {
+            conversation: ConversationId::Direct(alice),
+            message: msg,
+        }),
+        StorageOp::PutFile(file.clone()),
+    ])
+    .unwrap();
+    assert_eq!(db.file(&id).unwrap(), Some(file));
+    db.apply(&[StorageOp::DeleteMessage(id.clone())]).unwrap();
+    assert_eq!(
+        db.file(&id).unwrap(),
+        None,
+        "deleting the message deletes the file"
+    );
+}

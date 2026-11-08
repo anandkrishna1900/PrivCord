@@ -19,7 +19,7 @@ use privcord_domain::{
     ConversationId, MessageId, UserId,
 };
 use privcord_engine::{
-    EngineEvent, EngineHandle, ErrorCode, EventStream, GroupOp, LinkSecurity, Ports,
+    EngineEvent, EngineHandle, ErrorCode, EventStream, FileTarget, GroupOp, LinkSecurity, Ports,
 };
 use privcord_ports::{
     Clock, IdentitySecrets, Notification, Notifier, SecureStore, SecureStoreError, Transport,
@@ -74,6 +74,8 @@ pub enum FfiError {
     GroupRefused,
     #[error("group is full")]
     GroupFull,
+    #[error("bad file")]
+    BadFile,
 }
 
 impl From<ErrorCode> for FfiError {
@@ -97,6 +99,7 @@ impl From<ErrorCode> for FfiError {
             ErrorCode::NoSuchGroup => Self::NoSuchGroup,
             ErrorCode::GroupRefused => Self::GroupRefused,
             ErrorCode::GroupFull => Self::GroupFull,
+            ErrorCode::BadFile => Self::BadFile,
         }
     }
 }
@@ -293,6 +296,15 @@ pub struct MessageDto {
     pub created_at: i64,
     pub delivery: Delivery,
     pub reply_to: Option<String>,
+    /// A file message: `text` is the file's name and `load_file` returns its bytes.
+    pub is_file: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FileDto {
+    pub name: String,
+    pub mime: String,
+    pub data: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -535,6 +547,48 @@ impl PrivcordEngine {
         }))?)
     }
 
+    /// Send a file (at most 8 MB) to a person.
+    pub fn send_file(
+        &self,
+        peer: String,
+        name: String,
+        mime: String,
+        data: Vec<u8>,
+        reply_to: Option<String>,
+    ) -> Result<String, FfiError> {
+        self.send_file_to(
+            FileTarget::Person(user(&peer)?),
+            &name,
+            &mime,
+            data,
+            reply_to,
+        )
+    }
+
+    /// Send a file to every other member of a group.
+    pub fn send_group_file(
+        &self,
+        group: String,
+        name: String,
+        mime: String,
+        data: Vec<u8>,
+        reply_to: Option<String>,
+    ) -> Result<String, FfiError> {
+        self.send_file_to(FileTarget::Group(group), &name, &mime, data, reply_to)
+    }
+
+    /// The bytes of a file message, if we have them.
+    pub fn load_file(&self, message_id: String) -> Result<Option<FileDto>, FfiError> {
+        let id = MessageId::new(message_id).map_err(|_| FfiError::InvalidArgument)?;
+        Ok(
+            pollster::block_on(self.handle.load_file(&id))?.map(|f| FileDto {
+                name: f.name,
+                mime: f.mime,
+                data: f.bytes,
+            }),
+        )
+    }
+
     pub fn mark_read(&self, peer: String) -> Result<(), FfiError> {
         Ok(pollster::block_on(self.handle.mark_read(&user(&peer)?))?)
     }
@@ -608,6 +662,7 @@ impl PrivcordEngine {
                             created_at: m.client_created_at,
                             delivery: m.delivery_state.into(),
                             reply_to: m.reply_to.map(|r| r.id),
+                            is_file: m.kind == privcord_domain::message::MessageKind::File,
                         })
                         .collect(),
                 })
@@ -632,5 +687,24 @@ impl PrivcordEngine {
     /// Stop the engine and wait for it to finish. Safe to call more than once.
     pub fn shutdown(&self) -> Result<(), FfiError> {
         Ok(pollster::block_on(self.handle.shutdown())?)
+    }
+}
+
+impl PrivcordEngine {
+    fn send_file_to(
+        &self,
+        to: FileTarget,
+        name: &str,
+        mime: &str,
+        data: Vec<u8>,
+        reply_to: Option<String>,
+    ) -> Result<String, FfiError> {
+        let reply = reply_to
+            .map(|r| MessageId::new(r).map_err(|_| FfiError::InvalidArgument))
+            .transpose()?;
+        Ok(
+            pollster::block_on(self.handle.send_file(to, name, mime, data, reply.as_ref()))?
+                .to_string(),
+        )
     }
 }

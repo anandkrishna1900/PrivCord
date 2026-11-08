@@ -14,7 +14,9 @@ use privcord_domain::{
     privacy::ContactTrust,
     ConversationId, GroupId, MessageId, UserId,
 };
-use privcord_ports::{OutboxEntry, Storage, StorageError, StorageOp, StoredContact, StoredMessage};
+use privcord_ports::{
+    OutboxEntry, Storage, StorageError, StorageOp, StoredContact, StoredFile, StoredMessage,
+};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::{
     path::Path,
@@ -22,7 +24,7 @@ use std::{
 };
 
 /// The newest schema this build understands.
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
 
 /// Each entry takes the database from version `index` to `index + 1`.
 const MIGRATIONS: &[&str] = &[
@@ -61,6 +63,13 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX idx_outbox_recipient ON outbox (recipient, next_try_ms);
     CREATE TABLE kv (key TEXT PRIMARY KEY NOT NULL, value BLOB NOT NULL);",
+    // 1 -> 2: file bytes live beside, not inside, the message rows.
+    "CREATE TABLE files (
+        message_id TEXT PRIMARY KEY NOT NULL REFERENCES messages (message_id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        mime TEXT NOT NULL,
+        bytes BLOB NOT NULL
+    );",
 ];
 
 pub struct SqliteStorage {
@@ -272,6 +281,14 @@ fn apply_op(tx: &rusqlite::Transaction<'_>, op: &StorageOp) -> Result<(), Storag
                 return Err(StorageError::Rejected);
             }
         }
+        StorageOp::PutFile(f) => {
+            tx.prepare_cached(
+                "INSERT INTO files (message_id, name, mime, bytes) VALUES (?1,?2,?3,?4)
+                 ON CONFLICT(message_id) DO UPDATE SET name=?2, mime=?3, bytes=?4",
+            )
+            .and_then(|mut s| s.execute(params![f.message_id.as_str(), f.name, f.mime, f.bytes]))
+            .map_err(rej)?;
+        }
         StorageOp::DeleteMessage(id) => {
             tx.execute(
                 "DELETE FROM messages WHERE message_id = ?1",
@@ -461,6 +478,24 @@ impl Storage for SqliteStorage {
             });
         }
         Ok(out)
+    }
+
+    fn file(&self, id: &MessageId) -> Result<Option<StoredFile>, StorageError> {
+        self.lock()
+            .query_row(
+                "SELECT name, mime, bytes FROM files WHERE message_id = ?1",
+                params![id.as_str()],
+                |r| {
+                    Ok(StoredFile {
+                        message_id: id.clone(),
+                        name: r.get(0)?,
+                        mime: r.get(1)?,
+                        bytes: r.get(2)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(unavailable)
     }
 
     fn kv(&self, key: &str) -> Result<Option<Vec<u8>>, StorageError> {
