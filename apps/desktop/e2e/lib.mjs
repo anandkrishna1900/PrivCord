@@ -25,8 +25,13 @@ export function serve(dir) {
   return new Promise((resolve) => {
     const types = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html' };
     const server = http.createServer((req, res) => {
-      let p = path.join(dir, req.url.split('?')[0]);
-      if (!fs.existsSync(p) || fs.statSync(p).isDirectory()) p = path.join(dir, 'index.html');
+      const root = path.resolve(dir);
+      const rawPath = (req.url ?? '/').split('?')[0];
+      let pathname;
+      try { pathname = decodeURIComponent(rawPath); } catch { pathname = '/'; }
+      const candidate = path.resolve(root, `.${pathname}`);
+      let p = (candidate === root || candidate.startsWith(root + path.sep)) ? candidate : path.join(root, 'index.html');
+      if (!fs.existsSync(p) || fs.statSync(p).isDirectory()) p = path.join(root, 'index.html');
       res.setHeader('content-type', types[path.extname(p)] ?? 'application/octet-stream');
       res.end(fs.readFileSync(p));
     });
