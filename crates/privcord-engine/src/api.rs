@@ -38,6 +38,8 @@ pub struct Snapshot {
     pub own_uid: Option<UserId>,
     pub contacts: Vec<ContactView>,
     pub groups: Vec<GroupView>,
+    /// Names of the public channels joined.
+    pub channels: Vec<String>,
     pub messages: Vec<(ConversationId, Vec<ChatMessage>)>,
     pub queued: usize,
 }

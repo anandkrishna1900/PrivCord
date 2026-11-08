@@ -195,6 +195,7 @@ impl SecureStore for MemorySecureStore {
 pub struct RecordingTransport {
     sent: Mutex<Vec<(UserId, String)>>,
     connected: Mutex<Vec<UserId>>,
+    raw: Mutex<Vec<(String, String)>>,
 }
 
 impl RecordingTransport {
@@ -208,6 +209,10 @@ impl RecordingTransport {
             c.push(peer.clone());
         }
     }
+    /// Everything sent over raw (mesh) links since the last call.
+    pub fn drain_raw(&self) -> Vec<(String, String)> {
+        std::mem::take(&mut *lock(&self.raw))
+    }
     /// Everything sent since the last call.
     pub fn drain(&self) -> Vec<(UserId, String)> {
         std::mem::take(&mut *lock(&self.sent))
@@ -220,6 +225,10 @@ impl Transport for RecordingTransport {
             return Err(TransportError::NotConnected);
         }
         lock(&self.sent).push((peer.clone(), frame.to_owned()));
+        Ok(())
+    }
+    fn send_raw(&self, link: &str, frame: &str) -> Result<(), TransportError> {
+        lock(&self.raw).push((link.to_owned(), frame.to_owned()));
         Ok(())
     }
 }

@@ -14,4 +14,4 @@ pub use api::{ContactView, EngineEvent, GroupView, Snapshot};
 pub use core::{Core, LinkSecurity, Ports};
 pub use error::ErrorCode;
 pub use events::EventStream;
-pub use runtime::{EngineHandle, FileTarget, GroupOp};
+pub use runtime::{ChannelOp, EngineHandle, FileTarget, GroupOp};

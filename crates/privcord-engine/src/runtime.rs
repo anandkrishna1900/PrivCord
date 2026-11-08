@@ -70,6 +70,18 @@ enum Command {
         id: MessageId,
         reply: Reply<Option<StoredFile>>,
     },
+    Channel {
+        op: ChannelOp,
+        reply: Reply<String>,
+    },
+    MeshLink {
+        link: String,
+        up: bool,
+    },
+    MeshFrame {
+        link: String,
+        text: String,
+    },
     Group {
         op: GroupOp,
         /// The new group's id, or the new message's id; empty for operations that return nothing.
@@ -90,6 +102,14 @@ enum Command {
     },
     Snapshot(Reply<Snapshot>),
     Shutdown(oneshot::Sender<()>),
+}
+
+/// A channel operation. Returns the channel's normalised name or the new message's id, else an empty string.
+#[derive(Debug)]
+pub enum ChannelOp {
+    Join(String),
+    Leave(String),
+    Send { name: String, text: String },
 }
 
 /// Who a file goes to.
@@ -174,6 +194,23 @@ fn pump(core: &mut Core, cmd: Command) -> bool {
             }
         })),
         Command::LoadFile { id, reply } => drop(reply.send(core.file(&id))),
+        Command::Channel { op, reply } => drop(
+            reply.send(match op {
+                ChannelOp::Join(n) => core.join_channel(&n),
+                ChannelOp::Leave(n) => core.leave_channel(&n).map(|()| String::new()),
+                ChannelOp::Send { name, text } => core
+                    .send_channel_message(&name, &text)
+                    .map(|id| id.to_string()),
+            }),
+        ),
+        Command::MeshLink { link, up } => {
+            if up {
+                let _ = core.mesh_link_up(&link);
+            } else {
+                core.mesh_link_down(&link);
+            }
+        }
+        Command::MeshFrame { link, text } => core.mesh_frame(&link, &text),
         Command::Group { op, reply } => drop(
             reply.send(match op {
                 GroupOp::Create { name, members } => core.create_group(&name, &members),
@@ -352,6 +389,18 @@ impl EngineHandle {
             reply,
         })
         .await
+    }
+
+    pub async fn channel(&self, op: ChannelOp) -> Result<String, ErrorCode> {
+        self.ask(|reply| Command::Channel { op, reply }).await
+    }
+    /// A Bluetooth mesh neighbour appeared (`up`) or went away. Fire and forget.
+    pub fn mesh_link(&self, link: String, up: bool) -> Result<(), ErrorCode> {
+        self.push(Command::MeshLink { link, up })
+    }
+    /// A mesh packet arrived from a neighbour. Fire and forget.
+    pub fn mesh_frame(&self, link: String, text: String) -> Result<(), ErrorCode> {
+        self.push(Command::MeshFrame { link, text })
     }
 
     /// Run one group operation. Returns the new group's or message's id where there is one, else an empty string.

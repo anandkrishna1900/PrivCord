@@ -8,13 +8,13 @@ Status meanings: **Ported, tested** = the Rust implementation exists and is chec
 
 | Status | Files | Lines |
 |---|---:|---:|
-| Ported, tested | 46 | 5302 |
+| Ported, tested | 46 | 5310 |
 | Partly ported | 14 | 8360 |
 | Not yet ported | 24 | 3883 |
 | Stays (UI) | 51 | 10663 |
 | Stays (platform adapter) | 26 | 3822 |
 | Replaced by a library | 3 | 208 |
-| **All mapped files** | **164** | **32238** |
+| **All mapped files** | **164** | **32246** |
 
 Ported does not mean retired: the TypeScript and Kotlin versions stay in production until the apps call the Rust engine (M7 desktop, M8 Android) and the compatibility gates pass (PRD section 16).
 
@@ -25,7 +25,7 @@ Ported does not mean retired: the TypeScript and Kotlin versions stay in product
 | `packages/protocol/src/backup.ts` | 45 | `BACKUP_PREFIX`, `BACKUP_MIN_PASSPHRASE`, `sealBackup`, `openBackup` | Encrypted backup format | crypto::backup | Crypto | Ported, tested | M7/M8 | vectors both ways |
 | `packages/protocol/src/connectivity/connectionPath.ts` | 67 | `CandidateType`, `ConnectionPath`, `classifyPath`, `selectedPairFromStats`, `BLUETOOTH_PATH` | Classify the selected ICE pair | domain::state | Domain | Ported, tested | M7/M8 | domain unit |
 | `packages/protocol/src/connectivity/contactCard.ts` | 64 | `CONTACT_CARD_PREFIX`, `ContactCard`, `Contact`, `uidFromDh`, `encodeContactCard`, `decodeContactCard` | Contact card encode, decode, verify | crypto::card | Crypto | Ported, tested | M7/M8 | vectors byte-identical |
-| `packages/protocol/src/connectivity/diagnosis.ts` | 79 | `ConnectionFacts`, `DiagnosisAction`, `Diagnosis`, `diagnoseConnection`, `countSdpCandidates` | Why isn't it connecting | domain::diagnosis | Domain | Ported, tested | M7/M8 | domain unit |
+| `packages/protocol/src/connectivity/diagnosis.ts` | 84 | `ConnectionFacts`, `DiagnosisAction`, `Diagnosis`, `diagnoseConnection`, `countSdpCandidates` | Why isn't it connecting | domain::diagnosis | Domain | Ported, tested | M7/M8 | domain unit |
 | `packages/protocol/src/connectivity/inviteCode.ts` | 118 | `INVITE_WORDS`, `INVITE_TTL_SEC`, `newInviteWords`, `parseInviteWords`, `InviteRendezvous`, `deriveInvite` +4 | Six-word invites | crypto::invite | Crypto | Ported, tested | M7/M8 | vectors both ways |
 | `packages/protocol/src/connectivity/networkConfig.ts` | 112 | `TransportMode`, `TurnServer`, `SignalingConfig`, `NetworkConfig`, `DEFAULT_NOSTR_RELAYS`, `DEFAULT_NETWORK_CONFIG` +4 | Network settings parsing | domain::network | Domain | Ported, tested | M7/M8 | domain unit |
 | `packages/protocol/src/connectivity/seal.ts` | 156 | `SealedBlob`, `MAX_SEALED_BLOB_BYTES`, `mailboxFor`, `SealInput`, `seal`, `signBlob` +6 | Sealed blobs, mailbox ids | crypto::seal, domain::blob | Crypto | Ported, tested | M7/M8 | vectors both ways |
@@ -44,7 +44,7 @@ Ported does not mean retired: the TypeScript and Kotlin versions stay in product
 | `packages/protocol/src/groups/log.ts` | 222 | `GroupMemberInfo`, `GroupState`, `AddStatus`, `MAX_EVENTS_PER_GROUP`, `MAX_PENDING_EVENTS`, `GroupLog` | Group event log: signing, ids, deterministic fold, roster, 10-member cap | crypto::group | Crypto | Ported, tested | M7/M8 | every TypeScript trace in docs/group-vectors.json, any arrival order |
 | `packages/protocol/src/index.ts` | 30 | (none) | Re-exports | n/a | Tooling | Replaced by a library | With the package | n/a |
 | `packages/protocol/src/killswitch.ts` | 199 | `KillSwitchScope`, `StepStatus`, `KillSwitchMode`, `KillSwitchPlanStep`, `KillSwitchStepResult`, `KillSwitchReport` +10 | Emergency erase plans and report | engine::privacy service (planned) | Engine | Not yet ported | M4 | n/a |
-| `packages/protocol/src/mesh/channel.ts` | 113 | `MAX_CHANNEL_NAME`, `MAX_CHANNEL_TEXT`, `CHANNEL_TTL_SEC`, `normalizeChannelName`, `ChannelKeys`, `deriveChannel` +3 | Open channels | domain::channel, crypto::channel | Domain/Crypto | Ported, tested | M7/M8 | vectors both ways |
+| `packages/protocol/src/mesh/channel.ts` | 116 | `MAX_CHANNEL_NAME`, `MAX_CHANNEL_TEXT`, `CHANNEL_TTL_SEC`, `normalizeChannelName`, `ChannelKeys`, `deriveChannel` +3 | Open channels | domain::channel, crypto::channel | Domain/Crypto | Ported, tested | M7/M8 | vectors both ways |
 | `packages/protocol/src/mesh/node.ts` | 179 | `MESH_MAX_TTL`, `MESH_MAX_PACKET_BYTES`, `MESH_CARRY_MS`, `MeshPacket`, `packetId`, `makeMeshPacket` +5 | Mesh flood, carry, dedupe, rate limit | domain::mesh | Domain | Ported, tested | M7/M8 | simulation incl. flaky links |
 | `packages/protocol/src/message.ts` | 243 | `DeliveryState`, `TransportKind`, `MessageType`, `ReplyRef`, `makeReplyRef`, `validateReply` +18 | Message model, text rules, reply refs, peer message frame, declined frame | domain::message | Domain | Ported, tested | M7/M8 | domain vectors, properties |
 | `packages/protocol/src/ordering.ts` | 54 | `compareMessages`, `sortMessages`, `mergeMessages`, `isRetryable` | Message order and merge | domain::ordering | Domain | Ported, tested | M7/M8 | properties |

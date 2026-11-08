@@ -31,6 +31,10 @@ pub enum ErrorCode {
     GroupFull,
     #[error("That file is empty, too large or not valid.")]
     BadFile,
+    #[error("That is not a valid channel name.")]
+    BadChannel,
+    #[error("You have not joined that channel.")]
+    NotJoined,
     #[error("Storage failed; nothing was changed.")]
     Storage,
     #[error("Secure storage failed.")]

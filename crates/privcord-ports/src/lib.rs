@@ -144,6 +144,12 @@ pub enum TransportError {
 pub trait Transport: Send + Sync {
     /// Queue one frame. Must not block on the network.
     fn send(&self, peer: &UserId, frame: &str) -> Result<(), TransportError>;
+
+    /// Queue one frame on a radio link that is not a known contact (a Bluetooth mesh neighbour). Links are named by
+    /// whatever the adapter uses. A transport with no mesh radio keeps this default and the mesh simply has no links.
+    fn send_raw(&self, _link: &str, _frame: &str) -> Result<(), TransportError> {
+        Err(TransportError::NotConnected)
+    }
 }
 
 /// Something worth telling the person about while the app may be in the background.

@@ -36,6 +36,28 @@ impl TransportCallbacks for Wire {
             _ => false,
         }
     }
+    fn send_raw(&self, _link: String, _frame: String) -> bool {
+        false
+    }
+}
+
+/// A radio for the mesh test: each engine knows its neighbours by name and delivers straight into them.
+#[derive(Default)]
+struct MeshWire {
+    name: OnceLock<String>,
+    peers: Mutex<std::collections::HashMap<String, Arc<PrivcordEngine>>>,
+}
+impl TransportCallbacks for MeshWire {
+    fn send(&self, _peer: String, _frame: String) -> bool {
+        false
+    }
+    fn send_raw(&self, link: String, frame: String) -> bool {
+        let peer = self.peers.lock().unwrap().get(&link).cloned();
+        match (peer, self.name.get()) {
+            (Some(p), Some(me)) => p.mesh_frame(me.clone(), frame).is_ok(),
+            _ => false,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -46,11 +68,11 @@ impl NotifierCallbacks for Bell {
     }
 }
 
-fn start(
+fn start<T: TransportCallbacks + 'static>(
     dir: &std::path::Path,
     name: &str,
     keystore: Arc<FakeKeystore>,
-    wire: Arc<Wire>,
+    wire: Arc<T>,
     bell: Arc<Bell>,
 ) -> Arc<PrivcordEngine> {
     PrivcordEngine::start(
@@ -227,4 +249,73 @@ fn bad_input_gives_stable_codes() {
     )
     .is_err());
     e.shutdown().unwrap();
+}
+
+#[test]
+fn a_channel_message_crosses_the_mesh_over_two_hops_and_a_stranger_in_the_middle_only_relays() {
+    let dir = tempfile::tempdir().unwrap();
+    let mk = |name: &str| {
+        let wire = Arc::new(MeshWire::default());
+        wire.name.set(name.to_owned()).unwrap();
+        let e = start(
+            dir.path(),
+            &format!("{name}.db"),
+            Arc::new(FakeKeystore::default()),
+            wire.clone(),
+            Arc::new(Bell::default()),
+        );
+        e.create_identity().unwrap();
+        (e, wire)
+    };
+    let ((a, wa), (b, wb), (c, wc)) = (mk("a"), mk("b"), mk("c"));
+    wa.peers.lock().unwrap().insert("b".into(), b.clone());
+    wb.peers.lock().unwrap().insert("a".into(), a.clone());
+    wb.peers.lock().unwrap().insert("c".into(), c.clone());
+    wc.peers.lock().unwrap().insert("b".into(), b.clone());
+    // A and C joined; B never did and cannot read it, yet it must relay.
+    assert_eq!(
+        a.join_channel("  #General Chat ".into()).unwrap(),
+        "general-chat"
+    );
+    c.join_channel("general-chat".into()).unwrap();
+    assert_eq!(
+        a.join_channel("###".into()).unwrap_err(),
+        FfiError::BadChannel
+    );
+    assert_eq!(
+        b.send_channel_message("general-chat".into(), "x".into())
+            .unwrap_err(),
+        FfiError::NotJoined
+    );
+    a.mesh_link_up("b".into()).unwrap();
+    b.mesh_link_up("a".into()).unwrap();
+    b.mesh_link_up("c".into()).unwrap();
+    c.mesh_link_up("b".into()).unwrap();
+
+    a.send_channel_message("general-chat".into(), "anyone near?".into())
+        .unwrap();
+    let mut got = None;
+    for _ in 0..300 {
+        let snap = c.snapshot().unwrap();
+        got = snap
+            .conversations
+            .iter()
+            .find(|v| v.id == "chan:general-chat")
+            .and_then(|v| v.messages.first().cloned());
+        if got.is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let got = got.expect("C received the message across two hops");
+    assert_eq!(got.text, "anyone near?");
+    assert_eq!(got.sender, a.snapshot().unwrap().own_uid.unwrap());
+    assert!(
+        b.snapshot().unwrap().conversations.is_empty(),
+        "the relay stored nothing"
+    );
+    assert_eq!(c.snapshot().unwrap().channels, ["general-chat"]);
+    for e in [a, b, c] {
+        e.shutdown().unwrap();
+    }
 }

@@ -669,6 +669,9 @@ internal interface UniffiCallbackInterfaceSecureStoreCallbacksMethod2 : com.sun.
 internal interface UniffiCallbackInterfaceTransportCallbacksMethod0 : com.sun.jna.Callback {
     fun callback(`uniffiHandle`: Long,`peer`: RustBuffer.ByValue,`frame`: RustBuffer.ByValue,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,)
 }
+internal interface UniffiCallbackInterfaceTransportCallbacksMethod1 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`link`: RustBuffer.ByValue,`frame`: RustBuffer.ByValue,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,)
+}
 @Structure.FieldOrder("messageReceived", "uniffiFree")
 internal open class UniffiVTableCallbackInterfaceNotifierCallbacks(
     @JvmField internal var `messageReceived`: UniffiCallbackInterfaceNotifierCallbacksMethod0? = null,
@@ -707,22 +710,39 @@ internal open class UniffiVTableCallbackInterfaceSecureStoreCallbacks(
     }
 
 }
-@Structure.FieldOrder("send", "uniffiFree")
+@Structure.FieldOrder("send", "sendRaw", "uniffiFree")
 internal open class UniffiVTableCallbackInterfaceTransportCallbacks(
     @JvmField internal var `send`: UniffiCallbackInterfaceTransportCallbacksMethod0? = null,
+    @JvmField internal var `sendRaw`: UniffiCallbackInterfaceTransportCallbacksMethod1? = null,
     @JvmField internal var `uniffiFree`: UniffiCallbackInterfaceFree? = null,
 ) : Structure() {
     class UniffiByValue(
         `send`: UniffiCallbackInterfaceTransportCallbacksMethod0? = null,
+        `sendRaw`: UniffiCallbackInterfaceTransportCallbacksMethod1? = null,
         `uniffiFree`: UniffiCallbackInterfaceFree? = null,
-    ): UniffiVTableCallbackInterfaceTransportCallbacks(`send`,`uniffiFree`,), Structure.ByValue
+    ): UniffiVTableCallbackInterfaceTransportCallbacks(`send`,`sendRaw`,`uniffiFree`,), Structure.ByValue
 
    internal fun uniffiSetValue(other: UniffiVTableCallbackInterfaceTransportCallbacks) {
         `send` = other.`send`
+        `sendRaw` = other.`sendRaw`
         `uniffiFree` = other.`uniffiFree`
     }
 
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -894,6 +914,10 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_method_privcordengine_frame_received(`ptr`: Pointer,`peer`: RustBuffer.ByValue,`frame`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_join_channel(`ptr`: Pointer,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_method_privcordengine_leave_channel(`ptr`: Pointer,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_leave_group(`ptr`: Pointer,`group`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_link_down(`ptr`: Pointer,`peer`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -903,6 +927,12 @@ internal interface UniffiLib : Library {
     fun uniffi_privcord_ffi_fn_method_privcordengine_load_file(`ptr`: Pointer,`messageId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_method_privcordengine_mark_read(`ptr`: Pointer,`peer`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_mesh_frame(`ptr`: Pointer,`link`: RustBuffer.ByValue,`frame`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_mesh_link_down(`ptr`: Pointer,`link`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_mesh_link_up(`ptr`: Pointer,`link`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_next_event(`ptr`: Pointer,`timeoutMs`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -914,6 +944,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_rename_group(`ptr`: Pointer,`group`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_send_channel_message(`ptr`: Pointer,`name`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_method_privcordengine_send_file(`ptr`: Pointer,`peer`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,`mime`: RustBuffer.ByValue,`data`: RustBuffer.ByValue,`replyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_method_privcordengine_send_group_file(`ptr`: Pointer,`group`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,`mime`: RustBuffer.ByValue,`data`: RustBuffer.ByValue,`replyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -947,6 +979,8 @@ internal interface UniffiLib : Library {
     fun uniffi_privcord_ffi_fn_init_callback_vtable_transportcallbacks(`vtable`: UniffiVTableCallbackInterfaceTransportCallbacks,
     ): Unit
     fun uniffi_privcord_ffi_fn_method_transportcallbacks_send(`ptr`: Pointer,`peer`: RustBuffer.ByValue,`frame`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    fun uniffi_privcord_ffi_fn_method_transportcallbacks_send_raw(`ptr`: Pointer,`link`: RustBuffer.ByValue,`frame`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     fun ffi_privcord_ffi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1072,6 +1106,10 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_frame_received(
     ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_join_channel(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_leave_channel(
+    ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_leave_group(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_link_down(
@@ -1082,6 +1120,12 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_mark_read(
     ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_mesh_frame(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_mesh_link_down(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_mesh_link_up(
+    ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_next_event(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_own_card(
@@ -1091,6 +1135,8 @@ internal interface UniffiLib : Library {
     fun uniffi_privcord_ffi_checksum_method_privcordengine_remove_group_member(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_rename_group(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_send_channel_message(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_send_file(
     ): Short
@@ -1113,6 +1159,8 @@ internal interface UniffiLib : Library {
     fun uniffi_privcord_ffi_checksum_method_securestorecallbacks_delete_identity(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_transportcallbacks_send(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_transportcallbacks_send_raw(
     ): Short
     fun uniffi_privcord_ffi_checksum_constructor_privcordengine_start(
     ): Short
@@ -1151,6 +1199,12 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_frame_received() != 36264.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_join_channel() != 1805.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_leave_channel() != 8979.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_leave_group() != 65470.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1166,6 +1220,15 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_mark_read() != 53077.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_mesh_frame() != 42486.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_mesh_link_down() != 60840.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_mesh_link_up() != 17419.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_next_event() != 14644.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1179,6 +1242,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_rename_group() != 8179.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_send_channel_message() != 32740.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_send_file() != 52032.toShort()) {
@@ -1212,6 +1278,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_transportcallbacks_send() != 17330.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_transportcallbacks_send_raw() != 54395.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_constructor_privcordengine_start() != 20200.toShort()) {
@@ -1923,6 +1992,13 @@ public interface PrivcordEngineInterface {
      */
     fun `frameReceived`(`peer`: kotlin.String, `frame`: kotlin.String)
     
+    /**
+     * Join a public channel; returns its normalised name.
+     */
+    fun `joinChannel`(`name`: kotlin.String): kotlin.String
+    
+    fun `leaveChannel`(`name`: kotlin.String)
+    
     fun `leaveGroup`(`group`: kotlin.String)
     
     fun `linkDown`(`peer`: kotlin.String)
@@ -1940,6 +2016,18 @@ public interface PrivcordEngineInterface {
     fun `markRead`(`peer`: kotlin.String)
     
     /**
+     * A mesh packet arrived from a neighbour.
+     */
+    fun `meshFrame`(`link`: kotlin.String, `frame`: kotlin.String)
+    
+    fun `meshLinkDown`(`link`: kotlin.String)
+    
+    /**
+     * A Bluetooth mesh neighbour appeared.
+     */
+    fun `meshLinkUp`(`link`: kotlin.String)
+    
+    /**
      * Wait up to `timeout_ms` for the next event. `None` means nothing happened. Call it from a background thread
      * and turn it into a Flow; each call takes the next event in order.
      */
@@ -1952,6 +2040,11 @@ public interface PrivcordEngineInterface {
     fun `removeGroupMember`(`group`: kotlin.String, `uid`: kotlin.String)
     
     fun `renameGroup`(`group`: kotlin.String, `name`: kotlin.String)
+    
+    /**
+     * Write to a joined channel (flooded over the Bluetooth mesh). Returns the message id.
+     */
+    fun `sendChannelMessage`(`name`: kotlin.String, `text`: kotlin.String): kotlin.String
     
     /**
      * Send a file (at most 8 MB) to a person.
@@ -2142,6 +2235,34 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
     
 
     
+    /**
+     * Join a public channel; returns its normalised name.
+     */
+    @Throws(FfiException::class)override fun `joinChannel`(`name`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_join_channel(
+        it, FfiConverterString.lower(`name`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(FfiException::class)override fun `leaveChannel`(`name`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_leave_channel(
+        it, FfiConverterString.lower(`name`),_status)
+}
+    }
+    
+    
+
+    
     @Throws(FfiException::class)override fun `leaveGroup`(`group`: kotlin.String)
         = 
     callWithPointer {
@@ -2210,6 +2331,48 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
 
     
     /**
+     * A mesh packet arrived from a neighbour.
+     */
+    @Throws(FfiException::class)override fun `meshFrame`(`link`: kotlin.String, `frame`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_mesh_frame(
+        it, FfiConverterString.lower(`link`),FfiConverterString.lower(`frame`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(FfiException::class)override fun `meshLinkDown`(`link`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_mesh_link_down(
+        it, FfiConverterString.lower(`link`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * A Bluetooth mesh neighbour appeared.
+     */
+    @Throws(FfiException::class)override fun `meshLinkUp`(`link`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_mesh_link_up(
+        it, FfiConverterString.lower(`link`),_status)
+}
+    }
+    
+    
+
+    
+    /**
      * Wait up to `timeout_ms` for the next event. `None` means nothing happened. Call it from a background thread
      * and turn it into a Flow; each call takes the next event in order.
      */override fun `nextEvent`(`timeoutMs`: kotlin.UInt): EventDto? {
@@ -2271,6 +2434,22 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
 }
     }
     
+    
+
+    
+    /**
+     * Write to a joined channel (flooded over the Bluetooth mesh). Returns the message id.
+     */
+    @Throws(FfiException::class)override fun `sendChannelMessage`(`name`: kotlin.String, `text`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_send_channel_message(
+        it, FfiConverterString.lower(`name`),FfiConverterString.lower(`text`),_status)
+}
+    }
+    )
+    }
     
 
     
@@ -2859,6 +3038,11 @@ public interface TransportCallbacks {
     
     fun `send`(`peer`: kotlin.String, `frame`: kotlin.String): kotlin.Boolean
     
+    /**
+     * Send a frame to a Bluetooth mesh neighbour (not a contact). Returns false if the link is gone.
+     */
+    fun `sendRaw`(`link`: kotlin.String, `frame`: kotlin.String): kotlin.Boolean
+    
     companion object
 }
 
@@ -2959,6 +3143,21 @@ open class TransportCallbacksImpl: Disposable, AutoCloseable, TransportCallbacks
     
 
     
+    /**
+     * Send a frame to a Bluetooth mesh neighbour (not a contact). Returns false if the link is gone.
+     */override fun `sendRaw`(`link`: kotlin.String, `frame`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_transportcallbacks_send_raw(
+        it, FfiConverterString.lower(`link`),FfiConverterString.lower(`frame`),_status)
+}
+    }
+    )
+    }
+    
+
+    
 
     
     
@@ -2982,6 +3181,19 @@ internal object uniffiCallbackInterfaceTransportCallbacks {
             uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
         }
     }
+    internal object `sendRaw`: UniffiCallbackInterfaceTransportCallbacksMethod1 {
+        override fun callback(`uniffiHandle`: Long,`link`: RustBuffer.ByValue,`frame`: RustBuffer.ByValue,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeTransportCallbacks.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`sendRaw`(
+                    FfiConverterString.lift(`link`),
+                    FfiConverterString.lift(`frame`),
+                )
+            }
+            val writeReturn = { value: kotlin.Boolean -> uniffiOutReturn.setValue(FfiConverterBoolean.lower(value)) }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
 
     internal object uniffiFree: UniffiCallbackInterfaceFree {
         override fun callback(handle: Long) {
@@ -2991,6 +3203,7 @@ internal object uniffiCallbackInterfaceTransportCallbacks {
 
     internal var vtable = UniffiVTableCallbackInterfaceTransportCallbacks.UniffiByValue(
         `send`,
+        `sendRaw`,
         uniffiFree,
     )
 
@@ -3285,6 +3498,7 @@ data class SnapshotDto (
     var `contacts`: List<ContactDto>, 
     var `conversations`: List<ConversationDto>, 
     var `groups`: List<GroupDto>, 
+    var `channels`: List<kotlin.String>, 
     var `queued`: kotlin.ULong
 ) {
     
@@ -3302,6 +3516,7 @@ public object FfiConverterTypeSnapshotDto: FfiConverterRustBuffer<SnapshotDto> {
             FfiConverterSequenceTypeContactDto.read(buf),
             FfiConverterSequenceTypeConversationDto.read(buf),
             FfiConverterSequenceTypeGroupDto.read(buf),
+            FfiConverterSequenceString.read(buf),
             FfiConverterULong.read(buf),
         )
     }
@@ -3312,6 +3527,7 @@ public object FfiConverterTypeSnapshotDto: FfiConverterRustBuffer<SnapshotDto> {
             FfiConverterSequenceTypeContactDto.allocationSize(value.`contacts`) +
             FfiConverterSequenceTypeConversationDto.allocationSize(value.`conversations`) +
             FfiConverterSequenceTypeGroupDto.allocationSize(value.`groups`) +
+            FfiConverterSequenceString.allocationSize(value.`channels`) +
             FfiConverterULong.allocationSize(value.`queued`)
     )
 
@@ -3321,6 +3537,7 @@ public object FfiConverterTypeSnapshotDto: FfiConverterRustBuffer<SnapshotDto> {
             FfiConverterSequenceTypeContactDto.write(value.`contacts`, buf)
             FfiConverterSequenceTypeConversationDto.write(value.`conversations`, buf)
             FfiConverterSequenceTypeGroupDto.write(value.`groups`, buf)
+            FfiConverterSequenceString.write(value.`channels`, buf)
             FfiConverterULong.write(value.`queued`, buf)
     }
 }
@@ -3718,6 +3935,18 @@ sealed class FfiException: kotlin.Exception() {
             get() = ""
     }
     
+    class BadChannel(
+        ) : FfiException() {
+        override val message
+            get() = ""
+    }
+    
+    class NotJoined(
+        ) : FfiException() {
+        override val message
+            get() = ""
+    }
+    
 
     companion object ErrorHandler : UniffiRustCallStatusErrorHandler<FfiException> {
         override fun lift(error_buf: RustBuffer.ByValue): FfiException = FfiConverterTypeFfiError.lift(error_buf)
@@ -3754,6 +3983,8 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
             18 -> FfiException.GroupRefused()
             19 -> FfiException.GroupFull()
             20 -> FfiException.BadFile()
+            21 -> FfiException.BadChannel()
+            22 -> FfiException.NotJoined()
             else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
         }
     }
@@ -3840,6 +4071,14 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4UL
             )
+            is FfiException.BadChannel -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is FfiException.NotJoined -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
         }
     }
 
@@ -3923,6 +4162,14 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
             }
             is FfiException.BadFile -> {
                 buf.putInt(20)
+                Unit
+            }
+            is FfiException.BadChannel -> {
+                buf.putInt(21)
+                Unit
+            }
+            is FfiException.NotJoined -> {
+                buf.putInt(22)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }

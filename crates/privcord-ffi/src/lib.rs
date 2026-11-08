@@ -19,7 +19,8 @@ use privcord_domain::{
     ConversationId, MessageId, UserId,
 };
 use privcord_engine::{
-    EngineEvent, EngineHandle, ErrorCode, EventStream, FileTarget, GroupOp, LinkSecurity, Ports,
+    ChannelOp, EngineEvent, EngineHandle, ErrorCode, EventStream, FileTarget, GroupOp,
+    LinkSecurity, Ports,
 };
 use privcord_ports::{
     Clock, IdentitySecrets, Notification, Notifier, SecureStore, SecureStoreError, Transport,
@@ -76,6 +77,10 @@ pub enum FfiError {
     GroupFull,
     #[error("bad file")]
     BadFile,
+    #[error("invalid channel name")]
+    BadChannel,
+    #[error("channel not joined")]
+    NotJoined,
 }
 
 impl From<ErrorCode> for FfiError {
@@ -100,6 +105,8 @@ impl From<ErrorCode> for FfiError {
             ErrorCode::GroupRefused => Self::GroupRefused,
             ErrorCode::GroupFull => Self::GroupFull,
             ErrorCode::BadFile => Self::BadFile,
+            ErrorCode::BadChannel => Self::BadChannel,
+            ErrorCode::NotJoined => Self::NotJoined,
         }
     }
 }
@@ -118,6 +125,8 @@ pub trait SecureStoreCallbacks: Send + Sync {
 #[uniffi::export(with_foreign)]
 pub trait TransportCallbacks: Send + Sync {
     fn send(&self, peer: String, frame: String) -> bool;
+    /// Send a frame to a Bluetooth mesh neighbour (not a contact). Returns false if the link is gone.
+    fn send_raw(&self, link: String, frame: String) -> bool;
 }
 
 #[uniffi::export(with_foreign)]
@@ -159,6 +168,13 @@ struct TransportAdapter(Arc<dyn TransportCallbacks>);
 impl Transport for TransportAdapter {
     fn send(&self, peer: &UserId, frame: &str) -> Result<(), TransportError> {
         if self.0.send(peer.to_string(), frame.to_owned()) {
+            Ok(())
+        } else {
+            Err(TransportError::NotConnected)
+        }
+    }
+    fn send_raw(&self, link: &str, frame: &str) -> Result<(), TransportError> {
+        if self.0.send_raw(link.to_owned(), frame.to_owned()) {
             Ok(())
         } else {
             Err(TransportError::NotConnected)
@@ -320,6 +336,7 @@ pub struct SnapshotDto {
     pub contacts: Vec<ContactDto>,
     pub conversations: Vec<ConversationDto>,
     pub groups: Vec<GroupDto>,
+    pub channels: Vec<String>,
     pub queued: u64,
 }
 
@@ -589,6 +606,39 @@ impl PrivcordEngine {
         )
     }
 
+    /// Join a public channel; returns its normalised name.
+    pub fn join_channel(&self, name: String) -> Result<String, FfiError> {
+        Ok(pollster::block_on(
+            self.handle.channel(ChannelOp::Join(name)),
+        )?)
+    }
+
+    pub fn leave_channel(&self, name: String) -> Result<(), FfiError> {
+        pollster::block_on(self.handle.channel(ChannelOp::Leave(name)))?;
+        Ok(())
+    }
+
+    /// Write to a joined channel (flooded over the Bluetooth mesh). Returns the message id.
+    pub fn send_channel_message(&self, name: String, text: String) -> Result<String, FfiError> {
+        Ok(pollster::block_on(
+            self.handle.channel(ChannelOp::Send { name, text }),
+        )?)
+    }
+
+    /// A Bluetooth mesh neighbour appeared.
+    pub fn mesh_link_up(&self, link: String) -> Result<(), FfiError> {
+        Ok(self.handle.mesh_link(link, true)?)
+    }
+
+    pub fn mesh_link_down(&self, link: String) -> Result<(), FfiError> {
+        Ok(self.handle.mesh_link(link, false)?)
+    }
+
+    /// A mesh packet arrived from a neighbour.
+    pub fn mesh_frame(&self, link: String, frame: String) -> Result<(), FfiError> {
+        Ok(self.handle.mesh_frame(link, frame)?)
+    }
+
     pub fn mark_read(&self, peer: String) -> Result<(), FfiError> {
         Ok(pollster::block_on(self.handle.mark_read(&user(&peer)?))?)
     }
@@ -634,6 +684,7 @@ impl PrivcordEngine {
                     can_message: c.can_message,
                 })
                 .collect(),
+            channels: s.channels,
             groups: s
                 .groups
                 .into_iter()
