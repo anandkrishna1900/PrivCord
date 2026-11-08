@@ -1,0 +1,53 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/privcord-domain",
+    "crates/privcord-crypto",
+    "crates/privcord-ports",
+    "crates/privcord-engine",
+    "crates/privcord-storage",
+    "crates/privcord-ffi",
+]
+# The existing Tauri shell keeps its own lockfile until milestone M7 moves it onto this workspace.
+exclude = ["apps/desktop/src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license-file = "LICENSE"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "warn"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "2"
+zeroize = { version = "1", features = ["derive"] }
+base64 = "0.22"
+sha2 = "0.10"
+hkdf = "0.12"
+hmac = "0.12"
+pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
+aes-gcm = "0.10"
+p256 = { version = "0.14", features = ["ecdsa", "ecdh", "arithmetic"] }
+bip39 = "2"
+getrandom = "0.2"
+unicode-normalization = "0.1"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "time", "macros"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+proptest = "1"
+privcord-domain = { path = "crates/privcord-domain" }
+privcord-crypto = { path = "crates/privcord-crypto" }
+privcord-ports = { path = "crates/privcord-ports" }
+privcord-engine = { path = "crates/privcord-engine" }
+privcord-storage = { path = "crates/privcord-storage" }
