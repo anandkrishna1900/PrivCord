@@ -130,6 +130,10 @@ pub enum Op {
     RemoveContact(UserId),
     SetStoreForward(bool),
     SetDisplayName(String),
+    SendSignal {
+        peer: UserId,
+        message: crate::api::SignalMessage,
+    },
     KillSwitchConversation {
         conversation: ConversationId,
         erase_session: bool,
@@ -262,6 +266,9 @@ fn pump(core: &mut Core, cmd: Command) -> bool {
                 Op::RemoveContact(u) => core.remove_contact(&u).map(|()| Answer::Done),
                 Op::SetStoreForward(v) => core.set_store_forward(v).map(|()| Answer::Done),
                 Op::SetDisplayName(n) => core.set_display_name(&n).map(|()| Answer::Done),
+                Op::SendSignal { peer, message } => {
+                    core.send_signal(&peer, &message).map(|()| Answer::Done)
+                }
                 Op::KillSwitchConversation {
                     conversation,
                     erase_session,

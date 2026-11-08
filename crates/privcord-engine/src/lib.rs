@@ -12,7 +12,7 @@ pub mod runtime;
 
 pub use api::{
     AnswerStatus, AnswerView, ContactView, EngineEvent, GroupView, InviteView, RequestView,
-    Snapshot,
+    SignalMessage, Snapshot,
 };
 pub use core::InvitePreview;
 pub use core::{Core, LinkSecurity, Ports};

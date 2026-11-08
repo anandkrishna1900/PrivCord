@@ -30,6 +30,15 @@ pub struct GroupView {
     pub members: Vec<(String, bool)>,
 }
 
+/// Connection setup carried in sealed messages. The platform's WebRTC code produces and consumes the descriptions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SignalMessage {
+    /// "I am online and waiting": the other side (if it dials) should offer now.
+    Ready,
+    Offer(String),
+    Answer(String),
+}
+
 /// Our open six-word invite.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InviteView {
@@ -122,6 +131,12 @@ pub enum EngineEvent {
     },
     /// An emergency deletion ran (the report says how far it got).
     Wiped,
+    /// A contact sent connection setup. Hand `Offer` and `Answer` to the WebRTC code; on `Ready`, dial if you are the
+    /// side that offers.
+    SignalReceived {
+        peer: UserId,
+        message: SignalMessage,
+    },
     MessageRefused {
         message_id: MessageId,
     },

@@ -37,12 +37,26 @@ These are stricter than TypeScript, and none can affect a peer that behaves like
 7. **Safety numbers take the signing keys**, as the apps use them (`contact.card.sign`).
 8. **Mesh carry-queue eviction order** can differ in rare overflow cases (the TypeScript `Map` keeps the original position when a key is set again; the Rust version moves it to the end).
 
+## Also checked against the apps
+
+| Area | What is checked | How |
+|---|---|---|
+| BLE chunk framing and rotating tags | chunking, every reassembly error, 64 KiB message, tags | `docs/ble-vectors.json` (made by an independent Python implementation and used by the TypeScript and Kotlin tests) |
+| Pairing records, reconnect backoff, kill-switch plans and reports, manual connection codes | parse and validate cases, status table, delay table, every summary case, a run and a resume, every decode error | `docs/misc-vectors.json` made by `scripts/gen-misc-vectors.ts`; reproducible in CI |
+| Nostr events | event id, BIP-340 signature, the rules for which relay messages become blobs | a TypeScript-made event verifies in Rust; a Rust-made event verifies in TypeScript (`rustInterop.test.ts`) |
+| Group messages, files, channels, mesh | frame shapes, ordering, delivery, persistence | engine tests with real crypto and fake radios; two-hop mesh across three real engines through the facade |
+| Importers | both old databases on generated data | `docs/legacy-fixtures.json` (see [IMPORTERS.md](IMPORTERS.md)) |
+
+Additional deliberate differences: the kill-switch runner takes a clock instead of reading one, and failure text is cut to 160 UTF-16 units without splitting a character; pairing timestamps are whole milliseconds like every other timestamp here; a relayed (`relay_blob`) frame is passed on at most twice, as in the apps.
+
 ## Not yet compatible (not ported)
 
-Group frames and the group coordinator (the event log itself is ported), file frames inside the engine, signaling frames and Nostr events, manual pairing codes, BLE chunk framing, the dead-link timer, and the kill-switch report.
+* Reactions, delete for everyone, search and backup restore are still TypeScript and Kotlin only (the frames are ported in `domain::social`, but the engine does not act on them).
+* The Double Ratchet and X3DH code in `packages/protocol/src/e2ee` is not used by either app and is not ported (ADR-009).
+* The WebRTC session, sockets, the Bluetooth radio, the keychain and all UI stay in the platform adapters by design.
 
-**What this means for talking to the existing apps.** The engine can now authenticate with the existing apps over a WebRTC data channel (`LinkSecurity::TransportEncrypted`) and exchange direct messages, receipts, privacy frames and pings with them. That is checked at the level of handshake transcripts and frame shapes; **it has not been run against a live TypeScript or Kotlin app**, and anything the old apps send that Rust does not know yet (group sync, files) is ignored.
+**What this means for talking to the existing apps.** The engine can authenticate with the existing apps over a WebRTC data channel (`LinkSecurity::TransportEncrypted`) and exchange messages, receipts, groups, files and pings with them. That is checked at the level of handshake transcripts, frame shapes and shared vectors; **it has not been run against a live TypeScript or Kotlin app**.
 
 ## Data
 
-Nothing here reads existing user databases yet. The desktop SQLite schema (`localDb.ts`) and Android Room schema (`DuoDatabase.kt`) are mapped in [MIGRATION_MAP.md](MIGRATION_MAP.md); the importer is milestone M6b, and per the PRD no legacy persistence code may be removed before it passes on representative data.
+Existing installs are brought over by `privcord-import` (desktop SQLite and Android Room). See [IMPORTERS.md](IMPORTERS.md) for what is checked, what is left behind and why, and what has not been tried on a real device.

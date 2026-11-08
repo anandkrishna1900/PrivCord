@@ -530,3 +530,212 @@ fn emergency_deletion_erases_everything_reports_truthfully_and_continues_after_a
         .iter()
         .any(|x| x.step_id == "services.stop" && x.status == StepStatus::Skipped));
 }
+
+fn put_blobs(n: &Node) -> Vec<(String, String, privcord_domain::signaling::PutKind)> {
+    n.transport
+        .drain_signals()
+        .into_iter()
+        .filter_map(|o| match o {
+            SignalOp::Put {
+                mailbox,
+                blob,
+                kind,
+                ..
+            } => Some((mailbox, blob, kind)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn connection_setup_travels_sealed_and_only_the_right_side_acts_on_it() {
+    use privcord_domain::signaling::PutKind;
+    use privcord_engine::SignalMessage;
+    let clock = FakeClock::at(1_700_000_000_000);
+    let (mut a, mut b) = (node("alice", &clock), node("bob", &clock));
+    befriend(&mut a, &mut b);
+    a.transport.set_signaling(true);
+    b.transport.set_signaling(true);
+    // The lower uid is the one that offers.
+    let (offerer, answerer) = if a.uid.as_str() < b.uid.as_str() {
+        (&mut a, &mut b)
+    } else {
+        (&mut b, &mut a)
+    };
+    offerer.core.tick();
+    answerer.core.tick();
+    // Each side listens on its own mailbox once signaling is up.
+    assert!(offerer
+        .transport
+        .drain_signals()
+        .iter()
+        .any(|o| matches!(o, SignalOp::Subscribe(_))));
+    answerer.transport.drain_signals();
+    drain_events(answerer);
+
+    offerer
+        .core
+        .send_signal(&answerer.uid, &SignalMessage::Offer("v=0 offer".into()))
+        .unwrap();
+    let puts = put_blobs(offerer);
+    assert_eq!(puts.len(), 1);
+    assert_eq!(puts[0].2, PutKind::Sig);
+    // The mailbox is the answerer's, and the service sees only an encrypted blob.
+    assert!(!puts[0].1.contains("v=0"));
+    answerer.core.signal_blob(&puts[0].0, &puts[0].1);
+    answerer.core.signal_blob(&puts[0].0, &puts[0].1); // a second service: ignored
+    let got: Vec<_> = drain_events(answerer)
+        .into_iter()
+        .filter_map(|e| match e {
+            EngineEvent::SignalReceived { peer, message } => Some((peer, message)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        got,
+        [(
+            offerer.uid.clone(),
+            SignalMessage::Offer("v=0 offer".into())
+        )]
+    );
+
+    // The answer goes back and only the offerer acts on it; an offer sent to the offerer is ignored.
+    answerer
+        .core
+        .send_signal(&offerer.uid, &SignalMessage::Answer("v=0 answer".into()))
+        .unwrap();
+    let back = put_blobs(answerer);
+    offerer.core.signal_blob(&back[0].0, &back[0].1);
+    assert!(drain_events(offerer).iter().any(|e| matches!(e, EngineEvent::SignalReceived { message: SignalMessage::Answer(s), .. } if s == "v=0 answer")));
+    answerer
+        .core
+        .send_signal(&offerer.uid, &SignalMessage::Offer("wrong way".into()))
+        .unwrap();
+    let wrong = put_blobs(answerer);
+    offerer.core.signal_blob(&wrong[0].0, &wrong[0].1);
+    assert!(drain_events(offerer)
+        .iter()
+        .all(|e| !matches!(e, EngineEvent::SignalReceived { .. })));
+
+    // A blob from somebody we do not know, or one aimed at someone else, does nothing.
+    let stranger = node("zed", &clock);
+    let _ = stranger;
+    answerer.core.signal_blob(&back[0].0, "not a blob");
+    // Without any service and without a mutual contact there is no way to send.
+    answerer.transport.set_signaling(false);
+    assert_eq!(
+        answerer
+            .core
+            .send_signal(&offerer.uid, &SignalMessage::Ready),
+        Err(ErrorCode::NoRoute)
+    );
+}
+
+#[test]
+fn a_message_for_an_offline_friend_waits_on_the_relay_only_when_allowed_and_is_acknowledged_sealed()
+{
+    let clock = FakeClock::at(1_700_000_000_000);
+    let (mut a, mut b) = (node("alice", &clock), node("bob", &clock));
+    befriend(&mut a, &mut b);
+    a.transport.set_signaling(true);
+    b.transport.set_signaling(true);
+    let id = a.core.send_message(&b.uid, "see you at 9", None).unwrap();
+    a.core.tick();
+    assert!(
+        put_blobs(&a).is_empty(),
+        "store-and-forward is off: nothing leaves the device"
+    );
+
+    a.core.set_store_forward(true).unwrap();
+    a.core.tick();
+    let sent = put_blobs(&a);
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].2, privcord_domain::signaling::PutKind::Msg);
+    assert!(!sent[0].1.contains("see you"), "the relay sees ciphertext");
+    let status = |n: &Node| {
+        n.core
+            .snapshot()
+            .messages
+            .iter()
+            .flat_map(|(_, v)| v.iter())
+            .find(|m| m.message_id == id)
+            .unwrap()
+            .delivery_state
+    };
+    assert_eq!(status(&a), privcord_domain::message::DeliveryState::Sent);
+    a.core.tick();
+    assert!(put_blobs(&a).is_empty(), "handed over once, not every tick");
+
+    // Bob gets it through the service, stores it as a relay message, and answers with a sealed receipt.
+    b.core.signal_blob(&sent[0].0, &sent[0].1);
+    let m = b
+        .core
+        .snapshot()
+        .messages
+        .into_iter()
+        .flat_map(|(_, v)| v)
+        .next()
+        .unwrap();
+    assert_eq!(
+        (m.text.as_str(), m.transport),
+        (
+            "see you at 9",
+            privcord_domain::message::TransportKind::Relay
+        )
+    );
+    let receipt = put_blobs(&b);
+    assert_eq!(receipt.len(), 1);
+    a.core.signal_blob(&receipt[0].0, &receipt[0].1);
+    assert_eq!(
+        status(&a),
+        privcord_domain::message::DeliveryState::Delivered
+    );
+    assert_eq!(a.core.snapshot().queued, 0);
+}
+
+#[test]
+fn without_the_internet_a_contact_in_the_middle_hands_connection_setup_on() {
+    use privcord_engine::SignalMessage;
+    let clock = FakeClock::at(1_700_000_000_000);
+    let (mut a, mut b, mut c) = (
+        node("alice", &clock),
+        node("bob", &clock),
+        node("carol", &clock),
+    );
+    befriend(&mut a, &mut b);
+    befriend(&mut a, &mut c);
+    befriend(&mut b, &mut c);
+    // Carol is linked to both; Alice and Bob have no direct link and no signaling service.
+    connect(&mut a, &mut c);
+    connect(&mut b, &mut c);
+    drain_events(&mut b);
+    a.core.send_signal(&b.uid, &SignalMessage::Ready).unwrap();
+    // Deliver every frame to whoever it is addressed to, until quiet (Carol sits between the other two).
+    loop {
+        let mut moved = false;
+        let uids = [a.uid.clone(), b.uid.clone(), c.uid.clone()];
+        let nodes = [&mut a, &mut b, &mut c];
+        let mut inflight = Vec::new();
+        for (i, n) in nodes.iter().enumerate() {
+            for (to, f) in n.transport.drain() {
+                inflight.push((i, to, f));
+            }
+        }
+        let [a2, b2, c2] = nodes;
+        for (from, to, f) in inflight {
+            moved = true;
+            let target = if to == uids[0] {
+                &mut *a2
+            } else if to == uids[1] {
+                &mut *b2
+            } else {
+                &mut *c2
+            };
+            target.core.frame_received(&uids[from], &f);
+        }
+        if !moved {
+            break;
+        }
+    }
+    assert!(drain_events(&mut b).iter().any(|e| matches!(e, EngineEvent::SignalReceived { peer, message: SignalMessage::Ready } if *peer == a.uid)));
+}

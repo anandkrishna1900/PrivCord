@@ -1,0 +1,25 @@
+[package]
+name = "privcord-import"
+description = "Imports the existing desktop (SQLite) and Android (Room) databases into the Rust engine's storage, verifying everything it reads."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+privcord-domain.workspace = true
+privcord-crypto.workspace = true
+privcord-ports.workspace = true
+rusqlite.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+privcord-ports = { workspace = true, features = ["testing"] }
+privcord-storage.workspace = true
+privcord-crypto = { workspace = true, features = ["test-support"] }
+tempfile = "3"
+privcord-engine.workspace = true

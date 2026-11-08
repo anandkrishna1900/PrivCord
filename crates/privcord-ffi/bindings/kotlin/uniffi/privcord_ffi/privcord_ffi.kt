@@ -654,6 +654,12 @@ internal open class UniffiForeignFutureStructVoid(
 internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
     fun callback(`callbackData`: Long,`result`: UniffiForeignFutureStructVoid.UniffiByValue,)
 }
+internal interface UniffiCallbackInterfaceLegacyDecryptorMethod0 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`payload`: RustBuffer.ByValue,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,)
+}
+internal interface UniffiCallbackInterfaceLegacyFilesMethod0 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`messageId`: RustBuffer.ByValue,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,)
+}
 internal interface UniffiCallbackInterfaceNotifierCallbacksMethod0 : com.sun.jna.Callback {
     fun callback(`uniffiHandle`: Long,`conversation`: RustBuffer.ByValue,`sender`: RustBuffer.ByValue,`preview`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,)
 }
@@ -686,6 +692,38 @@ internal interface UniffiCallbackInterfaceTransportCallbacksMethod5 : com.sun.jn
 }
 internal interface UniffiCallbackInterfaceTransportCallbacksMethod6 : com.sun.jna.Callback {
     fun callback(`uniffiHandle`: Long,`mailbox`: RustBuffer.ByValue,`blob`: RustBuffer.ByValue,`kind`: RustBuffer.ByValue,`ttlSec`: Int,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,)
+}
+@Structure.FieldOrder("decryptText", "uniffiFree")
+internal open class UniffiVTableCallbackInterfaceLegacyDecryptor(
+    @JvmField internal var `decryptText`: UniffiCallbackInterfaceLegacyDecryptorMethod0? = null,
+    @JvmField internal var `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+) : Structure() {
+    class UniffiByValue(
+        `decryptText`: UniffiCallbackInterfaceLegacyDecryptorMethod0? = null,
+        `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+    ): UniffiVTableCallbackInterfaceLegacyDecryptor(`decryptText`,`uniffiFree`,), Structure.ByValue
+
+   internal fun uniffiSetValue(other: UniffiVTableCallbackInterfaceLegacyDecryptor) {
+        `decryptText` = other.`decryptText`
+        `uniffiFree` = other.`uniffiFree`
+    }
+
+}
+@Structure.FieldOrder("fileBytes", "uniffiFree")
+internal open class UniffiVTableCallbackInterfaceLegacyFiles(
+    @JvmField internal var `fileBytes`: UniffiCallbackInterfaceLegacyFilesMethod0? = null,
+    @JvmField internal var `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+) : Structure() {
+    class UniffiByValue(
+        `fileBytes`: UniffiCallbackInterfaceLegacyFilesMethod0? = null,
+        `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+    ): UniffiVTableCallbackInterfaceLegacyFiles(`fileBytes`,`uniffiFree`,), Structure.ByValue
+
+   internal fun uniffiSetValue(other: UniffiVTableCallbackInterfaceLegacyFiles) {
+        `fileBytes` = other.`fileBytes`
+        `uniffiFree` = other.`uniffiFree`
+    }
+
 }
 @Structure.FieldOrder("messageReceived", "uniffiFree")
 internal open class UniffiVTableCallbackInterfaceNotifierCallbacks(
@@ -938,6 +976,22 @@ internal open class UniffiVTableCallbackInterfaceTransportCallbacks(
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -948,6 +1002,8 @@ internal interface UniffiLib : Library {
             .also { lib: UniffiLib ->
                 uniffiCheckContractApiVersion(lib)
                 uniffiCheckApiChecksums(lib)
+                uniffiCallbackInterfaceLegacyDecryptor.register(lib)
+                uniffiCallbackInterfaceLegacyFiles.register(lib)
                 uniffiCallbackInterfaceNotifierCallbacks.register(lib)
                 uniffiCallbackInterfaceSecureStoreCallbacks.register(lib)
                 uniffiCallbackInterfaceTransportCallbacks.register(lib)
@@ -960,6 +1016,22 @@ internal interface UniffiLib : Library {
         }
     }
 
+    fun uniffi_privcord_ffi_fn_clone_legacydecryptor(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Pointer
+    fun uniffi_privcord_ffi_fn_free_legacydecryptor(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_init_callback_vtable_legacydecryptor(`vtable`: UniffiVTableCallbackInterfaceLegacyDecryptor,
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_legacydecryptor_decrypt_text(`ptr`: Pointer,`payload`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_clone_legacyfiles(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Pointer
+    fun uniffi_privcord_ffi_fn_free_legacyfiles(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_init_callback_vtable_legacyfiles(`vtable`: UniffiVTableCallbackInterfaceLegacyFiles,
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_legacyfiles_file_bytes(`ptr`: Pointer,`messageId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_clone_notifiercallbacks(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Pointer
     fun uniffi_privcord_ffi_fn_free_notifiercallbacks(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1042,6 +1114,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_method_privcordengine_send_message(`ptr`: Pointer,`peer`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`replyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_method_privcordengine_send_signal(`ptr`: Pointer,`peer`: RustBuffer.ByValue,`kind`: RustBuffer.ByValue,`sdp`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_set_display_name(`ptr`: Pointer,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_set_group_only(`ptr`: Pointer,`value`: Byte,uniffi_out_err: UniffiRustCallStatus, 
@@ -1092,6 +1166,10 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_privcord_ffi_fn_method_transportcallbacks_signal_put(`ptr`: Pointer,`mailbox`: RustBuffer.ByValue,`blob`: RustBuffer.ByValue,`kind`: RustBuffer.ByValue,`ttlSec`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    fun uniffi_privcord_ffi_fn_func_import_legacy_android(`oldDbPath`: RustBuffer.ByValue,`decryptor`: Pointer,`newDbPath`: RustBuffer.ByValue,`ownUid`: RustBuffer.ByValue,`files`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_func_import_legacy_desktop(`oldDbPath`: RustBuffer.ByValue,`aesKey`: RustBuffer.ByValue,`newDbPath`: RustBuffer.ByValue,`ownUid`: RustBuffer.ByValue,`files`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun ffi_privcord_ffi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun ffi_privcord_ffi_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1204,6 +1282,14 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_privcord_ffi_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_privcord_ffi_checksum_func_import_legacy_android(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_func_import_legacy_desktop(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_legacydecryptor_decrypt_text(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_legacyfiles_file_bytes(
+    ): Short
     fun uniffi_privcord_ffi_checksum_method_notifiercallbacks_message_received(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_accept_invite(
@@ -1274,6 +1360,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_send_message(
     ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_send_signal(
+    ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_set_display_name(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_set_group_only(
@@ -1331,6 +1419,18 @@ private fun uniffiCheckContractApiVersion(lib: UniffiLib) {
 
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: UniffiLib) {
+    if (lib.uniffi_privcord_ffi_checksum_func_import_legacy_android() != 37759.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_func_import_legacy_desktop() != 52917.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_legacydecryptor_decrypt_text() != 19749.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_legacyfiles_file_bytes() != 24894.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_privcord_ffi_checksum_method_notifiercallbacks_message_received() != 3623.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1434,6 +1534,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_send_message() != 34839.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_send_signal() != 24050.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_set_display_name() != 298.toShort()) {
@@ -1873,6 +1976,591 @@ private class JavaLangRefCleanable(
 ) : UniffiCleaner.Cleanable {
     override fun clean() = cleanable.clean()
 }
+/**
+ * Asks the platform to decrypt what the old app stored. On Android this calls the Keystore, whose key never leaves
+ * the device. Returns the plain text, or nothing if it cannot be decrypted.
+ */
+public interface LegacyDecryptor {
+    
+    fun `decryptText`(`payload`: kotlin.String): kotlin.String?
+    
+    companion object
+}
+
+/**
+ * Asks the platform to decrypt what the old app stored. On Android this calls the Keystore, whose key never leaves
+ * the device. Returns the plain text, or nothing if it cannot be decrypted.
+ */
+open class LegacyDecryptorImpl: Disposable, AutoCloseable, LegacyDecryptor {
+
+    constructor(pointer: Pointer) {
+        this.pointer = pointer
+        this.cleanable = UniffiLib.CLEANER.register(this, UniffiCleanAction(pointer))
+    }
+
+    /**
+     * This constructor can be used to instantiate a fake object. Only used for tests. Any
+     * attempt to actually use an object constructed this way will fail as there is no
+     * connected Rust object.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    constructor(noPointer: NoPointer) {
+        this.pointer = null
+        this.cleanable = UniffiLib.CLEANER.register(this, UniffiCleanAction(pointer))
+    }
+
+    protected val pointer: Pointer?
+    protected val cleanable: UniffiCleaner.Cleanable
+
+    private val wasDestroyed = AtomicBoolean(false)
+    private val callCounter = AtomicLong(1)
+
+    override fun destroy() {
+        // Only allow a single call to this method.
+        // TODO: maybe we should log a warning if called more than once?
+        if (this.wasDestroyed.compareAndSet(false, true)) {
+            // This decrement always matches the initial count of 1 given at creation time.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable.clean()
+            }
+        }
+    }
+
+    @Synchronized
+    override fun close() {
+        this.destroy()
+    }
+
+    internal inline fun <R> callWithPointer(block: (ptr: Pointer) -> R): R {
+        // Check and increment the call counter, to keep the object alive.
+        // This needs a compare-and-set retry loop in case of concurrent updates.
+        do {
+            val c = this.callCounter.get()
+            if (c == 0L) {
+                throw IllegalStateException("${this.javaClass.simpleName} object has already been destroyed")
+            }
+            if (c == Long.MAX_VALUE) {
+                throw IllegalStateException("${this.javaClass.simpleName} call counter would overflow")
+            }
+        } while (! this.callCounter.compareAndSet(c, c + 1L))
+        // Now we can safely do the method call without the pointer being freed concurrently.
+        try {
+            return block(this.uniffiClonePointer())
+        } finally {
+            // This decrement always matches the increment we performed above.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable.clean()
+            }
+        }
+    }
+
+    // Use a static inner class instead of a closure so as not to accidentally
+    // capture `this` as part of the cleanable's action.
+    private class UniffiCleanAction(private val pointer: Pointer?) : Runnable {
+        override fun run() {
+            pointer?.let { ptr ->
+                uniffiRustCall { status ->
+                    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_free_legacydecryptor(ptr, status)
+                }
+            }
+        }
+    }
+
+    fun uniffiClonePointer(): Pointer {
+        return uniffiRustCall() { status ->
+            UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_clone_legacydecryptor(pointer!!, status)
+        }
+    }
+
+    override fun `decryptText`(`payload`: kotlin.String): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_legacydecryptor_decrypt_text(
+        it, FfiConverterString.lower(`payload`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+
+    
+    
+    companion object
+    
+}
+// Magic number for the Rust proxy to call using the same mechanism as every other method,
+// to free the callback once it's dropped by Rust.
+internal const val IDX_CALLBACK_FREE = 0
+// Callback return codes
+internal const val UNIFFI_CALLBACK_SUCCESS = 0
+internal const val UNIFFI_CALLBACK_ERROR = 1
+internal const val UNIFFI_CALLBACK_UNEXPECTED_ERROR = 2
+
+/**
+ * @suppress
+ */
+public abstract class FfiConverterCallbackInterface<CallbackInterface: Any>: FfiConverter<CallbackInterface, Long> {
+    internal val handleMap = UniffiHandleMap<CallbackInterface>()
+
+    internal fun drop(handle: Long) {
+        handleMap.remove(handle)
+    }
+
+    override fun lift(value: Long): CallbackInterface {
+        return handleMap.get(value)
+    }
+
+    override fun read(buf: ByteBuffer) = lift(buf.getLong())
+
+    override fun lower(value: CallbackInterface) = handleMap.insert(value)
+
+    override fun allocationSize(value: CallbackInterface) = 8UL
+
+    override fun write(value: CallbackInterface, buf: ByteBuffer) {
+        buf.putLong(lower(value))
+    }
+}
+
+// Put the implementation in an object so we don't pollute the top-level namespace
+internal object uniffiCallbackInterfaceLegacyDecryptor {
+    internal object `decryptText`: UniffiCallbackInterfaceLegacyDecryptorMethod0 {
+        override fun callback(`uniffiHandle`: Long,`payload`: RustBuffer.ByValue,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeLegacyDecryptor.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`decryptText`(
+                    FfiConverterString.lift(`payload`),
+                )
+            }
+            val writeReturn = { value: kotlin.String? -> uniffiOutReturn.setValue(FfiConverterOptionalString.lower(value)) }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
+
+    internal object uniffiFree: UniffiCallbackInterfaceFree {
+        override fun callback(handle: Long) {
+            FfiConverterTypeLegacyDecryptor.handleMap.remove(handle)
+        }
+    }
+
+    internal var vtable = UniffiVTableCallbackInterfaceLegacyDecryptor.UniffiByValue(
+        `decryptText`,
+        uniffiFree,
+    )
+
+    // Registers the foreign callback with the Rust side.
+    // This method is generated for each callback interface.
+    internal fun register(lib: UniffiLib) {
+        lib.uniffi_privcord_ffi_fn_init_callback_vtable_legacydecryptor(vtable)
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeLegacyDecryptor: FfiConverter<LegacyDecryptor, Pointer> {
+    internal val handleMap = UniffiHandleMap<LegacyDecryptor>()
+
+    override fun lower(value: LegacyDecryptor): Pointer {
+        return Pointer(handleMap.insert(value))
+    }
+
+    override fun lift(value: Pointer): LegacyDecryptor {
+        return LegacyDecryptorImpl(value)
+    }
+
+    override fun read(buf: ByteBuffer): LegacyDecryptor {
+        // The Rust code always writes pointers as 8 bytes, and will
+        // fail to compile if they don't fit.
+        return lift(Pointer(buf.getLong()))
+    }
+
+    override fun allocationSize(value: LegacyDecryptor) = 8UL
+
+    override fun write(value: LegacyDecryptor, buf: ByteBuffer) {
+        // The Rust code always expects pointers written as 8 bytes,
+        // and will fail to compile if they don't fit.
+        buf.putLong(Pointer.nativeValue(lower(value)))
+    }
+}
+
+
+// This template implements a class for working with a Rust struct via a Pointer/Arc<T>
+// to the live Rust struct on the other side of the FFI.
+//
+// Each instance implements core operations for working with the Rust `Arc<T>` and the
+// Kotlin Pointer to work with the live Rust struct on the other side of the FFI.
+//
+// There's some subtlety here, because we have to be careful not to operate on a Rust
+// struct after it has been dropped, and because we must expose a public API for freeing
+// theq Kotlin wrapper object in lieu of reliable finalizers. The core requirements are:
+//
+//   * Each instance holds an opaque pointer to the underlying Rust struct.
+//     Method calls need to read this pointer from the object's state and pass it in to
+//     the Rust FFI.
+//
+//   * When an instance is no longer needed, its pointer should be passed to a
+//     special destructor function provided by the Rust FFI, which will drop the
+//     underlying Rust struct.
+//
+//   * Given an instance, calling code is expected to call the special
+//     `destroy` method in order to free it after use, either by calling it explicitly
+//     or by using a higher-level helper like the `use` method. Failing to do so risks
+//     leaking the underlying Rust struct.
+//
+//   * We can't assume that calling code will do the right thing, and must be prepared
+//     to handle Kotlin method calls executing concurrently with or even after a call to
+//     `destroy`, and to handle multiple (possibly concurrent!) calls to `destroy`.
+//
+//   * We must never allow Rust code to operate on the underlying Rust struct after
+//     the destructor has been called, and must never call the destructor more than once.
+//     Doing so may trigger memory unsafety.
+//
+//   * To mitigate many of the risks of leaking memory and use-after-free unsafety, a `Cleaner`
+//     is implemented to call the destructor when the Kotlin object becomes unreachable.
+//     This is done in a background thread. This is not a panacea, and client code should be aware that
+//      1. the thread may starve if some there are objects that have poorly performing
+//     `drop` methods or do significant work in their `drop` methods.
+//      2. the thread is shared across the whole library. This can be tuned by using `android_cleaner = true`,
+//         or `android = true` in the [`kotlin` section of the `uniffi.toml` file](https://mozilla.github.io/uniffi-rs/kotlin/configuration.html).
+//
+// If we try to implement this with mutual exclusion on access to the pointer, there is the
+// possibility of a race between a method call and a concurrent call to `destroy`:
+//
+//    * Thread A starts a method call, reads the value of the pointer, but is interrupted
+//      before it can pass the pointer over the FFI to Rust.
+//    * Thread B calls `destroy` and frees the underlying Rust struct.
+//    * Thread A resumes, passing the already-read pointer value to Rust and triggering
+//      a use-after-free.
+//
+// One possible solution would be to use a `ReadWriteLock`, with each method call taking
+// a read lock (and thus allowed to run concurrently) and the special `destroy` method
+// taking a write lock (and thus blocking on live method calls). However, we aim not to
+// generate methods with any hidden blocking semantics, and a `destroy` method that might
+// block if called incorrectly seems to meet that bar.
+//
+// So, we achieve our goals by giving each instance an associated `AtomicLong` counter to track
+// the number of in-flight method calls, and an `AtomicBoolean` flag to indicate whether `destroy`
+// has been called. These are updated according to the following rules:
+//
+//    * The initial value of the counter is 1, indicating a live object with no in-flight calls.
+//      The initial value for the flag is false.
+//
+//    * At the start of each method call, we atomically check the counter.
+//      If it is 0 then the underlying Rust struct has already been destroyed and the call is aborted.
+//      If it is nonzero them we atomically increment it by 1 and proceed with the method call.
+//
+//    * At the end of each method call, we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+//    * When `destroy` is called, we atomically flip the flag from false to true.
+//      If the flag was already true we silently fail.
+//      Otherwise we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+// Astute readers may observe that this all sounds very similar to the way that Rust's `Arc<T>` works,
+// and indeed it is, with the addition of a flag to guard against multiple calls to `destroy`.
+//
+// The overall effect is that the underlying Rust struct is destroyed only when `destroy` has been
+// called *and* all in-flight method calls have completed, avoiding violating any of the expectations
+// of the underlying Rust code.
+//
+// This makes a cleaner a better alternative to _not_ calling `destroy()` as
+// and when the object is finished with, but the abstraction is not perfect: if the Rust object's `drop`
+// method is slow, and/or there are many objects to cleanup, and it's on a low end Android device, then the cleaner
+// thread may be starved, and the app will leak memory.
+//
+// In this case, `destroy`ing manually may be a better solution.
+//
+// The cleaner can live side by side with the manual calling of `destroy`. In the order of responsiveness, uniffi objects
+// with Rust peers are reclaimed:
+//
+// 1. By calling the `destroy` method of the object, which calls `rustObject.free()`. If that doesn't happen:
+// 2. When the object becomes unreachable, AND the Cleaner thread gets to call `rustObject.free()`. If the thread is starved then:
+// 3. The memory is reclaimed when the process terminates.
+//
+// [1] https://stackoverflow.com/questions/24376768/can-java-finalize-an-object-when-it-is-still-in-scope/24380219
+//
+
+
+/**
+ * The plain bytes of a file the old app kept outside its message table.
+ */
+public interface LegacyFiles {
+    
+    fun `fileBytes`(`messageId`: kotlin.String): kotlin.ByteArray?
+    
+    companion object
+}
+
+/**
+ * The plain bytes of a file the old app kept outside its message table.
+ */
+open class LegacyFilesImpl: Disposable, AutoCloseable, LegacyFiles {
+
+    constructor(pointer: Pointer) {
+        this.pointer = pointer
+        this.cleanable = UniffiLib.CLEANER.register(this, UniffiCleanAction(pointer))
+    }
+
+    /**
+     * This constructor can be used to instantiate a fake object. Only used for tests. Any
+     * attempt to actually use an object constructed this way will fail as there is no
+     * connected Rust object.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    constructor(noPointer: NoPointer) {
+        this.pointer = null
+        this.cleanable = UniffiLib.CLEANER.register(this, UniffiCleanAction(pointer))
+    }
+
+    protected val pointer: Pointer?
+    protected val cleanable: UniffiCleaner.Cleanable
+
+    private val wasDestroyed = AtomicBoolean(false)
+    private val callCounter = AtomicLong(1)
+
+    override fun destroy() {
+        // Only allow a single call to this method.
+        // TODO: maybe we should log a warning if called more than once?
+        if (this.wasDestroyed.compareAndSet(false, true)) {
+            // This decrement always matches the initial count of 1 given at creation time.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable.clean()
+            }
+        }
+    }
+
+    @Synchronized
+    override fun close() {
+        this.destroy()
+    }
+
+    internal inline fun <R> callWithPointer(block: (ptr: Pointer) -> R): R {
+        // Check and increment the call counter, to keep the object alive.
+        // This needs a compare-and-set retry loop in case of concurrent updates.
+        do {
+            val c = this.callCounter.get()
+            if (c == 0L) {
+                throw IllegalStateException("${this.javaClass.simpleName} object has already been destroyed")
+            }
+            if (c == Long.MAX_VALUE) {
+                throw IllegalStateException("${this.javaClass.simpleName} call counter would overflow")
+            }
+        } while (! this.callCounter.compareAndSet(c, c + 1L))
+        // Now we can safely do the method call without the pointer being freed concurrently.
+        try {
+            return block(this.uniffiClonePointer())
+        } finally {
+            // This decrement always matches the increment we performed above.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable.clean()
+            }
+        }
+    }
+
+    // Use a static inner class instead of a closure so as not to accidentally
+    // capture `this` as part of the cleanable's action.
+    private class UniffiCleanAction(private val pointer: Pointer?) : Runnable {
+        override fun run() {
+            pointer?.let { ptr ->
+                uniffiRustCall { status ->
+                    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_free_legacyfiles(ptr, status)
+                }
+            }
+        }
+    }
+
+    fun uniffiClonePointer(): Pointer {
+        return uniffiRustCall() { status ->
+            UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_clone_legacyfiles(pointer!!, status)
+        }
+    }
+
+    override fun `fileBytes`(`messageId`: kotlin.String): kotlin.ByteArray? {
+            return FfiConverterOptionalByteArray.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_legacyfiles_file_bytes(
+        it, FfiConverterString.lower(`messageId`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+
+    
+    
+    companion object
+    
+}
+
+
+// Put the implementation in an object so we don't pollute the top-level namespace
+internal object uniffiCallbackInterfaceLegacyFiles {
+    internal object `fileBytes`: UniffiCallbackInterfaceLegacyFilesMethod0 {
+        override fun callback(`uniffiHandle`: Long,`messageId`: RustBuffer.ByValue,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeLegacyFiles.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`fileBytes`(
+                    FfiConverterString.lift(`messageId`),
+                )
+            }
+            val writeReturn = { value: kotlin.ByteArray? -> uniffiOutReturn.setValue(FfiConverterOptionalByteArray.lower(value)) }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
+
+    internal object uniffiFree: UniffiCallbackInterfaceFree {
+        override fun callback(handle: Long) {
+            FfiConverterTypeLegacyFiles.handleMap.remove(handle)
+        }
+    }
+
+    internal var vtable = UniffiVTableCallbackInterfaceLegacyFiles.UniffiByValue(
+        `fileBytes`,
+        uniffiFree,
+    )
+
+    // Registers the foreign callback with the Rust side.
+    // This method is generated for each callback interface.
+    internal fun register(lib: UniffiLib) {
+        lib.uniffi_privcord_ffi_fn_init_callback_vtable_legacyfiles(vtable)
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeLegacyFiles: FfiConverter<LegacyFiles, Pointer> {
+    internal val handleMap = UniffiHandleMap<LegacyFiles>()
+
+    override fun lower(value: LegacyFiles): Pointer {
+        return Pointer(handleMap.insert(value))
+    }
+
+    override fun lift(value: Pointer): LegacyFiles {
+        return LegacyFilesImpl(value)
+    }
+
+    override fun read(buf: ByteBuffer): LegacyFiles {
+        // The Rust code always writes pointers as 8 bytes, and will
+        // fail to compile if they don't fit.
+        return lift(Pointer(buf.getLong()))
+    }
+
+    override fun allocationSize(value: LegacyFiles) = 8UL
+
+    override fun write(value: LegacyFiles, buf: ByteBuffer) {
+        // The Rust code always expects pointers written as 8 bytes,
+        // and will fail to compile if they don't fit.
+        buf.putLong(Pointer.nativeValue(lower(value)))
+    }
+}
+
+
+// This template implements a class for working with a Rust struct via a Pointer/Arc<T>
+// to the live Rust struct on the other side of the FFI.
+//
+// Each instance implements core operations for working with the Rust `Arc<T>` and the
+// Kotlin Pointer to work with the live Rust struct on the other side of the FFI.
+//
+// There's some subtlety here, because we have to be careful not to operate on a Rust
+// struct after it has been dropped, and because we must expose a public API for freeing
+// theq Kotlin wrapper object in lieu of reliable finalizers. The core requirements are:
+//
+//   * Each instance holds an opaque pointer to the underlying Rust struct.
+//     Method calls need to read this pointer from the object's state and pass it in to
+//     the Rust FFI.
+//
+//   * When an instance is no longer needed, its pointer should be passed to a
+//     special destructor function provided by the Rust FFI, which will drop the
+//     underlying Rust struct.
+//
+//   * Given an instance, calling code is expected to call the special
+//     `destroy` method in order to free it after use, either by calling it explicitly
+//     or by using a higher-level helper like the `use` method. Failing to do so risks
+//     leaking the underlying Rust struct.
+//
+//   * We can't assume that calling code will do the right thing, and must be prepared
+//     to handle Kotlin method calls executing concurrently with or even after a call to
+//     `destroy`, and to handle multiple (possibly concurrent!) calls to `destroy`.
+//
+//   * We must never allow Rust code to operate on the underlying Rust struct after
+//     the destructor has been called, and must never call the destructor more than once.
+//     Doing so may trigger memory unsafety.
+//
+//   * To mitigate many of the risks of leaking memory and use-after-free unsafety, a `Cleaner`
+//     is implemented to call the destructor when the Kotlin object becomes unreachable.
+//     This is done in a background thread. This is not a panacea, and client code should be aware that
+//      1. the thread may starve if some there are objects that have poorly performing
+//     `drop` methods or do significant work in their `drop` methods.
+//      2. the thread is shared across the whole library. This can be tuned by using `android_cleaner = true`,
+//         or `android = true` in the [`kotlin` section of the `uniffi.toml` file](https://mozilla.github.io/uniffi-rs/kotlin/configuration.html).
+//
+// If we try to implement this with mutual exclusion on access to the pointer, there is the
+// possibility of a race between a method call and a concurrent call to `destroy`:
+//
+//    * Thread A starts a method call, reads the value of the pointer, but is interrupted
+//      before it can pass the pointer over the FFI to Rust.
+//    * Thread B calls `destroy` and frees the underlying Rust struct.
+//    * Thread A resumes, passing the already-read pointer value to Rust and triggering
+//      a use-after-free.
+//
+// One possible solution would be to use a `ReadWriteLock`, with each method call taking
+// a read lock (and thus allowed to run concurrently) and the special `destroy` method
+// taking a write lock (and thus blocking on live method calls). However, we aim not to
+// generate methods with any hidden blocking semantics, and a `destroy` method that might
+// block if called incorrectly seems to meet that bar.
+//
+// So, we achieve our goals by giving each instance an associated `AtomicLong` counter to track
+// the number of in-flight method calls, and an `AtomicBoolean` flag to indicate whether `destroy`
+// has been called. These are updated according to the following rules:
+//
+//    * The initial value of the counter is 1, indicating a live object with no in-flight calls.
+//      The initial value for the flag is false.
+//
+//    * At the start of each method call, we atomically check the counter.
+//      If it is 0 then the underlying Rust struct has already been destroyed and the call is aborted.
+//      If it is nonzero them we atomically increment it by 1 and proceed with the method call.
+//
+//    * At the end of each method call, we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+//    * When `destroy` is called, we atomically flip the flag from false to true.
+//      If the flag was already true we silently fail.
+//      Otherwise we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+// Astute readers may observe that this all sounds very similar to the way that Rust's `Arc<T>` works,
+// and indeed it is, with the addition of a flag to guard against multiple calls to `destroy`.
+//
+// The overall effect is that the underlying Rust struct is destroyed only when `destroy` has been
+// called *and* all in-flight method calls have completed, avoiding violating any of the expectations
+// of the underlying Rust code.
+//
+// This makes a cleaner a better alternative to _not_ calling `destroy()` as
+// and when the object is finished with, but the abstraction is not perfect: if the Rust object's `drop`
+// method is slow, and/or there are many objects to cleanup, and it's on a low end Android device, then the cleaner
+// thread may be starved, and the app will leak memory.
+//
+// In this case, `destroy`ing manually may be a better solution.
+//
+// The cleaner can live side by side with the manual calling of `destroy`. In the order of responsiveness, uniffi objects
+// with Rust peers are reclaimed:
+//
+// 1. By calling the `destroy` method of the object, which calls `rustObject.free()`. If that doesn't happen:
+// 2. When the object becomes unreachable, AND the Cleaner thread gets to call `rustObject.free()`. If the thread is starved then:
+// 3. The memory is reclaimed when the process terminates.
+//
+// [1] https://stackoverflow.com/questions/24376768/can-java-finalize-an-object-when-it-is-still-in-scope/24380219
+//
+
+
 public interface NotifierCallbacks {
     
     fun `messageReceived`(`conversation`: kotlin.String, `sender`: kotlin.String, `preview`: kotlin.String)
@@ -1979,38 +2667,7 @@ open class NotifierCallbacksImpl: Disposable, AutoCloseable, NotifierCallbacks {
     companion object
     
 }
-// Magic number for the Rust proxy to call using the same mechanism as every other method,
-// to free the callback once it's dropped by Rust.
-internal const val IDX_CALLBACK_FREE = 0
-// Callback return codes
-internal const val UNIFFI_CALLBACK_SUCCESS = 0
-internal const val UNIFFI_CALLBACK_ERROR = 1
-internal const val UNIFFI_CALLBACK_UNEXPECTED_ERROR = 2
 
-/**
- * @suppress
- */
-public abstract class FfiConverterCallbackInterface<CallbackInterface: Any>: FfiConverter<CallbackInterface, Long> {
-    internal val handleMap = UniffiHandleMap<CallbackInterface>()
-
-    internal fun drop(handle: Long) {
-        handleMap.remove(handle)
-    }
-
-    override fun lift(value: Long): CallbackInterface {
-        return handleMap.get(value)
-    }
-
-    override fun read(buf: ByteBuffer) = lift(buf.getLong())
-
-    override fun lower(value: CallbackInterface) = handleMap.insert(value)
-
-    override fun allocationSize(value: CallbackInterface) = 8UL
-
-    override fun write(value: CallbackInterface, buf: ByteBuffer) {
-        buf.putLong(lower(value))
-    }
-}
 
 // Put the implementation in an object so we don't pollute the top-level namespace
 internal object uniffiCallbackInterfaceNotifierCallbacks {
@@ -2303,6 +2960,12 @@ public interface PrivcordEngineInterface {
     fun `sendGroupMessage`(`group`: kotlin.String, `text`: kotlin.String, `replyTo`: kotlin.String?): kotlin.String
     
     fun `sendMessage`(`peer`: kotlin.String, `text`: kotlin.String, `replyTo`: kotlin.String?): kotlin.String
+    
+    /**
+     * Send connection setup to a contact (sealed to them, through the signaling service or mutual contacts).
+     * `sdp` is the session description for an offer or an answer.
+     */
+    fun `sendSignal`(`peer`: kotlin.String, `kind`: SignalKindDto, `sdp`: kotlin.String?)
     
     /**
      * The name put on invite cards.
@@ -2909,6 +3572,22 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
     }
     )
     }
+    
+
+    
+    /**
+     * Send connection setup to a contact (sealed to them, through the signaling service or mutual contacts).
+     * `sdp` is the session description for an offer or an answer.
+     */
+    @Throws(FfiException::class)override fun `sendSignal`(`peer`: kotlin.String, `kind`: SignalKindDto, `sdp`: kotlin.String?)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_send_signal(
+        it, FfiConverterString.lower(`peer`),FfiConverterTypeSignalKindDto.lower(`kind`),FfiConverterOptionalString.lower(`sdp`),_status)
+}
+    }
+    
     
 
     
@@ -4119,6 +4798,68 @@ public object FfiConverterTypeGroupMemberDto: FfiConverterRustBuffer<GroupMember
 
 
 
+/**
+ * What was brought over and why anything was left behind.
+ */
+data class ImportSummary (
+    var `alreadyDone`: kotlin.Boolean, 
+    var `contacts`: kotlin.ULong, 
+    var `groups`: kotlin.ULong, 
+    var `channels`: kotlin.ULong, 
+    var `messages`: kotlin.ULong, 
+    var `files`: kotlin.ULong, 
+    var `unsent`: kotlin.ULong, 
+    /**
+     * Reason code and how many, for everything that did not come over.
+     */
+    var `skipped`: List<SkippedCount>
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeImportSummary: FfiConverterRustBuffer<ImportSummary> {
+    override fun read(buf: ByteBuffer): ImportSummary {
+        return ImportSummary(
+            FfiConverterBoolean.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterSequenceTypeSkippedCount.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: ImportSummary) = (
+            FfiConverterBoolean.allocationSize(value.`alreadyDone`) +
+            FfiConverterULong.allocationSize(value.`contacts`) +
+            FfiConverterULong.allocationSize(value.`groups`) +
+            FfiConverterULong.allocationSize(value.`channels`) +
+            FfiConverterULong.allocationSize(value.`messages`) +
+            FfiConverterULong.allocationSize(value.`files`) +
+            FfiConverterULong.allocationSize(value.`unsent`) +
+            FfiConverterSequenceTypeSkippedCount.allocationSize(value.`skipped`)
+    )
+
+    override fun write(value: ImportSummary, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`alreadyDone`, buf)
+            FfiConverterULong.write(value.`contacts`, buf)
+            FfiConverterULong.write(value.`groups`, buf)
+            FfiConverterULong.write(value.`channels`, buf)
+            FfiConverterULong.write(value.`messages`, buf)
+            FfiConverterULong.write(value.`files`, buf)
+            FfiConverterULong.write(value.`unsent`, buf)
+            FfiConverterSequenceTypeSkippedCount.write(value.`skipped`, buf)
+    }
+}
+
+
+
 data class InviteDto (
     var `words`: kotlin.String, 
     var `expiresAt`: kotlin.Long
@@ -4280,6 +5021,38 @@ public object FfiConverterTypeRequestDto: FfiConverterRustBuffer<RequestDto> {
             FfiConverterString.write(value.`uid`, buf)
             FfiConverterString.write(value.`name`, buf)
             FfiConverterString.write(value.`safetyNumber`, buf)
+    }
+}
+
+
+
+data class SkippedCount (
+    var `reason`: kotlin.String, 
+    var `count`: kotlin.ULong
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSkippedCount: FfiConverterRustBuffer<SkippedCount> {
+    override fun read(buf: ByteBuffer): SkippedCount {
+        return SkippedCount(
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: SkippedCount) = (
+            FfiConverterString.allocationSize(value.`reason`) +
+            FfiConverterULong.allocationSize(value.`count`)
+    )
+
+    override fun write(value: SkippedCount, buf: ByteBuffer) {
+            FfiConverterString.write(value.`reason`, buf)
+            FfiConverterULong.write(value.`count`, buf)
     }
 }
 
@@ -4589,6 +5362,16 @@ sealed class EventDto {
     }
     
     /**
+     * A contact sent connection setup. `kind` says which; `Offer` and `Answer` carry the session description.
+     */
+    data class SignalReceived(
+        val `peer`: kotlin.String, 
+        val `kind`: SignalKindDto, 
+        val `sdp`: kotlin.String?) : EventDto() {
+        companion object
+    }
+    
+    /**
      * An emergency deletion ran; ask for its report.
      */
     object Wiped : EventDto()
@@ -4656,11 +5439,16 @@ public object FfiConverterTypeEventDto : FfiConverterRustBuffer<EventDto>{
                 FfiConverterString.read(buf),
                 FfiConverterBoolean.read(buf),
                 )
-            16 -> EventDto.Wiped
-            17 -> EventDto.Lagged(
+            16 -> EventDto.SignalReceived(
+                FfiConverterString.read(buf),
+                FfiConverterTypeSignalKindDto.read(buf),
+                FfiConverterOptionalString.read(buf),
+                )
+            17 -> EventDto.Wiped
+            18 -> EventDto.Lagged(
                 FfiConverterULong.read(buf),
                 )
-            18 -> EventDto.ShutDown
+            19 -> EventDto.ShutDown
             else -> throw RuntimeException("invalid enum value, something is very wrong!!")
         }
     }
@@ -4774,6 +5562,15 @@ public object FfiConverterTypeEventDto : FfiConverterRustBuffer<EventDto>{
                 + FfiConverterBoolean.allocationSize(value.`initiator`)
             )
         }
+        is EventDto.SignalReceived -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`peer`)
+                + FfiConverterTypeSignalKindDto.allocationSize(value.`kind`)
+                + FfiConverterOptionalString.allocationSize(value.`sdp`)
+            )
+        }
         is EventDto.Wiped -> {
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
@@ -4875,17 +5672,24 @@ public object FfiConverterTypeEventDto : FfiConverterRustBuffer<EventDto>{
                 FfiConverterBoolean.write(value.`initiator`, buf)
                 Unit
             }
-            is EventDto.Wiped -> {
+            is EventDto.SignalReceived -> {
                 buf.putInt(16)
+                FfiConverterString.write(value.`peer`, buf)
+                FfiConverterTypeSignalKindDto.write(value.`kind`, buf)
+                FfiConverterOptionalString.write(value.`sdp`, buf)
+                Unit
+            }
+            is EventDto.Wiped -> {
+                buf.putInt(17)
                 Unit
             }
             is EventDto.Lagged -> {
-                buf.putInt(17)
+                buf.putInt(18)
                 FfiConverterULong.write(value.`missed`, buf)
                 Unit
             }
             is EventDto.ShutDown -> {
-                buf.putInt(18)
+                buf.putInt(19)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -5065,6 +5869,12 @@ sealed class FfiException: kotlin.Exception() {
             get() = ""
     }
     
+    class NoRoute(
+        ) : FfiException() {
+        override val message
+            get() = ""
+    }
+    
 
     companion object ErrorHandler : UniffiRustCallStatusErrorHandler<FfiException> {
         override fun lift(error_buf: RustBuffer.ByValue): FfiException = FfiConverterTypeFfiError.lift(error_buf)
@@ -5108,6 +5918,7 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
             25 -> FfiException.InviteNotFound()
             26 -> FfiException.OwnInvite()
             27 -> FfiException.StillInGroup()
+            28 -> FfiException.NoRoute()
             else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
         }
     }
@@ -5222,6 +6033,10 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4UL
             )
+            is FfiException.NoRoute -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
         }
     }
 
@@ -5333,6 +6148,10 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
             }
             is FfiException.StillInGroup -> {
                 buf.putInt(27)
+                Unit
+            }
+            is FfiException.NoRoute -> {
+                buf.putInt(28)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -5559,6 +6378,40 @@ public object FfiConverterTypeSignalKind: FfiConverterRustBuffer<SignalKind> {
     override fun allocationSize(value: SignalKind) = 4UL
 
     override fun write(value: SignalKind, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * Connection setup sent to or received from a contact.
+ */
+
+enum class SignalKindDto {
+    
+    READY,
+    OFFER,
+    ANSWER;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSignalKindDto: FfiConverterRustBuffer<SignalKindDto> {
+    override fun read(buf: ByteBuffer) = try {
+        SignalKindDto.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: SignalKindDto) = 4UL
+
+    override fun write(value: SignalKindDto, buf: ByteBuffer) {
         buf.putInt(value.ordinal + 1)
     }
 }
@@ -6054,6 +6907,34 @@ public object FfiConverterSequenceTypeRequestDto: FfiConverterRustBuffer<List<Re
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeSkippedCount: FfiConverterRustBuffer<List<SkippedCount>> {
+    override fun read(buf: ByteBuffer): List<SkippedCount> {
+        val len = buf.getInt()
+        return List<SkippedCount>(len) {
+            FfiConverterTypeSkippedCount.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<SkippedCount>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeSkippedCount.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<SkippedCount>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeSkippedCount.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeWipeStepDto: FfiConverterRustBuffer<List<WipeStepDto>> {
     override fun read(buf: ByteBuffer): List<WipeStepDto> {
         val len = buf.getInt()
@@ -6075,4 +6956,31 @@ public object FfiConverterSequenceTypeWipeStepDto: FfiConverterRustBuffer<List<W
         }
     }
 }
+        /**
+         * Bring over an Android install: its Room database file, with a decryptor that calls the Android Keystore.
+         */
+    @Throws(FfiException::class) fun `importLegacyAndroid`(`oldDbPath`: kotlin.String, `decryptor`: LegacyDecryptor, `newDbPath`: kotlin.String, `ownUid`: kotlin.String, `files`: LegacyFiles): ImportSummary {
+            return FfiConverterTypeImportSummary.lift(
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_func_import_legacy_android(
+        FfiConverterString.lower(`oldDbPath`),FfiConverterTypeLegacyDecryptor.lower(`decryptor`),FfiConverterString.lower(`newDbPath`),FfiConverterString.lower(`ownUid`),FfiConverterTypeLegacyFiles.lower(`files`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Bring over a desktop install: its SQLite file, and the 32-byte AES key the app keeps in the OS secret store. Run it
+         * before `PrivcordEngine::start` on the new database; running it again does nothing.
+         */
+    @Throws(FfiException::class) fun `importLegacyDesktop`(`oldDbPath`: kotlin.String, `aesKey`: kotlin.ByteArray, `newDbPath`: kotlin.String, `ownUid`: kotlin.String, `files`: LegacyFiles): ImportSummary {
+            return FfiConverterTypeImportSummary.lift(
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_func_import_legacy_desktop(
+        FfiConverterString.lower(`oldDbPath`),FfiConverterByteArray.lower(`aesKey`),FfiConverterString.lower(`newDbPath`),FfiConverterString.lower(`ownUid`),FfiConverterTypeLegacyFiles.lower(`files`),_status)
+}
+    )
+    }
+    
+
 

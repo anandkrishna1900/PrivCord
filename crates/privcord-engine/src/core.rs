@@ -56,6 +56,7 @@ use zeroize::Zeroizing;
 
 mod invites;
 mod privacy;
+mod signaling;
 
 pub use invites::InvitePreview;
 
@@ -166,6 +167,9 @@ pub struct Core {
     /// Our place in the Bluetooth mesh (neighbours are anonymous radio links, not contacts).
     mesh: MeshNode,
     invites: invites::InviteState,
+    sealed: signaling::SealedState,
+    /// True only while a message that came through the signaling service is being handled.
+    relay_inbound: bool,
     /// The name on our invite cards.
     display_name: Option<String>,
 }
@@ -208,6 +212,8 @@ impl Core {
             channels: BTreeMap::new(),
             mesh: MeshNode::default(),
             invites: invites::InviteState::default(),
+            sealed: signaling::SealedState::default(),
+            relay_inbound: false,
             display_name: None,
         };
         if let Some(secrets) = core.ports.secure.load_identity()? {
@@ -737,6 +743,7 @@ impl Core {
             Some("declined") => self.on_declined(peer, frame),
             Some("group_push" | "group_events" | "group_have") => self.on_group_frame(peer, frame),
             Some("gmsg") => self.on_group_message(peer, frame),
+            Some("relay_blob") => self.on_relay_blob(peer, frame),
             Some("file_offer") => self.on_file_offer(peer, frame),
             Some("file_chunk") => self.on_file_chunk(peer, frame),
             Some("privacy") => {
@@ -778,7 +785,7 @@ impl Core {
         }
         let ack = |core: &mut Self, id: &MessageId| {
             let at = core.now();
-            core.send_secure(peer, &json!({ "v": PROTOCOL_VERSION, "kind": "ack", "messageId": id, "state": "DELIVERED", "at": at }));
+            core.send_ack(peer, id, at);
         };
         // Receiving twice is harmless: acknowledge again, store nothing.
         if self.messages.contains_key(&message.message_id) {
@@ -787,6 +794,7 @@ impl Core {
             return;
         }
         message.delivery_state = DeliveryState::Delivered;
+        message.transport = self.inbound_transport();
         let conversation = ConversationId::Direct(peer.clone());
         let row = StoredMessage {
             conversation: conversation.clone(),
@@ -1142,6 +1150,7 @@ impl Core {
         }
         self.request_dials(now);
         self.tick_invites();
+        self.tick_sealed();
     }
 
     /// Ask for a dial to each person whose link is down and whose backoff has passed (5 s doubling to 2 minutes, a few
@@ -1449,7 +1458,7 @@ impl Core {
         };
         let ack = |core: &mut Self, id: &MessageId| {
             let at = core.now();
-            core.send_secure(peer, &json!({ "v": PROTOCOL_VERSION, "kind": "ack", "messageId": id, "state": "DELIVERED", "at": at }));
+            core.send_ack(peer, id, at);
         };
         if self.messages.contains_key(&m.message_id) {
             ack(self, &m.message_id);
@@ -1462,7 +1471,7 @@ impl Core {
             text: m.text,
             client_created_at: m.client_created_at,
             kind: privcord_domain::message::MessageKind::Text,
-            transport: privcord_domain::message::TransportKind::P2p,
+            transport: self.inbound_transport(),
             delivery_state: DeliveryState::Delivered,
             reply_to: m.reply_to,
             read_at: None,

@@ -6,6 +6,7 @@ members = [
     "crates/privcord-ports",
     "crates/privcord-engine",
     "crates/privcord-storage",
+    "crates/privcord-import",
     "crates/privcord-ffi",
 ]
 # The existing Tauri shell keeps its own lockfile until milestone M7 moves it onto this workspace.
@@ -52,3 +53,4 @@ privcord-crypto = { path = "crates/privcord-crypto" }
 privcord-ports = { path = "crates/privcord-ports" }
 privcord-engine = { path = "crates/privcord-engine" }
 privcord-storage = { path = "crates/privcord-storage" }
+privcord-import = { path = "crates/privcord-import" }

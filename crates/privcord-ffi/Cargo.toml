@@ -30,6 +30,7 @@ required-features = ["cli"]
 
 [dependencies]
 privcord-domain.workspace = true
+privcord-import.workspace = true
 privcord-crypto.workspace = true
 privcord-ports.workspace = true
 privcord-engine.workspace = true

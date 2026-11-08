@@ -283,3 +283,74 @@ fn file_bytes_round_trip_and_go_with_their_message() {
         "deleting the message deletes the file"
     );
 }
+
+/// The schema as the first released build wrote it (version 1, before file bytes had a table). A person who updates
+/// must find everything exactly where it was.
+const V1_SCHEMA: &str = "CREATE TABLE contacts (uid TEXT PRIMARY KEY NOT NULL, card TEXT NOT NULL, name TEXT,
+        trust TEXT NOT NULL CHECK (trust IN ('verified', 'introduced')), checked INTEGER NOT NULL CHECK (checked IN (0, 1)),
+        introduced_by TEXT, created_at INTEGER NOT NULL);
+    CREATE TABLE messages (message_id TEXT PRIMARY KEY NOT NULL, conversation TEXT NOT NULL, client_message_id TEXT NOT NULL,
+        sender_id TEXT NOT NULL, text TEXT NOT NULL, client_created_at INTEGER NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('text', 'file')), transport TEXT NOT NULL CHECK (transport IN ('p2p', 'relay')),
+        delivery_state TEXT NOT NULL CHECK (delivery_state IN ('QUEUED', 'SENT', 'DELIVERED', 'READ', 'FAILED')),
+        read_at INTEGER, reply_id TEXT, reply_author TEXT, reply_preview TEXT);
+    CREATE INDEX idx_messages_conversation ON messages (conversation, client_created_at, message_id);
+    CREATE TABLE outbox (message_id TEXT NOT NULL REFERENCES messages (message_id) ON DELETE CASCADE, recipient TEXT NOT NULL,
+        attempts INTEGER NOT NULL, next_try_ms INTEGER NOT NULL, PRIMARY KEY (message_id, recipient));
+    CREATE INDEX idx_outbox_recipient ON outbox (recipient, next_try_ms);
+    CREATE TABLE kv (key TEXT PRIMARY KEY NOT NULL, value BLOB NOT NULL);";
+
+#[test]
+fn a_version_1_database_with_real_content_upgrades_to_the_current_schema_losing_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("v1.db");
+    {
+        let raw = rusqlite::Connection::open(&path).unwrap();
+        raw.execute_batch(V1_SCHEMA).unwrap();
+        raw.execute_batch(
+            "INSERT INTO messages VALUES ('m1','direct:bob','m1','bob','hello \u{1F600} from v1',1700000000000,'text','p2p','SENT',NULL,'r1','bob','quoted');
+             INSERT INTO messages VALUES ('m2','group:g1','m2','me','file.png',1700000000001,'file','p2p','DELIVERED',1700000000009,NULL,NULL,NULL);
+             INSERT INTO outbox VALUES ('m1','bob',3,1700000000500);
+             INSERT INTO kv VALUES ('device_id', X'6162');
+             INSERT INTO contacts VALUES ('bob','DUOID1:x','Bob','verified',1,NULL,1700000000000);",
+        )
+        .unwrap();
+        raw.pragma_update(None, "user_version", 1).unwrap();
+    }
+    let db = SqliteStorage::open(&path).unwrap();
+    assert_eq!(db.schema_version().unwrap(), SCHEMA_VERSION);
+    // A copy of the old database was kept: still version 1, with all its rows.
+    {
+        let bak = rusqlite::Connection::open(dir.path().join("v1.db.bak-v1")).unwrap();
+        let version: i64 = bak
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        let rows: i64 = bak
+            .query_row("SELECT COUNT(*) FROM messages", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!((version, rows), (1, 2));
+    }
+    // Everything is still there.
+    let messages = db.messages().unwrap();
+    assert_eq!(messages.len(), 2);
+    assert_eq!(messages[0].message.text, "hello \u{1F600} from v1");
+    assert_eq!(
+        messages[0].message.reply_to.as_ref().unwrap().preview,
+        "quoted"
+    );
+    assert_eq!(db.outbox().unwrap()[0].attempts, 3);
+    assert_eq!(db.kv("device_id").unwrap().unwrap(), b"ab");
+    assert_eq!(db.contacts().unwrap()[0].name.as_deref(), Some("Bob"));
+    // And the new table works: a file can be attached to an old message and goes when the message does.
+    let id = MessageId::new("m2").unwrap();
+    db.apply(&[StorageOp::PutFile(privcord_ports::StoredFile {
+        message_id: id.clone(),
+        name: "file.png".into(),
+        mime: "image/png".into(),
+        bytes: vec![1, 2, 3],
+    })])
+    .unwrap();
+    assert_eq!(db.file(&id).unwrap().unwrap().bytes, [1, 2, 3]);
+    db.apply(&[StorageOp::DeleteMessage(id.clone())]).unwrap();
+    assert!(db.file(&id).unwrap().is_none());
+}

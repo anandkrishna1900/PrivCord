@@ -409,6 +409,15 @@ impl Core {
             self.hub.publish(EngineEvent::InviteRequest { uid });
             return;
         }
+        // Something sealed for us, on our own mailbox.
+        if self
+            .uid
+            .as_ref()
+            .is_some_and(|u| privcord_crypto::seal::mailbox_for(u.as_str()) == mailbox)
+        {
+            self.handle_own_blob(blob);
+            return;
+        }
         // The card behind words we typed.
         let found = self
             .invites

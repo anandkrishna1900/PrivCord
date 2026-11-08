@@ -91,6 +91,8 @@ pub enum FfiError {
     OwnInvite,
     #[error("still in a shared group")]
     StillInGroup,
+    #[error("no way to reach them")]
+    NoRoute,
 }
 
 impl From<ErrorCode> for FfiError {
@@ -122,6 +124,7 @@ impl From<ErrorCode> for FfiError {
             ErrorCode::InviteNotFound => Self::InviteNotFound,
             ErrorCode::OwnInvite => Self::OwnInvite,
             ErrorCode::StillInGroup => Self::StillInGroup,
+            ErrorCode::NoRoute => Self::NoRoute,
         }
     }
 }
@@ -151,6 +154,14 @@ pub trait TransportCallbacks: Send + Sync {
     fn signal_unsubscribe(&self, mailbox: String);
     /// Publish an encoded sealed blob. True if at least one service took it.
     fn signal_put(&self, mailbox: String, blob: String, kind: SignalKind, ttl_sec: u32) -> bool;
+}
+
+/// Connection setup sent to or received from a contact.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum SignalKindDto {
+    Ready,
+    Offer,
+    Answer,
 }
 
 /// How long a published blob should live.
@@ -534,6 +545,12 @@ pub enum EventDto {
         peer: String,
         initiator: bool,
     },
+    /// A contact sent connection setup. `kind` says which; `Offer` and `Answer` carry the session description.
+    SignalReceived {
+        peer: String,
+        kind: SignalKindDto,
+        sdp: Option<String>,
+    },
     /// An emergency deletion ran; ask for its report.
     Wiped,
     Lagged {
@@ -597,6 +614,18 @@ fn event_dto(e: EngineEvent) -> EventDto {
             initiator,
         },
         EngineEvent::Wiped => EventDto::Wiped,
+        EngineEvent::SignalReceived { peer, message } => {
+            let (kind, sdp) = match message {
+                privcord_engine::SignalMessage::Ready => (SignalKindDto::Ready, None),
+                privcord_engine::SignalMessage::Offer(s) => (SignalKindDto::Offer, Some(s)),
+                privcord_engine::SignalMessage::Answer(s) => (SignalKindDto::Answer, Some(s)),
+            };
+            EventDto::SignalReceived {
+                peer: peer.to_string(),
+                kind,
+                sdp,
+            }
+        }
         EngineEvent::Lagged { missed } => EventDto::Lagged { missed },
         EngineEvent::ShutDown => EventDto::ShutDown,
     }
@@ -912,6 +941,26 @@ impl PrivcordEngine {
         self.report(Op::LastKillSwitchReport)
     }
 
+    /// Send connection setup to a contact (sealed to them, through the signaling service or mutual contacts).
+    /// `sdp` is the session description for an offer or an answer.
+    pub fn send_signal(
+        &self,
+        peer: String,
+        kind: SignalKindDto,
+        sdp: Option<String>,
+    ) -> Result<(), FfiError> {
+        let message = match (kind, sdp) {
+            (SignalKindDto::Ready, _) => privcord_engine::SignalMessage::Ready,
+            (SignalKindDto::Offer, Some(s)) => privcord_engine::SignalMessage::Offer(s),
+            (SignalKindDto::Answer, Some(s)) => privcord_engine::SignalMessage::Answer(s),
+            _ => return Err(FfiError::InvalidArgument),
+        };
+        self.misc(Op::SendSignal {
+            peer: user(&peer)?,
+            message,
+        })
+    }
+
     pub fn mark_read(&self, peer: String) -> Result<(), FfiError> {
         Ok(pollster::block_on(self.handle.mark_read(&user(&peer)?))?)
     }
@@ -1113,4 +1162,141 @@ fn wipe_dto(r: privcord_domain::killswitch::KillSwitchReport) -> WipeReportDto {
         failed_step_ids: summary.failed_step_ids,
         skipped_step_ids: summary.skipped_step_ids,
     }
+}
+
+/* ------------------------------------------------------------------ bringing over an existing install */
+
+/// Asks the platform to decrypt what the old app stored. On Android this calls the Keystore, whose key never leaves
+/// the device. Returns the plain text, or nothing if it cannot be decrypted.
+#[uniffi::export(with_foreign)]
+pub trait LegacyDecryptor: Send + Sync {
+    fn decrypt_text(&self, payload: String) -> Option<String>;
+}
+
+/// The plain bytes of a file the old app kept outside its message table.
+#[uniffi::export(with_foreign)]
+pub trait LegacyFiles: Send + Sync {
+    fn file_bytes(&self, message_id: String) -> Option<Vec<u8>>;
+}
+
+struct DecryptorAdapter(Arc<dyn LegacyDecryptor>);
+impl privcord_import::Decryptor for DecryptorAdapter {
+    fn text(&self, payload: &str) -> Option<String> {
+        self.0.decrypt_text(payload.to_owned())
+    }
+}
+struct FilesAdapter(Arc<dyn LegacyFiles>);
+impl privcord_import::FileSource for FilesAdapter {
+    fn file(&self, id: &str) -> Option<Vec<u8>> {
+        self.0.file_bytes(id.to_owned())
+    }
+}
+
+/// What was brought over and why anything was left behind.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ImportSummary {
+    pub already_done: bool,
+    pub contacts: u64,
+    pub groups: u64,
+    pub channels: u64,
+    pub messages: u64,
+    pub files: u64,
+    pub unsent: u64,
+    /// Reason code and how many, for everything that did not come over.
+    pub skipped: Vec<SkippedCount>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SkippedCount {
+    pub reason: String,
+    pub count: u64,
+}
+
+fn summary(r: privcord_import::ImportReport) -> ImportSummary {
+    let n = |v: usize| u64::try_from(v).unwrap_or(u64::MAX);
+    ImportSummary {
+        already_done: r.already_done,
+        contacts: n(r.contacts),
+        groups: n(r.groups),
+        channels: n(r.channels),
+        messages: n(r.messages),
+        files: n(r.files),
+        unsent: n(r.outbox),
+        skipped: r
+            .skipped
+            .into_iter()
+            .map(|(reason, c)| SkippedCount {
+                reason: reason.to_owned(),
+                count: n(c),
+            })
+            .collect(),
+    }
+}
+
+fn run_import(
+    source: privcord_import::Source,
+    bundle: privcord_import::LegacyBundle,
+    new_db_path: &str,
+    own_uid: &str,
+    files: &dyn privcord_import::FileSource,
+) -> Result<ImportSummary, FfiError> {
+    let storage = privcord_storage::SqliteStorage::open(std::path::Path::new(new_db_path))
+        .map_err(|_| FfiError::Storage)?;
+    let now = i64::try_from(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_millis()),
+    )
+    .unwrap_or(0);
+    privcord_import::import(&bundle, source, files, &user(own_uid)?, &storage, now)
+        .map(summary)
+        .map_err(|_| FfiError::Storage)
+}
+
+/// Bring over a desktop install: its SQLite file, and the 32-byte AES key the app keeps in the OS secret store. Run it
+/// before `PrivcordEngine::start` on the new database; running it again does nothing.
+#[uniffi::export]
+pub fn import_legacy_desktop(
+    old_db_path: String,
+    aes_key: Vec<u8>,
+    new_db_path: String,
+    own_uid: String,
+    files: Arc<dyn LegacyFiles>,
+) -> Result<ImportSummary, FfiError> {
+    let key: [u8; 32] = aes_key.try_into().map_err(|_| FfiError::InvalidArgument)?;
+    let bundle = privcord_import::desktop::read_bundle(
+        std::path::Path::new(&old_db_path),
+        &privcord_import::desktop::AesKeyDecryptor(key),
+    )
+    .map_err(|_| FfiError::InvalidArgument)?;
+    run_import(
+        privcord_import::Source::Desktop,
+        bundle,
+        &new_db_path,
+        &own_uid,
+        &FilesAdapter(files),
+    )
+}
+
+/// Bring over an Android install: its Room database file, with a decryptor that calls the Android Keystore.
+#[uniffi::export]
+pub fn import_legacy_android(
+    old_db_path: String,
+    decryptor: Arc<dyn LegacyDecryptor>,
+    new_db_path: String,
+    own_uid: String,
+    files: Arc<dyn LegacyFiles>,
+) -> Result<ImportSummary, FfiError> {
+    let bundle = privcord_import::android::read_bundle(
+        std::path::Path::new(&old_db_path),
+        &DecryptorAdapter(decryptor),
+    )
+    .map_err(|_| FfiError::InvalidArgument)?;
+    run_import(
+        privcord_import::Source::Android,
+        bundle,
+        &new_db_path,
+        &own_uid,
+        &FilesAdapter(files),
+    )
 }

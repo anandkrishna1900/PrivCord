@@ -45,6 +45,8 @@ pub enum ErrorCode {
     OwnInvite,
     #[error("Leave the groups you share first, then you can remove this friend.")]
     StillInGroup,
+    #[error("No way to reach them right now.")]
+    NoRoute,
     #[error("Storage failed; nothing was changed.")]
     Storage,
     #[error("Secure storage failed.")]

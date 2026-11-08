@@ -71,6 +71,12 @@ jobs:
         run: |
           npm ci
           npm test --workspace @duochat/protocol -- rustInterop
+      - name: TypeScript-made vectors are reproducible
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cd packages/protocol
+          npx vite-node scripts/gen-misc-vectors.ts
+          git diff --exit-code ../../docs/misc-vectors.json
       - name: Kotlin bindings match the committed API snapshot
         if: matrix.os == 'ubuntu-latest'
         run: |
