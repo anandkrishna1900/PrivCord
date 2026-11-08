@@ -293,5 +293,46 @@ fn backups_match_typescript() {
 fn the_rust_made_vector_file_is_reproducible() {
     let root = env!("CARGO_MANIFEST_DIR");
     let committed: Value = serde_json::from_str(&std::fs::read_to_string(format!("{root}/../../docs/rust-vectors.json")).unwrap()).unwrap();
-    assert_eq!(privcord_crypto::vectors::build().unwrap(), committed, "regenerate with the gen_vectors example");
+    assert!(privcord_crypto::vectors::build().unwrap() == committed, "docs/rust-vectors.json is stale: regenerate it with the gen_vectors example");
+}
+
+#[test]
+fn secure_channel_matches_typescript_byte_for_byte() {
+    use privcord_crypto::secure_channel::{ChannelError, Data, Hello, SecureChannel};
+    let v = load("android-vectors.json");
+    let sc = &v["secureChannel"];
+    let (ann, bob, cat) = people();
+    let (ann_uid, bob_uid) = (ann.uid().unwrap(), bob.uid().unwrap());
+    let scalar = |who: &str| -> [u8; 32] { codec::decode(sc[who]["ephPriv"]["d"].as_str().unwrap()).unwrap().try_into().unwrap() };
+    let mut a = SecureChannel::with_fixed(ann_uid.as_str(), bob_uid.as_str(), bob.sign_public(), &scalar("ann"), sc["ann"]["nonce"].as_str().unwrap()).unwrap();
+    let mut b = SecureChannel::with_fixed(bob_uid.as_str(), ann_uid.as_str(), ann.sign_public(), &scalar("bob"), sc["bob"]["nonce"].as_str().unwrap()).unwrap();
+
+    // Hellos from TypeScript are accepted; ours carry the same key and nonce and are accepted by the other side.
+    let ts_hello_ann = Hello::from_value(&sc["ann"]["hello"]).unwrap();
+    let ts_hello_bob = Hello::from_value(&sc["bob"]["hello"]).unwrap();
+    let our_hello_ann = a.hello(&ann).unwrap();
+    assert_eq!((&our_hello_ann.epk, &our_hello_ann.nonce), (&ts_hello_ann.epk, &ts_hello_ann.nonce));
+    a.accept(&ts_hello_bob).unwrap();
+    b.accept(&our_hello_ann).unwrap();
+
+    // Frames TypeScript encrypted decrypt here, and re-encrypting the same plaintext gives the same bytes.
+    for f in sc["frames"].as_array().unwrap() {
+        let frame = Data::from_value(&f["frame"]).unwrap();
+        let plaintext: Value = serde_json::from_str(f["plaintext"].as_str().unwrap()).unwrap();
+        let (sender, receiver) = if f["from"] == "ann" { (&mut a, &mut b) } else { (&mut b, &mut a) };
+        assert_eq!(receiver.decrypt(&frame).unwrap(), plaintext);
+        let again = sender.encrypt(&plaintext).unwrap();
+        assert_eq!(again, frame, "frame {}", f["n"]);
+        // A replay is refused.
+        assert_eq!(receiver.decrypt(&frame).unwrap_err(), ChannelError::Replay);
+    }
+
+    // An impostor's hello (signed by someone else) is refused; so is a second handshake.
+    let mut c = SecureChannel::new(bob_uid.as_str(), ann_uid.as_str(), ann.sign_public(), &mut SeededEntropy::new("c")).unwrap();
+    assert_eq!(c.accept(&Hello::from_value(&sc["impostorHello"]).unwrap()).unwrap_err(), ChannelError::BadHandshake);
+    assert_eq!(a.accept(&ts_hello_bob).unwrap_err(), ChannelError::AlreadyEstablished);
+    let _ = cat;
+    // Nothing can be sent before the handshake.
+    let mut fresh = SecureChannel::new("x", "y", ann.sign_public(), &mut SeededEntropy::new("f")).unwrap();
+    assert_eq!(fresh.encrypt(&json!({})).unwrap_err(), ChannelError::NotEstablished);
 }

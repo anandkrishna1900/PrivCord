@@ -22,6 +22,7 @@ pub mod kdf;
 pub mod rng;
 pub mod safety;
 pub mod seal;
+pub mod secure_channel;
 #[cfg(any(test, feature = "test-support"))]
 pub mod vectors;
 
