@@ -1,5 +1,6 @@
 [package]
 name = "privcord-ports"
+description = "Capability contracts the engine depends on. Platform adapters implement them; the engine never sees a concrete OS API."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,4 +9,11 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[features]
+# In-memory fakes for tests and for hosts that want a throwaway engine.
+testing = []
+
 [dependencies]
+privcord-domain.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true

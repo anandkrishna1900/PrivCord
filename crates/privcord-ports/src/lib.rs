@@ -1,1 +1,141 @@
-//! placeholder
+//! Ports: what the engine needs from the outside world, as traits.
+//!
+//! Every method is synchronous and returns promptly (a database call, a queue push); anything that waits on a radio or
+//! the network is the adapter's own business, and its results come back to the engine as inputs (`EngineHandle`).
+//! That keeps the engine deterministic and testable, and lets each platform implement a port its own way:
+//! Android Keystore, Windows Credential Manager, Linux Secret Service, macOS Keychain for [`SecureStore`];
+//! SQLite for [`Storage`]; WebRTC or Bluetooth for [`Transport`].
+//!
+//! Adapters map their platform errors to the error types here and never let one panic across the boundary.
+
+use privcord_domain::{
+    message::{ChatMessage, DeliveryState},
+    privacy::ContactTrust,
+    state::ConnectionPath,
+    ConversationId, MessageId, UserId,
+};
+use thiserror::Error;
+use zeroize::Zeroizing;
+
+#[cfg(feature = "testing")]
+pub mod testing;
+
+/// Wall-clock time. Monotonic time is not needed by the engine yet.
+pub trait Clock: Send + Sync {
+    /// Milliseconds since 1970.
+    fn now_ms(&self) -> i64;
+}
+
+/// Why a storage call failed. Details stay in the adapter's logs; nothing here carries content.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum StorageError {
+    #[error("storage is unavailable")]
+    Unavailable,
+    #[error("stored data failed an integrity check")]
+    Corrupt,
+    #[error("the database was written by a newer version")]
+    NewerVersion,
+    #[error("storage rejected the operation")]
+    Rejected,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredContact {
+    pub uid: UserId,
+    /// The `DUOID1:` text of their card, kept so it can be re-shared and re-verified.
+    pub card: String,
+    pub name: Option<String>,
+    pub trust: ContactTrust,
+    /// Safety numbers were compared out of band.
+    pub checked: bool,
+    pub introduced_by: Option<UserId>,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredMessage {
+    pub conversation: ConversationId,
+    pub message: ChatMessage,
+}
+
+/// A message waiting to reach one recipient.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutboxEntry {
+    pub message_id: MessageId,
+    pub recipient: UserId,
+    pub attempts: u32,
+    pub next_try_ms: i64,
+}
+
+/// One change. A batch of these is applied all together or not at all.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StorageOp {
+    PutContact(StoredContact),
+    DeleteContact(UserId),
+    /// Stores a message unless one with the same id exists (so receiving twice is harmless).
+    InsertMessage(StoredMessage),
+    SetDelivery { id: MessageId, state: DeliveryState, read_at: Option<i64> },
+    DeleteMessage(MessageId),
+    PutOutbox(OutboxEntry),
+    RemoveOutbox { message_id: MessageId, recipient: UserId },
+    SetKv { key: String, value: Vec<u8> },
+}
+
+/// Persistent state. `apply` is the only way to change it, and it is atomic: a crash or an error part-way leaves
+/// nothing half-written (a message never exists without its outbox entry, or the other way round).
+pub trait Storage: Send + Sync {
+    fn apply(&self, batch: &[StorageOp]) -> Result<(), StorageError>;
+    fn contacts(&self) -> Result<Vec<StoredContact>, StorageError>;
+    fn messages(&self) -> Result<Vec<StoredMessage>, StorageError>;
+    fn outbox(&self) -> Result<Vec<OutboxEntry>, StorageError>;
+    fn kv(&self, key: &str) -> Result<Option<Vec<u8>>, StorageError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum SecureStoreError {
+    #[error("secure storage is unavailable")]
+    Unavailable,
+    #[error("secure storage refused access")]
+    Denied,
+}
+
+/// The two private scalars of an identity (sign, then agree), as the OS-backed store keeps them. Wiped when dropped.
+pub type IdentitySecrets = Zeroizing<[u8; 64]>;
+
+/// OS-backed secret storage (Keystore, Credential Manager, Secret Service, Keychain).
+pub trait SecureStore: Send + Sync {
+    fn load_identity(&self) -> Result<Option<IdentitySecrets>, SecureStoreError>;
+    fn save_identity(&self, secrets: &IdentitySecrets) -> Result<(), SecureStoreError>;
+    fn delete_identity(&self) -> Result<(), SecureStoreError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum TransportError {
+    #[error("not connected to that person")]
+    NotConnected,
+    #[error("the link refused the frame")]
+    Refused,
+}
+
+/// Sends text frames to a peer over whatever link is up (WebRTC data channel, Bluetooth, ...). The engine decides
+/// which peers to talk to; the adapter owns the radio. Incoming frames and link changes are reported to the engine.
+pub trait Transport: Send + Sync {
+    /// Queue one frame. Must not block on the network.
+    fn send(&self, peer: &UserId, frame: &str) -> Result<(), TransportError>;
+}
+
+/// Something worth telling the person about while the app may be in the background.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Notification {
+    MessageReceived { conversation: ConversationId, sender: UserId, preview: String },
+}
+
+pub trait Notifier: Send + Sync {
+    fn notify(&self, notification: Notification);
+}
+
+/// What an adapter reports when a link comes up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LinkInfo {
+    pub path: ConnectionPath,
+}

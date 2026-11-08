@@ -1,5 +1,6 @@
 [package]
 name = "privcord-engine"
+description = "The PrivCord application engine: identity, contacts, authenticated peer links, messaging, delivery and state. One implementation for every platform."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,3 +10,15 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+privcord-domain.workspace = true
+privcord-crypto.workspace = true
+privcord-ports.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+privcord-ports = { workspace = true, features = ["testing"] }
+privcord-crypto = { workspace = true, features = ["test-support"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "sync", "rt"] }
