@@ -632,7 +632,7 @@ class RustChatEngine(
                     deliveredTo = (m.total.toInt() - m.pending.toInt()).coerceAtLeast(0),
                     type = if (m.isFile) MessageType.FILE else MessageType.TEXT,
                     replyTo = m.replyTo?.let { ReplyRef(it, replied?.let { r -> nameOf(s, r.sender) } ?: "", replied?.text.orEmpty()) },
-                    file = if (m.isFile) FileMeta(m.text, "", 0, "") else null,
+                    file = if (m.isFile) FileMeta(m.text, m.fileMime, m.fileSize.toLong().coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), "") else null,
                     senderName = if (conv.id.startsWith("chan:")) nameOf(s, m.sender) else null,
                     deleted = m.deleted, reactions = reactions,
                 )

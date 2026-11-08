@@ -68,6 +68,13 @@ pub struct StoredFile {
     pub bytes: Vec<u8>,
 }
 
+/// What the chat list needs to know about a stored file without reading its bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileInfo {
+    pub mime: String,
+    pub size: u64,
+}
+
 /// A message waiting to reach one recipient.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutboxEntry {
@@ -143,6 +150,13 @@ pub trait Storage: Send + Sync {
     fn outbox(&self) -> Result<Vec<OutboxEntry>, StorageError>;
     fn kv(&self, key: &str) -> Result<Option<Vec<u8>>, StorageError>;
     fn file(&self, id: &MessageId) -> Result<Option<StoredFile>, StorageError>;
+    /// Type and size of a stored file. The default reads the file; a database can answer without reading the bytes.
+    fn file_info(&self, id: &MessageId) -> Result<Option<FileInfo>, StorageError> {
+        Ok(self.file(id)?.map(|f| FileInfo {
+            size: u64::try_from(f.bytes.len()).unwrap_or(u64::MAX),
+            mime: f.mime,
+        }))
+    }
     fn reactions(&self) -> Result<Vec<StoredReaction>, StorageError>;
     /// Messages that were deleted for everyone.
     fn deleted(&self) -> Result<Vec<MessageId>, StorageError>;

@@ -47,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.duochat.app.data.ChatState
 import com.duochat.app.data.ChatSummary
 import com.duochat.app.data.LinkStatus
@@ -97,22 +98,13 @@ fun HomeScreen(
             if (state.chats.isNotEmpty()) {
                 Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp) {
                     Row(
-                        modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 10.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Button(onClick = onAddFriend, modifier = Modifier.weight(1f)) {
-                            Icon(Icons.Filled.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Add friend")
-                        }
-                        OutlinedButton(onClick = onNewGroup, modifier = Modifier.weight(1f), enabled = state.contacts.isNotEmpty()) {
-                            Icon(Icons.Filled.Groups, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("New group")
-                        }
-                        OutlinedButton(onClick = onChannels, modifier = Modifier.weight(1f)) {
-                            Text("# Channels")
-                        }
+                        // Icon over a one-line label, equal widths: the same on a narrow phone and a wide one.
+                        HomeAction("Add friend", Icons.Filled.PersonAdd, filled = true, enabled = true, onClick = onAddFriend, modifier = Modifier.weight(1f))
+                        HomeAction("New group", Icons.Filled.Groups, filled = false, enabled = state.contacts.isNotEmpty(), onClick = onNewGroup, modifier = Modifier.weight(1f))
+                        HomeAction("Channels", null, filled = false, enabled = true, onClick = onChannels, modifier = Modifier.weight(1f))
                     }
                 }
             }
@@ -242,4 +234,27 @@ fun formatListItemTime(epochMs: Long): String {
         SimpleDateFormat("MMM d", Locale.getDefault())
     }
     return fmt.format(date)
+}
+
+
+/** One of the three actions under the chat list: icon over a single-line label, so it never wraps on a narrow phone. */
+@androidx.compose.runtime.Composable
+private fun HomeAction(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector?,
+    filled: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val padding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+    val content: @androidx.compose.runtime.Composable () -> Unit = {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (icon != null) Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+            else Text("#", fontSize = 18.sp, maxLines = 1, softWrap = false)
+            Text(label, fontSize = 12.sp, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+        }
+    }
+    if (filled) Button(onClick = onClick, enabled = enabled, modifier = modifier, contentPadding = padding) { content() }
+    else OutlinedButton(onClick = onClick, enabled = enabled, modifier = modifier, contentPadding = padding) { content() }
 }

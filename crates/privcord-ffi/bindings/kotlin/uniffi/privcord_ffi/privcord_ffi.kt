@@ -5305,6 +5305,11 @@ data class MessageDto (
      */
     var `isFile`: kotlin.Boolean, 
     /**
+     * A file message: its type (for example `image/jpeg`) and size in bytes, so the chat can show a preview and a size.
+     */
+    var `fileMime`: kotlin.String, 
+    var `fileSize`: kotlin.ULong, 
+    /**
      * Deleted for everyone: show it as removed (there is no text).
      */
     var `deleted`: kotlin.Boolean, 
@@ -5335,6 +5340,8 @@ public object FfiConverterTypeMessageDto: FfiConverterRustBuffer<MessageDto> {
             FfiConverterTypeDelivery.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterBoolean.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterSequenceTypeReactionChipDto.read(buf),
             FfiConverterUInt.read(buf),
@@ -5350,6 +5357,8 @@ public object FfiConverterTypeMessageDto: FfiConverterRustBuffer<MessageDto> {
             FfiConverterTypeDelivery.allocationSize(value.`delivery`) +
             FfiConverterOptionalString.allocationSize(value.`replyTo`) +
             FfiConverterBoolean.allocationSize(value.`isFile`) +
+            FfiConverterString.allocationSize(value.`fileMime`) +
+            FfiConverterULong.allocationSize(value.`fileSize`) +
             FfiConverterBoolean.allocationSize(value.`deleted`) +
             FfiConverterSequenceTypeReactionChipDto.allocationSize(value.`reactions`) +
             FfiConverterUInt.allocationSize(value.`pending`) +
@@ -5364,6 +5373,8 @@ public object FfiConverterTypeMessageDto: FfiConverterRustBuffer<MessageDto> {
             FfiConverterTypeDelivery.write(value.`delivery`, buf)
             FfiConverterOptionalString.write(value.`replyTo`, buf)
             FfiConverterBoolean.write(value.`isFile`, buf)
+            FfiConverterString.write(value.`fileMime`, buf)
+            FfiConverterULong.write(value.`fileSize`, buf)
             FfiConverterBoolean.write(value.`deleted`, buf)
             FfiConverterSequenceTypeReactionChipDto.write(value.`reactions`, buf)
             FfiConverterUInt.write(value.`pending`, buf)

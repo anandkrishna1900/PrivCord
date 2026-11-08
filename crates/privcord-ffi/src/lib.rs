@@ -413,6 +413,9 @@ pub struct MessageDto {
     pub reply_to: Option<String>,
     /// A file message: `text` is the file's name and `load_file` returns its bytes.
     pub is_file: bool,
+    /// A file message: its type (for example `image/jpeg`) and size in bytes, so the chat can show a preview and a size.
+    pub file_mime: String,
+    pub file_size: u64,
     /// Deleted for everyone: show it as removed (there is no text).
     pub deleted: bool,
     /// Reactions in the fixed emoji order: how many, and whether you reacted.
@@ -1197,6 +1200,7 @@ impl PrivcordEngine {
             .map(|d| (d.message_id.clone(), (d.pending, d.total)))
             .collect();
         let deleted: std::collections::HashSet<_> = s.deleted.iter().cloned().collect();
+        let files: std::collections::HashMap<_, _> = s.files.iter().cloned().collect();
         let reactions: std::collections::HashMap<_, _> = s
             .reactions
             .iter()
@@ -1294,6 +1298,10 @@ impl PrivcordEngine {
                             delivery: m.delivery_state.into(),
                             reply_to: m.reply_to.map(|r| r.id),
                             is_file: m.kind == privcord_domain::message::MessageKind::File,
+                            file_mime: files
+                                .get(&m.message_id)
+                                .map_or_else(String::new, |f| f.mime.clone()),
+                            file_size: files.get(&m.message_id).map_or(0, |f| f.size),
                             deleted: deleted.contains(&m.message_id),
                             reactions: chips(reactions.get(&m.message_id), &own),
                             pending: deliveries

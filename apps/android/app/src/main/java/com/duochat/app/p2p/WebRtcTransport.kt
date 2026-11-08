@@ -261,7 +261,7 @@ class WebRtcTransport(
 
     private suspend fun waitForIceGathering(pc: PeerConnection) {
         if (pc.iceGatheringState() == PeerConnection.IceGatheringState.COMPLETE) return
-        withTimeoutOrNull(8_000) {
+        withTimeoutOrNull(4_000) {
             suspendCancellableCoroutine<Unit> { continuation ->
                 iceGatherContinuation = continuation
                 continuation.invokeOnCancellation {
