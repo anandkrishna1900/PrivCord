@@ -198,7 +198,17 @@ jobs:
           workspaces: apps/desktop/src-tauri
       - run: npm ci
       - name: Build installer (also proves the Rust crate, including Bluetooth, compiles)
-        run: npm run tauri:build
+        # Tauri downloads its NSIS packager from github.com at the end of the build; that download has been returning
+        # HTTP 504. The compile is cached after the first attempt, so retrying only repeats the download.
+        shell: pwsh
+        run: |
+          for ($i = 1; $i -le 4; $i++) {
+            npm run tauri:build
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            Write-Host "tauri build failed (attempt $i of 4); retrying in 60 s"
+            Start-Sleep -Seconds 60
+          }
+          exit 1
       - uses: actions/upload-artifact@v4
         with:
           name: duochat-windows-unsigned
