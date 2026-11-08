@@ -123,6 +123,20 @@ fn pump(a: &mut Node, b: &mut Node, au: &UserId, bu: &UserId) -> usize {
     }
 }
 
+/// Let time pass the way it does in life: in small steps, with both sides ticking and their pings and pongs delivered.
+/// (Jumping the clock in one go would look like a silent link, which the engine rightly declares dead.)
+fn pass_time(a: &mut Node, b: &mut Node, au: &UserId, bu: &UserId, ms: i64) {
+    let mut left = ms;
+    while left > 0 {
+        let step = left.min(2_000);
+        a.clock.advance(step);
+        left -= step;
+        a.core.tick();
+        b.core.tick();
+        pump(a, b, au, bu);
+    }
+}
+
 fn state_of(n: &Node, who: &UserId) -> ConnectionState {
     n.core
         .snapshot()
@@ -318,9 +332,7 @@ fn a_lost_receipt_causes_a_resend_that_is_stored_once() {
     // Nothing happens until the retry time; then Alice sends again.
     a.core.tick();
     assert!(a.transport.drain().is_empty());
-    a.clock.advance(RETRY_AFTER_MS + 1);
-    a.core.tick();
-    pump(&mut a, &mut b, &au, &bu);
+    pass_time(&mut a, &mut b, &au, &bu, RETRY_AFTER_MS + 1);
     assert_eq!(
         texts(&b, &au),
         vec!["once only"],
@@ -536,9 +548,7 @@ fn a_failed_write_changes_nothing_and_a_failed_receive_is_not_acknowledged() {
     connect(&mut a, &mut b, &au, &bu);
     assert!(texts(&b, &au).is_empty());
     assert_ne!(status(&a, &id2), DeliveryState::Delivered);
-    a.clock.advance(RETRY_AFTER_MS + 1);
-    a.core.tick();
-    pump(&mut a, &mut b, &au, &bu);
+    pass_time(&mut a, &mut b, &au, &bu, RETRY_AFTER_MS + 1);
     assert_eq!(texts(&b, &au), vec!["will retry"]);
     assert_eq!(status(&a, &id2), DeliveryState::Delivered);
     let _ = id;
@@ -809,6 +819,34 @@ fn over_an_already_encrypted_link_the_engine_uses_the_legacy_handshake_and_plain
 }
 
 #[test]
+fn a_layered_link_runs_the_peer_handshake_inside_the_secure_channel_and_encrypts_frames() {
+    use privcord_engine::LinkSecurity;
+    let (mut a, mut b, au, bu) = pair();
+    connect_with(&mut a, &mut b, &au, &bu, LinkSecurity::Layered);
+    for (node, peer) in [(&a, &bu), (&b, &au)] {
+        assert_eq!(
+            state_of(node, peer),
+            ConnectionState::Connected {
+                path: ConnectionPath::DirectNat
+            }
+        );
+    }
+    let id = a
+        .core
+        .send_message(&bu, "secret over bluetooth", None)
+        .unwrap();
+    let frames = a.transport.drain();
+    assert_eq!(frames.len(), 1);
+    assert!(!frames[0].1.contains("secret over bluetooth"));
+    let v: Value = serde_json::from_str(&frames[0].1).unwrap();
+    assert_eq!(v["kind"], "sc_data");
+    b.core.frame_received(&au, &frames[0].1);
+    pump(&mut a, &mut b, &au, &bu);
+    assert_eq!(texts(&b, &au), vec!["secret over bluetooth"]);
+    assert_eq!(status(&a, &id), DeliveryState::Delivered);
+}
+
+#[test]
 fn the_legacy_handshake_refuses_a_stranger_and_ignores_frames_before_it_finishes() {
     use privcord_crypto::peer_auth::{Expected, PeerAuth};
     use privcord_engine::LinkSecurity;
@@ -853,4 +891,22 @@ fn the_legacy_handshake_refuses_a_stranger_and_ignores_frames_before_it_finishes
             reason: ConnectionFailure::AuthenticationFailed
         }
     );
+}
+
+#[test]
+fn a_friend_can_be_given_a_name_of_your_own_and_it_can_be_cleared() {
+    let (mut a, _b, _au, bu) = pair();
+    let shown = |n: &Node| {
+        n.core
+            .snapshot()
+            .contacts
+            .iter()
+            .find(|c| c.uid == bu)
+            .map(|c| c.display_name.clone())
+            .unwrap()
+    };
+    a.core.rename_contact(&bu, "  Mum  ").unwrap();
+    assert_eq!(shown(&a), "Mum");
+    a.core.rename_contact(&bu, "   ").unwrap();
+    assert!(shown(&a).starts_with("Friend"), "{}", shown(&a));
 }

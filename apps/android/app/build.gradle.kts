@@ -45,6 +45,9 @@ android {
         versionCode = 1
         versionName = "0.1.0"
 
+        // The Rust core (crates/privcord-ffi) is built per phone CPU type into src/main/jniLibs (see docs/rust/ANDROID.md).
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86") }
+
         buildConfigString("CONVERSATION_ID", setting("duochat.conversationId", "duo"))
         buildConfigString("TURN_URL", setting("turn.url"))
         buildConfigString("TURN_USERNAME", setting("turn.username"))
@@ -52,6 +55,14 @@ android {
     }
 
     signingConfigs {
+        // One fixed DEBUG key, committed on purpose, so every CI-built debug APK can update the previous one in place.
+        // It protects nothing: never use it for a release build.
+        getByName("debug") {
+            storeFile = rootProject.file("keystore/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
         if (releaseKeystore != null) {
             create("release") {
                 storeFile = releaseKeystore
@@ -84,6 +95,27 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+    }
+
+    sourceSets {
+        // The UniFFI-generated Kotlin for the Rust core is checked in next to the crate; compile it into the app.
+        getByName("main") { java.srcDir("../../../crates/privcord-ffi/bindings/kotlin") }
+    }
+
+    // Two builds from one codebase: "classic" is the original Kotlin engine; "rust" runs the shared Rust engine. The
+    // rust build installs next to the classic one (its own app id and its own data), so trying it risks nothing.
+    flavorDimensions += "engine"
+    productFlavors {
+        create("classic") {
+            dimension = "engine"
+            buildConfigField("boolean", "RUST_ENGINE", "false")
+        }
+        create("rust") {
+            dimension = "engine"
+            applicationIdSuffix = ".rust"
+            versionNameSuffix = "-rust"
+            buildConfigField("boolean", "RUST_ENGINE", "true")
+        }
     }
 
     buildFeatures {
@@ -125,6 +157,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     // WebSocket client for the signaling relay and Nostr relays.
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // The generated bindings call the Rust library through JNA.
+    implementation("net.java.dev.jna:jna:5.14.0@aar")
 
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")

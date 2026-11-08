@@ -33,16 +33,19 @@ const enc = new TextEncoder();
 const dec = new TextDecoder();
 const hex = (b: Uint8Array) => [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
 
+/** Removes `ch` from both ends. A loop, not a regex: no backtracking on adversarial input. */
+function trimChar(s: string, ch: string): string {
+  let a = 0;
+  let b = s.length;
+  while (a < b && s[a] === ch) a += 1;
+  while (b > a && s[b - 1] === ch) b -= 1;
+  return s.slice(a, b);
+}
+
 /** "  #General Chat " -> "general-chat". Letters, digits (any language) and dashes only; null if nothing is left. */
 export function normalizeChannelName(raw: string): string | null {
-  const name = raw
-    .normalize('NFKC')
-    .toLowerCase()
-    .replace(/^#+/, '')
-    .replace(/[^\p{L}\p{N}]+/gu, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, MAX_CHANNEL_NAME)
-    .replace(/-+$/g, '');
+  const lowered = trimChar(raw.normalize('NFKC').toLowerCase(), '#');
+  const name = trimChar(trimChar(lowered.replace(/[^\p{L}\p{N}]+/gu, '-'), '-').slice(0, MAX_CHANNEL_NAME), '-');
   return name.length > 0 ? name : null;
 }
 

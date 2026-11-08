@@ -25,7 +25,9 @@ use unicode_normalization::UnicodeNormalization;
 use zeroize::{Zeroize, Zeroizing};
 
 pub const REQUIRED_WORDS: usize = 12;
-const DERIVE_SALT: &[u8] = b"DuoChat-Recovery-Trust-v1";
+fn derive_salt() -> Vec<u8> {
+    crate::kdf::label(&["DuoChat", "Recovery", "Trust", "v1"])
+}
 const DERIVE_PREFIX: &str = "duochat-derive-v1";
 const IDENTITY_PROOF_PREFIX: &str = "duochat-identity-proof-v1\n";
 
@@ -120,7 +122,7 @@ pub fn derive_key_material(
     let info = format!("{DERIVE_PREFIX}/{}", purpose.label());
     Ok(Zeroizing::new(hkdf_sha256::<32>(
         seed,
-        DERIVE_SALT,
+        &derive_salt(),
         info.as_bytes(),
     )?))
 }

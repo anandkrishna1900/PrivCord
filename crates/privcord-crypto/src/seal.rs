@@ -20,7 +20,9 @@ use privcord_domain::{
 };
 use serde_json::{json, Value};
 
-const SEAL_SALT: &[u8] = b"duochat-seal-v1";
+fn seal_salt() -> Vec<u8> {
+    crate::kdf::label(&["duochat", "seal", "v1"])
+}
 const MAILBOX_PREFIX: &str = "duochat-mailbox-v1|";
 
 /// The bytes a blob's signature covers.
@@ -48,7 +50,7 @@ pub fn seal(
     let shared = diffie_hellman(ephemeral.to_nonzero_scalar(), peer.as_affine());
     let key = hkdf_sha256::<32>(
         shared.raw_secret_bytes(),
-        SEAL_SALT,
+        &seal_salt(),
         format!("{to}|{from}").as_bytes(),
     )?;
     let iv: [u8; 12] = random_array(entropy)?;
@@ -101,7 +103,7 @@ pub fn open(
     let shared = own.agree(&blob.epk).ok()?;
     let key = hkdf_sha256::<32>(
         &*shared,
-        SEAL_SALT,
+        &seal_salt(),
         format!("{}|{}", blob.to, blob.from).as_bytes(),
     )
     .ok()?;

@@ -14,7 +14,10 @@ use privcord_domain::{
     privacy::ContactTrust,
     ConversationId, GroupId, MessageId, UserId,
 };
-use privcord_ports::{OutboxEntry, Storage, StorageError, StorageOp, StoredContact, StoredMessage};
+use privcord_ports::{
+    EraseScope, OutboxEntry, Storage, StorageError, StorageOp, StoredContact, StoredFile,
+    StoredMessage, StoredReaction,
+};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::{
     path::Path,
@@ -22,7 +25,7 @@ use std::{
 };
 
 /// The newest schema this build understands.
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 3;
 
 /// Each entry takes the database from version `index` to `index + 1`.
 const MIGRATIONS: &[&str] = &[
@@ -61,6 +64,21 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX idx_outbox_recipient ON outbox (recipient, next_try_ms);
     CREATE TABLE kv (key TEXT PRIMARY KEY NOT NULL, value BLOB NOT NULL);",
+    // 1 -> 2: file bytes live beside, not inside, the message rows.
+    "CREATE TABLE files (
+        message_id TEXT PRIMARY KEY NOT NULL REFERENCES messages (message_id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        mime TEXT NOT NULL,
+        bytes BLOB NOT NULL
+    );",
+    // 2 -> 3: reactions, and the mark for messages deleted for everyone.
+    "CREATE TABLE reactions (
+        message_id TEXT NOT NULL REFERENCES messages (message_id) ON DELETE CASCADE,
+        uid TEXT NOT NULL,
+        emoji TEXT NOT NULL,
+        PRIMARY KEY (message_id, uid)
+    );
+    ALTER TABLE messages ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0;",
 ];
 
 pub struct SqliteStorage {
@@ -85,6 +103,9 @@ fn init(
     conn.pragma_update(None, "foreign_keys", true)
         .map_err(unavailable)?;
     conn.pragma_update(None, "journal_mode", "WAL")
+        .map_err(unavailable)?;
+    // Deleted rows are overwritten, not just unlinked, so an erase leaves nothing readable in the free pages.
+    conn.pragma_update(None, "secure_delete", true)
         .map_err(unavailable)?;
     conn.pragma_update(None, "synchronous", "FULL")
         .map_err(unavailable)?;
@@ -271,6 +292,83 @@ fn apply_op(tx: &rusqlite::Transaction<'_>, op: &StorageOp) -> Result<(), Storag
             if n == 0 {
                 return Err(StorageError::Rejected);
             }
+        }
+        StorageOp::Erase(scope) => {
+            let sql: &[&str] = match scope {
+                EraseScope::Conversation(c) => {
+                    tx.execute(
+                        "DELETE FROM messages WHERE conversation = ?1",
+                        params![conversation_key(c)],
+                    )
+                    .map_err(rej)?;
+                    &[]
+                }
+                EraseScope::Messages => &["DELETE FROM messages"],
+                EraseScope::Contacts => &["DELETE FROM contacts"],
+                EraseScope::Files => &["DELETE FROM files"],
+                EraseScope::Outbox => &["DELETE FROM outbox"],
+                EraseScope::All => &[
+                    "DELETE FROM messages",
+                    "DELETE FROM contacts",
+                    "DELETE FROM kv",
+                    "DELETE FROM outbox",
+                    "DELETE FROM files",
+                ],
+            };
+            for q in sql {
+                tx.execute(q, []).map_err(rej)?;
+            }
+        }
+        StorageOp::SetReaction {
+            message_id,
+            uid,
+            emoji,
+        } => {
+            // The message must exist (the foreign key enforces it for inserts).
+            match emoji {
+                Some(e) => tx
+                    .execute(
+                        "INSERT INTO reactions (message_id, uid, emoji) VALUES (?1,?2,?3)
+                         ON CONFLICT(message_id, uid) DO UPDATE SET emoji = ?3",
+                        params![message_id.as_str(), uid.as_str(), e],
+                    )
+                    .map(|_| ())
+                    .map_err(rej)?,
+                None => {
+                    tx.execute(
+                        "DELETE FROM reactions WHERE message_id = ?1 AND uid = ?2",
+                        params![message_id.as_str(), uid.as_str()],
+                    )
+                    .map_err(rej)?;
+                }
+            }
+        }
+        StorageOp::Tombstone(id) => {
+            let changed = tx
+                .execute(
+                    "UPDATE messages SET text = '', kind = 'text', reply_id = NULL, reply_author = NULL, reply_preview = NULL,
+                     deleted = 1 WHERE message_id = ?1",
+                    params![id.as_str()],
+                )
+                .map_err(rej)?;
+            if changed == 0 {
+                return Err(StorageError::Rejected);
+            }
+            for q in [
+                "DELETE FROM files WHERE message_id = ?1",
+                "DELETE FROM reactions WHERE message_id = ?1",
+                "DELETE FROM outbox WHERE message_id = ?1",
+            ] {
+                tx.execute(q, params![id.as_str()]).map_err(rej)?;
+            }
+        }
+        StorageOp::PutFile(f) => {
+            tx.prepare_cached(
+                "INSERT INTO files (message_id, name, mime, bytes) VALUES (?1,?2,?3,?4)
+                 ON CONFLICT(message_id) DO UPDATE SET name=?2, mime=?3, bytes=?4",
+            )
+            .and_then(|mut s| s.execute(params![f.message_id.as_str(), f.name, f.mime, f.bytes]))
+            .map_err(rej)?;
         }
         StorageOp::DeleteMessage(id) => {
             tx.execute(
@@ -459,6 +557,65 @@ impl Storage for SqliteStorage {
                 attempts,
                 next_try_ms: next,
             });
+        }
+        Ok(out)
+    }
+
+    fn file(&self, id: &MessageId) -> Result<Option<StoredFile>, StorageError> {
+        self.lock()
+            .query_row(
+                "SELECT name, mime, bytes FROM files WHERE message_id = ?1",
+                params![id.as_str()],
+                |r| {
+                    Ok(StoredFile {
+                        message_id: id.clone(),
+                        name: r.get(0)?,
+                        mime: r.get(1)?,
+                        bytes: r.get(2)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(unavailable)
+    }
+
+    fn reactions(&self) -> Result<Vec<StoredReaction>, StorageError> {
+        let conn = self.lock();
+        let mut stmt = conn
+            .prepare_cached("SELECT message_id, uid, emoji FROM reactions ORDER BY message_id, uid")
+            .map_err(unavailable)?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            })
+            .map_err(unavailable)?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (m, u, emoji) = row.map_err(unavailable)?;
+            out.push(StoredReaction {
+                message_id: MessageId::new(m).map_err(|_| StorageError::Corrupt)?,
+                uid: UserId::new(u).map_err(|_| StorageError::Corrupt)?,
+                emoji,
+            });
+        }
+        Ok(out)
+    }
+
+    fn deleted(&self) -> Result<Vec<MessageId>, StorageError> {
+        let conn = self.lock();
+        let mut stmt = conn
+            .prepare_cached("SELECT message_id FROM messages WHERE deleted = 1")
+            .map_err(unavailable)?;
+        let rows = stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .map_err(unavailable)?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(MessageId::new(row.map_err(unavailable)?).map_err(|_| StorageError::Corrupt)?);
         }
         Ok(out)
     }

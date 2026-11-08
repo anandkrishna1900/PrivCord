@@ -37,12 +37,56 @@ These are stricter than TypeScript, and none can affect a peer that behaves like
 7. **Safety numbers take the signing keys**, as the apps use them (`contact.card.sign`).
 8. **Mesh carry-queue eviction order** can differ in rare overflow cases (the TypeScript `Map` keeps the original position when a key is set again; the Rust version moves it to the end).
 
+## Also checked against the apps
+
+| Area | What is checked | How |
+|---|---|---|
+| BLE chunk framing and rotating tags | chunking, every reassembly error, 64 KiB message, tags | `docs/ble-vectors.json` (made by an independent Python implementation and used by the TypeScript and Kotlin tests) |
+| Pairing records, reconnect backoff, kill-switch plans and reports, manual connection codes | parse and validate cases, status table, delay table, every summary case, a run and a resume, every decode error | `docs/misc-vectors.json` made by `scripts/gen-misc-vectors.ts`; reproducible in CI |
+| Nostr events | event id, BIP-340 signature, the rules for which relay messages become blobs | a TypeScript-made event verifies in Rust; a Rust-made event verifies in TypeScript (`rustInterop.test.ts`) |
+| Group messages, files, channels, mesh | frame shapes, ordering, delivery, persistence | engine tests with real crypto and fake radios; two-hop mesh across three real engines through the facade |
+| Delete for everyone, reactions, search, muting, backups | frames and rules; a backup made by the app's own `sealBackup` restores into the engine | engine tests (`social.rs`), `docs/legacy-fixtures.json` |
+| Importers | both old databases on generated data | `docs/legacy-fixtures.json` (see [IMPORTERS.md](IMPORTERS.md)) |
+
+Additional deliberate differences: the kill-switch runner takes a clock instead of reading one, and failure text is cut to 160 UTF-16 units without splitting a character; pairing timestamps are whole milliseconds like every other timestamp here; a relayed (`relay_blob`) frame is passed on at most twice, as in the apps.
+
+## The pairwise end-to-end layer (X3DH, Double Ratchet, envelopes, group messages)
+
+Ported to `crypto::e2ee` and checked both ways with `docs/e2ee-vectors.json` (made by `scripts/gen-e2ee-vectors.ts`) and
+`rust-vectors.json`:
+
+* every bundle verdict and error message; the responder derives exactly the secret and associated data the TypeScript
+  initiator derived;
+* TypeScript conversations (first message, replies, out-of-order delivery across a DH ratchet, a replayed position, a
+  changed byte, a rewritten context) are read by Rust from the TypeScript's own session snapshots;
+* a Rust X3DH session, its ratchet messages and a group message are read by the TypeScript code (`rustInterop.test.ts`);
+* serialised sessions restore across languages.
+
+Deliberate differences: **decrypting is atomic in Rust** (a refused message leaves the ratchet exactly as it was; the
+TypeScript documents this but may leave a half-advanced state behind); ratchet public keys must have 32-byte
+coordinates (the TypeScript only fails later); prekey ids are whole numbers; the group manager takes `(group_id, epoch)`
+instead of the TypeScript's metadata object, which is only a carrier.
+
+## The signaling clients
+
+`engine::signaling` holds the relay client, the Nostr transport and the hub as state machines with no sockets. The relay
+client is tested against the real `relay/server.js` (live delivery, stored delivery on subscribe, refusal of an oversize
+blob); backoff (1 s doubling to 30 s), put timeouts (8 s), reconnect from the newest timestamp, de-duplication across
+services and the Nostr acceptance rules are tested against small fake servers speaking the same protocols. One
+difference: a hub whose services are all stopped reports `idle` (the TypeScript says `error`).
+
+The Nostr client is also run against a real, independent relay (Python `nostr-relay`, which verifies BIP-340 signatures and event age): a stored event is handed over on subscribe, a live event reaches an online listener, and a damaged signature is not accepted (`tests/real_nostr.rs`). It was not run against public Nostr relays, whose policies differ, and the size-limit refusal is not tested for that reason. The refusal check also treats silence as refusal.
+
 ## Not yet compatible (not ported)
 
-Group frames and the group coordinator (the event log itself is ported), file frames inside the engine, signaling frames and Nostr events, manual pairing codes, BLE chunk framing, the dead-link timer, and the kill-switch report.
+* Disappearing messages and translations were removed from the apps and are not in the engine.
+* The WebRTC session, the raw sockets, the Bluetooth radio, the keychain and all UI stay in the platform adapters by design. The only application files still marked partly ported are `engine.ts` and `ChatEngine.kt`, which still start and drive the WebRTC and Bluetooth links, turn events into screen state, and show notices.
 
-**What this means for talking to the existing apps.** The engine can now authenticate with the existing apps over a WebRTC data channel (`LinkSecurity::TransportEncrypted`) and exchange direct messages, receipts, privacy frames and pings with them. That is checked at the level of handshake transcripts and frame shapes; **it has not been run against a live TypeScript or Kotlin app**, and anything the old apps send that Rust does not know yet (group sync, files) is ignored.
+**What this means for talking to the existing apps.** The engine can authenticate with the existing apps over a WebRTC data channel (`LinkSecurity::TransportEncrypted`) and over Bluetooth (`LinkSecurity::Layered`: the secure-channel handshake, then the legacy peer handshake inside it, then encrypted frames; Bluetooth is what the TypeScript and Kotlin apps do today). `EngineEncrypted` (secure channel only) is not what the existing apps speak and is for engine-to-engine links.
 
+**Run live against the real desktop app (Bluetooth only).** `apps/desktop/e2e/rust-peer.mjs` builds the desktop app, runs it in headless Chromium, and connects it over the simulated Bluetooth radio to `crates/privcord-engine/examples/peer.rs`, a separate Rust engine process. It pairs by exchanging invites in the app's real Add-friend dialog, connects, sends a message each way, checks the receipt reaches the Rust side, and checks that no message text and no handshake appears in the recorded radio chunks. Writing it found a real mismatch: the engine's first Bluetooth mode ran only the secure channel, which the apps do not accept, so the app timed out ("could not be verified in time"). `Layered` fixed it. This is CI-run.
+
+What that does **not** cover: the WebRTC path against the live app, groups, files and channels against a live app, the real Bluetooth radio, and **any Kotlin app** (no emulator here; the Kotlin side is checked by shared vectors only).
 ## Data
 
-Nothing here reads existing user databases yet. The desktop SQLite schema (`localDb.ts`) and Android Room schema (`DuoDatabase.kt`) are mapped in [MIGRATION_MAP.md](MIGRATION_MAP.md); the importer is milestone M6b, and per the PRD no legacy persistence code may be removed before it passes on representative data.
+Existing installs are brought over by `privcord-import` (desktop SQLite and Android Room). See [IMPORTERS.md](IMPORTERS.md) for what is checked, what is left behind and why, and what has not been tried on a real device.

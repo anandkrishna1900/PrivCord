@@ -144,9 +144,9 @@ class ChatEngine(
     private val ble: BleEnvironment? = null,
     /** Makes the Bluetooth mesh radio; null where it cannot exist (unit tests, no Bluetooth). */
     private val meshRadioFactory: (() -> com.duochat.app.ble.MeshRadio)? = null,
-) {
+) : ChatEngineApi {
     private val _state = MutableStateFlow(ChatState())
-    val state: StateFlow<ChatState> = _state.asStateFlow()
+    override val state: StateFlow<ChatState> = _state.asStateFlow()
 
     /** A saved friend (or someone introduced to us). Keys are pinned from [card]. */
     private class Friend(
@@ -223,7 +223,7 @@ class ChatEngine(
     // Lifecycle
     // ---------------------------------------------------------------------
 
-    suspend fun start() {
+    override suspend fun start() {
         try {
             val loadedIdentity = identityManager.load()
             if (loadedIdentity == null) {
@@ -256,7 +256,7 @@ class ChatEngine(
         }
     }
 
-    fun stop() {
+    override fun stop() {
         stopped = true
         tickJob?.cancel()
         bleSearch?.cancel()
@@ -270,18 +270,18 @@ class ChatEngine(
     }
 
     /** The app is in the foreground (used to decide about notifications). */
-    fun setVisible(isVisible: Boolean) {
+    override fun setVisible(isVisible: Boolean) {
         appVisible = isVisible
         openChat?.let { id -> if (isVisible) scope.launch { markRead(id) } }
     }
 
     /** The conversation on screen (null on the home list). */
-    fun setOpenChat(conversationId: String?) {
+    override fun setOpenChat(conversationId: String?) {
         openChat = conversationId
         if (conversationId != null) scope.launch { markRead(conversationId) }
     }
 
-    fun clearNotice() {
+    override fun clearNotice() {
         notice = null
         _state.update { it.copy(notice = null, error = null) }
     }
@@ -373,7 +373,7 @@ class ChatEngine(
     }
 
     /** The name friends see changed: new groups carry the new name. */
-    fun onOwnNameChanged() {
+    override fun onOwnNameChanged() {
         if (identity != null) rebuildCoordinator()
     }
 
@@ -392,13 +392,13 @@ class ChatEngine(
     // Friends
     // ---------------------------------------------------------------------
 
-    fun ownCard(): String {
+    override fun ownCard(): String {
         val current = identity ?: throw IllegalStateException("Identity is not ready.")
         return ContactCards.encode(ContactCard(current.publicJwk, current.dhJwk, current.identityProof, ownName().ifBlank { null }))
     }
 
     /** Save the friend whose invite was scanned or pasted. Returns their uid. */
-    suspend fun addFriend(text: String): Result<String> = runCatching {
+    override suspend fun addFriend(text: String): Result<String> = runCatching {
         val current = identity ?: throw IllegalStateException("Identity is not ready.")
         val words = InviteCode.parse(text)
         val found = words?.let { lookUpInvite(it) }
@@ -450,11 +450,11 @@ class ChatEngine(
         }
     }
 
-    fun retryAnswer() {
+    override fun retryAnswer() {
         scope.launch { runAnswer() }
     }
 
-    fun clearAnswer() {
+    override fun clearAnswer() {
         _state.update { it.copy(answer = null) }
     }
 
@@ -475,7 +475,7 @@ class ChatEngine(
     }
 
     /** "Delete for me" removes it here only. "Delete for everyone" (your own messages) also asks the others to remove it. */
-    suspend fun deleteMessage(messageId: String, everyone: Boolean) {
+    override suspend fun deleteMessage(messageId: String, everyone: Boolean) {
         val m = messages[messageId] ?: return
         if (!everyone || m.senderId != selfUid) {
             dropMessage(messageId)
@@ -505,7 +505,7 @@ class ChatEngine(
     }
 
     /** Toggle my reaction on a message (the same emoji again removes it). */
-    suspend fun react(messageId: String, emoji: String) {
+    override suspend fun react(messageId: String, emoji: String) {
         val m = messages[messageId] ?: return
         if (m.deleted || m.conversationId.startsWith("chan:") || emoji !in REACTION_EMOJI) return
         val reactions = m.reactions.toMutableMap()
@@ -552,7 +552,7 @@ class ChatEngine(
     class SearchHit(val messageId: String, val conversationId: String, val conversationName: String, val senderName: String, val text: String, val at: Long)
 
     /** Looks through the messages on this phone (nothing leaves it). */
-    fun search(query: String, limit: Int = 50): List<SearchHit> {
+    override fun search(query: String, limit: Int): List<SearchHit> {
         val q = query.trim().lowercase()
         if (q.length < 2) return emptyList()
         fun convName(id: String) = when {
@@ -568,7 +568,7 @@ class ChatEngine(
     }
 
     /** A passphrase-protected copy of friends, groups, channels and messages (no files, no recovery phrase). */
-    suspend fun exportBackup(passphrase: String): Result<String> = runCatching {
+    override suspend fun exportBackup(passphrase: String): Result<String> = runCatching {
         require(passphrase.length >= Backup.MIN_PASSPHRASE) { "Use at least ${Backup.MIN_PASSPHRASE} characters." }
         val contacts = org.json.JSONArray()
         for (f in friends.values) {
@@ -603,7 +603,7 @@ class ChatEngine(
     }
 
     /** Adds what is in a backup to what is here. Never replaces or removes anything that already exists. */
-    suspend fun importBackup(text: String, passphrase: String): Result<String> = runCatching {
+    override suspend fun importBackup(text: String, passphrase: String): Result<String> = runCatching {
         val data = withContext(Dispatchers.Default) { Backup.open(text, passphrase) }
             ?: throw IllegalArgumentException("That did not open. Check the passphrase and that this is a PrivCord backup file.")
         if (data.optString("uid") != selfUid) {
@@ -677,7 +677,7 @@ class ChatEngine(
     private fun channelLabel(card: ContactCard, uid: String) = "${card.name?.trim().takeUnless { it.isNullOrEmpty() } ?: "Anonymous"} #${uid.take(4)}"
 
     /** Join (or create: there is no difference) a public channel. Returns its conversation id. */
-    suspend fun joinChannel(raw: String, persist: Boolean = true): Result<String> = runCatching {
+    override suspend fun joinChannel(raw: String, persist: Boolean): Result<String> = runCatching {
         val name = Channels.normalize(raw) ?: throw IllegalArgumentException("Type a channel name, for example general.")
         if (joinedChannels.containsKey(name)) return@runCatching "chan:$name"
         if (joinedChannels.size >= MAX_CHANNELS) throw IllegalStateException("You can be in at most $MAX_CHANNELS channels. Leave one first.")
@@ -695,7 +695,7 @@ class ChatEngine(
         "chan:$name"
     }
 
-    fun leaveChannel(conversationId: String) {
+    override fun leaveChannel(conversationId: String) {
         val name = conversationId.removePrefix("chan:")
         joinedChannels.remove(name)?.hub?.stop()
         messages.values.removeAll { it.conversationId == "chan:$name" }
@@ -709,7 +709,7 @@ class ChatEngine(
     }
 
     /** Stop showing a person's channel messages (kept on this phone only). */
-    fun muteSender(uid: String) {
+    override fun muteSender(uid: String) {
         muted += uid
         scope.launch { runCatching { store.putKv("muted", org.json.JSONArray(muted.toList())) } }
         emit()
@@ -764,7 +764,7 @@ class ChatEngine(
     }
 
     /** Turns the Bluetooth mesh on or off (Settings). Nothing is advertised or scanned while it is off. */
-    fun setMeshEnabled(on: Boolean) {
+    override fun setMeshEnabled(on: Boolean) {
         if (on && meshRadio == null) {
             val radio = meshRadioFactory?.invoke() ?: return
             meshRadio = radio
@@ -876,7 +876,7 @@ class ChatEngine(
     }
 
     /** Show-your-words: publish our card under fresh words and listen for people who answer. */
-    suspend fun createInvite(): Result<ActiveInvite> = runCatching {
+    override suspend fun createInvite(): Result<ActiveInvite> = runCatching {
         inviteMutex.withLock {
             activeInvite?.takeIf { it.expiresAt > System.currentTimeMillis() + 30_000 }?.let {
                 return@runCatching ActiveInvite(it.words.joinToString(" "), it.expiresAt)
@@ -928,12 +928,12 @@ class ChatEngine(
     }
 
     /** Accept somebody who used our words. */
-    suspend fun acceptRequest(uid: String): Result<String> {
+    override suspend fun acceptRequest(uid: String): Result<String> {
         val request = requestCards.remove(uid) ?: return Result.failure(IllegalStateException("That request is no longer there."))
         return addFriend(ContactCards.encode(request.first.card))
     }
 
-    fun dismissRequest(uid: String) {
+    override fun dismissRequest(uid: String) {
         requestCards.remove(uid)
         emit()
     }
@@ -968,7 +968,7 @@ class ChatEngine(
     }
 
     /** "Check it's really them": the safety numbers matched. */
-    suspend fun markChecked(uid: String) {
+    override suspend fun markChecked(uid: String) {
         val friend = friends[uid] ?: return
         // A safety-number check is not a pairing: direct messages follow the group-only rules, and swapping
         // invites (addFriend) is what pairs two people for good.
@@ -977,7 +977,7 @@ class ChatEngine(
         emit()
     }
 
-    suspend fun renameFriend(uid: String, name: String) {
+    override suspend fun renameFriend(uid: String, name: String) {
         val friend = friends[uid] ?: return
         val clean = name.trim().take(40)
         if (clean.isEmpty()) return
@@ -987,12 +987,12 @@ class ChatEngine(
     }
 
     /** Why a friend cannot be removed right now, or null. */
-    fun removeBlocker(uid: String): String? {
+    override fun removeBlocker(uid: String): String? {
         val shared = coordinator?.myGroups()?.firstOrNull { it.members.containsKey(uid) }
         return if (shared != null) "${nameOf(uid)} is in the group \"${shared.name}\" with you. Leave that group first." else null
     }
 
-    suspend fun removeFriend(uid: String): Result<Unit> {
+    override suspend fun removeFriend(uid: String): Result<Unit> {
         removeBlocker(uid)?.let { return Result.failure(IllegalStateException(it)) }
         links.remove(uid)?.let { closeLink(it) }
         friends.remove(uid)
@@ -1026,7 +1026,7 @@ class ChatEngine(
     }
 
     /** Turn the group-only privacy setting on or off and tell everyone we are connected to. */
-    fun setGroupOnly(value: Boolean) {
+    override fun setGroupOnly(value: Boolean) {
         if (groupOnly == value) return
         groupOnly = value
         for (link in links.values) if (link.session.isReady) link.session.sendJson(privacyFrame())
@@ -1051,7 +1051,7 @@ class ChatEngine(
         return if (group.members.containsKey(selfUid)) null else "You are no longer in this group."
     }
 
-    suspend fun createGroup(name: String, memberUids: List<String>): Result<String> = runCatching {
+    override suspend fun createGroup(name: String, memberUids: List<String>): Result<String> = runCatching {
         val coordinator = coordinator ?: throw IllegalStateException("Identity is not ready.")
         val clean = name.trim()
         if (clean.isEmpty()) throw IllegalArgumentException("Give the group a name.")
@@ -1067,7 +1067,7 @@ class ChatEngine(
         if (!canDirect(uid)) throw IllegalArgumentException("Pick friends you can message directly.")
     }
 
-    suspend fun addToGroup(groupId: String, uids: List<String>): Result<Unit> = runCatching {
+    override suspend fun addToGroup(groupId: String, uids: List<String>): Result<Unit> = runCatching {
         val coordinator = coordinator ?: throw IllegalStateException("Identity is not ready.")
         for (uid in uids.distinct()) {
             requireDirect(uid)
@@ -1080,15 +1080,15 @@ class ChatEngine(
         }
     }
 
-    suspend fun removeFromGroup(groupId: String, uid: String): Result<Unit> = runCatching {
+    override suspend fun removeFromGroup(groupId: String, uid: String): Result<Unit> = runCatching {
         applyGroupResult((coordinator ?: throw IllegalStateException("Not ready.")).removeMember(groupId, uid), null)
     }.mapError()
 
-    suspend fun leaveGroup(groupId: String): Result<Unit> = runCatching {
+    override suspend fun leaveGroup(groupId: String): Result<Unit> = runCatching {
         applyGroupResult((coordinator ?: throw IllegalStateException("Not ready.")).leave(groupId), null)
     }.mapError()
 
-    suspend fun renameGroup(groupId: String, name: String): Result<Unit> = runCatching {
+    override suspend fun renameGroup(groupId: String, name: String): Result<Unit> = runCatching {
         if (name.isBlank()) throw IllegalArgumentException("Give the group a name.")
         applyGroupResult((coordinator ?: throw IllegalStateException("Not ready.")).rename(groupId, name), null)
     }.mapError()
@@ -1190,7 +1190,7 @@ class ChatEngine(
         return if (original.conversationId == conversationId) makeReplyRef(original) else null
     }
 
-    suspend fun send(conversationId: String, rawText: String, replyToId: String? = null): Result<Unit> {
+    override suspend fun send(conversationId: String, rawText: String, replyToId: String?): Result<Unit> {
         if (identity == null) return Result.failure(IllegalStateException("Identity is not ready yet."))
         return try {
             val coordinator = coordinator ?: throw IllegalStateException("Identity is not ready yet.")
@@ -1230,8 +1230,8 @@ class ChatEngine(
     }
 
     /** Send a file (at most 8 MB) to a friend or a group. It goes straight to each person over the direct link. */
-    suspend fun sendFile(
-        conversationId: String, rawName: String, mime: String, bytes: ByteArray, replyToId: String? = null,
+    override suspend fun sendFile(
+        conversationId: String, rawName: String, mime: String, bytes: ByteArray, replyToId: String?,
     ): Result<Unit> {
         if (identity == null) return Result.failure(IllegalStateException("Identity is not ready yet."))
         return try {
@@ -1268,13 +1268,13 @@ class ChatEngine(
     }
 
     /** The bytes of a stored file, for showing or saving it. */
-    suspend fun getFile(messageId: String): Pair<FileMeta, ByteArray>? {
+    override suspend fun getFile(messageId: String): Pair<FileMeta, ByteArray>? {
         val meta = messages[messageId]?.file ?: return null
         val bytes = withContext(Dispatchers.IO) { runCatching { store.getFile(messageId) }.getOrNull() } ?: return null
         return meta to bytes
     }
 
-    suspend fun retry(messageId: String) {
+    override suspend fun retry(messageId: String) {
         val message = messages[messageId] ?: return
         if (message.senderId != selfUid) return
         for (row in outbox.values.filter { it.messageId == messageId }) {
@@ -1437,14 +1437,14 @@ class ChatEngine(
         outbox.values.removeAll { row -> row.messageId !in messages }
     }
 
-    suspend fun clearChat(conversationId: String) {
+    override suspend fun clearChat(conversationId: String) {
         clearConversationData(conversationId)
         links[conversationId]?.lastReadWritten = null
         emit()
         say("The chat was cleared on this phone.")
     }
 
-    suspend fun clearLocalData() {
+    override suspend fun clearLocalData() {
         store.clearAll()
         messages.clear()
         outbox.clear()
@@ -1611,7 +1611,7 @@ class ChatEngine(
     }
 
     /** The user compared the safety number of a manual connection. */
-    fun confirmManual() {
+    override fun confirmManual() {
         manualLink?.session?.confirmPeer()
     }
 
@@ -1871,13 +1871,13 @@ class ChatEngine(
     // ---------------------------------------------------------------------
 
     /** Apply changed STUN/TURN/signaling settings; they take effect on the next connection. */
-    fun reloadNetwork() {
+    override fun reloadNetwork() {
         startSignaling(force = true)
         say("Network settings applied. They take effect on the next connection.")
     }
 
     /** The device gained a network: reconnect the signaling sockets now instead of waiting out the backoff. */
-    fun onNetworkAvailable() {
+    override fun onNetworkAvailable() {
         if (stopped || identity == null) return
         for (link in links.values) {
             link.attempt = 0
@@ -2138,7 +2138,7 @@ class ChatEngine(
         return Link(binding, newSession(binding)).also { manualLink = it }
     }
 
-    suspend fun createManualOffer(): String {
+    override suspend fun createManualOffer(): String {
         val current = identity ?: throw IllegalStateException("Identity is not ready.")
         val pairing = pairingLink(replace = true)
         pairing.session.setExpectedPeerKey(null)
@@ -2150,7 +2150,7 @@ class ChatEngine(
         }
     }
 
-    suspend fun applyManualAnswer(code: String) {
+    override suspend fun applyManualAnswer(code: String) {
         val decoded = ManualSignalCodec.decode(code, handshakeId)
         if (decoded.kind != "answer") throw IllegalArgumentException("This code is an offer. The other user must paste your offer and send back an answer.")
         checkSignalIdentity(decoded)
@@ -2160,7 +2160,7 @@ class ChatEngine(
         pairing.session.applyAnswer(decoded.sdp)
     }
 
-    suspend fun acceptManualOffer(code: String): String {
+    override suspend fun acceptManualOffer(code: String): String {
         val current = identity ?: throw IllegalStateException("Identity is not ready.")
         val decoded = ManualSignalCodec.decode(code, handshakeId)
         if (decoded.kind != "offer") throw IllegalArgumentException("This code is an answer. Paste the offer from the other user instead.")
@@ -2175,7 +2175,7 @@ class ChatEngine(
         }
     }
 
-    fun cancelManual() {
+    override fun cancelManual() {
         manualLink?.session?.close()
         manualLink = null
         _state.update { it.copy(manual = ManualState()) }
@@ -2185,7 +2185,7 @@ class ChatEngine(
     // Bluetooth LE: works with no internet, within radio range. UNTESTED on a real radio.
     // ---------------------------------------------------------------------
 
-    fun refreshBluetooth() {
+    override fun refreshBluetooth() {
         val bleLink = bleUid?.let { links[it] }?.takeIf { it.session.isBluetooth }
         val any = links.values.firstOrNull { it.session.isBluetooth }
         val status = bluetoothStatusFor(
@@ -2203,7 +2203,7 @@ class ChatEngine(
      * Looks for [uid] over Bluetooth for [BLE_SEARCH_MS]. Only one Bluetooth search or link at a time (the radio
      * code was written for one). Never prompts for permissions: when missing it fails with a message and the UI asks.
      */
-    suspend fun connectBluetooth(uid: String, manual: Boolean = true): Result<Unit> {
+    override suspend fun connectBluetooth(uid: String, manual: Boolean): Result<Unit> {
         val failure = { message: String -> Result.failure<Unit>(IllegalStateException(message)) }
         val environment = ble ?: return failure("Bluetooth is not available in this build.")
         val current = identity ?: return failure("Identity is not ready yet.")

@@ -2,10 +2,11 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use crate::{
-    Clock, IdentitySecrets, Notification, Notifier, OutboxEntry, SecureStore, SecureStoreError,
-    Storage, StorageError, StorageOp, StoredContact, StoredMessage, Transport, TransportError,
+    Clock, EraseScope, IdentitySecrets, Notification, Notifier, OutboxEntry, SecureStore,
+    SecureStoreError, Storage, StorageError, StorageOp, StoredContact, StoredFile, StoredMessage,
+    StoredReaction, Transport, TransportError,
 };
-use privcord_domain::UserId;
+use privcord_domain::{signaling::PutKind, MessageId, UserId};
 use std::{
     collections::HashMap,
     sync::{
@@ -43,6 +44,9 @@ struct Data {
     messages: Vec<StoredMessage>,
     outbox: Vec<OutboxEntry>,
     kv: HashMap<String, Vec<u8>>,
+    files: HashMap<MessageId, StoredFile>,
+    reactions: Vec<StoredReaction>,
+    deleted: Vec<MessageId>,
 }
 
 /// Atomic in-memory storage: a batch is applied to a copy and swapped in only if every op succeeds.
@@ -50,6 +54,7 @@ struct Data {
 pub struct MemoryStorage {
     data: Mutex<Data>,
     fail_next: AtomicUsize,
+    fail_at: AtomicUsize,
     applied: AtomicUsize,
 }
 
@@ -59,6 +64,11 @@ impl MemoryStorage {
     }
 
     /// The next `n` calls to `apply` fail (as a crash or a full disk would), leaving nothing written.
+    /// Make only the `n`th next `apply` fail (1 is the very next one); the others succeed.
+    pub fn fail_apply_at(&self, n: usize) {
+        self.fail_at.store(n, Ordering::SeqCst);
+    }
+
     pub fn fail_next_applies(&self, n: usize) {
         self.fail_next.store(n, Ordering::SeqCst);
     }
@@ -70,6 +80,11 @@ impl MemoryStorage {
 
 impl Storage for MemoryStorage {
     fn apply(&self, batch: &[StorageOp]) -> Result<(), StorageError> {
+        if self.fail_at.load(Ordering::SeqCst) > 0
+            && self.fail_at.fetch_sub(1, Ordering::SeqCst) == 1
+        {
+            return Err(StorageError::Unavailable);
+        }
         if self.fail_next.load(Ordering::SeqCst) > 0 {
             self.fail_next.fetch_sub(1, Ordering::SeqCst);
             return Err(StorageError::Unavailable);
@@ -105,6 +120,9 @@ impl Storage for MemoryStorage {
                 StorageOp::DeleteMessage(id) => {
                     next.messages.retain(|x| &x.message.message_id != id);
                     next.outbox.retain(|o| &o.message_id != id);
+                    next.files.remove(id);
+                    next.reactions.retain(|r| &r.message_id != id);
+                    next.deleted.retain(|d| d != id);
                 }
                 StorageOp::PutOutbox(e) => {
                     if !next
@@ -124,6 +142,80 @@ impl Storage for MemoryStorage {
                 } => {
                     next.outbox
                         .retain(|o| !(&o.message_id == message_id && &o.recipient == recipient));
+                }
+                StorageOp::SetReaction {
+                    message_id,
+                    uid,
+                    emoji,
+                } => {
+                    if !next
+                        .messages
+                        .iter()
+                        .any(|x| &x.message.message_id == message_id)
+                    {
+                        return Err(StorageError::Rejected);
+                    }
+                    next.reactions
+                        .retain(|r| !(&r.message_id == message_id && &r.uid == uid));
+                    if let Some(e) = emoji {
+                        next.reactions.push(StoredReaction {
+                            message_id: message_id.clone(),
+                            uid: uid.clone(),
+                            emoji: e.clone(),
+                        });
+                    }
+                }
+                StorageOp::Tombstone(id) => {
+                    let m = next
+                        .messages
+                        .iter_mut()
+                        .find(|x| &x.message.message_id == id)
+                        .ok_or(StorageError::Rejected)?;
+                    m.message.text.clear();
+                    m.message.kind = privcord_domain::message::MessageKind::Text;
+                    m.message.reply_to = None;
+                    next.files.remove(id);
+                    next.reactions.retain(|r| &r.message_id != id);
+                    next.outbox.retain(|o| &o.message_id != id);
+                    if !next.deleted.contains(id) {
+                        next.deleted.push(id.clone());
+                    }
+                }
+                StorageOp::Erase(scope) => match scope {
+                    EraseScope::Conversation(c) => {
+                        let ids: Vec<MessageId> = next
+                            .messages
+                            .iter()
+                            .filter(|m| &m.conversation == c)
+                            .map(|m| m.message.message_id.clone())
+                            .collect();
+                        next.messages.retain(|m| &m.conversation != c);
+                        next.outbox.retain(|o| !ids.contains(&o.message_id));
+                        next.files.retain(|k, _| !ids.contains(k));
+                        next.reactions.retain(|r| !ids.contains(&r.message_id));
+                        next.deleted.retain(|d| !ids.contains(d));
+                    }
+                    EraseScope::Messages => {
+                        next.messages.clear();
+                        next.outbox.clear();
+                        next.files.clear();
+                        next.reactions.clear();
+                        next.deleted.clear();
+                    }
+                    EraseScope::Contacts => next.contacts.clear(),
+                    EraseScope::Files => next.files.clear(),
+                    EraseScope::Outbox => next.outbox.clear(),
+                    EraseScope::All => next = Data::default(),
+                },
+                StorageOp::PutFile(f) => {
+                    if !next
+                        .messages
+                        .iter()
+                        .any(|x| x.message.message_id == f.message_id)
+                    {
+                        return Err(StorageError::Rejected);
+                    }
+                    next.files.insert(f.message_id.clone(), f.clone());
                 }
                 StorageOp::SetKv { key, value } => {
                     next.kv.insert(key.clone(), value.clone());
@@ -145,6 +237,15 @@ impl Storage for MemoryStorage {
     }
     fn outbox(&self) -> Result<Vec<OutboxEntry>, StorageError> {
         Ok(lock(&self.data).outbox.clone())
+    }
+    fn file(&self, id: &MessageId) -> Result<Option<StoredFile>, StorageError> {
+        Ok(lock(&self.data).files.get(id).cloned())
+    }
+    fn reactions(&self) -> Result<Vec<StoredReaction>, StorageError> {
+        Ok(lock(&self.data).reactions.clone())
+    }
+    fn deleted(&self) -> Result<Vec<MessageId>, StorageError> {
+        Ok(lock(&self.data).deleted.clone())
     }
     fn kv(&self, key: &str) -> Result<Option<Vec<u8>>, StorageError> {
         Ok(lock(&self.data).kv.get(key).cloned())
@@ -179,6 +280,24 @@ impl SecureStore for MemorySecureStore {
 pub struct RecordingTransport {
     sent: Mutex<Vec<(UserId, String)>>,
     connected: Mutex<Vec<UserId>>,
+    raw: Mutex<Vec<(String, String)>>,
+    closed: Mutex<Vec<UserId>>,
+    signals: Mutex<Vec<SignalOp>>,
+    signaling_up: std::sync::atomic::AtomicBool,
+    signal_fails: std::sync::atomic::AtomicBool,
+}
+
+/// What the engine asked of the signaling service.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SignalOp {
+    Subscribe(String),
+    Unsubscribe(String),
+    Put {
+        mailbox: String,
+        blob: String,
+        kind: PutKind,
+        ttl_sec: u32,
+    },
 }
 
 impl RecordingTransport {
@@ -192,6 +311,25 @@ impl RecordingTransport {
             c.push(peer.clone());
         }
     }
+    /// Pretend a signaling service is (not) configured.
+    pub fn set_signaling(&self, up: bool) {
+        self.signaling_up.store(up, Ordering::SeqCst);
+    }
+    /// Make publishing fail (the service is unreachable).
+    pub fn set_signal_fails(&self, fails: bool) {
+        self.signal_fails.store(fails, Ordering::SeqCst);
+    }
+    pub fn drain_signals(&self) -> Vec<SignalOp> {
+        std::mem::take(&mut *lock(&self.signals))
+    }
+    /// Peers the engine asked to be closed since the last call.
+    pub fn drain_closed(&self) -> Vec<UserId> {
+        std::mem::take(&mut *lock(&self.closed))
+    }
+    /// Everything sent over raw (mesh) links since the last call.
+    pub fn drain_raw(&self) -> Vec<(String, String)> {
+        std::mem::take(&mut *lock(&self.raw))
+    }
     /// Everything sent since the last call.
     pub fn drain(&self) -> Vec<(UserId, String)> {
         std::mem::take(&mut *lock(&self.sent))
@@ -204,6 +342,44 @@ impl Transport for RecordingTransport {
             return Err(TransportError::NotConnected);
         }
         lock(&self.sent).push((peer.clone(), frame.to_owned()));
+        Ok(())
+    }
+    fn send_raw(&self, link: &str, frame: &str) -> Result<(), TransportError> {
+        lock(&self.raw).push((link.to_owned(), frame.to_owned()));
+        Ok(())
+    }
+    fn close(&self, peer: &UserId) {
+        lock(&self.closed).push(peer.clone());
+    }
+    fn signal_available(&self) -> bool {
+        self.signaling_up.load(Ordering::SeqCst)
+    }
+    fn signal_subscribe(&self, mailbox: &str) -> Result<(), TransportError> {
+        if !self.signal_available() {
+            return Err(TransportError::NotConnected);
+        }
+        lock(&self.signals).push(SignalOp::Subscribe(mailbox.to_owned()));
+        Ok(())
+    }
+    fn signal_unsubscribe(&self, mailbox: &str) {
+        lock(&self.signals).push(SignalOp::Unsubscribe(mailbox.to_owned()));
+    }
+    fn signal_put(
+        &self,
+        mailbox: &str,
+        blob: &str,
+        kind: PutKind,
+        ttl_sec: u32,
+    ) -> Result<(), TransportError> {
+        if !self.signal_available() || self.signal_fails.load(Ordering::SeqCst) {
+            return Err(TransportError::NotConnected);
+        }
+        lock(&self.signals).push(SignalOp::Put {
+            mailbox: mailbox.to_owned(),
+            blob: blob.to_owned(),
+            kind,
+            ttl_sec,
+        });
         Ok(())
     }
 }

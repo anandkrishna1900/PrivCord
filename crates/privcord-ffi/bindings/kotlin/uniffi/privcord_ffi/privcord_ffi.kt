@@ -654,6 +654,12 @@ internal open class UniffiForeignFutureStructVoid(
 internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
     fun callback(`callbackData`: Long,`result`: UniffiForeignFutureStructVoid.UniffiByValue,)
 }
+internal interface UniffiCallbackInterfaceLegacyDecryptorMethod0 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`payload`: RustBuffer.ByValue,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,)
+}
+internal interface UniffiCallbackInterfaceLegacyFilesMethod0 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`messageId`: RustBuffer.ByValue,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,)
+}
 internal interface UniffiCallbackInterfaceNotifierCallbacksMethod0 : com.sun.jna.Callback {
     fun callback(`uniffiHandle`: Long,`conversation`: RustBuffer.ByValue,`sender`: RustBuffer.ByValue,`preview`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,)
 }
@@ -668,6 +674,56 @@ internal interface UniffiCallbackInterfaceSecureStoreCallbacksMethod2 : com.sun.
 }
 internal interface UniffiCallbackInterfaceTransportCallbacksMethod0 : com.sun.jna.Callback {
     fun callback(`uniffiHandle`: Long,`peer`: RustBuffer.ByValue,`frame`: RustBuffer.ByValue,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,)
+}
+internal interface UniffiCallbackInterfaceTransportCallbacksMethod1 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`link`: RustBuffer.ByValue,`frame`: RustBuffer.ByValue,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,)
+}
+internal interface UniffiCallbackInterfaceTransportCallbacksMethod2 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`peer`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,)
+}
+internal interface UniffiCallbackInterfaceTransportCallbacksMethod3 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,)
+}
+internal interface UniffiCallbackInterfaceTransportCallbacksMethod4 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`mailbox`: RustBuffer.ByValue,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,)
+}
+internal interface UniffiCallbackInterfaceTransportCallbacksMethod5 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`mailbox`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,)
+}
+internal interface UniffiCallbackInterfaceTransportCallbacksMethod6 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`mailbox`: RustBuffer.ByValue,`blob`: RustBuffer.ByValue,`kind`: RustBuffer.ByValue,`ttlSec`: Int,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,)
+}
+@Structure.FieldOrder("decryptText", "uniffiFree")
+internal open class UniffiVTableCallbackInterfaceLegacyDecryptor(
+    @JvmField internal var `decryptText`: UniffiCallbackInterfaceLegacyDecryptorMethod0? = null,
+    @JvmField internal var `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+) : Structure() {
+    class UniffiByValue(
+        `decryptText`: UniffiCallbackInterfaceLegacyDecryptorMethod0? = null,
+        `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+    ): UniffiVTableCallbackInterfaceLegacyDecryptor(`decryptText`,`uniffiFree`,), Structure.ByValue
+
+   internal fun uniffiSetValue(other: UniffiVTableCallbackInterfaceLegacyDecryptor) {
+        `decryptText` = other.`decryptText`
+        `uniffiFree` = other.`uniffiFree`
+    }
+
+}
+@Structure.FieldOrder("fileBytes", "uniffiFree")
+internal open class UniffiVTableCallbackInterfaceLegacyFiles(
+    @JvmField internal var `fileBytes`: UniffiCallbackInterfaceLegacyFilesMethod0? = null,
+    @JvmField internal var `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+) : Structure() {
+    class UniffiByValue(
+        `fileBytes`: UniffiCallbackInterfaceLegacyFilesMethod0? = null,
+        `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+    ): UniffiVTableCallbackInterfaceLegacyFiles(`fileBytes`,`uniffiFree`,), Structure.ByValue
+
+   internal fun uniffiSetValue(other: UniffiVTableCallbackInterfaceLegacyFiles) {
+        `fileBytes` = other.`fileBytes`
+        `uniffiFree` = other.`uniffiFree`
+    }
+
 }
 @Structure.FieldOrder("messageReceived", "uniffiFree")
 internal open class UniffiVTableCallbackInterfaceNotifierCallbacks(
@@ -707,22 +763,152 @@ internal open class UniffiVTableCallbackInterfaceSecureStoreCallbacks(
     }
 
 }
-@Structure.FieldOrder("send", "uniffiFree")
+@Structure.FieldOrder("send", "sendRaw", "close", "signalAvailable", "signalSubscribe", "signalUnsubscribe", "signalPut", "uniffiFree")
 internal open class UniffiVTableCallbackInterfaceTransportCallbacks(
     @JvmField internal var `send`: UniffiCallbackInterfaceTransportCallbacksMethod0? = null,
+    @JvmField internal var `sendRaw`: UniffiCallbackInterfaceTransportCallbacksMethod1? = null,
+    @JvmField internal var `close`: UniffiCallbackInterfaceTransportCallbacksMethod2? = null,
+    @JvmField internal var `signalAvailable`: UniffiCallbackInterfaceTransportCallbacksMethod3? = null,
+    @JvmField internal var `signalSubscribe`: UniffiCallbackInterfaceTransportCallbacksMethod4? = null,
+    @JvmField internal var `signalUnsubscribe`: UniffiCallbackInterfaceTransportCallbacksMethod5? = null,
+    @JvmField internal var `signalPut`: UniffiCallbackInterfaceTransportCallbacksMethod6? = null,
     @JvmField internal var `uniffiFree`: UniffiCallbackInterfaceFree? = null,
 ) : Structure() {
     class UniffiByValue(
         `send`: UniffiCallbackInterfaceTransportCallbacksMethod0? = null,
+        `sendRaw`: UniffiCallbackInterfaceTransportCallbacksMethod1? = null,
+        `close`: UniffiCallbackInterfaceTransportCallbacksMethod2? = null,
+        `signalAvailable`: UniffiCallbackInterfaceTransportCallbacksMethod3? = null,
+        `signalSubscribe`: UniffiCallbackInterfaceTransportCallbacksMethod4? = null,
+        `signalUnsubscribe`: UniffiCallbackInterfaceTransportCallbacksMethod5? = null,
+        `signalPut`: UniffiCallbackInterfaceTransportCallbacksMethod6? = null,
         `uniffiFree`: UniffiCallbackInterfaceFree? = null,
-    ): UniffiVTableCallbackInterfaceTransportCallbacks(`send`,`uniffiFree`,), Structure.ByValue
+    ): UniffiVTableCallbackInterfaceTransportCallbacks(`send`,`sendRaw`,`close`,`signalAvailable`,`signalSubscribe`,`signalUnsubscribe`,`signalPut`,`uniffiFree`,), Structure.ByValue
 
    internal fun uniffiSetValue(other: UniffiVTableCallbackInterfaceTransportCallbacks) {
         `send` = other.`send`
+        `sendRaw` = other.`sendRaw`
+        `close` = other.`close`
+        `signalAvailable` = other.`signalAvailable`
+        `signalSubscribe` = other.`signalSubscribe`
+        `signalUnsubscribe` = other.`signalUnsubscribe`
+        `signalPut` = other.`signalPut`
         `uniffiFree` = other.`uniffiFree`
     }
 
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -840,6 +1026,8 @@ internal interface UniffiLib : Library {
             .also { lib: UniffiLib ->
                 uniffiCheckContractApiVersion(lib)
                 uniffiCheckApiChecksums(lib)
+                uniffiCallbackInterfaceLegacyDecryptor.register(lib)
+                uniffiCallbackInterfaceLegacyFiles.register(lib)
                 uniffiCallbackInterfaceNotifierCallbacks.register(lib)
                 uniffiCallbackInterfaceSecureStoreCallbacks.register(lib)
                 uniffiCallbackInterfaceTransportCallbacks.register(lib)
@@ -852,6 +1040,22 @@ internal interface UniffiLib : Library {
         }
     }
 
+    fun uniffi_privcord_ffi_fn_clone_legacydecryptor(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Pointer
+    fun uniffi_privcord_ffi_fn_free_legacydecryptor(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_init_callback_vtable_legacydecryptor(`vtable`: UniffiVTableCallbackInterfaceLegacyDecryptor,
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_legacydecryptor_decrypt_text(`ptr`: Pointer,`payload`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_clone_legacyfiles(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Pointer
+    fun uniffi_privcord_ffi_fn_free_legacyfiles(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_init_callback_vtable_legacyfiles(`vtable`: UniffiVTableCallbackInterfaceLegacyFiles,
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_legacyfiles_file_bytes(`ptr`: Pointer,`messageId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_clone_notifiercallbacks(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Pointer
     fun uniffi_privcord_ffi_fn_free_notifiercallbacks(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -866,31 +1070,113 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_privcord_ffi_fn_constructor_privcordengine_start(`dbPath`: RustBuffer.ByValue,`context`: RustBuffer.ByValue,`secure`: Pointer,`transport`: Pointer,`notifier`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Pointer
+    fun uniffi_privcord_ffi_fn_method_privcordengine_accept_invite(`ptr`: Pointer,`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_method_privcordengine_accept_request(`ptr`: Pointer,`uid`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_method_privcordengine_add_contact(`ptr`: Pointer,`card`: RustBuffer.ByValue,`verified`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_method_privcordengine_add_group_member(`ptr`: Pointer,`group`: RustBuffer.ByValue,`uid`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_ble_secret(`ptr`: Pointer,`peer`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_method_privcordengine_clear_answer(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_create_group(`ptr`: Pointer,`name`: RustBuffer.ByValue,`members`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_method_privcordengine_create_identity(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_method_privcordengine_create_invite(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_method_privcordengine_delete_message(`ptr`: Pointer,`messageId`: RustBuffer.ByValue,`everyone`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_dismiss_request(`ptr`: Pointer,`uid`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_export_backup(`ptr`: Pointer,`passphrase`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_method_privcordengine_frame_received(`ptr`: Pointer,`peer`: RustBuffer.ByValue,`frame`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_import_backup(`ptr`: Pointer,`text`: RustBuffer.ByValue,`passphrase`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_method_privcordengine_join_channel(`ptr`: Pointer,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_method_privcordengine_last_wipe_report(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_method_privcordengine_leave_channel(`ptr`: Pointer,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_leave_group(`ptr`: Pointer,`group`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_link_down(`ptr`: Pointer,`peer`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_link_up(`ptr`: Pointer,`peer`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,`kind`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_load_file(`ptr`: Pointer,`messageId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_method_privcordengine_mark_conversation_read(`ptr`: Pointer,`conversation`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_mark_read(`ptr`: Pointer,`peer`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_mesh_frame(`ptr`: Pointer,`link`: RustBuffer.ByValue,`frame`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_mesh_link_down(`ptr`: Pointer,`link`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_mesh_link_up(`ptr`: Pointer,`link`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_next_event(`ptr`: Pointer,`timeoutMs`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_method_privcordengine_own_card(`ptr`: Pointer,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_method_privcordengine_preview_invite(`ptr`: Pointer,`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_method_privcordengine_react(`ptr`: Pointer,`messageId`: RustBuffer.ByValue,`emoji`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_recover_identity(`ptr`: Pointer,`phrase`: RustBuffer.ByValue,`passphrase`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_remove_contact(`ptr`: Pointer,`uid`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_remove_group_member(`ptr`: Pointer,`group`: RustBuffer.ByValue,`uid`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_rename_contact(`ptr`: Pointer,`uid`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_rename_group(`ptr`: Pointer,`group`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_retry_answer(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_search(`ptr`: Pointer,`query`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_method_privcordengine_send_channel_message(`ptr`: Pointer,`name`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_method_privcordengine_send_file(`ptr`: Pointer,`peer`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,`mime`: RustBuffer.ByValue,`data`: RustBuffer.ByValue,`replyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_method_privcordengine_send_group_file(`ptr`: Pointer,`group`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,`mime`: RustBuffer.ByValue,`data`: RustBuffer.ByValue,`replyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_method_privcordengine_send_group_message(`ptr`: Pointer,`group`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`replyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_method_privcordengine_send_message(`ptr`: Pointer,`peer`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`replyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_method_privcordengine_send_signal(`ptr`: Pointer,`peer`: RustBuffer.ByValue,`kind`: RustBuffer.ByValue,`sdp`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_set_checked(`ptr`: Pointer,`uid`: RustBuffer.ByValue,`checked`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_set_display_name(`ptr`: Pointer,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_set_group_only(`ptr`: Pointer,`value`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_set_muted(`ptr`: Pointer,`uid`: RustBuffer.ByValue,`muted`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_set_store_forward(`ptr`: Pointer,`value`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_shutdown(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_signal_blob(`ptr`: Pointer,`mailbox`: RustBuffer.ByValue,`blob`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_snapshot(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_method_privcordengine_stop_invite(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_wipe_conversation(`ptr`: Pointer,`conversation`: RustBuffer.ByValue,`eraseSession`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_method_privcordengine_wipe_everything(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_clone_securestorecallbacks(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Pointer
@@ -912,6 +1198,26 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_privcord_ffi_fn_method_transportcallbacks_send(`ptr`: Pointer,`peer`: RustBuffer.ByValue,`frame`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    fun uniffi_privcord_ffi_fn_method_transportcallbacks_send_raw(`ptr`: Pointer,`link`: RustBuffer.ByValue,`frame`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    fun uniffi_privcord_ffi_fn_method_transportcallbacks_close(`ptr`: Pointer,`peer`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_transportcallbacks_signal_available(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    fun uniffi_privcord_ffi_fn_method_transportcallbacks_signal_subscribe(`ptr`: Pointer,`mailbox`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    fun uniffi_privcord_ffi_fn_method_transportcallbacks_signal_unsubscribe(`ptr`: Pointer,`mailbox`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_transportcallbacks_signal_put(`ptr`: Pointer,`mailbox`: RustBuffer.ByValue,`blob`: RustBuffer.ByValue,`kind`: RustBuffer.ByValue,`ttlSec`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    fun uniffi_privcord_ffi_fn_func_core_version(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_func_import_legacy_android(`oldDbPath`: RustBuffer.ByValue,`decryptor`: Pointer,`newDbPath`: RustBuffer.ByValue,`ownUid`: RustBuffer.ByValue,`files`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_func_import_legacy_desktop(`oldDbPath`: RustBuffer.ByValue,`aesKey`: RustBuffer.ByValue,`newDbPath`: RustBuffer.ByValue,`ownUid`: RustBuffer.ByValue,`files`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_func_self_test(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun ffi_privcord_ffi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun ffi_privcord_ffi_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1024,33 +1330,127 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_privcord_ffi_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_privcord_ffi_checksum_func_core_version(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_func_import_legacy_android(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_func_import_legacy_desktop(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_func_self_test(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_legacydecryptor_decrypt_text(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_legacyfiles_file_bytes(
+    ): Short
     fun uniffi_privcord_ffi_checksum_method_notifiercallbacks_message_received(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_accept_invite(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_accept_request(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_add_contact(
     ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_add_group_member(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_ble_secret(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_clear_answer(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_create_group(
+    ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_create_identity(
     ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_create_invite(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_delete_message(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_dismiss_request(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_export_backup(
+    ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_frame_received(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_import_backup(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_join_channel(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_last_wipe_report(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_leave_channel(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_leave_group(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_link_down(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_link_up(
     ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_load_file(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_mark_conversation_read(
+    ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_mark_read(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_mesh_frame(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_mesh_link_down(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_mesh_link_up(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_next_event(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_own_card(
     ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_preview_invite(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_react(
+    ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_recover_identity(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_remove_contact(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_remove_group_member(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_rename_contact(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_rename_group(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_retry_answer(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_search(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_send_channel_message(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_send_file(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_send_group_file(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_send_group_message(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_send_message(
     ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_send_signal(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_set_checked(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_set_display_name(
+    ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_set_group_only(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_set_muted(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_set_store_forward(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_shutdown(
     ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_signal_blob(
+    ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_snapshot(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_stop_invite(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_wipe_conversation(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_wipe_everything(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_securestorecallbacks_load_identity(
     ): Short
@@ -1059,6 +1459,18 @@ internal interface UniffiLib : Library {
     fun uniffi_privcord_ffi_checksum_method_securestorecallbacks_delete_identity(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_transportcallbacks_send(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_transportcallbacks_send_raw(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_transportcallbacks_close(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_transportcallbacks_signal_available(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_transportcallbacks_signal_subscribe(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_transportcallbacks_signal_unsubscribe(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_transportcallbacks_signal_put(
     ): Short
     fun uniffi_privcord_ffi_checksum_constructor_privcordengine_start(
     ): Short
@@ -1079,16 +1491,79 @@ private fun uniffiCheckContractApiVersion(lib: UniffiLib) {
 
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: UniffiLib) {
+    if (lib.uniffi_privcord_ffi_checksum_func_core_version() != 14917.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_func_import_legacy_android() != 37759.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_func_import_legacy_desktop() != 52917.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_func_self_test() != 39236.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_legacydecryptor_decrypt_text() != 19749.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_legacyfiles_file_bytes() != 24894.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_privcord_ffi_checksum_method_notifiercallbacks_message_received() != 3623.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_accept_invite() != 42739.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_accept_request() != 39056.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_add_contact() != 51286.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_add_group_member() != 42035.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_ble_secret() != 10999.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_clear_answer() != 55739.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_create_group() != 11412.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_create_identity() != 18742.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_create_invite() != 17170.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_delete_message() != 55350.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_dismiss_request() != 31153.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_export_backup() != 46179.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_frame_received() != 36264.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_import_backup() != 57407.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_join_channel() != 1805.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_last_wipe_report() != 42249.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_leave_channel() != 8979.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_leave_group() != 65470.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_link_down() != 49639.toShort()) {
@@ -1097,7 +1572,22 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_link_up() != 12869.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_load_file() != 9945.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_mark_conversation_read() != 59089.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_mark_read() != 53077.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_mesh_frame() != 42486.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_mesh_link_down() != 60840.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_mesh_link_up() != 17419.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_next_event() != 14644.toShort()) {
@@ -1106,19 +1596,82 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_own_card() != 46869.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_preview_invite() != 21260.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_react() != 12546.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_recover_identity() != 65257.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_remove_contact() != 13126.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_remove_group_member() != 4702.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_rename_contact() != 45171.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_rename_group() != 8179.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_retry_answer() != 39887.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_search() != 51141.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_send_channel_message() != 32740.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_send_file() != 52032.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_send_group_file() != 47013.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_send_group_message() != 844.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_send_message() != 34839.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_send_signal() != 24050.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_set_checked() != 19308.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_set_display_name() != 298.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_set_group_only() != 19562.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_set_muted() != 63712.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_set_store_forward() != 53043.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_shutdown() != 9417.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_signal_blob() != 12620.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_snapshot() != 20760.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_stop_invite() != 37776.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_wipe_conversation() != 9385.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_wipe_everything() != 19049.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_securestorecallbacks_load_identity() != 55739.toShort()) {
@@ -1131,6 +1684,24 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_transportcallbacks_send() != 17330.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_transportcallbacks_send_raw() != 54395.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_transportcallbacks_close() != 57316.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_transportcallbacks_signal_available() != 43599.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_transportcallbacks_signal_subscribe() != 59595.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_transportcallbacks_signal_unsubscribe() != 5106.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_transportcallbacks_signal_put() != 42555.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_constructor_privcordengine_start() != 20200.toShort()) {
@@ -1513,6 +2084,591 @@ private class JavaLangRefCleanable(
 ) : UniffiCleaner.Cleanable {
     override fun clean() = cleanable.clean()
 }
+/**
+ * Asks the platform to decrypt what the old app stored. On Android this calls the Keystore, whose key never leaves
+ * the device. Returns the plain text, or nothing if it cannot be decrypted.
+ */
+public interface LegacyDecryptor {
+    
+    fun `decryptText`(`payload`: kotlin.String): kotlin.String?
+    
+    companion object
+}
+
+/**
+ * Asks the platform to decrypt what the old app stored. On Android this calls the Keystore, whose key never leaves
+ * the device. Returns the plain text, or nothing if it cannot be decrypted.
+ */
+open class LegacyDecryptorImpl: Disposable, AutoCloseable, LegacyDecryptor {
+
+    constructor(pointer: Pointer) {
+        this.pointer = pointer
+        this.cleanable = UniffiLib.CLEANER.register(this, UniffiCleanAction(pointer))
+    }
+
+    /**
+     * This constructor can be used to instantiate a fake object. Only used for tests. Any
+     * attempt to actually use an object constructed this way will fail as there is no
+     * connected Rust object.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    constructor(noPointer: NoPointer) {
+        this.pointer = null
+        this.cleanable = UniffiLib.CLEANER.register(this, UniffiCleanAction(pointer))
+    }
+
+    protected val pointer: Pointer?
+    protected val cleanable: UniffiCleaner.Cleanable
+
+    private val wasDestroyed = AtomicBoolean(false)
+    private val callCounter = AtomicLong(1)
+
+    override fun destroy() {
+        // Only allow a single call to this method.
+        // TODO: maybe we should log a warning if called more than once?
+        if (this.wasDestroyed.compareAndSet(false, true)) {
+            // This decrement always matches the initial count of 1 given at creation time.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable.clean()
+            }
+        }
+    }
+
+    @Synchronized
+    override fun close() {
+        this.destroy()
+    }
+
+    internal inline fun <R> callWithPointer(block: (ptr: Pointer) -> R): R {
+        // Check and increment the call counter, to keep the object alive.
+        // This needs a compare-and-set retry loop in case of concurrent updates.
+        do {
+            val c = this.callCounter.get()
+            if (c == 0L) {
+                throw IllegalStateException("${this.javaClass.simpleName} object has already been destroyed")
+            }
+            if (c == Long.MAX_VALUE) {
+                throw IllegalStateException("${this.javaClass.simpleName} call counter would overflow")
+            }
+        } while (! this.callCounter.compareAndSet(c, c + 1L))
+        // Now we can safely do the method call without the pointer being freed concurrently.
+        try {
+            return block(this.uniffiClonePointer())
+        } finally {
+            // This decrement always matches the increment we performed above.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable.clean()
+            }
+        }
+    }
+
+    // Use a static inner class instead of a closure so as not to accidentally
+    // capture `this` as part of the cleanable's action.
+    private class UniffiCleanAction(private val pointer: Pointer?) : Runnable {
+        override fun run() {
+            pointer?.let { ptr ->
+                uniffiRustCall { status ->
+                    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_free_legacydecryptor(ptr, status)
+                }
+            }
+        }
+    }
+
+    fun uniffiClonePointer(): Pointer {
+        return uniffiRustCall() { status ->
+            UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_clone_legacydecryptor(pointer!!, status)
+        }
+    }
+
+    override fun `decryptText`(`payload`: kotlin.String): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_legacydecryptor_decrypt_text(
+        it, FfiConverterString.lower(`payload`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+
+    
+    
+    companion object
+    
+}
+// Magic number for the Rust proxy to call using the same mechanism as every other method,
+// to free the callback once it's dropped by Rust.
+internal const val IDX_CALLBACK_FREE = 0
+// Callback return codes
+internal const val UNIFFI_CALLBACK_SUCCESS = 0
+internal const val UNIFFI_CALLBACK_ERROR = 1
+internal const val UNIFFI_CALLBACK_UNEXPECTED_ERROR = 2
+
+/**
+ * @suppress
+ */
+public abstract class FfiConverterCallbackInterface<CallbackInterface: Any>: FfiConverter<CallbackInterface, Long> {
+    internal val handleMap = UniffiHandleMap<CallbackInterface>()
+
+    internal fun drop(handle: Long) {
+        handleMap.remove(handle)
+    }
+
+    override fun lift(value: Long): CallbackInterface {
+        return handleMap.get(value)
+    }
+
+    override fun read(buf: ByteBuffer) = lift(buf.getLong())
+
+    override fun lower(value: CallbackInterface) = handleMap.insert(value)
+
+    override fun allocationSize(value: CallbackInterface) = 8UL
+
+    override fun write(value: CallbackInterface, buf: ByteBuffer) {
+        buf.putLong(lower(value))
+    }
+}
+
+// Put the implementation in an object so we don't pollute the top-level namespace
+internal object uniffiCallbackInterfaceLegacyDecryptor {
+    internal object `decryptText`: UniffiCallbackInterfaceLegacyDecryptorMethod0 {
+        override fun callback(`uniffiHandle`: Long,`payload`: RustBuffer.ByValue,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeLegacyDecryptor.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`decryptText`(
+                    FfiConverterString.lift(`payload`),
+                )
+            }
+            val writeReturn = { value: kotlin.String? -> uniffiOutReturn.setValue(FfiConverterOptionalString.lower(value)) }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
+
+    internal object uniffiFree: UniffiCallbackInterfaceFree {
+        override fun callback(handle: Long) {
+            FfiConverterTypeLegacyDecryptor.handleMap.remove(handle)
+        }
+    }
+
+    internal var vtable = UniffiVTableCallbackInterfaceLegacyDecryptor.UniffiByValue(
+        `decryptText`,
+        uniffiFree,
+    )
+
+    // Registers the foreign callback with the Rust side.
+    // This method is generated for each callback interface.
+    internal fun register(lib: UniffiLib) {
+        lib.uniffi_privcord_ffi_fn_init_callback_vtable_legacydecryptor(vtable)
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeLegacyDecryptor: FfiConverter<LegacyDecryptor, Pointer> {
+    internal val handleMap = UniffiHandleMap<LegacyDecryptor>()
+
+    override fun lower(value: LegacyDecryptor): Pointer {
+        return Pointer(handleMap.insert(value))
+    }
+
+    override fun lift(value: Pointer): LegacyDecryptor {
+        return LegacyDecryptorImpl(value)
+    }
+
+    override fun read(buf: ByteBuffer): LegacyDecryptor {
+        // The Rust code always writes pointers as 8 bytes, and will
+        // fail to compile if they don't fit.
+        return lift(Pointer(buf.getLong()))
+    }
+
+    override fun allocationSize(value: LegacyDecryptor) = 8UL
+
+    override fun write(value: LegacyDecryptor, buf: ByteBuffer) {
+        // The Rust code always expects pointers written as 8 bytes,
+        // and will fail to compile if they don't fit.
+        buf.putLong(Pointer.nativeValue(lower(value)))
+    }
+}
+
+
+// This template implements a class for working with a Rust struct via a Pointer/Arc<T>
+// to the live Rust struct on the other side of the FFI.
+//
+// Each instance implements core operations for working with the Rust `Arc<T>` and the
+// Kotlin Pointer to work with the live Rust struct on the other side of the FFI.
+//
+// There's some subtlety here, because we have to be careful not to operate on a Rust
+// struct after it has been dropped, and because we must expose a public API for freeing
+// theq Kotlin wrapper object in lieu of reliable finalizers. The core requirements are:
+//
+//   * Each instance holds an opaque pointer to the underlying Rust struct.
+//     Method calls need to read this pointer from the object's state and pass it in to
+//     the Rust FFI.
+//
+//   * When an instance is no longer needed, its pointer should be passed to a
+//     special destructor function provided by the Rust FFI, which will drop the
+//     underlying Rust struct.
+//
+//   * Given an instance, calling code is expected to call the special
+//     `destroy` method in order to free it after use, either by calling it explicitly
+//     or by using a higher-level helper like the `use` method. Failing to do so risks
+//     leaking the underlying Rust struct.
+//
+//   * We can't assume that calling code will do the right thing, and must be prepared
+//     to handle Kotlin method calls executing concurrently with or even after a call to
+//     `destroy`, and to handle multiple (possibly concurrent!) calls to `destroy`.
+//
+//   * We must never allow Rust code to operate on the underlying Rust struct after
+//     the destructor has been called, and must never call the destructor more than once.
+//     Doing so may trigger memory unsafety.
+//
+//   * To mitigate many of the risks of leaking memory and use-after-free unsafety, a `Cleaner`
+//     is implemented to call the destructor when the Kotlin object becomes unreachable.
+//     This is done in a background thread. This is not a panacea, and client code should be aware that
+//      1. the thread may starve if some there are objects that have poorly performing
+//     `drop` methods or do significant work in their `drop` methods.
+//      2. the thread is shared across the whole library. This can be tuned by using `android_cleaner = true`,
+//         or `android = true` in the [`kotlin` section of the `uniffi.toml` file](https://mozilla.github.io/uniffi-rs/kotlin/configuration.html).
+//
+// If we try to implement this with mutual exclusion on access to the pointer, there is the
+// possibility of a race between a method call and a concurrent call to `destroy`:
+//
+//    * Thread A starts a method call, reads the value of the pointer, but is interrupted
+//      before it can pass the pointer over the FFI to Rust.
+//    * Thread B calls `destroy` and frees the underlying Rust struct.
+//    * Thread A resumes, passing the already-read pointer value to Rust and triggering
+//      a use-after-free.
+//
+// One possible solution would be to use a `ReadWriteLock`, with each method call taking
+// a read lock (and thus allowed to run concurrently) and the special `destroy` method
+// taking a write lock (and thus blocking on live method calls). However, we aim not to
+// generate methods with any hidden blocking semantics, and a `destroy` method that might
+// block if called incorrectly seems to meet that bar.
+//
+// So, we achieve our goals by giving each instance an associated `AtomicLong` counter to track
+// the number of in-flight method calls, and an `AtomicBoolean` flag to indicate whether `destroy`
+// has been called. These are updated according to the following rules:
+//
+//    * The initial value of the counter is 1, indicating a live object with no in-flight calls.
+//      The initial value for the flag is false.
+//
+//    * At the start of each method call, we atomically check the counter.
+//      If it is 0 then the underlying Rust struct has already been destroyed and the call is aborted.
+//      If it is nonzero them we atomically increment it by 1 and proceed with the method call.
+//
+//    * At the end of each method call, we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+//    * When `destroy` is called, we atomically flip the flag from false to true.
+//      If the flag was already true we silently fail.
+//      Otherwise we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+// Astute readers may observe that this all sounds very similar to the way that Rust's `Arc<T>` works,
+// and indeed it is, with the addition of a flag to guard against multiple calls to `destroy`.
+//
+// The overall effect is that the underlying Rust struct is destroyed only when `destroy` has been
+// called *and* all in-flight method calls have completed, avoiding violating any of the expectations
+// of the underlying Rust code.
+//
+// This makes a cleaner a better alternative to _not_ calling `destroy()` as
+// and when the object is finished with, but the abstraction is not perfect: if the Rust object's `drop`
+// method is slow, and/or there are many objects to cleanup, and it's on a low end Android device, then the cleaner
+// thread may be starved, and the app will leak memory.
+//
+// In this case, `destroy`ing manually may be a better solution.
+//
+// The cleaner can live side by side with the manual calling of `destroy`. In the order of responsiveness, uniffi objects
+// with Rust peers are reclaimed:
+//
+// 1. By calling the `destroy` method of the object, which calls `rustObject.free()`. If that doesn't happen:
+// 2. When the object becomes unreachable, AND the Cleaner thread gets to call `rustObject.free()`. If the thread is starved then:
+// 3. The memory is reclaimed when the process terminates.
+//
+// [1] https://stackoverflow.com/questions/24376768/can-java-finalize-an-object-when-it-is-still-in-scope/24380219
+//
+
+
+/**
+ * The plain bytes of a file the old app kept outside its message table.
+ */
+public interface LegacyFiles {
+    
+    fun `fileBytes`(`messageId`: kotlin.String): kotlin.ByteArray?
+    
+    companion object
+}
+
+/**
+ * The plain bytes of a file the old app kept outside its message table.
+ */
+open class LegacyFilesImpl: Disposable, AutoCloseable, LegacyFiles {
+
+    constructor(pointer: Pointer) {
+        this.pointer = pointer
+        this.cleanable = UniffiLib.CLEANER.register(this, UniffiCleanAction(pointer))
+    }
+
+    /**
+     * This constructor can be used to instantiate a fake object. Only used for tests. Any
+     * attempt to actually use an object constructed this way will fail as there is no
+     * connected Rust object.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    constructor(noPointer: NoPointer) {
+        this.pointer = null
+        this.cleanable = UniffiLib.CLEANER.register(this, UniffiCleanAction(pointer))
+    }
+
+    protected val pointer: Pointer?
+    protected val cleanable: UniffiCleaner.Cleanable
+
+    private val wasDestroyed = AtomicBoolean(false)
+    private val callCounter = AtomicLong(1)
+
+    override fun destroy() {
+        // Only allow a single call to this method.
+        // TODO: maybe we should log a warning if called more than once?
+        if (this.wasDestroyed.compareAndSet(false, true)) {
+            // This decrement always matches the initial count of 1 given at creation time.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable.clean()
+            }
+        }
+    }
+
+    @Synchronized
+    override fun close() {
+        this.destroy()
+    }
+
+    internal inline fun <R> callWithPointer(block: (ptr: Pointer) -> R): R {
+        // Check and increment the call counter, to keep the object alive.
+        // This needs a compare-and-set retry loop in case of concurrent updates.
+        do {
+            val c = this.callCounter.get()
+            if (c == 0L) {
+                throw IllegalStateException("${this.javaClass.simpleName} object has already been destroyed")
+            }
+            if (c == Long.MAX_VALUE) {
+                throw IllegalStateException("${this.javaClass.simpleName} call counter would overflow")
+            }
+        } while (! this.callCounter.compareAndSet(c, c + 1L))
+        // Now we can safely do the method call without the pointer being freed concurrently.
+        try {
+            return block(this.uniffiClonePointer())
+        } finally {
+            // This decrement always matches the increment we performed above.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable.clean()
+            }
+        }
+    }
+
+    // Use a static inner class instead of a closure so as not to accidentally
+    // capture `this` as part of the cleanable's action.
+    private class UniffiCleanAction(private val pointer: Pointer?) : Runnable {
+        override fun run() {
+            pointer?.let { ptr ->
+                uniffiRustCall { status ->
+                    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_free_legacyfiles(ptr, status)
+                }
+            }
+        }
+    }
+
+    fun uniffiClonePointer(): Pointer {
+        return uniffiRustCall() { status ->
+            UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_clone_legacyfiles(pointer!!, status)
+        }
+    }
+
+    override fun `fileBytes`(`messageId`: kotlin.String): kotlin.ByteArray? {
+            return FfiConverterOptionalByteArray.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_legacyfiles_file_bytes(
+        it, FfiConverterString.lower(`messageId`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+
+    
+    
+    companion object
+    
+}
+
+
+// Put the implementation in an object so we don't pollute the top-level namespace
+internal object uniffiCallbackInterfaceLegacyFiles {
+    internal object `fileBytes`: UniffiCallbackInterfaceLegacyFilesMethod0 {
+        override fun callback(`uniffiHandle`: Long,`messageId`: RustBuffer.ByValue,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeLegacyFiles.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`fileBytes`(
+                    FfiConverterString.lift(`messageId`),
+                )
+            }
+            val writeReturn = { value: kotlin.ByteArray? -> uniffiOutReturn.setValue(FfiConverterOptionalByteArray.lower(value)) }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
+
+    internal object uniffiFree: UniffiCallbackInterfaceFree {
+        override fun callback(handle: Long) {
+            FfiConverterTypeLegacyFiles.handleMap.remove(handle)
+        }
+    }
+
+    internal var vtable = UniffiVTableCallbackInterfaceLegacyFiles.UniffiByValue(
+        `fileBytes`,
+        uniffiFree,
+    )
+
+    // Registers the foreign callback with the Rust side.
+    // This method is generated for each callback interface.
+    internal fun register(lib: UniffiLib) {
+        lib.uniffi_privcord_ffi_fn_init_callback_vtable_legacyfiles(vtable)
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeLegacyFiles: FfiConverter<LegacyFiles, Pointer> {
+    internal val handleMap = UniffiHandleMap<LegacyFiles>()
+
+    override fun lower(value: LegacyFiles): Pointer {
+        return Pointer(handleMap.insert(value))
+    }
+
+    override fun lift(value: Pointer): LegacyFiles {
+        return LegacyFilesImpl(value)
+    }
+
+    override fun read(buf: ByteBuffer): LegacyFiles {
+        // The Rust code always writes pointers as 8 bytes, and will
+        // fail to compile if they don't fit.
+        return lift(Pointer(buf.getLong()))
+    }
+
+    override fun allocationSize(value: LegacyFiles) = 8UL
+
+    override fun write(value: LegacyFiles, buf: ByteBuffer) {
+        // The Rust code always expects pointers written as 8 bytes,
+        // and will fail to compile if they don't fit.
+        buf.putLong(Pointer.nativeValue(lower(value)))
+    }
+}
+
+
+// This template implements a class for working with a Rust struct via a Pointer/Arc<T>
+// to the live Rust struct on the other side of the FFI.
+//
+// Each instance implements core operations for working with the Rust `Arc<T>` and the
+// Kotlin Pointer to work with the live Rust struct on the other side of the FFI.
+//
+// There's some subtlety here, because we have to be careful not to operate on a Rust
+// struct after it has been dropped, and because we must expose a public API for freeing
+// theq Kotlin wrapper object in lieu of reliable finalizers. The core requirements are:
+//
+//   * Each instance holds an opaque pointer to the underlying Rust struct.
+//     Method calls need to read this pointer from the object's state and pass it in to
+//     the Rust FFI.
+//
+//   * When an instance is no longer needed, its pointer should be passed to a
+//     special destructor function provided by the Rust FFI, which will drop the
+//     underlying Rust struct.
+//
+//   * Given an instance, calling code is expected to call the special
+//     `destroy` method in order to free it after use, either by calling it explicitly
+//     or by using a higher-level helper like the `use` method. Failing to do so risks
+//     leaking the underlying Rust struct.
+//
+//   * We can't assume that calling code will do the right thing, and must be prepared
+//     to handle Kotlin method calls executing concurrently with or even after a call to
+//     `destroy`, and to handle multiple (possibly concurrent!) calls to `destroy`.
+//
+//   * We must never allow Rust code to operate on the underlying Rust struct after
+//     the destructor has been called, and must never call the destructor more than once.
+//     Doing so may trigger memory unsafety.
+//
+//   * To mitigate many of the risks of leaking memory and use-after-free unsafety, a `Cleaner`
+//     is implemented to call the destructor when the Kotlin object becomes unreachable.
+//     This is done in a background thread. This is not a panacea, and client code should be aware that
+//      1. the thread may starve if some there are objects that have poorly performing
+//     `drop` methods or do significant work in their `drop` methods.
+//      2. the thread is shared across the whole library. This can be tuned by using `android_cleaner = true`,
+//         or `android = true` in the [`kotlin` section of the `uniffi.toml` file](https://mozilla.github.io/uniffi-rs/kotlin/configuration.html).
+//
+// If we try to implement this with mutual exclusion on access to the pointer, there is the
+// possibility of a race between a method call and a concurrent call to `destroy`:
+//
+//    * Thread A starts a method call, reads the value of the pointer, but is interrupted
+//      before it can pass the pointer over the FFI to Rust.
+//    * Thread B calls `destroy` and frees the underlying Rust struct.
+//    * Thread A resumes, passing the already-read pointer value to Rust and triggering
+//      a use-after-free.
+//
+// One possible solution would be to use a `ReadWriteLock`, with each method call taking
+// a read lock (and thus allowed to run concurrently) and the special `destroy` method
+// taking a write lock (and thus blocking on live method calls). However, we aim not to
+// generate methods with any hidden blocking semantics, and a `destroy` method that might
+// block if called incorrectly seems to meet that bar.
+//
+// So, we achieve our goals by giving each instance an associated `AtomicLong` counter to track
+// the number of in-flight method calls, and an `AtomicBoolean` flag to indicate whether `destroy`
+// has been called. These are updated according to the following rules:
+//
+//    * The initial value of the counter is 1, indicating a live object with no in-flight calls.
+//      The initial value for the flag is false.
+//
+//    * At the start of each method call, we atomically check the counter.
+//      If it is 0 then the underlying Rust struct has already been destroyed and the call is aborted.
+//      If it is nonzero them we atomically increment it by 1 and proceed with the method call.
+//
+//    * At the end of each method call, we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+//    * When `destroy` is called, we atomically flip the flag from false to true.
+//      If the flag was already true we silently fail.
+//      Otherwise we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+// Astute readers may observe that this all sounds very similar to the way that Rust's `Arc<T>` works,
+// and indeed it is, with the addition of a flag to guard against multiple calls to `destroy`.
+//
+// The overall effect is that the underlying Rust struct is destroyed only when `destroy` has been
+// called *and* all in-flight method calls have completed, avoiding violating any of the expectations
+// of the underlying Rust code.
+//
+// This makes a cleaner a better alternative to _not_ calling `destroy()` as
+// and when the object is finished with, but the abstraction is not perfect: if the Rust object's `drop`
+// method is slow, and/or there are many objects to cleanup, and it's on a low end Android device, then the cleaner
+// thread may be starved, and the app will leak memory.
+//
+// In this case, `destroy`ing manually may be a better solution.
+//
+// The cleaner can live side by side with the manual calling of `destroy`. In the order of responsiveness, uniffi objects
+// with Rust peers are reclaimed:
+//
+// 1. By calling the `destroy` method of the object, which calls `rustObject.free()`. If that doesn't happen:
+// 2. When the object becomes unreachable, AND the Cleaner thread gets to call `rustObject.free()`. If the thread is starved then:
+// 3. The memory is reclaimed when the process terminates.
+//
+// [1] https://stackoverflow.com/questions/24376768/can-java-finalize-an-object-when-it-is-still-in-scope/24380219
+//
+
+
 public interface NotifierCallbacks {
     
     fun `messageReceived`(`conversation`: kotlin.String, `sender`: kotlin.String, `preview`: kotlin.String)
@@ -1619,38 +2775,7 @@ open class NotifierCallbacksImpl: Disposable, AutoCloseable, NotifierCallbacks {
     companion object
     
 }
-// Magic number for the Rust proxy to call using the same mechanism as every other method,
-// to free the callback once it's dropped by Rust.
-internal const val IDX_CALLBACK_FREE = 0
-// Callback return codes
-internal const val UNIFFI_CALLBACK_SUCCESS = 0
-internal const val UNIFFI_CALLBACK_ERROR = 1
-internal const val UNIFFI_CALLBACK_UNEXPECTED_ERROR = 2
 
-/**
- * @suppress
- */
-public abstract class FfiConverterCallbackInterface<CallbackInterface: Any>: FfiConverter<CallbackInterface, Long> {
-    internal val handleMap = UniffiHandleMap<CallbackInterface>()
-
-    internal fun drop(handle: Long) {
-        handleMap.remove(handle)
-    }
-
-    override fun lift(value: Long): CallbackInterface {
-        return handleMap.get(value)
-    }
-
-    override fun read(buf: ByteBuffer) = lift(buf.getLong())
-
-    override fun lower(value: CallbackInterface) = handleMap.insert(value)
-
-    override fun allocationSize(value: CallbackInterface) = 8UL
-
-    override fun write(value: CallbackInterface, buf: ByteBuffer) {
-        buf.putLong(lower(value))
-    }
-}
 
 // Put the implementation in an object so we don't pollute the top-level namespace
 internal object uniffiCallbackInterfaceNotifierCallbacks {
@@ -1821,9 +2946,31 @@ public object FfiConverterTypeNotifierCallbacks: FfiConverter<NotifierCallbacks,
 public interface PrivcordEngineInterface {
     
     /**
+     * Save a friend from their invite. Returns their id.
+     */
+    fun `acceptInvite`(`text`: kotlin.String): kotlin.String
+    
+    fun `acceptRequest`(`uid`: kotlin.String): kotlin.String
+    
+    /**
      * Add a contact from their card. `verified` is true when the cards were swapped directly.
      */
     fun `addContact`(`card`: kotlin.String, `verified`: kotlin.Boolean): kotlin.String
+    
+    fun `addGroupMember`(`group`: kotlin.String, `uid`: kotlin.String)
+    
+    /**
+     * The 32-byte secret shared with a friend. Bluetooth uses it only to choose which advertisements to accept; do not
+     * store it or send it anywhere.
+     */
+    fun `bleSecret`(`peer`: kotlin.String): kotlin.ByteArray
+    
+    fun `clearAnswer`()
+    
+    /**
+     * Make a group with these contacts. Returns the group's id.
+     */
+    fun `createGroup`(`name`: kotlin.String, `members`: List<kotlin.String>): kotlin.String
     
     /**
      * Make a new identity. Returns the 12 recovery words, once. Show them, make the person save them, then drop them.
@@ -1831,9 +2978,45 @@ public interface PrivcordEngineInterface {
     fun `createIdentity`(): kotlin.String
     
     /**
+     * Make a six-word invite and publish it. Returns the words and when they stop working (ms since 1970).
+     */
+    fun `createInvite`(): InviteDto
+    
+    /**
+     * Delete a message. `everyone` (your own messages only) also asks the others to remove it, and leaves a tombstone.
+     */
+    fun `deleteMessage`(`messageId`: kotlin.String, `everyone`: kotlin.Boolean)
+    
+    fun `dismissRequest`(`uid`: kotlin.String)
+    
+    /**
+     * A passphrase-protected copy of friends, groups, channels, muted people and messages (no files, no recovery phrase).
+     */
+    fun `exportBackup`(`passphrase`: kotlin.String): kotlin.String
+    
+    /**
      * A frame arrived from `peer`.
      */
     fun `frameReceived`(`peer`: kotlin.String, `frame`: kotlin.String)
+    
+    /**
+     * Add what is in a backup to what is here. Never replaces or removes anything that already exists.
+     */
+    fun `importBackup`(`text`: kotlin.String, `passphrase`: kotlin.String): RestoreDto
+    
+    /**
+     * Join a public channel; returns its normalised name.
+     */
+    fun `joinChannel`(`name`: kotlin.String): kotlin.String
+    
+    /**
+     * The report of the last deletion that was started, if any.
+     */
+    fun `lastWipeReport`(): WipeReportDto?
+    
+    fun `leaveChannel`(`name`: kotlin.String)
+    
+    fun `leaveGroup`(`group`: kotlin.String)
     
     fun `linkDown`(`peer`: kotlin.String)
     
@@ -1842,7 +3025,29 @@ public interface PrivcordEngineInterface {
      */
     fun `linkUp`(`peer`: kotlin.String, `path`: PathKind, `kind`: LinkKind)
     
+    /**
+     * The bytes of a file message, if we have them.
+     */
+    fun `loadFile`(`messageId`: kotlin.String): FileDto?
+    
+    /**
+     * Mark a group or channel (`chan:` plus its name) as read. For a person use `mark_read`.
+     */
+    fun `markConversationRead`(`conversation`: kotlin.String)
+    
     fun `markRead`(`peer`: kotlin.String)
+    
+    /**
+     * A mesh packet arrived from a neighbour.
+     */
+    fun `meshFrame`(`link`: kotlin.String, `frame`: kotlin.String)
+    
+    fun `meshLinkDown`(`link`: kotlin.String)
+    
+    /**
+     * A Bluetooth mesh neighbour appeared.
+     */
+    fun `meshLinkUp`(`link`: kotlin.String)
     
     /**
      * Wait up to `timeout_ms` for the next event. `None` means nothing happened. Call it from a background thread
@@ -1852,11 +3057,86 @@ public interface PrivcordEngineInterface {
     
     fun `ownCard`(`name`: kotlin.String?): kotlin.String
     
+    /**
+     * Look at an invite (six words or a full card) without saving it. A card answers at once; words start a search
+     * that ends with an `InviteFound` or `InviteLookupFailed` event.
+     */
+    fun `previewInvite`(`text`: kotlin.String): PreviewDto?
+    
+    /**
+     * Toggle your reaction (one of 👍 ❤️ 😂 😮 😢 🙏) on a message; the same one again removes it.
+     */
+    fun `react`(`messageId`: kotlin.String, `emoji`: kotlin.String)
+    
     fun `recoverIdentity`(`phrase`: kotlin.String, `passphrase`: kotlin.String)
+    
+    /**
+     * Forget a friend and their chat. Refused while they share a group with you.
+     */
+    fun `removeContact`(`uid`: kotlin.String)
+    
+    fun `removeGroupMember`(`group`: kotlin.String, `uid`: kotlin.String)
+    
+    /**
+     * Give a friend a name of your own; an empty name goes back to the one on their card.
+     */
+    fun `renameContact`(`uid`: kotlin.String, `name`: kotlin.String)
+    
+    fun `renameGroup`(`group`: kotlin.String, `name`: kotlin.String)
+    
+    fun `retryAnswer`()
+    
+    /**
+     * Search messages on this device (two characters at least). Newest first.
+     */
+    fun `search`(`query`: kotlin.String, `limit`: kotlin.UInt): List<SearchHitDto>
+    
+    /**
+     * Write to a joined channel (flooded over the Bluetooth mesh). Returns the message id.
+     */
+    fun `sendChannelMessage`(`name`: kotlin.String, `text`: kotlin.String): kotlin.String
+    
+    /**
+     * Send a file (at most 8 MB) to a person.
+     */
+    fun `sendFile`(`peer`: kotlin.String, `name`: kotlin.String, `mime`: kotlin.String, `data`: kotlin.ByteArray, `replyTo`: kotlin.String?): kotlin.String
+    
+    /**
+     * Send a file to every other member of a group.
+     */
+    fun `sendGroupFile`(`group`: kotlin.String, `name`: kotlin.String, `mime`: kotlin.String, `data`: kotlin.ByteArray, `replyTo`: kotlin.String?): kotlin.String
+    
+    fun `sendGroupMessage`(`group`: kotlin.String, `text`: kotlin.String, `replyTo`: kotlin.String?): kotlin.String
     
     fun `sendMessage`(`peer`: kotlin.String, `text`: kotlin.String, `replyTo`: kotlin.String?): kotlin.String
     
+    /**
+     * Send connection setup to a contact (sealed to them, through the signaling service or mutual contacts).
+     * `sdp` is the session description for an offer or an answer.
+     */
+    fun `sendSignal`(`peer`: kotlin.String, `kind`: SignalKindDto, `sdp`: kotlin.String?)
+    
+    /**
+     * Record that you compared the safety number with this person (or took it back).
+     */
+    fun `setChecked`(`uid`: kotlin.String, `checked`: kotlin.Boolean)
+    
+    /**
+     * The name put on invite cards.
+     */
+    fun `setDisplayName`(`name`: kotlin.String)
+    
     fun `setGroupOnly`(`value`: kotlin.Boolean)
+    
+    /**
+     * Hide (or show again) a person's channel messages, on this device only.
+     */
+    fun `setMuted`(`uid`: kotlin.String, `muted`: kotlin.Boolean)
+    
+    /**
+     * Keep invites on the relay for 15 minutes as well as publishing them live.
+     */
+    fun `setStoreForward`(`value`: kotlin.Boolean)
     
     /**
      * Stop the engine and wait for it to finish. Safe to call more than once.
@@ -1864,9 +3144,27 @@ public interface PrivcordEngineInterface {
     fun `shutdown`()
     
     /**
+     * The signaling service delivered a blob on a mailbox we listen on.
+     */
+    fun `signalBlob`(`mailbox`: kotlin.String, `blob`: kotlin.String)
+    
+    /**
      * Everything a recreated UI needs, so it never depends on having seen every event.
      */
     fun `snapshot`(): SnapshotDto
+    
+    fun `stopInvite`()
+    
+    /**
+     * Delete one chat here. `conversation` is a person's id, a group id or `chan:` plus a channel name.
+     */
+    fun `wipeConversation`(`conversation`: kotlin.String, `eraseSession`: kotlin.Boolean): WipeReportDto
+    
+    /**
+     * Emergency deletion of everything the engine holds. Returns the report; a crash part-way is continued on the
+     * next call.
+     */
+    fun `wipeEverything`(): WipeReportDto
     
     companion object
 }
@@ -1957,6 +3255,35 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
 
     
     /**
+     * Save a friend from their invite. Returns their id.
+     */
+    @Throws(FfiException::class)override fun `acceptInvite`(`text`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_accept_invite(
+        it, FfiConverterString.lower(`text`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(FfiException::class)override fun `acceptRequest`(`uid`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_accept_request(
+        it, FfiConverterString.lower(`uid`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * Add a contact from their card. `verified` is true when the cards were swapped directly.
      */
     @Throws(FfiException::class)override fun `addContact`(`card`: kotlin.String, `verified`: kotlin.Boolean): kotlin.String {
@@ -1965,6 +3292,63 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_add_contact(
         it, FfiConverterString.lower(`card`),FfiConverterBoolean.lower(`verified`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(FfiException::class)override fun `addGroupMember`(`group`: kotlin.String, `uid`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_add_group_member(
+        it, FfiConverterString.lower(`group`),FfiConverterString.lower(`uid`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * The 32-byte secret shared with a friend. Bluetooth uses it only to choose which advertisements to accept; do not
+     * store it or send it anywhere.
+     */
+    @Throws(FfiException::class)override fun `bleSecret`(`peer`: kotlin.String): kotlin.ByteArray {
+            return FfiConverterByteArray.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_ble_secret(
+        it, FfiConverterString.lower(`peer`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(FfiException::class)override fun `clearAnswer`()
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_clear_answer(
+        it, _status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Make a group with these contacts. Returns the group's id.
+     */
+    @Throws(FfiException::class)override fun `createGroup`(`name`: kotlin.String, `members`: List<kotlin.String>): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_create_group(
+        it, FfiConverterString.lower(`name`),FfiConverterSequenceString.lower(`members`),_status)
 }
     }
     )
@@ -1989,6 +3373,65 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
 
     
     /**
+     * Make a six-word invite and publish it. Returns the words and when they stop working (ms since 1970).
+     */
+    @Throws(FfiException::class)override fun `createInvite`(): InviteDto {
+            return FfiConverterTypeInviteDto.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_create_invite(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Delete a message. `everyone` (your own messages only) also asks the others to remove it, and leaves a tombstone.
+     */
+    @Throws(FfiException::class)override fun `deleteMessage`(`messageId`: kotlin.String, `everyone`: kotlin.Boolean)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_delete_message(
+        it, FfiConverterString.lower(`messageId`),FfiConverterBoolean.lower(`everyone`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(FfiException::class)override fun `dismissRequest`(`uid`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_dismiss_request(
+        it, FfiConverterString.lower(`uid`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * A passphrase-protected copy of friends, groups, channels, muted people and messages (no files, no recovery phrase).
+     */
+    @Throws(FfiException::class)override fun `exportBackup`(`passphrase`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_export_backup(
+        it, FfiConverterString.lower(`passphrase`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
      * A frame arrived from `peer`.
      */
     @Throws(FfiException::class)override fun `frameReceived`(`peer`: kotlin.String, `frame`: kotlin.String)
@@ -1997,6 +3440,78 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_frame_received(
         it, FfiConverterString.lower(`peer`),FfiConverterString.lower(`frame`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Add what is in a backup to what is here. Never replaces or removes anything that already exists.
+     */
+    @Throws(FfiException::class)override fun `importBackup`(`text`: kotlin.String, `passphrase`: kotlin.String): RestoreDto {
+            return FfiConverterTypeRestoreDto.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_import_backup(
+        it, FfiConverterString.lower(`text`),FfiConverterString.lower(`passphrase`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Join a public channel; returns its normalised name.
+     */
+    @Throws(FfiException::class)override fun `joinChannel`(`name`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_join_channel(
+        it, FfiConverterString.lower(`name`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * The report of the last deletion that was started, if any.
+     */
+    @Throws(FfiException::class)override fun `lastWipeReport`(): WipeReportDto? {
+            return FfiConverterOptionalTypeWipeReportDto.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_last_wipe_report(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(FfiException::class)override fun `leaveChannel`(`name`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_leave_channel(
+        it, FfiConverterString.lower(`name`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(FfiException::class)override fun `leaveGroup`(`group`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_leave_group(
+        it, FfiConverterString.lower(`group`),_status)
 }
     }
     
@@ -2030,12 +3545,85 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
     
 
     
+    /**
+     * The bytes of a file message, if we have them.
+     */
+    @Throws(FfiException::class)override fun `loadFile`(`messageId`: kotlin.String): FileDto? {
+            return FfiConverterOptionalTypeFileDto.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_load_file(
+        it, FfiConverterString.lower(`messageId`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Mark a group or channel (`chan:` plus its name) as read. For a person use `mark_read`.
+     */
+    @Throws(FfiException::class)override fun `markConversationRead`(`conversation`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_mark_conversation_read(
+        it, FfiConverterString.lower(`conversation`),_status)
+}
+    }
+    
+    
+
+    
     @Throws(FfiException::class)override fun `markRead`(`peer`: kotlin.String)
         = 
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_mark_read(
         it, FfiConverterString.lower(`peer`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * A mesh packet arrived from a neighbour.
+     */
+    @Throws(FfiException::class)override fun `meshFrame`(`link`: kotlin.String, `frame`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_mesh_frame(
+        it, FfiConverterString.lower(`link`),FfiConverterString.lower(`frame`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(FfiException::class)override fun `meshLinkDown`(`link`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_mesh_link_down(
+        it, FfiConverterString.lower(`link`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * A Bluetooth mesh neighbour appeared.
+     */
+    @Throws(FfiException::class)override fun `meshLinkUp`(`link`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_mesh_link_up(
+        it, FfiConverterString.lower(`link`),_status)
 }
     }
     
@@ -2071,6 +3659,38 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
     
 
     
+    /**
+     * Look at an invite (six words or a full card) without saving it. A card answers at once; words start a search
+     * that ends with an `InviteFound` or `InviteLookupFailed` event.
+     */
+    @Throws(FfiException::class)override fun `previewInvite`(`text`: kotlin.String): PreviewDto? {
+            return FfiConverterOptionalTypePreviewDto.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_preview_invite(
+        it, FfiConverterString.lower(`text`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Toggle your reaction (one of 👍 ❤️ 😂 😮 😢 🙏) on a message; the same one again removes it.
+     */
+    @Throws(FfiException::class)override fun `react`(`messageId`: kotlin.String, `emoji`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_react(
+        it, FfiConverterString.lower(`messageId`),FfiConverterString.lower(`emoji`),_status)
+}
+    }
+    
+    
+
+    
     @Throws(FfiException::class)override fun `recoverIdentity`(`phrase`: kotlin.String, `passphrase`: kotlin.String)
         = 
     callWithPointer {
@@ -2080,6 +3700,149 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
 }
     }
     
+    
+
+    
+    /**
+     * Forget a friend and their chat. Refused while they share a group with you.
+     */
+    @Throws(FfiException::class)override fun `removeContact`(`uid`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_remove_contact(
+        it, FfiConverterString.lower(`uid`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(FfiException::class)override fun `removeGroupMember`(`group`: kotlin.String, `uid`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_remove_group_member(
+        it, FfiConverterString.lower(`group`),FfiConverterString.lower(`uid`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Give a friend a name of your own; an empty name goes back to the one on their card.
+     */
+    @Throws(FfiException::class)override fun `renameContact`(`uid`: kotlin.String, `name`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_rename_contact(
+        it, FfiConverterString.lower(`uid`),FfiConverterString.lower(`name`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(FfiException::class)override fun `renameGroup`(`group`: kotlin.String, `name`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_rename_group(
+        it, FfiConverterString.lower(`group`),FfiConverterString.lower(`name`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(FfiException::class)override fun `retryAnswer`()
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_retry_answer(
+        it, _status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Search messages on this device (two characters at least). Newest first.
+     */
+    @Throws(FfiException::class)override fun `search`(`query`: kotlin.String, `limit`: kotlin.UInt): List<SearchHitDto> {
+            return FfiConverterSequenceTypeSearchHitDto.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_search(
+        it, FfiConverterString.lower(`query`),FfiConverterUInt.lower(`limit`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Write to a joined channel (flooded over the Bluetooth mesh). Returns the message id.
+     */
+    @Throws(FfiException::class)override fun `sendChannelMessage`(`name`: kotlin.String, `text`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_send_channel_message(
+        it, FfiConverterString.lower(`name`),FfiConverterString.lower(`text`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Send a file (at most 8 MB) to a person.
+     */
+    @Throws(FfiException::class)override fun `sendFile`(`peer`: kotlin.String, `name`: kotlin.String, `mime`: kotlin.String, `data`: kotlin.ByteArray, `replyTo`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_send_file(
+        it, FfiConverterString.lower(`peer`),FfiConverterString.lower(`name`),FfiConverterString.lower(`mime`),FfiConverterByteArray.lower(`data`),FfiConverterOptionalString.lower(`replyTo`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Send a file to every other member of a group.
+     */
+    @Throws(FfiException::class)override fun `sendGroupFile`(`group`: kotlin.String, `name`: kotlin.String, `mime`: kotlin.String, `data`: kotlin.ByteArray, `replyTo`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_send_group_file(
+        it, FfiConverterString.lower(`group`),FfiConverterString.lower(`name`),FfiConverterString.lower(`mime`),FfiConverterByteArray.lower(`data`),FfiConverterOptionalString.lower(`replyTo`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(FfiException::class)override fun `sendGroupMessage`(`group`: kotlin.String, `text`: kotlin.String, `replyTo`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_send_group_message(
+        it, FfiConverterString.lower(`group`),FfiConverterString.lower(`text`),FfiConverterOptionalString.lower(`replyTo`),_status)
+}
+    }
+    )
+    }
     
 
     
@@ -2096,11 +3859,87 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
     
 
     
+    /**
+     * Send connection setup to a contact (sealed to them, through the signaling service or mutual contacts).
+     * `sdp` is the session description for an offer or an answer.
+     */
+    @Throws(FfiException::class)override fun `sendSignal`(`peer`: kotlin.String, `kind`: SignalKindDto, `sdp`: kotlin.String?)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_send_signal(
+        it, FfiConverterString.lower(`peer`),FfiConverterTypeSignalKindDto.lower(`kind`),FfiConverterOptionalString.lower(`sdp`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Record that you compared the safety number with this person (or took it back).
+     */
+    @Throws(FfiException::class)override fun `setChecked`(`uid`: kotlin.String, `checked`: kotlin.Boolean)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_set_checked(
+        it, FfiConverterString.lower(`uid`),FfiConverterBoolean.lower(`checked`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * The name put on invite cards.
+     */
+    @Throws(FfiException::class)override fun `setDisplayName`(`name`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_set_display_name(
+        it, FfiConverterString.lower(`name`),_status)
+}
+    }
+    
+    
+
+    
     @Throws(FfiException::class)override fun `setGroupOnly`(`value`: kotlin.Boolean)
         = 
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_set_group_only(
+        it, FfiConverterBoolean.lower(`value`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Hide (or show again) a person's channel messages, on this device only.
+     */
+    @Throws(FfiException::class)override fun `setMuted`(`uid`: kotlin.String, `muted`: kotlin.Boolean)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_set_muted(
+        it, FfiConverterString.lower(`uid`),FfiConverterBoolean.lower(`muted`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Keep invites on the relay for 15 minutes as well as publishing them live.
+     */
+    @Throws(FfiException::class)override fun `setStoreForward`(`value`: kotlin.Boolean)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_set_store_forward(
         it, FfiConverterBoolean.lower(`value`),_status)
 }
     }
@@ -2124,6 +3963,21 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
 
     
     /**
+     * The signaling service delivered a blob on a mailbox we listen on.
+     */
+    @Throws(FfiException::class)override fun `signalBlob`(`mailbox`: kotlin.String, `blob`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_signal_blob(
+        it, FfiConverterString.lower(`mailbox`),FfiConverterString.lower(`blob`),_status)
+}
+    }
+    
+    
+
+    
+    /**
      * Everything a recreated UI needs, so it never depends on having seen every event.
      */
     @Throws(FfiException::class)override fun `snapshot`(): SnapshotDto {
@@ -2131,6 +3985,51 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_snapshot(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(FfiException::class)override fun `stopInvite`()
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_stop_invite(
+        it, _status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Delete one chat here. `conversation` is a person's id, a group id or `chan:` plus a channel name.
+     */
+    @Throws(FfiException::class)override fun `wipeConversation`(`conversation`: kotlin.String, `eraseSession`: kotlin.Boolean): WipeReportDto {
+            return FfiConverterTypeWipeReportDto.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_wipe_conversation(
+        it, FfiConverterString.lower(`conversation`),FfiConverterBoolean.lower(`eraseSession`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Emergency deletion of everything the engine holds. Returns the report; a crash part-way is continued on the
+     * next call.
+     */
+    @Throws(FfiException::class)override fun `wipeEverything`(): WipeReportDto {
+            return FfiConverterTypeWipeReportDto.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_wipe_everything(
         it, _status)
 }
     }
@@ -2623,6 +4522,33 @@ public interface TransportCallbacks {
     
     fun `send`(`peer`: kotlin.String, `frame`: kotlin.String): kotlin.Boolean
     
+    /**
+     * Send a frame to a Bluetooth mesh neighbour (not a contact). Returns false if the link is gone.
+     */
+    fun `sendRaw`(`link`: kotlin.String, `frame`: kotlin.String): kotlin.Boolean
+    
+    /**
+     * The engine decided this link is dead (nothing heard for 14 s): close it so it can be dialed again.
+     */
+    fun `close`(`peer`: kotlin.String)
+    
+    /**
+     * Is a signaling service (relay or Nostr) configured?
+     */
+    fun `signalAvailable`(): kotlin.Boolean
+    
+    /**
+     * Listen on a mailbox. Blobs that arrive go back through `signal_blob`.
+     */
+    fun `signalSubscribe`(`mailbox`: kotlin.String): kotlin.Boolean
+    
+    fun `signalUnsubscribe`(`mailbox`: kotlin.String)
+    
+    /**
+     * Publish an encoded sealed blob. True if at least one service took it.
+     */
+    fun `signalPut`(`mailbox`: kotlin.String, `blob`: kotlin.String, `kind`: SignalKind, `ttlSec`: kotlin.UInt): kotlin.Boolean
+    
     companion object
 }
 
@@ -2723,6 +4649,91 @@ open class TransportCallbacksImpl: Disposable, AutoCloseable, TransportCallbacks
     
 
     
+    /**
+     * Send a frame to a Bluetooth mesh neighbour (not a contact). Returns false if the link is gone.
+     */override fun `sendRaw`(`link`: kotlin.String, `frame`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_transportcallbacks_send_raw(
+        it, FfiConverterString.lower(`link`),FfiConverterString.lower(`frame`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * The engine decided this link is dead (nothing heard for 14 s): close it so it can be dialed again.
+     */override fun `close`(`peer`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_transportcallbacks_close(
+        it, FfiConverterString.lower(`peer`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Is a signaling service (relay or Nostr) configured?
+     */override fun `signalAvailable`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_transportcallbacks_signal_available(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Listen on a mailbox. Blobs that arrive go back through `signal_blob`.
+     */override fun `signalSubscribe`(`mailbox`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_transportcallbacks_signal_subscribe(
+        it, FfiConverterString.lower(`mailbox`),_status)
+}
+    }
+    )
+    }
+    
+
+    override fun `signalUnsubscribe`(`mailbox`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_transportcallbacks_signal_unsubscribe(
+        it, FfiConverterString.lower(`mailbox`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Publish an encoded sealed blob. True if at least one service took it.
+     */override fun `signalPut`(`mailbox`: kotlin.String, `blob`: kotlin.String, `kind`: SignalKind, `ttlSec`: kotlin.UInt): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_transportcallbacks_signal_put(
+        it, FfiConverterString.lower(`mailbox`),FfiConverterString.lower(`blob`),FfiConverterTypeSignalKind.lower(`kind`),FfiConverterUInt.lower(`ttlSec`),_status)
+}
+    }
+    )
+    }
+    
+
+    
 
     
     
@@ -2746,6 +4757,81 @@ internal object uniffiCallbackInterfaceTransportCallbacks {
             uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
         }
     }
+    internal object `sendRaw`: UniffiCallbackInterfaceTransportCallbacksMethod1 {
+        override fun callback(`uniffiHandle`: Long,`link`: RustBuffer.ByValue,`frame`: RustBuffer.ByValue,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeTransportCallbacks.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`sendRaw`(
+                    FfiConverterString.lift(`link`),
+                    FfiConverterString.lift(`frame`),
+                )
+            }
+            val writeReturn = { value: kotlin.Boolean -> uniffiOutReturn.setValue(FfiConverterBoolean.lower(value)) }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
+    internal object `close`: UniffiCallbackInterfaceTransportCallbacksMethod2 {
+        override fun callback(`uniffiHandle`: Long,`peer`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeTransportCallbacks.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`close`(
+                    FfiConverterString.lift(`peer`),
+                )
+            }
+            val writeReturn = { _: Unit -> Unit }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
+    internal object `signalAvailable`: UniffiCallbackInterfaceTransportCallbacksMethod3 {
+        override fun callback(`uniffiHandle`: Long,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeTransportCallbacks.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`signalAvailable`(
+                )
+            }
+            val writeReturn = { value: kotlin.Boolean -> uniffiOutReturn.setValue(FfiConverterBoolean.lower(value)) }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
+    internal object `signalSubscribe`: UniffiCallbackInterfaceTransportCallbacksMethod4 {
+        override fun callback(`uniffiHandle`: Long,`mailbox`: RustBuffer.ByValue,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeTransportCallbacks.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`signalSubscribe`(
+                    FfiConverterString.lift(`mailbox`),
+                )
+            }
+            val writeReturn = { value: kotlin.Boolean -> uniffiOutReturn.setValue(FfiConverterBoolean.lower(value)) }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
+    internal object `signalUnsubscribe`: UniffiCallbackInterfaceTransportCallbacksMethod5 {
+        override fun callback(`uniffiHandle`: Long,`mailbox`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeTransportCallbacks.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`signalUnsubscribe`(
+                    FfiConverterString.lift(`mailbox`),
+                )
+            }
+            val writeReturn = { _: Unit -> Unit }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
+    internal object `signalPut`: UniffiCallbackInterfaceTransportCallbacksMethod6 {
+        override fun callback(`uniffiHandle`: Long,`mailbox`: RustBuffer.ByValue,`blob`: RustBuffer.ByValue,`kind`: RustBuffer.ByValue,`ttlSec`: Int,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeTransportCallbacks.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`signalPut`(
+                    FfiConverterString.lift(`mailbox`),
+                    FfiConverterString.lift(`blob`),
+                    FfiConverterTypeSignalKind.lift(`kind`),
+                    FfiConverterUInt.lift(`ttlSec`),
+                )
+            }
+            val writeReturn = { value: kotlin.Boolean -> uniffiOutReturn.setValue(FfiConverterBoolean.lower(value)) }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
 
     internal object uniffiFree: UniffiCallbackInterfaceFree {
         override fun callback(handle: Long) {
@@ -2755,6 +4841,12 @@ internal object uniffiCallbackInterfaceTransportCallbacks {
 
     internal var vtable = UniffiVTableCallbackInterfaceTransportCallbacks.UniffiByValue(
         `send`,
+        `sendRaw`,
+        `close`,
+        `signalAvailable`,
+        `signalSubscribe`,
+        `signalUnsubscribe`,
+        `signalPut`,
         uniffiFree,
     )
 
@@ -2796,9 +4888,49 @@ public object FfiConverterTypeTransportCallbacks: FfiConverter<TransportCallback
 
 
 
+data class AnswerDto (
+    var `uid`: kotlin.String, 
+    var `status`: AnswerState
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeAnswerDto: FfiConverterRustBuffer<AnswerDto> {
+    override fun read(buf: ByteBuffer): AnswerDto {
+        return AnswerDto(
+            FfiConverterString.read(buf),
+            FfiConverterTypeAnswerState.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: AnswerDto) = (
+            FfiConverterString.allocationSize(value.`uid`) +
+            FfiConverterTypeAnswerState.allocationSize(value.`status`)
+    )
+
+    override fun write(value: AnswerDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`uid`, buf)
+            FfiConverterTypeAnswerState.write(value.`status`, buf)
+    }
+}
+
+
+
 data class ContactDto (
     var `uid`: kotlin.String, 
     var `name`: kotlin.String?, 
+    /**
+     * What to show: their name, or "Friend" and the start of their id.
+     */
+    var `displayName`: kotlin.String, 
+    /**
+     * Who introduced them, if they came through a group.
+     */
+    var `introducedBy`: kotlin.String?, 
     var `verified`: kotlin.Boolean, 
     var `checked`: kotlin.Boolean, 
     var `safetyNumber`: kotlin.String, 
@@ -2817,6 +4949,8 @@ public object FfiConverterTypeContactDto: FfiConverterRustBuffer<ContactDto> {
         return ContactDto(
             FfiConverterString.read(buf),
             FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterString.read(buf),
@@ -2828,6 +4962,8 @@ public object FfiConverterTypeContactDto: FfiConverterRustBuffer<ContactDto> {
     override fun allocationSize(value: ContactDto) = (
             FfiConverterString.allocationSize(value.`uid`) +
             FfiConverterOptionalString.allocationSize(value.`name`) +
+            FfiConverterString.allocationSize(value.`displayName`) +
+            FfiConverterOptionalString.allocationSize(value.`introducedBy`) +
             FfiConverterBoolean.allocationSize(value.`verified`) +
             FfiConverterBoolean.allocationSize(value.`checked`) +
             FfiConverterString.allocationSize(value.`safetyNumber`) +
@@ -2838,6 +4974,8 @@ public object FfiConverterTypeContactDto: FfiConverterRustBuffer<ContactDto> {
     override fun write(value: ContactDto, buf: ByteBuffer) {
             FfiConverterString.write(value.`uid`, buf)
             FfiConverterOptionalString.write(value.`name`, buf)
+            FfiConverterString.write(value.`displayName`, buf)
+            FfiConverterOptionalString.write(value.`introducedBy`, buf)
             FfiConverterBoolean.write(value.`verified`, buf)
             FfiConverterBoolean.write(value.`checked`, buf)
             FfiConverterString.write(value.`safetyNumber`, buf)
@@ -2850,7 +4988,15 @@ public object FfiConverterTypeContactDto: FfiConverterRustBuffer<ContactDto> {
 
 data class ConversationDto (
     var `id`: kotlin.String, 
-    var `messages`: List<MessageDto>
+    var `messages`: List<MessageDto>, 
+    /**
+     * The newest message as the chat list shows it (the text, "Message deleted", or a paperclip and a file name).
+     */
+    var `last`: LastMessageDto?, 
+    /**
+     * Messages from others you have not read.
+     */
+    var `unread`: kotlin.UInt
 ) {
     
     companion object
@@ -2864,17 +5010,284 @@ public object FfiConverterTypeConversationDto: FfiConverterRustBuffer<Conversati
         return ConversationDto(
             FfiConverterString.read(buf),
             FfiConverterSequenceTypeMessageDto.read(buf),
+            FfiConverterOptionalTypeLastMessageDto.read(buf),
+            FfiConverterUInt.read(buf),
         )
     }
 
     override fun allocationSize(value: ConversationDto) = (
             FfiConverterString.allocationSize(value.`id`) +
-            FfiConverterSequenceTypeMessageDto.allocationSize(value.`messages`)
+            FfiConverterSequenceTypeMessageDto.allocationSize(value.`messages`) +
+            FfiConverterOptionalTypeLastMessageDto.allocationSize(value.`last`) +
+            FfiConverterUInt.allocationSize(value.`unread`)
     )
 
     override fun write(value: ConversationDto, buf: ByteBuffer) {
             FfiConverterString.write(value.`id`, buf)
             FfiConverterSequenceTypeMessageDto.write(value.`messages`, buf)
+            FfiConverterOptionalTypeLastMessageDto.write(value.`last`, buf)
+            FfiConverterUInt.write(value.`unread`, buf)
+    }
+}
+
+
+
+data class FileDto (
+    var `name`: kotlin.String, 
+    var `mime`: kotlin.String, 
+    var `data`: kotlin.ByteArray
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFileDto: FfiConverterRustBuffer<FileDto> {
+    override fun read(buf: ByteBuffer): FileDto {
+        return FileDto(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterByteArray.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FileDto) = (
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterString.allocationSize(value.`mime`) +
+            FfiConverterByteArray.allocationSize(value.`data`)
+    )
+
+    override fun write(value: FileDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterString.write(value.`mime`, buf)
+            FfiConverterByteArray.write(value.`data`, buf)
+    }
+}
+
+
+
+data class GroupDto (
+    var `id`: kotlin.String, 
+    var `name`: kotlin.String, 
+    var `createdBy`: kotlin.String, 
+    var `members`: List<GroupMemberDto>, 
+    var `amAdmin`: kotlin.Boolean, 
+    var `full`: kotlin.Boolean, 
+    var `maxMembers`: kotlin.UInt, 
+    /**
+     * How many of the other members are connected right now.
+     */
+    var `connected`: kotlin.UInt
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeGroupDto: FfiConverterRustBuffer<GroupDto> {
+    override fun read(buf: ByteBuffer): GroupDto {
+        return GroupDto(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterSequenceTypeGroupMemberDto.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: GroupDto) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterString.allocationSize(value.`createdBy`) +
+            FfiConverterSequenceTypeGroupMemberDto.allocationSize(value.`members`) +
+            FfiConverterBoolean.allocationSize(value.`amAdmin`) +
+            FfiConverterBoolean.allocationSize(value.`full`) +
+            FfiConverterUInt.allocationSize(value.`maxMembers`) +
+            FfiConverterUInt.allocationSize(value.`connected`)
+    )
+
+    override fun write(value: GroupDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterString.write(value.`createdBy`, buf)
+            FfiConverterSequenceTypeGroupMemberDto.write(value.`members`, buf)
+            FfiConverterBoolean.write(value.`amAdmin`, buf)
+            FfiConverterBoolean.write(value.`full`, buf)
+            FfiConverterUInt.write(value.`maxMembers`, buf)
+            FfiConverterUInt.write(value.`connected`, buf)
+    }
+}
+
+
+
+data class GroupMemberDto (
+    var `uid`: kotlin.String, 
+    var `admin`: kotlin.Boolean
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeGroupMemberDto: FfiConverterRustBuffer<GroupMemberDto> {
+    override fun read(buf: ByteBuffer): GroupMemberDto {
+        return GroupMemberDto(
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: GroupMemberDto) = (
+            FfiConverterString.allocationSize(value.`uid`) +
+            FfiConverterBoolean.allocationSize(value.`admin`)
+    )
+
+    override fun write(value: GroupMemberDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`uid`, buf)
+            FfiConverterBoolean.write(value.`admin`, buf)
+    }
+}
+
+
+
+/**
+ * What was brought over and why anything was left behind.
+ */
+data class ImportSummary (
+    var `alreadyDone`: kotlin.Boolean, 
+    var `contacts`: kotlin.ULong, 
+    var `groups`: kotlin.ULong, 
+    var `channels`: kotlin.ULong, 
+    var `messages`: kotlin.ULong, 
+    var `files`: kotlin.ULong, 
+    var `unsent`: kotlin.ULong, 
+    /**
+     * Reason code and how many, for everything that did not come over.
+     */
+    var `skipped`: List<SkippedCount>
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeImportSummary: FfiConverterRustBuffer<ImportSummary> {
+    override fun read(buf: ByteBuffer): ImportSummary {
+        return ImportSummary(
+            FfiConverterBoolean.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterSequenceTypeSkippedCount.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: ImportSummary) = (
+            FfiConverterBoolean.allocationSize(value.`alreadyDone`) +
+            FfiConverterULong.allocationSize(value.`contacts`) +
+            FfiConverterULong.allocationSize(value.`groups`) +
+            FfiConverterULong.allocationSize(value.`channels`) +
+            FfiConverterULong.allocationSize(value.`messages`) +
+            FfiConverterULong.allocationSize(value.`files`) +
+            FfiConverterULong.allocationSize(value.`unsent`) +
+            FfiConverterSequenceTypeSkippedCount.allocationSize(value.`skipped`)
+    )
+
+    override fun write(value: ImportSummary, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`alreadyDone`, buf)
+            FfiConverterULong.write(value.`contacts`, buf)
+            FfiConverterULong.write(value.`groups`, buf)
+            FfiConverterULong.write(value.`channels`, buf)
+            FfiConverterULong.write(value.`messages`, buf)
+            FfiConverterULong.write(value.`files`, buf)
+            FfiConverterULong.write(value.`unsent`, buf)
+            FfiConverterSequenceTypeSkippedCount.write(value.`skipped`, buf)
+    }
+}
+
+
+
+data class InviteDto (
+    var `words`: kotlin.String, 
+    var `expiresAt`: kotlin.Long
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeInviteDto: FfiConverterRustBuffer<InviteDto> {
+    override fun read(buf: ByteBuffer): InviteDto {
+        return InviteDto(
+            FfiConverterString.read(buf),
+            FfiConverterLong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: InviteDto) = (
+            FfiConverterString.allocationSize(value.`words`) +
+            FfiConverterLong.allocationSize(value.`expiresAt`)
+    )
+
+    override fun write(value: InviteDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`words`, buf)
+            FfiConverterLong.write(value.`expiresAt`, buf)
+    }
+}
+
+
+
+data class LastMessageDto (
+    var `text`: kotlin.String, 
+    var `at`: kotlin.Long, 
+    var `own`: kotlin.Boolean, 
+    var `sender`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeLastMessageDto: FfiConverterRustBuffer<LastMessageDto> {
+    override fun read(buf: ByteBuffer): LastMessageDto {
+        return LastMessageDto(
+            FfiConverterString.read(buf),
+            FfiConverterLong.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: LastMessageDto) = (
+            FfiConverterString.allocationSize(value.`text`) +
+            FfiConverterLong.allocationSize(value.`at`) +
+            FfiConverterBoolean.allocationSize(value.`own`) +
+            FfiConverterString.allocationSize(value.`sender`)
+    )
+
+    override fun write(value: LastMessageDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`text`, buf)
+            FfiConverterLong.write(value.`at`, buf)
+            FfiConverterBoolean.write(value.`own`, buf)
+            FfiConverterString.write(value.`sender`, buf)
     }
 }
 
@@ -2886,7 +5299,24 @@ data class MessageDto (
     var `text`: kotlin.String, 
     var `createdAt`: kotlin.Long, 
     var `delivery`: Delivery, 
-    var `replyTo`: kotlin.String?
+    var `replyTo`: kotlin.String?, 
+    /**
+     * A file message: `text` is the file's name and `load_file` returns its bytes.
+     */
+    var `isFile`: kotlin.Boolean, 
+    /**
+     * Deleted for everyone: show it as removed (there is no text).
+     */
+    var `deleted`: kotlin.Boolean, 
+    /**
+     * Reactions in the fixed emoji order: how many, and whether you reacted.
+     */
+    var `reactions`: List<ReactionChipDto>, 
+    /**
+     * Your own message: how many people it has still to reach, and how many it is for (0 and 0 once delivered).
+     */
+    var `pending`: kotlin.UInt, 
+    var `total`: kotlin.UInt
 ) {
     
     companion object
@@ -2904,6 +5334,11 @@ public object FfiConverterTypeMessageDto: FfiConverterRustBuffer<MessageDto> {
             FfiConverterLong.read(buf),
             FfiConverterTypeDelivery.read(buf),
             FfiConverterOptionalString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterSequenceTypeReactionChipDto.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
         )
     }
 
@@ -2913,7 +5348,12 @@ public object FfiConverterTypeMessageDto: FfiConverterRustBuffer<MessageDto> {
             FfiConverterString.allocationSize(value.`text`) +
             FfiConverterLong.allocationSize(value.`createdAt`) +
             FfiConverterTypeDelivery.allocationSize(value.`delivery`) +
-            FfiConverterOptionalString.allocationSize(value.`replyTo`)
+            FfiConverterOptionalString.allocationSize(value.`replyTo`) +
+            FfiConverterBoolean.allocationSize(value.`isFile`) +
+            FfiConverterBoolean.allocationSize(value.`deleted`) +
+            FfiConverterSequenceTypeReactionChipDto.allocationSize(value.`reactions`) +
+            FfiConverterUInt.allocationSize(value.`pending`) +
+            FfiConverterUInt.allocationSize(value.`total`)
     )
 
     override fun write(value: MessageDto, buf: ByteBuffer) {
@@ -2923,6 +5363,238 @@ public object FfiConverterTypeMessageDto: FfiConverterRustBuffer<MessageDto> {
             FfiConverterLong.write(value.`createdAt`, buf)
             FfiConverterTypeDelivery.write(value.`delivery`, buf)
             FfiConverterOptionalString.write(value.`replyTo`, buf)
+            FfiConverterBoolean.write(value.`isFile`, buf)
+            FfiConverterBoolean.write(value.`deleted`, buf)
+            FfiConverterSequenceTypeReactionChipDto.write(value.`reactions`, buf)
+            FfiConverterUInt.write(value.`pending`, buf)
+            FfiConverterUInt.write(value.`total`, buf)
+    }
+}
+
+
+
+/**
+ * What a person sees before saving a friend.
+ */
+data class PreviewDto (
+    var `uid`: kotlin.String, 
+    var `name`: kotlin.String, 
+    var `safetyNumber`: kotlin.String, 
+    var `already`: kotlin.Boolean
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypePreviewDto: FfiConverterRustBuffer<PreviewDto> {
+    override fun read(buf: ByteBuffer): PreviewDto {
+        return PreviewDto(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: PreviewDto) = (
+            FfiConverterString.allocationSize(value.`uid`) +
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterString.allocationSize(value.`safetyNumber`) +
+            FfiConverterBoolean.allocationSize(value.`already`)
+    )
+
+    override fun write(value: PreviewDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`uid`, buf)
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterString.write(value.`safetyNumber`, buf)
+            FfiConverterBoolean.write(value.`already`, buf)
+    }
+}
+
+
+
+data class ReactionChipDto (
+    var `emoji`: kotlin.String, 
+    var `count`: kotlin.UInt, 
+    var `mine`: kotlin.Boolean
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeReactionChipDto: FfiConverterRustBuffer<ReactionChipDto> {
+    override fun read(buf: ByteBuffer): ReactionChipDto {
+        return ReactionChipDto(
+            FfiConverterString.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: ReactionChipDto) = (
+            FfiConverterString.allocationSize(value.`emoji`) +
+            FfiConverterUInt.allocationSize(value.`count`) +
+            FfiConverterBoolean.allocationSize(value.`mine`)
+    )
+
+    override fun write(value: ReactionChipDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`emoji`, buf)
+            FfiConverterUInt.write(value.`count`, buf)
+            FfiConverterBoolean.write(value.`mine`, buf)
+    }
+}
+
+
+
+data class RequestDto (
+    var `uid`: kotlin.String, 
+    var `name`: kotlin.String, 
+    var `safetyNumber`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeRequestDto: FfiConverterRustBuffer<RequestDto> {
+    override fun read(buf: ByteBuffer): RequestDto {
+        return RequestDto(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: RequestDto) = (
+            FfiConverterString.allocationSize(value.`uid`) +
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterString.allocationSize(value.`safetyNumber`)
+    )
+
+    override fun write(value: RequestDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`uid`, buf)
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterString.write(value.`safetyNumber`, buf)
+    }
+}
+
+
+
+data class RestoreDto (
+    var `friends`: kotlin.ULong, 
+    var `groups`: kotlin.ULong, 
+    var `messages`: kotlin.ULong
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeRestoreDto: FfiConverterRustBuffer<RestoreDto> {
+    override fun read(buf: ByteBuffer): RestoreDto {
+        return RestoreDto(
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: RestoreDto) = (
+            FfiConverterULong.allocationSize(value.`friends`) +
+            FfiConverterULong.allocationSize(value.`groups`) +
+            FfiConverterULong.allocationSize(value.`messages`)
+    )
+
+    override fun write(value: RestoreDto, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`friends`, buf)
+            FfiConverterULong.write(value.`groups`, buf)
+            FfiConverterULong.write(value.`messages`, buf)
+    }
+}
+
+
+
+data class SearchHitDto (
+    var `messageId`: kotlin.String, 
+    var `conversation`: kotlin.String, 
+    var `sender`: kotlin.String, 
+    var `text`: kotlin.String, 
+    var `at`: kotlin.Long
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSearchHitDto: FfiConverterRustBuffer<SearchHitDto> {
+    override fun read(buf: ByteBuffer): SearchHitDto {
+        return SearchHitDto(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterLong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: SearchHitDto) = (
+            FfiConverterString.allocationSize(value.`messageId`) +
+            FfiConverterString.allocationSize(value.`conversation`) +
+            FfiConverterString.allocationSize(value.`sender`) +
+            FfiConverterString.allocationSize(value.`text`) +
+            FfiConverterLong.allocationSize(value.`at`)
+    )
+
+    override fun write(value: SearchHitDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`messageId`, buf)
+            FfiConverterString.write(value.`conversation`, buf)
+            FfiConverterString.write(value.`sender`, buf)
+            FfiConverterString.write(value.`text`, buf)
+            FfiConverterLong.write(value.`at`, buf)
+    }
+}
+
+
+
+data class SkippedCount (
+    var `reason`: kotlin.String, 
+    var `count`: kotlin.ULong
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSkippedCount: FfiConverterRustBuffer<SkippedCount> {
+    override fun read(buf: ByteBuffer): SkippedCount {
+        return SkippedCount(
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: SkippedCount) = (
+            FfiConverterString.allocationSize(value.`reason`) +
+            FfiConverterULong.allocationSize(value.`count`)
+    )
+
+    override fun write(value: SkippedCount, buf: ByteBuffer) {
+            FfiConverterString.write(value.`reason`, buf)
+            FfiConverterULong.write(value.`count`, buf)
     }
 }
 
@@ -2933,6 +5605,16 @@ data class SnapshotDto (
     var `ownUid`: kotlin.String?, 
     var `contacts`: List<ContactDto>, 
     var `conversations`: List<ConversationDto>, 
+    var `groups`: List<GroupDto>, 
+    var `channels`: List<kotlin.String>, 
+    /**
+     * People whose channel messages you hid.
+     */
+    var `muted`: List<kotlin.String>, 
+    var `invite`: InviteDto?, 
+    var `requests`: List<RequestDto>, 
+    var `answer`: AnswerDto?, 
+    var `lookupPending`: kotlin.Boolean, 
     var `queued`: kotlin.ULong
 ) {
     
@@ -2949,6 +5631,13 @@ public object FfiConverterTypeSnapshotDto: FfiConverterRustBuffer<SnapshotDto> {
             FfiConverterOptionalString.read(buf),
             FfiConverterSequenceTypeContactDto.read(buf),
             FfiConverterSequenceTypeConversationDto.read(buf),
+            FfiConverterSequenceTypeGroupDto.read(buf),
+            FfiConverterSequenceString.read(buf),
+            FfiConverterSequenceString.read(buf),
+            FfiConverterOptionalTypeInviteDto.read(buf),
+            FfiConverterSequenceTypeRequestDto.read(buf),
+            FfiConverterOptionalTypeAnswerDto.read(buf),
+            FfiConverterBoolean.read(buf),
             FfiConverterULong.read(buf),
         )
     }
@@ -2958,6 +5647,13 @@ public object FfiConverterTypeSnapshotDto: FfiConverterRustBuffer<SnapshotDto> {
             FfiConverterOptionalString.allocationSize(value.`ownUid`) +
             FfiConverterSequenceTypeContactDto.allocationSize(value.`contacts`) +
             FfiConverterSequenceTypeConversationDto.allocationSize(value.`conversations`) +
+            FfiConverterSequenceTypeGroupDto.allocationSize(value.`groups`) +
+            FfiConverterSequenceString.allocationSize(value.`channels`) +
+            FfiConverterSequenceString.allocationSize(value.`muted`) +
+            FfiConverterOptionalTypeInviteDto.allocationSize(value.`invite`) +
+            FfiConverterSequenceTypeRequestDto.allocationSize(value.`requests`) +
+            FfiConverterOptionalTypeAnswerDto.allocationSize(value.`answer`) +
+            FfiConverterBoolean.allocationSize(value.`lookupPending`) +
             FfiConverterULong.allocationSize(value.`queued`)
     )
 
@@ -2966,9 +5662,137 @@ public object FfiConverterTypeSnapshotDto: FfiConverterRustBuffer<SnapshotDto> {
             FfiConverterOptionalString.write(value.`ownUid`, buf)
             FfiConverterSequenceTypeContactDto.write(value.`contacts`, buf)
             FfiConverterSequenceTypeConversationDto.write(value.`conversations`, buf)
+            FfiConverterSequenceTypeGroupDto.write(value.`groups`, buf)
+            FfiConverterSequenceString.write(value.`channels`, buf)
+            FfiConverterSequenceString.write(value.`muted`, buf)
+            FfiConverterOptionalTypeInviteDto.write(value.`invite`, buf)
+            FfiConverterSequenceTypeRequestDto.write(value.`requests`, buf)
+            FfiConverterOptionalTypeAnswerDto.write(value.`answer`, buf)
+            FfiConverterBoolean.write(value.`lookupPending`, buf)
             FfiConverterULong.write(value.`queued`, buf)
     }
 }
+
+
+
+/**
+ * The truthful result of an emergency deletion. Show exactly this, never a false "complete".
+ */
+data class WipeReportDto (
+    var `application`: kotlin.Boolean, 
+    var `steps`: List<WipeStepDto>, 
+    var `complete`: kotlin.Boolean, 
+    var `partial`: kotlin.Boolean, 
+    var `failedStepIds`: List<kotlin.String>, 
+    var `skippedStepIds`: List<kotlin.String>, 
+    var `finished`: kotlin.Boolean
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWipeReportDto: FfiConverterRustBuffer<WipeReportDto> {
+    override fun read(buf: ByteBuffer): WipeReportDto {
+        return WipeReportDto(
+            FfiConverterBoolean.read(buf),
+            FfiConverterSequenceTypeWipeStepDto.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterSequenceString.read(buf),
+            FfiConverterSequenceString.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WipeReportDto) = (
+            FfiConverterBoolean.allocationSize(value.`application`) +
+            FfiConverterSequenceTypeWipeStepDto.allocationSize(value.`steps`) +
+            FfiConverterBoolean.allocationSize(value.`complete`) +
+            FfiConverterBoolean.allocationSize(value.`partial`) +
+            FfiConverterSequenceString.allocationSize(value.`failedStepIds`) +
+            FfiConverterSequenceString.allocationSize(value.`skippedStepIds`) +
+            FfiConverterBoolean.allocationSize(value.`finished`)
+    )
+
+    override fun write(value: WipeReportDto, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`application`, buf)
+            FfiConverterSequenceTypeWipeStepDto.write(value.`steps`, buf)
+            FfiConverterBoolean.write(value.`complete`, buf)
+            FfiConverterBoolean.write(value.`partial`, buf)
+            FfiConverterSequenceString.write(value.`failedStepIds`, buf)
+            FfiConverterSequenceString.write(value.`skippedStepIds`, buf)
+            FfiConverterBoolean.write(value.`finished`, buf)
+    }
+}
+
+
+
+data class WipeStepDto (
+    var `stepId`: kotlin.String, 
+    var `status`: WipeStatus, 
+    var `details`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWipeStepDto: FfiConverterRustBuffer<WipeStepDto> {
+    override fun read(buf: ByteBuffer): WipeStepDto {
+        return WipeStepDto(
+            FfiConverterString.read(buf),
+            FfiConverterTypeWipeStatus.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WipeStepDto) = (
+            FfiConverterString.allocationSize(value.`stepId`) +
+            FfiConverterTypeWipeStatus.allocationSize(value.`status`) +
+            FfiConverterOptionalString.allocationSize(value.`details`)
+    )
+
+    override fun write(value: WipeStepDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`stepId`, buf)
+            FfiConverterTypeWipeStatus.write(value.`status`, buf)
+            FfiConverterOptionalString.write(value.`details`, buf)
+    }
+}
+
+
+
+
+enum class AnswerState {
+    
+    SENT,
+    FAILED;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeAnswerState: FfiConverterRustBuffer<AnswerState> {
+    override fun read(buf: ByteBuffer) = try {
+        AnswerState.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: AnswerState) = 4UL
+
+    override fun write(value: AnswerState, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
 
 
 
@@ -3045,6 +5869,94 @@ sealed class EventDto {
     /**
      * This reader fell behind; ask for a snapshot.
      */
+    data class GroupChanged(
+        val `groupId`: kotlin.String) : EventDto() {
+        companion object
+    }
+    
+    object InviteChanged : EventDto()
+    
+    
+    data class InviteRequest(
+        val `uid`: kotlin.String) : EventDto() {
+        companion object
+    }
+    
+    data class InviteFound(
+        val `uid`: kotlin.String, 
+        val `name`: kotlin.String, 
+        val `safetyNumber`: kotlin.String, 
+        val `already`: kotlin.Boolean) : EventDto() {
+        companion object
+    }
+    
+    object InviteLookupFailed : EventDto()
+    
+    
+    object AnswerChanged : EventDto()
+    
+    
+    data class ContactRemoved(
+        val `uid`: kotlin.String) : EventDto() {
+        companion object
+    }
+    
+    /**
+     * Time to dial this person (their link is down and the backoff has passed).
+     */
+    data class DialRequested(
+        val `peer`: kotlin.String, 
+        val `initiator`: kotlin.Boolean) : EventDto() {
+        companion object
+    }
+    
+    /**
+     * A contact sent connection setup. `kind` says which; `Offer` and `Answer` carry the session description.
+     */
+    data class SignalReceived(
+        val `peer`: kotlin.String, 
+        val `kind`: SignalKindDto, 
+        val `sdp`: kotlin.String?) : EventDto() {
+        companion object
+    }
+    
+    /**
+     * A message's reactions or its deleted mark changed.
+     */
+    data class MessageChanged(
+        val `messageId`: kotlin.String) : EventDto() {
+        companion object
+    }
+    
+    /**
+     * A message was removed from this device.
+     */
+    data class MessageRemoved(
+        val `messageId`: kotlin.String) : EventDto() {
+        companion object
+    }
+    
+    /**
+     * A backup was restored, or a setting changed: ask for a snapshot.
+     */
+    object SnapshotChanged : EventDto()
+    
+    
+    /**
+     * A file is arriving: `percent` is how much of it is here.
+     */
+    data class FileProgress(
+        val `messageId`: kotlin.String, 
+        val `percent`: kotlin.UInt) : EventDto() {
+        companion object
+    }
+    
+    /**
+     * An emergency deletion ran; ask for its report.
+     */
+    object Wiped : EventDto()
+    
+    
     data class Lagged(
         val `missed`: kotlin.ULong) : EventDto() {
         companion object
@@ -3085,10 +5997,49 @@ public object FfiConverterTypeEventDto : FfiConverterRustBuffer<EventDto>{
                 FfiConverterString.read(buf),
                 FfiConverterTypeLinkState.read(buf),
                 )
-            8 -> EventDto.Lagged(
+            8 -> EventDto.GroupChanged(
+                FfiConverterString.read(buf),
+                )
+            9 -> EventDto.InviteChanged
+            10 -> EventDto.InviteRequest(
+                FfiConverterString.read(buf),
+                )
+            11 -> EventDto.InviteFound(
+                FfiConverterString.read(buf),
+                FfiConverterString.read(buf),
+                FfiConverterString.read(buf),
+                FfiConverterBoolean.read(buf),
+                )
+            12 -> EventDto.InviteLookupFailed
+            13 -> EventDto.AnswerChanged
+            14 -> EventDto.ContactRemoved(
+                FfiConverterString.read(buf),
+                )
+            15 -> EventDto.DialRequested(
+                FfiConverterString.read(buf),
+                FfiConverterBoolean.read(buf),
+                )
+            16 -> EventDto.SignalReceived(
+                FfiConverterString.read(buf),
+                FfiConverterTypeSignalKindDto.read(buf),
+                FfiConverterOptionalString.read(buf),
+                )
+            17 -> EventDto.MessageChanged(
+                FfiConverterString.read(buf),
+                )
+            18 -> EventDto.MessageRemoved(
+                FfiConverterString.read(buf),
+                )
+            19 -> EventDto.SnapshotChanged
+            20 -> EventDto.FileProgress(
+                FfiConverterString.read(buf),
+                FfiConverterUInt.read(buf),
+                )
+            21 -> EventDto.Wiped
+            22 -> EventDto.Lagged(
                 FfiConverterULong.read(buf),
                 )
-            9 -> EventDto.ShutDown
+            23 -> EventDto.ShutDown
             else -> throw RuntimeException("invalid enum value, something is very wrong!!")
         }
     }
@@ -3145,6 +6096,106 @@ public object FfiConverterTypeEventDto : FfiConverterRustBuffer<EventDto>{
                 + FfiConverterTypeLinkState.allocationSize(value.`link`)
             )
         }
+        is EventDto.GroupChanged -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`groupId`)
+            )
+        }
+        is EventDto.InviteChanged -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+        is EventDto.InviteRequest -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`uid`)
+            )
+        }
+        is EventDto.InviteFound -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`uid`)
+                + FfiConverterString.allocationSize(value.`name`)
+                + FfiConverterString.allocationSize(value.`safetyNumber`)
+                + FfiConverterBoolean.allocationSize(value.`already`)
+            )
+        }
+        is EventDto.InviteLookupFailed -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+        is EventDto.AnswerChanged -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+        is EventDto.ContactRemoved -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`uid`)
+            )
+        }
+        is EventDto.DialRequested -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`peer`)
+                + FfiConverterBoolean.allocationSize(value.`initiator`)
+            )
+        }
+        is EventDto.SignalReceived -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`peer`)
+                + FfiConverterTypeSignalKindDto.allocationSize(value.`kind`)
+                + FfiConverterOptionalString.allocationSize(value.`sdp`)
+            )
+        }
+        is EventDto.MessageChanged -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`messageId`)
+            )
+        }
+        is EventDto.MessageRemoved -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`messageId`)
+            )
+        }
+        is EventDto.SnapshotChanged -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+        is EventDto.FileProgress -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`messageId`)
+                + FfiConverterUInt.allocationSize(value.`percent`)
+            )
+        }
+        is EventDto.Wiped -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
         is EventDto.Lagged -> {
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
@@ -3199,13 +6250,85 @@ public object FfiConverterTypeEventDto : FfiConverterRustBuffer<EventDto>{
                 FfiConverterTypeLinkState.write(value.`link`, buf)
                 Unit
             }
-            is EventDto.Lagged -> {
+            is EventDto.GroupChanged -> {
                 buf.putInt(8)
+                FfiConverterString.write(value.`groupId`, buf)
+                Unit
+            }
+            is EventDto.InviteChanged -> {
+                buf.putInt(9)
+                Unit
+            }
+            is EventDto.InviteRequest -> {
+                buf.putInt(10)
+                FfiConverterString.write(value.`uid`, buf)
+                Unit
+            }
+            is EventDto.InviteFound -> {
+                buf.putInt(11)
+                FfiConverterString.write(value.`uid`, buf)
+                FfiConverterString.write(value.`name`, buf)
+                FfiConverterString.write(value.`safetyNumber`, buf)
+                FfiConverterBoolean.write(value.`already`, buf)
+                Unit
+            }
+            is EventDto.InviteLookupFailed -> {
+                buf.putInt(12)
+                Unit
+            }
+            is EventDto.AnswerChanged -> {
+                buf.putInt(13)
+                Unit
+            }
+            is EventDto.ContactRemoved -> {
+                buf.putInt(14)
+                FfiConverterString.write(value.`uid`, buf)
+                Unit
+            }
+            is EventDto.DialRequested -> {
+                buf.putInt(15)
+                FfiConverterString.write(value.`peer`, buf)
+                FfiConverterBoolean.write(value.`initiator`, buf)
+                Unit
+            }
+            is EventDto.SignalReceived -> {
+                buf.putInt(16)
+                FfiConverterString.write(value.`peer`, buf)
+                FfiConverterTypeSignalKindDto.write(value.`kind`, buf)
+                FfiConverterOptionalString.write(value.`sdp`, buf)
+                Unit
+            }
+            is EventDto.MessageChanged -> {
+                buf.putInt(17)
+                FfiConverterString.write(value.`messageId`, buf)
+                Unit
+            }
+            is EventDto.MessageRemoved -> {
+                buf.putInt(18)
+                FfiConverterString.write(value.`messageId`, buf)
+                Unit
+            }
+            is EventDto.SnapshotChanged -> {
+                buf.putInt(19)
+                Unit
+            }
+            is EventDto.FileProgress -> {
+                buf.putInt(20)
+                FfiConverterString.write(value.`messageId`, buf)
+                FfiConverterUInt.write(value.`percent`, buf)
+                Unit
+            }
+            is EventDto.Wiped -> {
+                buf.putInt(21)
+                Unit
+            }
+            is EventDto.Lagged -> {
+                buf.putInt(22)
                 FfiConverterULong.write(value.`missed`, buf)
                 Unit
             }
             is EventDto.ShutDown -> {
-                buf.putInt(9)
+                buf.putInt(23)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -3319,6 +6442,102 @@ sealed class FfiException: kotlin.Exception() {
             get() = ""
     }
     
+    class NoSuchGroup(
+        ) : FfiException() {
+        override val message
+            get() = ""
+    }
+    
+    class GroupRefused(
+        ) : FfiException() {
+        override val message
+            get() = ""
+    }
+    
+    class GroupFull(
+        ) : FfiException() {
+        override val message
+            get() = ""
+    }
+    
+    class BadFile(
+        ) : FfiException() {
+        override val message
+            get() = ""
+    }
+    
+    class BadChannel(
+        ) : FfiException() {
+        override val message
+            get() = ""
+    }
+    
+    class NotJoined(
+        ) : FfiException() {
+        override val message
+            get() = ""
+    }
+    
+    class NoSignaling(
+        ) : FfiException() {
+        override val message
+            get() = ""
+    }
+    
+    class InvalidInvite(
+        ) : FfiException() {
+        override val message
+            get() = ""
+    }
+    
+    class InviteNotFound(
+        ) : FfiException() {
+        override val message
+            get() = ""
+    }
+    
+    class OwnInvite(
+        ) : FfiException() {
+        override val message
+            get() = ""
+    }
+    
+    class StillInGroup(
+        ) : FfiException() {
+        override val message
+            get() = ""
+    }
+    
+    class NoRoute(
+        ) : FfiException() {
+        override val message
+            get() = ""
+    }
+    
+    class BadReaction(
+        ) : FfiException() {
+        override val message
+            get() = ""
+    }
+    
+    class WeakPassphrase(
+        ) : FfiException() {
+        override val message
+            get() = ""
+    }
+    
+    class BackupUnreadable(
+        ) : FfiException() {
+        override val message
+            get() = ""
+    }
+    
+    class BackupNotYours(
+        ) : FfiException() {
+        override val message
+            get() = ""
+    }
+    
 
     companion object ErrorHandler : UniffiRustCallStatusErrorHandler<FfiException> {
         override fun lift(error_buf: RustBuffer.ByValue): FfiException = FfiConverterTypeFfiError.lift(error_buf)
@@ -3351,6 +6570,22 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
             14 -> FfiException.ShuttingDown()
             15 -> FfiException.Busy()
             16 -> FfiException.InvalidArgument()
+            17 -> FfiException.NoSuchGroup()
+            18 -> FfiException.GroupRefused()
+            19 -> FfiException.GroupFull()
+            20 -> FfiException.BadFile()
+            21 -> FfiException.BadChannel()
+            22 -> FfiException.NotJoined()
+            23 -> FfiException.NoSignaling()
+            24 -> FfiException.InvalidInvite()
+            25 -> FfiException.InviteNotFound()
+            26 -> FfiException.OwnInvite()
+            27 -> FfiException.StillInGroup()
+            28 -> FfiException.NoRoute()
+            29 -> FfiException.BadReaction()
+            30 -> FfiException.WeakPassphrase()
+            31 -> FfiException.BackupUnreadable()
+            32 -> FfiException.BackupNotYours()
             else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
         }
     }
@@ -3418,6 +6653,70 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
                 4UL
             )
             is FfiException.InvalidArgument -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is FfiException.NoSuchGroup -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is FfiException.GroupRefused -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is FfiException.GroupFull -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is FfiException.BadFile -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is FfiException.BadChannel -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is FfiException.NotJoined -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is FfiException.NoSignaling -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is FfiException.InvalidInvite -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is FfiException.InviteNotFound -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is FfiException.OwnInvite -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is FfiException.StillInGroup -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is FfiException.NoRoute -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is FfiException.BadReaction -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is FfiException.WeakPassphrase -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is FfiException.BackupUnreadable -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is FfiException.BackupNotYours -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4UL
             )
@@ -3490,6 +6789,70 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
                 buf.putInt(16)
                 Unit
             }
+            is FfiException.NoSuchGroup -> {
+                buf.putInt(17)
+                Unit
+            }
+            is FfiException.GroupRefused -> {
+                buf.putInt(18)
+                Unit
+            }
+            is FfiException.GroupFull -> {
+                buf.putInt(19)
+                Unit
+            }
+            is FfiException.BadFile -> {
+                buf.putInt(20)
+                Unit
+            }
+            is FfiException.BadChannel -> {
+                buf.putInt(21)
+                Unit
+            }
+            is FfiException.NotJoined -> {
+                buf.putInt(22)
+                Unit
+            }
+            is FfiException.NoSignaling -> {
+                buf.putInt(23)
+                Unit
+            }
+            is FfiException.InvalidInvite -> {
+                buf.putInt(24)
+                Unit
+            }
+            is FfiException.InviteNotFound -> {
+                buf.putInt(25)
+                Unit
+            }
+            is FfiException.OwnInvite -> {
+                buf.putInt(26)
+                Unit
+            }
+            is FfiException.StillInGroup -> {
+                buf.putInt(27)
+                Unit
+            }
+            is FfiException.NoRoute -> {
+                buf.putInt(28)
+                Unit
+            }
+            is FfiException.BadReaction -> {
+                buf.putInt(29)
+                Unit
+            }
+            is FfiException.WeakPassphrase -> {
+                buf.putInt(30)
+                Unit
+            }
+            is FfiException.BackupUnreadable -> {
+                buf.putInt(31)
+                Unit
+            }
+            is FfiException.BackupNotYours -> {
+                buf.putInt(32)
+                Unit
+            }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
     }
 
@@ -3506,7 +6869,12 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
 enum class LinkKind {
     
     ENCRYPTED,
-    OPEN;
+    OPEN,
+    /**
+     * Not encrypted (Bluetooth), the way the TypeScript and Kotlin apps run it today: the secure-channel handshake,
+     * then the legacy peer handshake inside it, then encrypted frames. This is what talks to those apps.
+     */
+    LAYERED;
     companion object
 }
 
@@ -3683,6 +7051,110 @@ public object FfiConverterTypePathKind: FfiConverterRustBuffer<PathKind> {
 
 
 
+/**
+ * How long a published blob should live.
+ */
+
+enum class SignalKind {
+    
+    /**
+     * Short-lived live signaling.
+     */
+    LIVE,
+    /**
+     * Held for someone who is offline.
+     */
+    STORED;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSignalKind: FfiConverterRustBuffer<SignalKind> {
+    override fun read(buf: ByteBuffer) = try {
+        SignalKind.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: SignalKind) = 4UL
+
+    override fun write(value: SignalKind, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * Connection setup sent to or received from a contact.
+ */
+
+enum class SignalKindDto {
+    
+    READY,
+    OFFER,
+    ANSWER;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSignalKindDto: FfiConverterRustBuffer<SignalKindDto> {
+    override fun read(buf: ByteBuffer) = try {
+        SignalKindDto.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: SignalKindDto) = 4UL
+
+    override fun write(value: SignalKindDto, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
+enum class WipeStatus {
+    
+    ERASED,
+    SKIPPED,
+    FAILED;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWipeStatus: FfiConverterRustBuffer<WipeStatus> {
+    override fun read(buf: ByteBuffer) = try {
+        WipeStatus.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: WipeStatus) = 4UL
+
+    override fun write(value: WipeStatus, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
 
 /**
  * @suppress
@@ -3751,6 +7223,198 @@ public object FfiConverterOptionalByteArray: FfiConverterRustBuffer<kotlin.ByteA
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeAnswerDto: FfiConverterRustBuffer<AnswerDto?> {
+    override fun read(buf: ByteBuffer): AnswerDto? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeAnswerDto.read(buf)
+    }
+
+    override fun allocationSize(value: AnswerDto?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeAnswerDto.allocationSize(value)
+        }
+    }
+
+    override fun write(value: AnswerDto?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeAnswerDto.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeFileDto: FfiConverterRustBuffer<FileDto?> {
+    override fun read(buf: ByteBuffer): FileDto? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeFileDto.read(buf)
+    }
+
+    override fun allocationSize(value: FileDto?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeFileDto.allocationSize(value)
+        }
+    }
+
+    override fun write(value: FileDto?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeFileDto.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeInviteDto: FfiConverterRustBuffer<InviteDto?> {
+    override fun read(buf: ByteBuffer): InviteDto? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeInviteDto.read(buf)
+    }
+
+    override fun allocationSize(value: InviteDto?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeInviteDto.allocationSize(value)
+        }
+    }
+
+    override fun write(value: InviteDto?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeInviteDto.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeLastMessageDto: FfiConverterRustBuffer<LastMessageDto?> {
+    override fun read(buf: ByteBuffer): LastMessageDto? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeLastMessageDto.read(buf)
+    }
+
+    override fun allocationSize(value: LastMessageDto?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeLastMessageDto.allocationSize(value)
+        }
+    }
+
+    override fun write(value: LastMessageDto?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeLastMessageDto.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypePreviewDto: FfiConverterRustBuffer<PreviewDto?> {
+    override fun read(buf: ByteBuffer): PreviewDto? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypePreviewDto.read(buf)
+    }
+
+    override fun allocationSize(value: PreviewDto?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypePreviewDto.allocationSize(value)
+        }
+    }
+
+    override fun write(value: PreviewDto?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypePreviewDto.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeWipeReportDto: FfiConverterRustBuffer<WipeReportDto?> {
+    override fun read(buf: ByteBuffer): WipeReportDto? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeWipeReportDto.read(buf)
+    }
+
+    override fun allocationSize(value: WipeReportDto?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeWipeReportDto.allocationSize(value)
+        }
+    }
+
+    override fun write(value: WipeReportDto?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeWipeReportDto.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeEventDto: FfiConverterRustBuffer<EventDto?> {
     override fun read(buf: ByteBuffer): EventDto? {
         if (buf.get().toInt() == 0) {
@@ -3773,6 +7437,34 @@ public object FfiConverterOptionalTypeEventDto: FfiConverterRustBuffer<EventDto?
         } else {
             buf.put(1)
             FfiConverterTypeEventDto.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.String>> {
+    override fun read(buf: ByteBuffer): List<kotlin.String> {
+        val len = buf.getInt()
+        return List<kotlin.String>(len) {
+            FfiConverterString.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<kotlin.String>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterString.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<kotlin.String>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterString.write(it, buf)
         }
     }
 }
@@ -3839,6 +7531,62 @@ public object FfiConverterSequenceTypeConversationDto: FfiConverterRustBuffer<Li
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeGroupDto: FfiConverterRustBuffer<List<GroupDto>> {
+    override fun read(buf: ByteBuffer): List<GroupDto> {
+        val len = buf.getInt()
+        return List<GroupDto>(len) {
+            FfiConverterTypeGroupDto.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<GroupDto>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeGroupDto.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<GroupDto>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeGroupDto.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeGroupMemberDto: FfiConverterRustBuffer<List<GroupMemberDto>> {
+    override fun read(buf: ByteBuffer): List<GroupMemberDto> {
+        val len = buf.getInt()
+        return List<GroupMemberDto>(len) {
+            FfiConverterTypeGroupMemberDto.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<GroupMemberDto>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeGroupMemberDto.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<GroupMemberDto>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeGroupMemberDto.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeMessageDto: FfiConverterRustBuffer<List<MessageDto>> {
     override fun read(buf: ByteBuffer): List<MessageDto> {
         val len = buf.getInt()
@@ -3860,4 +7608,197 @@ public object FfiConverterSequenceTypeMessageDto: FfiConverterRustBuffer<List<Me
         }
     }
 }
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeReactionChipDto: FfiConverterRustBuffer<List<ReactionChipDto>> {
+    override fun read(buf: ByteBuffer): List<ReactionChipDto> {
+        val len = buf.getInt()
+        return List<ReactionChipDto>(len) {
+            FfiConverterTypeReactionChipDto.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<ReactionChipDto>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeReactionChipDto.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<ReactionChipDto>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeReactionChipDto.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeRequestDto: FfiConverterRustBuffer<List<RequestDto>> {
+    override fun read(buf: ByteBuffer): List<RequestDto> {
+        val len = buf.getInt()
+        return List<RequestDto>(len) {
+            FfiConverterTypeRequestDto.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<RequestDto>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeRequestDto.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<RequestDto>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeRequestDto.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeSearchHitDto: FfiConverterRustBuffer<List<SearchHitDto>> {
+    override fun read(buf: ByteBuffer): List<SearchHitDto> {
+        val len = buf.getInt()
+        return List<SearchHitDto>(len) {
+            FfiConverterTypeSearchHitDto.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<SearchHitDto>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeSearchHitDto.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<SearchHitDto>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeSearchHitDto.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeSkippedCount: FfiConverterRustBuffer<List<SkippedCount>> {
+    override fun read(buf: ByteBuffer): List<SkippedCount> {
+        val len = buf.getInt()
+        return List<SkippedCount>(len) {
+            FfiConverterTypeSkippedCount.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<SkippedCount>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeSkippedCount.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<SkippedCount>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeSkippedCount.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeWipeStepDto: FfiConverterRustBuffer<List<WipeStepDto>> {
+    override fun read(buf: ByteBuffer): List<WipeStepDto> {
+        val len = buf.getInt()
+        return List<WipeStepDto>(len) {
+            FfiConverterTypeWipeStepDto.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<WipeStepDto>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeWipeStepDto.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<WipeStepDto>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeWipeStepDto.write(it, buf)
+        }
+    }
+}
+        /**
+         * Version of the Rust core inside this build.
+         */ fun `coreVersion`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_func_core_version(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Bring over an Android install: its Room database file, with a decryptor that calls the Android Keystore.
+         */
+    @Throws(FfiException::class) fun `importLegacyAndroid`(`oldDbPath`: kotlin.String, `decryptor`: LegacyDecryptor, `newDbPath`: kotlin.String, `ownUid`: kotlin.String, `files`: LegacyFiles): ImportSummary {
+            return FfiConverterTypeImportSummary.lift(
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_func_import_legacy_android(
+        FfiConverterString.lower(`oldDbPath`),FfiConverterTypeLegacyDecryptor.lower(`decryptor`),FfiConverterString.lower(`newDbPath`),FfiConverterString.lower(`ownUid`),FfiConverterTypeLegacyFiles.lower(`files`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Bring over a desktop install: its SQLite file, and the 32-byte AES key the app keeps in the OS secret store. Run it
+         * before `PrivcordEngine::start` on the new database; running it again does nothing.
+         */
+    @Throws(FfiException::class) fun `importLegacyDesktop`(`oldDbPath`: kotlin.String, `aesKey`: kotlin.ByteArray, `newDbPath`: kotlin.String, `ownUid`: kotlin.String, `files`: LegacyFiles): ImportSummary {
+            return FfiConverterTypeImportSummary.lift(
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_func_import_legacy_desktop(
+        FfiConverterString.lower(`oldDbPath`),FfiConverterByteArray.lower(`aesKey`),FfiConverterString.lower(`newDbPath`),FfiConverterString.lower(`ownUid`),FfiConverterTypeLegacyFiles.lower(`files`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * A quick check that the native library really works on this device: it makes two throwaway identities, seals a
+         * message from one to the other and opens it (P-256, HKDF, AES-GCM, signatures), then opens an in-memory SQLite
+         * database and runs the schema. Returns "ok", or says which step failed. It touches no stored data.
+         */ fun `selfTest`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_func_self_test(
+        _status)
+}
+    )
+    }
+    
+
 

@@ -30,6 +30,7 @@ required-features = ["cli"]
 
 [dependencies]
 privcord-domain.workspace = true
+privcord-import = { workspace = true, features = ["readers"] }
 privcord-crypto.workspace = true
 privcord-ports.workspace = true
 privcord-engine.workspace = true
@@ -37,6 +38,7 @@ privcord-storage.workspace = true
 uniffi = "0.28"
 pollster = "0.4"
 thiserror.workspace = true
+serde_json.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]

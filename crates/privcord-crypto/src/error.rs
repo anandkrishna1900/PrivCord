@@ -23,4 +23,7 @@ pub enum CryptoError {
     Random,
     #[error("Invalid input.")]
     Invalid,
+    /// A refusal from the double-ratchet / prekey layer, with a fixed, content-free reason.
+    #[error("{0}")]
+    E2ee(&'static str),
 }

@@ -219,3 +219,84 @@ fn liveness_and_receipt_frames_parse_like_typescript() {
         assert!(PeerFrame::parse(&r["frame"]).is_none() && r["parsed"].is_null());
     }
 }
+
+fn ble_vectors() -> Value {
+    let root = env!("CARGO_MANIFEST_DIR");
+    let text = std::fs::read_to_string(format!("{root}/../../docs/ble-vectors.json"))
+        .expect("ble-vectors.json");
+    serde_json::from_str(&text).unwrap()
+}
+
+fn unhex(s: &str) -> Vec<u8> {
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+        .collect()
+}
+
+#[test]
+fn ble_chunking_and_reassembly_match_the_shared_vectors() {
+    use privcord_domain::ble::{
+        chunk_message, BleFramingError, Reassembler, BLE_MAX_MESSAGE_BYTES,
+    };
+    let v = ble_vectors();
+    for case in v["chunking"].as_array().unwrap() {
+        let text = case["text"].as_str().unwrap();
+        let max = case["maxChunk"].as_u64().unwrap() as usize;
+        let want: Vec<Vec<u8>> = case["chunksHex"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|h| unhex(h.as_str().unwrap()))
+            .collect();
+        let got = chunk_message(text.as_bytes(), max).unwrap();
+        assert_eq!(got, want, "{}", case["name"]);
+        // And they put the message back together.
+        let mut r = Reassembler::new();
+        let mut out = None;
+        for c in &got {
+            out = r.push(c).unwrap();
+        }
+        assert_eq!(out.unwrap(), text.as_bytes());
+    }
+    for case in v["reassembly"].as_array().unwrap() {
+        let mut r = Reassembler::new();
+        let chunks = case["chunksHex"].as_array().unwrap();
+        let results = case["results"].as_array().unwrap();
+        for (c, want) in chunks.iter().zip(results) {
+            let got = r.push(&unhex(c.as_str().unwrap()));
+            match want {
+                Value::Null => assert_eq!(got, Ok(None), "{}", case["name"]),
+                w if w.get("err").is_some() => assert!(got.is_err(), "{}", case["name"]),
+                w => assert_eq!(
+                    got.unwrap().unwrap(),
+                    w["msg"].as_str().unwrap().as_bytes(),
+                    "{}",
+                    case["name"]
+                ),
+            }
+        }
+    }
+    let large = &v["large"];
+    let data =
+        vec![large["byte"].as_u64().unwrap() as u8; large["length"].as_u64().unwrap() as usize];
+    let chunks = chunk_message(&data, large["maxChunk"].as_u64().unwrap() as usize).unwrap();
+    assert_eq!(chunks.len(), large["chunkCount"].as_u64().unwrap() as usize);
+    let mut r = Reassembler::new();
+    let mut out = None;
+    for c in &chunks {
+        out = r.push(c).unwrap();
+    }
+    assert_eq!(out.unwrap(), data);
+    let over = &v["oversize"];
+    assert_eq!(
+        chunk_message(&vec![0u8; over["length"].as_u64().unwrap() as usize], 512),
+        Err(BleFramingError::TooLarge)
+    );
+    assert_eq!(BLE_MAX_MESSAGE_BYTES, 65_536);
+    assert_eq!(chunk_message(&[], 20), Err(BleFramingError::Empty));
+    assert_eq!(
+        chunk_message(b"x", 3),
+        Err(BleFramingError::ChunkSizeTooSmall)
+    );
+}

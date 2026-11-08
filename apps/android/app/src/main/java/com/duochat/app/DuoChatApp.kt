@@ -9,5 +9,6 @@ class DuoChatApp : Application() {
         super.onCreate()
         DuoNotifications.ensureChannel(this)
         PeerConnectionFactoryHolder.initialize(this)
+        android.util.Log.i("DuoChat", "Rust core: ${RustCore.status}")
     }
 }

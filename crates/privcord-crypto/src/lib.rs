@@ -12,14 +12,18 @@
 
 pub mod aead;
 pub mod backup;
+pub mod ble;
 pub mod canonical;
 pub mod card;
 pub mod channel;
+pub mod e2ee;
 pub mod error;
 pub mod group;
+pub mod group_coordinator;
 pub mod identity;
 pub mod invite;
 pub mod kdf;
+pub mod nostr;
 pub mod peer_auth;
 pub mod rng;
 pub mod safety;

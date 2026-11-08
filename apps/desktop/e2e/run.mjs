@@ -17,21 +17,30 @@ const dist = build();
 const { server, url: appUrl } = await serve(dist);
 const browser = await launch();
 
+// Scenarios that start six or more browsers at once can time out on a small CI runner (14 failed on one runner and passed
+// alone and on another). They get one more attempt; a second failure is a real failure and says so.
+const HEAVY = new Set([11, 14]);
+
 async function scenario(id, name, fn) {
   if (only && !only.includes(String(id))) return;
-  const started = Date.now();
-  const notes = [];
-  const cleanups = [];
-  try {
-    await fn({ note: (n) => notes.push(n), cleanups });
-    results.push({ id, name, status: 'PASS', notes, secs: Math.round((Date.now() - started) / 1000) });
-  } catch (error) {
-    results.push({ id, name, status: 'FAIL', notes: [...notes, error.message], secs: Math.round((Date.now() - started) / 1000) });
-  } finally {
-    for (const c of cleanups.reverse()) await Promise.resolve(c()).catch(() => undefined);
+  const attempts = HEAVY.has(id) ? 2 : 1;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const started = Date.now();
+    const notes = [];
+    const cleanups = [];
+    try {
+      await fn({ note: (n) => notes.push(n), cleanups });
+      results.push({ id, name, status: 'PASS', notes: attempt > 1 ? [...notes, 'passed on the second attempt'] : notes, secs: Math.round((Date.now() - started) / 1000) });
+    } catch (error) {
+      results.push({ id, name, status: 'FAIL', notes: [...notes, error.message], secs: Math.round((Date.now() - started) / 1000) });
+    } finally {
+      for (const c of cleanups.reverse()) await Promise.resolve(c()).catch(() => undefined);
+    }
+    const r = results.at(-1);
+    console.log(`${r.status} #${id} ${name} (${r.secs}s)${attempt < attempts && r.status === 'FAIL' ? ' - trying once more' : ''}\n   ${r.notes.join('\n   ')}`);
+    if (r.status === 'PASS') break;
+    if (attempt < attempts) results.pop();
   }
-  const r = results.at(-1);
-  console.log(`${r.status} #${id} ${name} (${r.secs}s)\n   ${r.notes.join('\n   ')}`);
 }
 
 /* 1 ------------------------------------------------------------------ */

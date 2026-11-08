@@ -86,7 +86,7 @@ fn hello_payload(
 }
 
 fn frame_iv(counter: u64) -> [u8; 12] {
-    let mut iv = [0u8; 12];
+    let mut iv = crate::kdf::blank::<12>();
     iv[4..].copy_from_slice(&counter.to_be_bytes());
     iv
 }

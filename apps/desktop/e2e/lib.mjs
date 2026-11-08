@@ -24,22 +24,22 @@ export function build() {
 export function serve(dir) {
   return new Promise((resolve) => {
     const types = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html' };
-    const root = path.resolve(dir);
-    const rootReal = fs.realpathSync(root);
-    const indexReal = fs.realpathSync(path.join(rootReal, 'index.html'));
+    // Read the build output once into a map keyed by URL. A request is only ever a lookup in this map, so no part of
+    // the URL reaches the file system.
+    const files = new Map();
+    const walk = (d, prefix) => {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        if (e.isDirectory()) walk(path.join(d, e.name), `${prefix}${e.name}/`);
+        else files.set(`/${prefix}${e.name}`, { body: fs.readFileSync(path.join(d, e.name)), type: types[path.extname(e.name)] ?? 'application/octet-stream' });
+      }
+    };
+    walk(dir, '');
     const server = http.createServer((req, res) => {
-      const rawPath = (req.url ?? '/').split('?')[0];
-      let pathname;
-      try { pathname = decodeURIComponent(rawPath); } catch { pathname = '/'; }
-      const candidate = path.resolve(rootReal, `.${pathname}`);
-      let p = indexReal;
-      try {
-        const candidateReal = fs.realpathSync(candidate);
-        if (candidateReal === rootReal || candidateReal.startsWith(rootReal + path.sep)) p = candidateReal;
-      } catch {}
-      if (!fs.existsSync(p) || fs.statSync(p).isDirectory()) p = indexReal;
-      res.setHeader('content-type', types[path.extname(p)] ?? 'application/octet-stream');
-      res.end(fs.readFileSync(p));
+      let key = '/';
+      try { key = decodeURIComponent(req.url.split('?')[0]); } catch { /* bad escape: serve the index */ }
+      const f = files.get(key) ?? files.get('/index.html');
+      res.setHeader('content-type', f.type);
+      res.end(f.body);
     });
     server.listen(0, '127.0.0.1', () => resolve({ server, url: `http://127.0.0.1:${server.address().port}` }));
   });

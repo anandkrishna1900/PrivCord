@@ -52,6 +52,22 @@ impl Transport for Wire {
         to.frame_received(me, frame.to_owned())
             .map_err(|_| TransportError::Refused)
     }
+    /// A signaling service that accepts everything: it only makes a six-word invite possible (a slow command).
+    fn signal_available(&self) -> bool {
+        true
+    }
+    fn signal_subscribe(&self, _mailbox: &str) -> Result<(), TransportError> {
+        Ok(())
+    }
+    fn signal_put(
+        &self,
+        _mailbox: &str,
+        _blob: &str,
+        _kind: privcord_domain::signaling::PutKind,
+        _ttl_sec: u32,
+    ) -> Result<(), TransportError> {
+        Ok(())
+    }
 }
 
 fn ports(wire: Arc<Wire>) -> Ports {
@@ -180,8 +196,16 @@ async fn two_running_engines_talk_and_shut_down_cleanly() {
 async fn a_flood_of_commands_is_rejected_not_buffered_without_bound() {
     let (h, _events) = EngineHandle::start(ports(Arc::new(Wire::default()))).unwrap();
     h.create_identity().await.unwrap();
-    // Queue far more fire-and-forget frames than the queue holds, without letting the engine run in between.
     let me = h.snapshot().await.unwrap().own_uid.unwrap();
+    // Keep the engine busy with a slow command (a six-word invite stretches its words with 150,000 rounds of hashing),
+    // so the frames below really do pile up in the queue instead of racing the engine that drains it.
+    let h = Arc::new(h);
+    let busy_with = {
+        let h = h.clone();
+        tokio::spawn(async move { h.op(privcord_engine::Op::CreateInvite).await })
+    };
+    tokio::task::yield_now().await;
+    std::thread::sleep(std::time::Duration::from_millis(30));
     let mut busy = 0;
     for _ in 0..5000 {
         if h.frame_received(&me, "{}".into()) == Err(ErrorCode::Busy) {
@@ -189,6 +213,7 @@ async fn a_flood_of_commands_is_rejected_not_buffered_without_bound() {
         }
     }
     assert!(busy > 0, "a bounded queue must push back");
+    busy_with.await.unwrap().unwrap();
     h.shutdown().await.unwrap();
 }
 

@@ -6,6 +6,7 @@ members = [
     "crates/privcord-ports",
     "crates/privcord-engine",
     "crates/privcord-storage",
+    "crates/privcord-import",
     "crates/privcord-ffi",
 ]
 # The existing Tauri shell keeps its own lockfile until milestone M7 moves it onto this workspace.
@@ -40,6 +41,7 @@ hmac = "0.12"
 pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
 aes-gcm = "0.10"
 p256 = { version = "0.14", features = ["ecdsa", "ecdh", "arithmetic"] }
+k256 = { version = "0.14", default-features = false, features = ["schnorr", "arithmetic", "std"] }
 bip39 = "2"
 getrandom = "0.2"
 unicode-normalization = "0.1"
@@ -51,3 +53,4 @@ privcord-crypto = { path = "crates/privcord-crypto" }
 privcord-ports = { path = "crates/privcord-ports" }
 privcord-engine = { path = "crates/privcord-engine" }
 privcord-storage = { path = "crates/privcord-storage" }
+privcord-import = { path = "crates/privcord-import", default-features = false }

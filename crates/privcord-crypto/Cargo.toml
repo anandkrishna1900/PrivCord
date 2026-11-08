@@ -24,6 +24,7 @@ hmac.workspace = true
 pbkdf2.workspace = true
 aes-gcm.workspace = true
 p256.workspace = true
+k256.workspace = true
 bip39.workspace = true
 getrandom.workspace = true
 unicode-normalization.workspace = true

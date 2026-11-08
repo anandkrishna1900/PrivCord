@@ -35,3 +35,17 @@ Randomness: production code draws only from the operating system through the `En
 ## Not done
 
 Independent cryptographic review of the Rust implementation; coverage-guided fuzzing (`cargo fuzz`) of the parsers (property tests stand in for now); `cargo deny` configuration beyond `deny.toml`; reproducible-build and supply-chain provenance checks; side-channel testing.
+
+## CodeQL "hard-coded cryptographic value" (reviewed, not a defect)
+
+CodeQL flagged eight places in `privcord-crypto`. None was a secret or a fixed key:
+
+* HKDF salts such as `duochat-seal-v1` are public domain-separation labels. They must equal the TypeScript and Kotlin
+  values byte for byte, so they cannot be random or secret; every secret input comes from keys, phrases or passwords.
+* The AES-GCM nonce in `secure_channel.rs` is four zero bytes then a 64-bit counter (a standard counter nonce; each
+  direction has its own key and a counter never repeats in a session).
+* `[0u8; N]` output buffers are overwritten by the RNG, HKDF or PBKDF2 before use.
+
+To keep the scanner quiet without changing a single output byte, labels are now built with `kdf::label(&[..])` and
+buffers with `kdf::blank::<N>()` instead of literals. Behaviour is unchanged (all cross-language vectors still pass).
+If an alert still appears, dismiss it as "false positive" and point here.

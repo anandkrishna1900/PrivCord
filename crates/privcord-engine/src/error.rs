@@ -23,6 +23,38 @@ pub enum ErrorCode {
     DirectNotAllowed,
     #[error("No such message.")]
     UnknownMessage,
+    #[error("You are not in that group.")]
+    NoSuchGroup,
+    #[error("That group change is not allowed.")]
+    GroupRefused,
+    #[error("The group is full.")]
+    GroupFull,
+    #[error("That file is empty, too large or not valid.")]
+    BadFile,
+    #[error("That is not a valid channel name.")]
+    BadChannel,
+    #[error("You have not joined that channel.")]
+    NotJoined,
+    #[error("Six-word invites need a connection service (Settings, Connection). The QR code and the full invite text work without one.")]
+    NoSignaling,
+    #[error("That does not look like a PrivCord invite. Check the words, or ask your friend to share it again.")]
+    InvalidInvite,
+    #[error("Could not find that invite. Check the words, make sure your friend still has the invite open, and that you are both online.")]
+    InviteNotFound,
+    #[error("That is your own invite. Send it to a friend instead.")]
+    OwnInvite,
+    #[error("Leave the groups you share first, then you can remove this friend.")]
+    StillInGroup,
+    #[error("No way to reach them right now.")]
+    NoRoute,
+    #[error("That is not one of the reactions.")]
+    BadReaction,
+    #[error("Use at least 8 characters for the backup passphrase.")]
+    WeakPassphrase,
+    #[error("That did not open. Check the passphrase and that this is a PrivCord backup file.")]
+    BackupUnreadable,
+    #[error("That backup belongs to a different identity.")]
+    BackupNotYours,
     #[error("Storage failed; nothing was changed.")]
     Storage,
     #[error("Secure storage failed.")]
