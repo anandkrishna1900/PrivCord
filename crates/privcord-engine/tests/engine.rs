@@ -688,3 +688,60 @@ fn a_hello_that_overtakes_the_link_up_report_is_not_lost() {
         }
     );
 }
+
+#[test]
+fn the_engine_runs_on_real_sqlite_and_recovers_after_a_restart() {
+    use privcord_storage::SqliteStorage;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("alice.db");
+    let clock = FakeClock::at(1_700_000_000_000);
+    let secure = MemorySecureStore::new();
+    let (bu, bob_card, mut b) = {
+        let b = fresh("bob", &clock);
+        (b.core.own_uid().unwrap().clone(), b.core.own_card(Some("Bob")).unwrap(), b)
+    };
+    let sqlite = |p: &std::path::Path| -> Arc<dyn Storage> { Arc::new(SqliteStorage::open(p).unwrap()) };
+    let make = |storage: Arc<dyn Storage>, seed: &str| {
+        let transport = RecordingTransport::new();
+        let ports = Ports {
+            storage,
+            secure: secure.clone(),
+            transport: transport.clone(),
+            clock: clock.clone(),
+            notifier: RecordingNotifier::new(),
+            entropy: Box::new(SeededEntropy::new(seed)),
+        };
+        (Core::new(ports).unwrap(), transport)
+    };
+    let (mut core, _t) = make(sqlite(&path), "a1");
+    core.create_identity().unwrap();
+    let au = core.own_uid().unwrap().clone();
+    core.add_contact(&bob_card, ContactTrust::Verified).unwrap();
+    let id = core.send_message(&bu, "stored in sqlite", None).unwrap();
+    drop(core);
+
+    // A new process opens the same file and finds everything, including the undelivered message.
+    let (mut core, transport) = make(sqlite(&path), "a2");
+    assert_eq!(core.own_uid(), Some(&au));
+    let snap = core.snapshot();
+    assert_eq!((snap.contacts.len(), snap.queued), (1, 1));
+    assert_eq!(snap.messages[0].1[0].message_id, id);
+
+    // And it delivers to a live peer once the link is up.
+    b.core.add_contact(&core.own_card(Some("Alice")).unwrap(), ContactTrust::Verified).unwrap();
+    transport.set_connected(&bu, true);
+    b.transport.set_connected(&au, true);
+    core.link_up(&bu, ConnectionPath::DirectLan).unwrap();
+    b.core.link_up(&au, ConnectionPath::DirectLan).unwrap();
+    for _ in 0..4 {
+        for (_, f) in transport.drain() {
+            b.core.frame_received(&au, &f);
+        }
+        for (_, f) in b.transport.drain() {
+            core.frame_received(&bu, &f);
+        }
+    }
+    assert_eq!(texts(&b, &au), vec!["stored in sqlite"]);
+    assert_eq!(core.snapshot().queued, 0);
+    assert_eq!(core.snapshot().messages[0].1[0].delivery_state, DeliveryState::Delivered);
+}

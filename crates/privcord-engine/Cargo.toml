@@ -22,3 +22,5 @@ tokio.workspace = true
 privcord-ports = { workspace = true, features = ["testing"] }
 privcord-crypto = { workspace = true, features = ["test-support"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "sync", "rt"] }
+privcord-storage = { workspace = true }
+tempfile = "3"
