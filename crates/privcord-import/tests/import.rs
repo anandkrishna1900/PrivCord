@@ -42,6 +42,13 @@ fn key(f: &Value) -> [u8; 32] {
     unhex(f["aesKeyHex"].as_str().unwrap()).try_into().unwrap()
 }
 
+/// A key that is not the app's: the right one with a bit flipped (so no literal key appears in a test).
+fn wrong_key(f: &Value) -> [u8; 32] {
+    let mut k = key(f);
+    k[0] ^= 1;
+    k
+}
+
 struct Files(HashMap<String, Vec<u8>>);
 impl FileSource for Files {
     fn file(&self, id: &str) -> Option<Vec<u8>> {
@@ -461,7 +468,7 @@ fn a_wrong_key_imports_nothing_instead_of_garbage() {
     let dir = tempfile::tempdir().unwrap();
     let old = dir.path().join("duochat.db");
     build_desktop(&old, &f["desktop"], false);
-    let bundle = desktop::read_bundle(&old, &AesKeyDecryptor([9; 32])).unwrap();
+    let bundle = desktop::read_bundle(&old, &AesKeyDecryptor(wrong_key(&f))).unwrap();
     assert!(bundle.contacts.is_empty() && bundle.messages.is_empty() && bundle.groups.is_empty());
     let db = SqliteStorage::in_memory().unwrap();
     let r = import(&bundle, Source::Desktop, &NoFiles, &uid(&f, "me"), &db, 1).unwrap();
@@ -472,10 +479,12 @@ fn a_wrong_key_imports_nothing_instead_of_garbage() {
         .unwrap()
         .execute_batch("CREATE TABLE t (x)")
         .unwrap();
-    assert!(desktop::read_bundle(&other, &AesKeyDecryptor([0; 32])).is_err());
-    assert!(
-        desktop::read_bundle(&dir.path().join("missing.db"), &AesKeyDecryptor([0; 32])).is_err()
-    );
+    assert!(desktop::read_bundle(&other, &AesKeyDecryptor(wrong_key(&f))).is_err());
+    assert!(desktop::read_bundle(
+        &dir.path().join("missing.db"),
+        &AesKeyDecryptor(wrong_key(&f))
+    )
+    .is_err());
 }
 
 #[test]
