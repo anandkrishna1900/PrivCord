@@ -65,7 +65,7 @@ data class NetworkConfig(
             "stun:stun.l.google.com:19302",
             "stun:stun.cloudflare.com:3478",
         )
-        val DEFAULT_NOSTR_RELAYS = listOf("wss://relay.damus.io", "wss://nos.lol", "wss://relay.primal.net")
+        val DEFAULT_NOSTR_RELAYS = listOf("wss://relay.damus.io", "wss://nos.lol", "wss://relay.primal.net", "wss://nostr.mom")
 
         fun isStunUrl(value: String) = isIceUrl(value, "stun", "stuns")
         fun isTurnUrl(value: String) = isIceUrl(value, "turn", "turns")

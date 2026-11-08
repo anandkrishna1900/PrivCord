@@ -994,8 +994,8 @@ class RustChatEngine(
                 if (!found) {
                     return Result.failure(
                         IllegalStateException(
-                            if (hubStatus() == SignalingStatus.ONLINE) "Could not find that invite. Check the words, or ask your friend to share it again."
-                            else "Could not reach the connection service to look up those words. Check your internet, then try again.",
+                            if (hubStatus() == SignalingStatus.ONLINE) "Could not find that invite. Check the words, make sure your friend still has the invite screen open, then try again. (${hubs.values.map { it.describe() }.distinct().joinToString(" | ")})"
+                            else "Could not reach the connection service to look up those words. Check your internet, then try again. (${hubs.values.map { it.describe() }.distinct().joinToString(" | ")})",
                         ),
                     )
                 }
