@@ -22,6 +22,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import com.duochat.app.data.FileMeta
+import androidx.compose.ui.graphics.asAndroidBitmap
 import com.duochat.app.data.MAX_FILE_BYTES
 import com.duochat.app.data.MessageType
 import com.duochat.app.data.formatBytes
@@ -1054,7 +1055,10 @@ private fun readPicked(context: android.content.Context, uri: Uri): PickedFile {
             c.getColumnIndex(OpenableColumns.SIZE).takeIf { it >= 0 && !c.isNull(it) }?.let { size = c.getLong(it) }
         }
     }
-    if (size > MAX_FILE_BYTES) throw IllegalArgumentException("Files can be at most ${formatBytes(MAX_FILE_BYTES)}.")
+    val type = context.contentResolver.getType(uri) ?: "application/octet-stream"
+    // Photos are shrunk before sending, so a big original may be read; anything else must fit as it is.
+    val limit = if (isShrinkable(type)) PHOTO_READ_LIMIT else MAX_FILE_BYTES.toLong()
+    if (size > limit) throw IllegalArgumentException("Files can be at most ${formatBytes(MAX_FILE_BYTES)}.")
     val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
         val out = java.io.ByteArrayOutputStream()
         val buffer = ByteArray(64 * 1024)
@@ -1062,12 +1066,31 @@ private fun readPicked(context: android.content.Context, uri: Uri): PickedFile {
             val n = input.read(buffer)
             if (n < 0) break
             out.write(buffer, 0, n)
-            if (out.size() > MAX_FILE_BYTES) throw IllegalArgumentException("Files can be at most ${formatBytes(MAX_FILE_BYTES)}.")
+            if (out.size() > limit) throw IllegalArgumentException("Files can be at most ${formatBytes(MAX_FILE_BYTES)}.")
         }
         out.toByteArray()
     } ?: throw IllegalStateException("Could not open that file.")
-    return PickedFile(name, context.contentResolver.getType(uri) ?: "application/octet-stream", bytes)
+    val shrunk = if (isShrinkable(type) && bytes.size > SHRINK_ABOVE) shrinkPhoto(bytes, name) else null
+    val picked = shrunk ?: PickedFile(name, type, bytes)
+    if (picked.bytes.size > MAX_FILE_BYTES) throw IllegalArgumentException("Files can be at most ${formatBytes(MAX_FILE_BYTES)}.")
+    return picked
 }
+
+private const val PHOTO_READ_LIMIT = 48L * 1024 * 1024
+private const val SHRINK_ABOVE = 1_000_000
+private const val PHOTO_SIDE = 2048
+
+private fun isShrinkable(mime: String) = mime.lowercase() in setOf("image/jpeg", "image/png", "image/webp", "image/heic", "image/heif")
+
+/** A big photo becomes a 2048 px JPEG (upright, about 300-600 KB): it sends in a second or two and always fits. */
+private fun shrinkPhoto(bytes: ByteArray, name: String): PickedFile? = runCatching {
+    val bitmap = decodeUpright(bytes, PHOTO_SIDE)?.asAndroidBitmap() ?: return null
+    val out = java.io.ByteArrayOutputStream()
+    bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out)
+    val small = out.toByteArray()
+    if (small.isEmpty() || small.size >= bytes.size) return null
+    PickedFile(name.substringBeforeLast('.', name) + ".jpg", "image/jpeg", small)
+}.getOrNull()
 
 /**
  * Decodes a photo, no bigger than [maxSide] on its longest side, and turns it the way the camera meant it to be
