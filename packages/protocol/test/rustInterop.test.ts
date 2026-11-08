@@ -1,0 +1,69 @@
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+import {
+  decodeBlob,
+  decodeContactCard,
+  deriveChannel,
+  deriveIdentityFromPhrase,
+  deriveInvite,
+  fromB64Url,
+  ecdsaVerify,
+  openBackup,
+  openChannelMessage,
+  openInvite,
+  open,
+  verifyIdentityProof,
+} from '../src';
+
+// Produced by the Rust engine (`cargo run -p privcord-crypto --example gen_vectors`). The Rust tests assert the file is
+// reproducible; this suite asserts the TypeScript implementation accepts everything in it, so both directions are covered.
+const v = JSON.parse(readFileSync(new URL('../../../docs/rust-vectors.json', import.meta.url), 'utf8'));
+
+describe('artifacts produced by the Rust engine', () => {
+  it('contact cards decode with the same uid and a valid proof', async () => {
+    const ann = await decodeContactCard(v.people.ann.card);
+    expect(ann?.uid).toBe(v.people.ann.uid);
+    expect(ann?.card.name).toBe('Ann ✓');
+    const bob = await decodeContactCard(v.people.bob.card);
+    expect(bob?.uid).toBe(v.people.bob.uid);
+    expect(await verifyIdentityProof(ann!.card.sign, ann!.card.dh, v.people.ann.identityProof)).toBe(true);
+  });
+
+  it('sealed blobs open for the right recipient and nobody else', async () => {
+    const ann = (await deriveIdentityFromPhrase(v.people.ann.phrase)).identity;
+    const bob = (await deriveIdentityFromPhrase(v.people.bob.phrase)).identity;
+    const [ab, ba] = v.sealed;
+    const first = await open({ blob: decodeBlob(ab.wire)!, ownUid: v.people.bob.uid, ownDhPriv: bob.dhKey.privJwk, senderSign: ann.signKey.pubJwk, senderUid: v.people.ann.uid });
+    expect(first).toEqual(ab.payload);
+    const second = await open({ blob: decodeBlob(ba.wire)!, ownUid: v.people.ann.uid, ownDhPriv: ann.dhKey.privJwk, senderSign: bob.signKey.pubJwk, senderUid: v.people.bob.uid });
+    expect(second).toEqual(ba.payload);
+    expect(await open({ blob: decodeBlob(ab.wire)!, ownUid: v.people.ann.uid, ownDhPriv: ann.dhKey.privJwk, senderSign: bob.signKey.pubJwk, senderUid: v.people.bob.uid })).toBeNull();
+  });
+
+  it('a Rust signature verifies in WebCrypto', async () => {
+    const ann = (await deriveIdentityFromPhrase(v.people.ann.phrase)).identity;
+    expect(await ecdsaVerify(ann.signKey.pubJwk, fromB64Url(v.signature.sig), new TextEncoder().encode(v.signature.message))).toBe(true);
+    expect(await ecdsaVerify(ann.signKey.pubJwk, fromB64Url(v.signature.sig), new TextEncoder().encode('something else'))).toBe(false);
+  });
+
+  it('invites derive the same mailbox and open', async () => {
+    const rv = await deriveInvite(v.invite.words);
+    expect(rv.mailbox).toBe(v.invite.mailbox);
+    const card = await openInvite(rv, v.invite.card);
+    expect(card?.kind).toBe('card');
+    expect(card?.contact.uid).toBe(v.people.ann.uid);
+    expect((await openInvite(rv, v.invite.reply))?.kind).toBe('reply');
+  });
+
+  it('channel messages open and carry the sender', async () => {
+    const ch = await deriveChannel(v.channel.name);
+    const m = await openChannelMessage(ch, v.channel.blob);
+    expect(m?.text).toBe(v.channel.text);
+    expect(m?.contact.uid).toBe(v.people.ann.uid);
+  });
+
+  it('backups open with the passphrase and not without it', async () => {
+    expect(await openBackup(v.backup.text, v.backup.passphrase)).toEqual(v.backup.data);
+    expect(await openBackup(v.backup.text, 'wrong passphrase')).toBeNull();
+  });
+});
