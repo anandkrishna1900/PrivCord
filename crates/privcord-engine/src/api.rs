@@ -134,6 +134,8 @@ pub struct Snapshot {
     pub lookup_pending: bool,
     pub messages: Vec<(ConversationId, Vec<ChatMessage>)>,
     pub queued: usize,
+    /// The name each person gave in a public channel (they are not contacts).
+    pub channel_people: Vec<(UserId, String)>,
     /// Type and size of every file message that is stored.
     pub files: Vec<(MessageId, privcord_ports::FileInfo)>,
 }

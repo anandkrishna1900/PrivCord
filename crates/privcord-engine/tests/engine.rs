@@ -930,3 +930,30 @@ fn the_route_of_a_link_that_is_already_up_can_be_corrected_afterwards() {
         }
     );
 }
+
+#[test]
+fn retrying_a_message_queues_it_again_once_and_only_for_our_own_messages() {
+    let (mut a, mut b, au, bu) = pair();
+    let id = a.core.send_message(&bu, "later", None).unwrap();
+    assert_eq!(a.core.snapshot().queued, 1);
+    a.core.retry_message(&id).unwrap();
+    assert_eq!(a.core.snapshot().queued, 1, "no second copy in the outbox");
+    assert_eq!(status(&a, &id), DeliveryState::Queued);
+    // Once the link is up it goes out and is acknowledged.
+    connect_with(
+        &mut a,
+        &mut b,
+        &au,
+        &bu,
+        privcord_engine::LinkSecurity::TransportEncrypted,
+    );
+    pump(&mut a, &mut b, &au, &bu);
+    assert_eq!(texts(&b, &au), vec!["later"]);
+    // Someone else's message, or one that does not exist, is refused.
+    let theirs = b.core.send_message(&au, "mine", None).unwrap();
+    assert!(a.core.retry_message(&theirs).is_err());
+    assert!(a
+        .core
+        .retry_message(&privcord_domain::MessageId::new("nope").unwrap())
+        .is_err());
+}

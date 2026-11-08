@@ -260,6 +260,8 @@ class RustChatEngine(
         }
 
         override fun signalPut(mailbox: String, blob: String, kind: SignalKind, ttlSec: UInt): Boolean {
+            // No relay configured, or every socket failed: say so, and the engine hands the blob to mutual friends instead.
+            if (hubs.isEmpty() || hubs.values.all { it.status() == SignalingStatus.ERROR }) return false
             val decoded = Seal.decode(blob) ?: return false
             val wire = if (kind == SignalKind.LIVE) "sig" else "msg"
             // Right after start (or a network change) the sockets are still opening and a put would be refused. Keep the blob
@@ -391,7 +393,11 @@ class RustChatEngine(
                 onSignal(event.peer, event.kind, event.sdp)
             }
             is EventDto.MessageAdded -> {
-                if (!event.own) notifyIncoming(event.conversation, event.messageId)
+                if (!event.own) {
+                    // The chat is open on screen: this message is read the moment it arrives (and the sender is told).
+                    if (visible && openChat == event.conversation) markOpen(event.conversation)
+                    else notifyIncoming(event.conversation, event.messageId)
+                }
                 requestRefresh()
             }
             is EventDto.InviteFound -> { lookup?.complete(true); requestRefresh() }
@@ -748,10 +754,16 @@ class RustChatEngine(
         }.sortedBy { it.name.lowercase() }
 
         val shaped = HashMap<String, List<ChatMessage>>()
+        val people = s.channelPeople.associate { it.uid to it.name }
+        val muted = s.muted.toSet()
+        // A person we only know from a channel: the name they chose plus a short id, so two "Alex" can be told apart.
+        fun channelLabel(uid: String): String =
+            (if (uid == self) ownName().takeIf { it.isNotBlank() } else people[uid]).let { (it ?: "Anonymous") + " #" + uid.take(4) }
         for (conv in s.conversations) {
-            val mapped = conv.messages.mapIndexed { index, m ->
+            val visibleMessages = if (conv.id.startsWith("chan:")) conv.messages.filter { it.sender !in muted } else conv.messages
+            val mapped = visibleMessages.mapIndexed { index, m ->
                 val replied = m.replyTo?.let { rid -> conv.messages.firstOrNull { it.id == rid } }
-                val unreadFrom = conv.messages.size - conv.unread.toInt()
+                val unreadFrom = visibleMessages.size - conv.unread.toInt()
                 val reactions = LinkedHashMap<String, String>()
                 for (chip in m.reactions) {
                     if (chip.mine) reactions[self] = chip.emoji
@@ -767,7 +779,7 @@ class RustChatEngine(
                     type = if (m.isFile) MessageType.FILE else MessageType.TEXT,
                     replyTo = m.replyTo?.let { ReplyRef(it, replied?.let { r -> nameOf(s, r.sender) } ?: "", replied?.text.orEmpty()) },
                     file = if (m.isFile) FileMeta(m.text, m.fileMime, m.fileSize.toLong().coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), "") else null,
-                    senderName = if (conv.id.startsWith("chan:")) nameOf(s, m.sender) else null,
+                    senderName = if (conv.id.startsWith("chan:")) channelLabel(m.sender) else null,
                     deleted = m.deleted, reactions = reactions,
                 )
             }
@@ -802,7 +814,7 @@ class RustChatEngine(
             val id = "chan:$name"
             val conv = s.conversations.firstOrNull { it.id == id }
             summaries += ChatSummary(
-                id, true, "# $name", conv?.last?.let { nameOf(s, it.sender) + ": " + it.text }, conv?.last?.at ?: 0L,
+                id, true, "# $name", conv?.last?.takeIf { it.sender !in muted }?.let { channelLabel(it.sender) + ": " + it.text }, conv?.last?.at ?: 0L,
                 conv?.unread?.toInt() ?: 0, if (online) LinkStatus.CONNECTED else LinkStatus.OFFLINE, "Public channel",
             )
         }
@@ -956,7 +968,13 @@ class RustChatEngine(
         "Restored ${it.friends} friends, ${it.groups} groups and ${it.messages} messages."
     }
 
-    override suspend fun joinChannel(raw: String, persist: Boolean): Result<String> = call { joinChannel(raw) }
+    override suspend fun joinChannel(raw: String, persist: Boolean): Result<String> {
+        // A channel needs the connection service or the Bluetooth mesh; with neither it could never carry a message.
+        if (networkConfig().signaling.isEmpty() && meshRadio == null) {
+            return Result.failure(IllegalStateException("Channels need a connection service (Settings > Connection) or the Bluetooth mesh (Settings)."))
+        }
+        return call { joinChannel(raw) }
+    }
     override fun leaveChannel(conversationId: String) { scope.launch { call { leaveChannel(conversationId.removePrefix("chan:")) } } }
     override fun muteSender(uid: String) { scope.launch { call { setMuted(uid, true) } } }
 
@@ -968,9 +986,18 @@ class RustChatEngine(
 
     override suspend fun renameFriend(uid: String, name: String) { call { renameContact(uid, name) } }
 
-    override fun removeBlocker(uid: String): String? = null
+    /** Why a friend cannot be removed right now, or null: someone you share a group with stays until you leave the group. */
+    override fun removeBlocker(uid: String): String? {
+        val snapshot = last ?: return null
+        val me = snapshot.ownUid ?: return null
+        val shared = snapshot.groups.firstOrNull { g -> g.members.any { it.uid == uid } && g.members.any { it.uid == me } } ?: return null
+        return "${nameOf(snapshot, uid)} is in the group \"${shared.name}\" with you. Leave that group first."
+    }
 
-    override suspend fun removeFriend(uid: String): Result<Unit> = call { removeContact(uid) }
+    override suspend fun removeFriend(uid: String): Result<Unit> {
+        removeBlocker(uid)?.let { return Result.failure(IllegalStateException(it)) }
+        return call { removeContact(uid) }
+    }
 
     override fun setGroupOnly(value: Boolean) {
         groupOnly = value
@@ -1006,8 +1033,9 @@ class RustChatEngine(
         call { loadFile(messageId) }.getOrNull()?.let { FileMeta(it.name, it.mime, it.data.size, "") to it.data }
 
     override suspend fun retry(messageId: String) {
-        // The engine resends on its own when the link opens; nudge it to dial now instead of waiting out the backoff.
-        onNetworkAvailable()
+        // Send it again from the start (a refused file, say), and dial now instead of waiting out the retry delay.
+        call { retryMessage(messageId) }
+        io { runCatching { engine?.resetDialBackoff(null) } }
         requestRefresh()
     }
 

@@ -1020,6 +1020,8 @@ internal open class UniffiVTableCallbackInterfaceTransportCallbacks(
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1147,6 +1149,8 @@ internal interface UniffiLib : Library {
     fun uniffi_privcord_ffi_fn_method_privcordengine_reset_dial_backoff(`ptr`: Pointer,`peer`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_retry_answer(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_retry_message(`ptr`: Pointer,`messageId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_search(`ptr`: Pointer,`query`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1426,6 +1430,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_retry_answer(
     ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_retry_message(
+    ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_search(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_send_channel_message(
@@ -1633,6 +1639,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_retry_answer() != 39887.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_retry_message() != 1610.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_search() != 51141.toShort()) {
@@ -3110,6 +3119,11 @@ public interface PrivcordEngineInterface {
     fun `retryAnswer`()
     
     /**
+     * Send one of your own messages again from the start (it was refused, or never got through).
+     */
+    fun `retryMessage`(`messageId`: kotlin.String)
+    
+    /**
      * Search messages on this device (two characters at least). Newest first.
      */
     fun `search`(`query`: kotlin.String, `limit`: kotlin.UInt): List<SearchHitDto>
@@ -3806,6 +3820,21 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_retry_answer(
         it, _status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Send one of your own messages again from the start (it was refused, or never got through).
+     */
+    @Throws(FfiException::class)override fun `retryMessage`(`messageId`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_retry_message(
+        it, FfiConverterString.lower(`messageId`),_status)
 }
     }
     
@@ -4978,6 +5007,38 @@ public object FfiConverterTypeAnswerDto: FfiConverterRustBuffer<AnswerDto> {
 
 
 
+data class ChannelPersonDto (
+    var `uid`: kotlin.String, 
+    var `name`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeChannelPersonDto: FfiConverterRustBuffer<ChannelPersonDto> {
+    override fun read(buf: ByteBuffer): ChannelPersonDto {
+        return ChannelPersonDto(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: ChannelPersonDto) = (
+            FfiConverterString.allocationSize(value.`uid`) +
+            FfiConverterString.allocationSize(value.`name`)
+    )
+
+    override fun write(value: ChannelPersonDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`uid`, buf)
+            FfiConverterString.write(value.`name`, buf)
+    }
+}
+
+
+
 data class ContactDto (
     var `uid`: kotlin.String, 
     var `name`: kotlin.String?, 
@@ -5684,7 +5745,11 @@ data class SnapshotDto (
     var `requests`: List<RequestDto>, 
     var `answer`: AnswerDto?, 
     var `lookupPending`: kotlin.Boolean, 
-    var `queued`: kotlin.ULong
+    var `queued`: kotlin.ULong, 
+    /**
+     * The name each person gave in a public channel (they are not contacts).
+     */
+    var `channelPeople`: List<ChannelPersonDto>
 ) {
     
     companion object
@@ -5708,6 +5773,7 @@ public object FfiConverterTypeSnapshotDto: FfiConverterRustBuffer<SnapshotDto> {
             FfiConverterOptionalTypeAnswerDto.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterULong.read(buf),
+            FfiConverterSequenceTypeChannelPersonDto.read(buf),
         )
     }
 
@@ -5723,7 +5789,8 @@ public object FfiConverterTypeSnapshotDto: FfiConverterRustBuffer<SnapshotDto> {
             FfiConverterSequenceTypeRequestDto.allocationSize(value.`requests`) +
             FfiConverterOptionalTypeAnswerDto.allocationSize(value.`answer`) +
             FfiConverterBoolean.allocationSize(value.`lookupPending`) +
-            FfiConverterULong.allocationSize(value.`queued`)
+            FfiConverterULong.allocationSize(value.`queued`) +
+            FfiConverterSequenceTypeChannelPersonDto.allocationSize(value.`channelPeople`)
     )
 
     override fun write(value: SnapshotDto, buf: ByteBuffer) {
@@ -5739,6 +5806,7 @@ public object FfiConverterTypeSnapshotDto: FfiConverterRustBuffer<SnapshotDto> {
             FfiConverterOptionalTypeAnswerDto.write(value.`answer`, buf)
             FfiConverterBoolean.write(value.`lookupPending`, buf)
             FfiConverterULong.write(value.`queued`, buf)
+            FfiConverterSequenceTypeChannelPersonDto.write(value.`channelPeople`, buf)
     }
 }
 
@@ -7534,6 +7602,34 @@ public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.Str
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterString.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeChannelPersonDto: FfiConverterRustBuffer<List<ChannelPersonDto>> {
+    override fun read(buf: ByteBuffer): List<ChannelPersonDto> {
+        val len = buf.getInt()
+        return List<ChannelPersonDto>(len) {
+            FfiConverterTypeChannelPersonDto.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<ChannelPersonDto>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeChannelPersonDto.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<ChannelPersonDto>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeChannelPersonDto.write(it, buf)
         }
     }
 }

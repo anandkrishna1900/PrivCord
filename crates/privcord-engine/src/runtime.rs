@@ -156,6 +156,9 @@ pub enum Op {
         peer: UserId,
         path: ConnectionPath,
     },
+    RetryMessage {
+        id: MessageId,
+    },
     MarkConversationRead {
         conversation: ConversationId,
     },
@@ -313,6 +316,7 @@ fn pump(core: &mut Core, cmd: Command) -> bool {
                 }
                 Op::React { id, emoji } => core.react(&id, &emoji).map(|()| Answer::Done),
                 Op::SetMuted { uid, muted } => core.set_muted(&uid, muted).map(|()| Answer::Done),
+                Op::RetryMessage { id } => core.retry_message(&id).map(|()| Answer::Done),
                 Op::SetLinkPath { peer, path } => {
                     core.set_link_path(&peer, path);
                     Ok(Answer::Done)

@@ -25,6 +25,7 @@ use privcord_crypto::{
     secure_channel::{Data, Hello, SecureChannel},
     CryptoError,
 };
+use privcord_domain::{blob::SealedBlob, signaling::PutKind};
 use privcord_domain::{
     channel::normalize_channel_name,
     files::{file_chunks, AssembleResult, BeginOutcome, FileAssembler, FileChunk, FileOffer},
@@ -49,7 +50,7 @@ use privcord_ports::{
 };
 use serde_json::{json, Value};
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     sync::Arc,
 };
 use zeroize::Zeroizing;
@@ -77,6 +78,7 @@ const KV_DEVICE_ID: &str = "device_id";
 const KV_GROUP_ONLY: &str = "settings.group_only";
 const KV_GROUPS: &str = "groups.v1";
 const KV_CHANNELS: &str = "channels.v1";
+const KV_CHANNEL_PEOPLE: &str = "channel.people.v1";
 
 /// Everything the engine reaches the outside world through.
 pub struct Ports {
@@ -185,6 +187,10 @@ pub struct Core {
     mesh: MeshNode,
     invites: invites::InviteState,
     sealed: signaling::SealedState,
+    /// Channel mailboxes we are listening on (the adapter opens the sockets).
+    channel_subscribed: HashSet<String>,
+    /// The name each person gave in a channel message (they are not contacts).
+    channel_people: BTreeMap<UserId, String>,
     /// Group messages that arrived before we knew the group: held for a minute, then dropped.
     pending_group: PendingGroupBuffer<Value>,
     /// Everyone's reactions, per message.
@@ -238,6 +244,8 @@ impl Core {
             mesh: MeshNode::default(),
             invites: invites::InviteState::default(),
             sealed: signaling::SealedState::default(),
+            channel_subscribed: HashSet::new(),
+            channel_people: BTreeMap::new(),
             pending_group: PendingGroupBuffer::default(),
             reactions: HashMap::new(),
             deleted: std::collections::HashSet::new(),
@@ -273,6 +281,8 @@ impl Core {
         self.messages.clear();
         self.reactions.clear();
         self.channels.clear();
+        self.channel_subscribed.clear();
+        self.channel_people.clear();
         self.groups = None;
         for stored in self.ports.storage.contacts()? {
             if let Some(contact) = ContactCard::decode(&stored.card).filter(|c| c.uid == stored.uid)
@@ -311,6 +321,15 @@ impl Core {
                 for n in names {
                     if let Some(name) = normalize_channel_name(&n) {
                         self.channels.insert(name.clone(), derive_channel(&name)?);
+                    }
+                }
+            }
+        }
+        if let Some(bytes) = self.ports.storage.kv(KV_CHANNEL_PEOPLE)? {
+            if let Ok(list) = serde_json::from_slice::<Vec<(String, String)>>(&bytes) {
+                for (u, n) in list {
+                    if let Ok(uid) = UserId::new(u) {
+                        self.channel_people.insert(uid, n);
                     }
                 }
             }
@@ -1349,6 +1368,7 @@ impl Core {
         self.request_dials(now);
         self.tick_invites();
         self.tick_sealed();
+        self.tick_channels();
     }
 
     /// Ask for a dial to each person whose link is down and whose backoff has passed (5 s doubling to 2 minutes, a few
@@ -1660,6 +1680,66 @@ impl Core {
             self.flush(r);
         }
         Ok(id)
+    }
+
+    /// Send one of our own messages again from the start: after a friend refused it (a file that arrived while they were busy,
+    /// say), or when the person taps "retry". Everyone it was for gets it again; receivers ignore a message they have.
+    pub fn retry_message(&mut self, id: &MessageId) -> Result<(), ErrorCode> {
+        self.require_live()?;
+        let own = self.uid.clone().ok_or(ErrorCode::NoIdentity)?;
+        let row = self.messages.get(id).ok_or(ErrorCode::UnknownMessage)?;
+        if row.message.sender_id != own || row.message.delivery_state == DeliveryState::Read {
+            return Err(ErrorCode::UnknownMessage);
+        }
+        let recipients: Vec<UserId> = match &row.conversation {
+            ConversationId::Direct(p) => vec![p.clone()],
+            ConversationId::Group(g) => self
+                .groups
+                .as_ref()
+                .map(|gr| {
+                    gr.recipients(g.as_str())
+                        .iter()
+                        .filter_map(|u| UserId::new(u.as_str()).ok())
+                        .collect()
+                })
+                .unwrap_or_default(),
+            ConversationId::Channel(_) => return Ok(()),
+        };
+        let now = self.now();
+        let entries: Vec<OutboxEntry> = recipients
+            .iter()
+            .filter(|r| {
+                !self
+                    .outbox
+                    .iter()
+                    .any(|o| &o.message_id == id && &o.recipient == *r)
+            })
+            .map(|r| OutboxEntry {
+                message_id: id.clone(),
+                recipient: r.clone(),
+                attempts: 0,
+                next_try_ms: now,
+            })
+            .collect();
+        let mut ops = vec![StorageOp::SetDelivery {
+            id: id.clone(),
+            state: DeliveryState::Queued,
+            read_at: None,
+        }];
+        ops.extend(entries.iter().cloned().map(StorageOp::PutOutbox));
+        self.ports.storage.apply(&ops)?;
+        if let Some(m) = self.messages.get_mut(id) {
+            m.message.delivery_state = DeliveryState::Queued;
+        }
+        self.outbox.extend(entries);
+        self.hub.publish(EngineEvent::MessageStatusChanged {
+            message_id: id.clone(),
+            status: DeliveryState::Queued,
+        });
+        for r in &recipients {
+            self.flush(r);
+        }
+        Ok(())
     }
 
     fn on_group_message(&mut self, peer: &UserId, value: &Value) {
@@ -2035,12 +2115,55 @@ impl Core {
                 self.channels.insert(name, keys);
                 return Err(e);
             }
+            if self.channel_subscribed.remove(&keys.mailbox) {
+                self.ports.transport.signal_unsubscribe(&keys.mailbox);
+            }
         }
         Ok(())
     }
 
-    /// Write to a channel you joined: sealed, signed, stored and flooded over the mesh to every neighbour (and carried
-    /// for neighbours that arrive later). Nobody is told it arrived: a channel is a broadcast.
+    /// Listen on the mailbox of every channel we joined, once signaling is up (the adapter opens the sockets).
+    fn tick_channels(&mut self) {
+        if !self.ports.transport.signal_available() {
+            self.channel_subscribed.clear();
+            return;
+        }
+        let mailboxes: Vec<String> = self.channels.values().map(|k| k.mailbox.clone()).collect();
+        for m in mailboxes {
+            if !self.channel_subscribed.contains(&m)
+                && self.ports.transport.signal_subscribe(&m).is_ok()
+            {
+                self.channel_subscribed.insert(m);
+            }
+        }
+    }
+
+    /// Hand a channel message to the signaling service: a live copy always, and a stored copy (history for people who
+    /// join later) only when store-and-forward is on. True if the service took at least one.
+    fn put_channel(&self, mailbox: &str, blob: &SealedBlob) -> bool {
+        let text = blob.encode();
+        let live = self
+            .ports
+            .transport
+            .signal_put(mailbox, &text, PutKind::Sig, 120)
+            .is_ok();
+        let stored = self.store_forward()
+            && self
+                .ports
+                .transport
+                .signal_put(
+                    mailbox,
+                    &text,
+                    PutKind::Msg,
+                    u32::try_from(privcord_crypto::channel::CHANNEL_TTL_SEC).unwrap_or(86_400),
+                )
+                .is_ok();
+        live || stored
+    }
+
+    /// Write to a channel you joined: sealed, signed, stored, sent through the signaling service and flooded over the
+    /// mesh to every neighbour (and carried for neighbours that arrive later). Nobody is told it arrived: a channel is a
+    /// broadcast.
     pub fn send_channel_message(&mut self, raw: &str, text: &str) -> Result<MessageId, ErrorCode> {
         self.require_live()?;
         let own = self.uid.clone().ok_or(ErrorCode::NoIdentity)?;
@@ -2050,17 +2173,34 @@ impl Core {
         else {
             return Err(ErrorCode::NotJoined);
         };
-        let blob = seal_channel_message(keys, identity, None, text, now, &mut *self.ports.entropy)
-            .map_err(|e| match e {
-                CryptoError::EmptyMessage => ErrorCode::EmptyMessage,
-                other => ErrorCode::from(other),
-            })?;
+        let mailbox = keys.mailbox.clone();
+        let blob = seal_channel_message(
+            keys,
+            identity,
+            self.display_name.as_deref(),
+            text,
+            now,
+            &mut *self.ports.entropy,
+        )
+        .map_err(|e| match e {
+            CryptoError::EmptyMessage => ErrorCode::EmptyMessage,
+            other => ErrorCode::from(other),
+        })?;
         let id = MessageId::new(privcord_domain::mesh::packet_id(&blob))
             .map_err(|_| ErrorCode::Crypto)?;
         let text: String = privcord_domain::text::js_trim(text)
             .chars()
             .take(privcord_domain::limits::MAX_CHANNEL_TEXT)
             .collect();
+        let out = self
+            .mesh
+            .inject(blob.clone(), u64::try_from(now).unwrap_or(0));
+        let over_signaling = self.put_channel(&mailbox, &blob);
+        // A signaling service is configured but took nothing, and no neighbour can carry it: say so instead of storing a
+        // message that nobody will ever get. (With no service configured the mesh may still carry it later.)
+        if self.ports.transport.signal_available() && !over_signaling && out.is_empty() {
+            return Err(ErrorCode::NoSignaling);
+        }
         let conversation = ConversationId::Channel(name);
         let row = StoredMessage {
             conversation: conversation.clone(),
@@ -2086,7 +2226,6 @@ impl Core {
             message_id: id.clone(),
             own: true,
         });
-        let out = self.mesh.inject(blob, u64::try_from(now).unwrap_or(0));
         self.mesh_send(out);
         Ok(id)
     }
@@ -2128,10 +2267,15 @@ impl Core {
         let now = u64::try_from(self.now()).unwrap_or(0);
         let result = self.mesh.handle(&value, link, now);
         self.mesh_send(result.forward);
-        let Some(blob) = result.accepted else {
-            return;
-        };
-        let Ok(blob_value) = serde_json::to_value(&blob) else {
+        if let Some(blob) = result.accepted {
+            self.accept_channel_blob(&blob);
+        }
+    }
+
+    /// A sealed blob for one of our channels, from the mesh or from the signaling service: open it, remember who wrote
+    /// it, keep it, tell the app. Repeats, our own messages and people we muted are dropped.
+    fn accept_channel_blob(&mut self, blob: &SealedBlob) {
+        let Ok(blob_value) = serde_json::to_value(blob) else {
             return;
         };
         let opened = self
@@ -2142,11 +2286,30 @@ impl Core {
         let Some(m) = opened else {
             return;
         };
-        let Ok(id) = MessageId::new(privcord_domain::mesh::packet_id(&blob)) else {
+        let Ok(id) = MessageId::new(privcord_domain::mesh::packet_id(blob)) else {
             return;
         };
-        if self.messages.contains_key(&id) || Some(&m.contact.uid) == self.uid.as_ref() {
+        if self.messages.contains_key(&id)
+            || Some(&m.contact.uid) == self.uid.as_ref()
+            || self.muted.contains(&m.contact.uid)
+        {
             return;
+        }
+        if let Some(n) = m.contact.card.name.as_ref().filter(|n| !n.is_empty()) {
+            if self.channel_people.get(&m.contact.uid) != Some(n) {
+                self.channel_people.insert(m.contact.uid.clone(), n.clone());
+                let list: Vec<(&str, &String)> = self
+                    .channel_people
+                    .iter()
+                    .map(|(u, n)| (u.as_str(), n))
+                    .collect();
+                if let Ok(value) = serde_json::to_vec(&list) {
+                    let _ = self.ports.storage.apply(&[StorageOp::SetKv {
+                        key: KV_CHANNEL_PEOPLE.into(),
+                        value,
+                    }]);
+                }
+            }
         }
         let conversation = ConversationId::Channel(m.channel.clone());
         let row = StoredMessage {
@@ -2301,6 +2464,11 @@ impl Core {
             lookup_pending,
             messages,
             queued: self.outbox.len(),
+            channel_people: self
+                .channel_people
+                .iter()
+                .map(|(u, n)| (u.clone(), n.clone()))
+                .collect(),
             files,
         }
     }

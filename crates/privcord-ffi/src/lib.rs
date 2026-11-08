@@ -474,6 +474,12 @@ pub struct LastMessageDto {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ChannelPersonDto {
+    pub uid: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct SnapshotDto {
     pub seq: u64,
     pub own_uid: Option<String>,
@@ -488,6 +494,8 @@ pub struct SnapshotDto {
     pub answer: Option<AnswerDto>,
     pub lookup_pending: bool,
     pub queued: u64,
+    /// The name each person gave in a public channel (they are not contacts).
+    pub channel_people: Vec<ChannelPersonDto>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -1080,6 +1088,12 @@ impl PrivcordEngine {
         self.misc(Op::React { id, emoji })
     }
 
+    /// Send one of your own messages again from the start (it was refused, or never got through).
+    pub fn retry_message(&self, message_id: String) -> Result<(), FfiError> {
+        let id = MessageId::new(message_id).map_err(|_| FfiError::InvalidArgument)?;
+        self.misc(Op::RetryMessage { id })
+    }
+
     /// Tell the engine how a link that is already up is really routed (found out after it opened).
     pub fn set_link_path(&self, peer: String, path: PathKind) -> Result<(), FfiError> {
         self.misc(Op::SetLinkPath {
@@ -1329,6 +1343,14 @@ impl PrivcordEngine {
                 })
                 .collect(),
             queued: u64::try_from(s.queued).unwrap_or(u64::MAX),
+            channel_people: s
+                .channel_people
+                .iter()
+                .map(|(u, n)| ChannelPersonDto {
+                    uid: u.to_string(),
+                    name: n.clone(),
+                })
+                .collect(),
         })
     }
 

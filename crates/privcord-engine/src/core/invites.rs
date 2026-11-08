@@ -90,7 +90,7 @@ fn short(uid: &UserId) -> String {
 }
 
 impl Core {
-    fn store_forward(&self) -> bool {
+    pub(super) fn store_forward(&self) -> bool {
         matches!(self.ports.storage.kv(KV_STORE_FORWARD), Ok(Some(v)) if v == b"1")
     }
 
@@ -377,6 +377,11 @@ impl Core {
         let Some(own) = self.identity.as_ref().map(|i| i.sign_public()) else {
             return;
         };
+        // A message in a public channel we joined, carried by the signaling service.
+        if self.channels.values().any(|k| k.mailbox == mailbox) {
+            self.accept_channel_blob(&blob);
+            return;
+        }
         // Someone answered our words.
         if let Some(a) = self
             .invites
