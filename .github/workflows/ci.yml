@@ -60,7 +60,12 @@ jobs:
       # The relay client is tested against the real relay (Node + its `ws` package), so install the JS dependencies first.
       - run: npm ci
         if: matrix.os == 'ubuntu-latest'
-      # The Nostr client is tested against an independent real relay (Python `nostr-relay`).
+      # The Nostr client is tested against an independent real relay (Python `nostr-relay`). Python 3.12 has prebuilt
+      # wheels for its dependencies; the runner's default (3.14) tries to build coincurve from source and fails.
+      - uses: actions/setup-python@v5
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          python-version: '3.12'
       - run: pip install nostr-relay==1.14
         if: matrix.os == 'ubuntu-latest'
       - run: cargo fmt --all --check
