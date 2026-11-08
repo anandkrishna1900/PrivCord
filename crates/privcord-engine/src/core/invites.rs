@@ -28,8 +28,8 @@ use std::collections::BTreeMap;
 pub(super) const KV_STORE_FORWARD: &str = "settings.store_forward";
 pub(super) const KV_NAME: &str = "profile.name";
 /// The invite card is published again this often while the invite is open: relays differ in what they keep.
-const REPUBLISH_MS: i64 = 8_000;
-const LOOKUP_MS: i64 = 15_000;
+const REPUBLISH_MS: i64 = 4_000;
+const LOOKUP_MS: i64 = 40_000;
 const ANSWER_LINGER_MS: i64 = 1_500;
 const LIVE_TTL_SEC: u32 = 120;
 

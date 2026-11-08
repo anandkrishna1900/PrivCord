@@ -1273,7 +1273,7 @@ class RustChatEngine(
 
     private companion object {
         const val OFFER_TIMEOUT_MS = 25_000L
-        const val LOOKUP_WAIT_MS = 17_000L
+        const val LOOKUP_WAIT_MS = 42_000L
         const val PUT_WAIT_MS = 30_000L
         const val PUT_RETRY_MS = 100L
         const val READY_GUARD_MS = 8_000L

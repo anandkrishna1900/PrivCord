@@ -361,12 +361,12 @@ fn an_open_invite_is_republished_expires_and_a_failed_answer_can_be_retried() {
     );
     assert_eq!(first[1].1, 900);
 
-    a.clock.advance(7_000);
+    a.clock.advance(3_000);
     a.core.tick();
     assert!(puts(&a).is_empty(), "not yet");
     a.clock.advance(2_000);
     a.core.tick();
-    assert_eq!(puts(&a).len(), 2, "republished after 8 s");
+    assert_eq!(puts(&a).len(), 2, "republished after 4 s");
 
     // Bob finds the invite but the service fails when he answers: the answer is marked failed, and retrying works.
     let (_, _, blob, mailbox) = first[0].clone();
@@ -400,7 +400,7 @@ fn an_open_invite_is_republished_expires_and_a_failed_answer_can_be_retried() {
 }
 
 #[test]
-fn a_search_that_finds_nothing_gives_up_after_fifteen_seconds() {
+fn a_search_that_finds_nothing_gives_up_after_forty_seconds() {
     let clock = FakeClock::at(1_700_000_000_000);
     let mut b = node("bob", &clock);
     b.transport.set_signaling(true);
@@ -411,7 +411,7 @@ fn a_search_that_finds_nothing_gives_up_after_fifteen_seconds() {
             .unwrap(),
         None
     );
-    b.clock.advance(14_000);
+    b.clock.advance(39_000);
     b.core.tick();
     assert!(b.core.snapshot().lookup_pending);
     b.clock.advance(2_000);

@@ -793,7 +793,7 @@ impl Core {
             return;
         };
         p.bad_frames += 1;
-        if p.bad_frames >= 5 {
+        if p.bad_frames >= 20 {
             p.bad_frames = 0;
             self.fail(peer, ConnectionFailure::AuthenticationFailed);
             self.ports.transport.close(peer);
