@@ -182,6 +182,7 @@ fn person(seed: u8) -> (Identity, ContactCard, String) {
     (id, card, uid)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn event(
     identity: &Identity,
     group: &str,
@@ -312,7 +313,7 @@ fn tampering_missing_parents_and_foreign_groups_are_refused() {
         EventType::Add,
         &uid,
         1100,
-        &[gid.clone()],
+        std::slice::from_ref(&gid),
         Some(&u2),
         Some(&c2),
         None,
