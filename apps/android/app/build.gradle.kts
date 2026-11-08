@@ -154,7 +154,7 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     // WebSocket client for the signaling relay and Nostr relays.
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // The generated bindings call the Rust library through JNA.
