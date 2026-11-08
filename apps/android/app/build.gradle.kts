@@ -156,7 +156,7 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     // WebSocket client for the signaling relay and Nostr relays.
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:okhttp:5.5.1")
     // The generated bindings call the Rust library through JNA.
     implementation("net.java.dev.jna:jna:5.14.0@aar")
 
