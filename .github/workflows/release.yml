@@ -7,6 +7,9 @@ on:
   push:
     tags: ['v*']
 
+permissions:
+  contents: read
+
 jobs:
   windows:
     runs-on: windows-latest
