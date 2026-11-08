@@ -4,4 +4,4 @@
 const [host, password] = process.argv.slice(2);
 if (!host || !password) { console.error('usage: node make-share-line.mjs <host> <password>'); process.exit(1); }
 const json = JSON.stringify({ u: [`turn:${host}:3478`, `turn:${host}:3478?transport=tcp`], n: 'privcord', c: password });
-console.log('PRIVCORD-TURN1:' + Buffer.from(json, 'utf8').toString('base64url'));
+process.stdout.write('PRIVCORD-TURN1:' + Buffer.from(json, 'utf8').toString('base64url') + '\n');
