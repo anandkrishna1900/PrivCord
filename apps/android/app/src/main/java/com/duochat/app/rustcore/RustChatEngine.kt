@@ -833,6 +833,17 @@ class RustChatEngine(
         }
     }
 
+    override fun reloadNetwork() {
+        scope.launch { call { setStoreForward(networkConfig().storeForward) } }
+        // The sockets follow the new settings the next time they are opened: reopen every mailbox now.
+        for (mailbox in hubs.keys.toList()) {
+            if (mailbox == "put") continue
+            transport.signalSubscribe(mailbox)
+        }
+    }
+
+    override fun onNetworkAvailable() = reloadNetwork()
+
     // ------------------------------------------------------------------ manual connection codes
 
     private fun encodeCode(kind: String, sdp: String, card: String): String {
