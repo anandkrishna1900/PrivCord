@@ -25,8 +25,10 @@ export function serve(dir) {
   return new Promise((resolve) => {
     const types = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html' };
     const server = http.createServer((req, res) => {
-      let p = path.join(dir, req.url.split('?')[0]);
-      if (!fs.existsSync(p) || fs.statSync(p).isDirectory()) p = path.join(dir, 'index.html');
+      // Never serve anything outside `dir`, whatever the URL says (../ or encoded forms).
+      const root = path.resolve(dir);
+      let p = path.resolve(root, '.' + path.sep + decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, ''));
+      if (!p.startsWith(root + path.sep) || !fs.existsSync(p) || fs.statSync(p).isDirectory()) p = path.join(root, 'index.html');
       res.setHeader('content-type', types[path.extname(p)] ?? 'application/octet-stream');
       res.end(fs.readFileSync(p));
     });

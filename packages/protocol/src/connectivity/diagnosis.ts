@@ -74,6 +74,11 @@ export function diagnoseConnection(f: ConnectionFacts, friend = 'your friend'): 
 /** Counts the address kinds in an SDP blob (host, srflx = found by STUN, relay = TURN). */
 export function countSdpCandidates(sdp: string): { host: number; srflx: number; relay: number } {
   const out = { host: 0, srflx: 0, relay: 0 };
-  for (const m of sdp.matchAll(/a=candidate:[^\r\n]* typ (host|srflx|relay)\b/g)) out[m[1] as 'host' | 'srflx' | 'relay'] += 1;
+  // Line by line with a pattern that has no leading wildcard: linear time however long the blob is.
+  for (const line of sdp.split(/\r?\n/)) {
+    if (!line.startsWith('a=candidate:')) continue;
+    const m = / typ (host|srflx|relay)\b/.exec(line);
+    if (m) out[m[1] as 'host' | 'srflx' | 'relay'] += 1;
+  }
   return out;
 }

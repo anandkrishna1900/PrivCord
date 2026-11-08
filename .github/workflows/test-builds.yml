@@ -5,6 +5,9 @@ name: Test builds
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   windows:
     name: Windows installer (unsigned)
