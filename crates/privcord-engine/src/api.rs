@@ -20,6 +20,16 @@ pub struct ContactView {
     pub can_message: bool,
 }
 
+/// A group you are in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupView {
+    pub group_id: String,
+    pub name: String,
+    pub created_by: String,
+    /// Each member and whether they are an admin.
+    pub members: Vec<(String, bool)>,
+}
+
 /// Everything a recreated UI needs, so it never depends on having seen every historical event.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Snapshot {
@@ -27,6 +37,7 @@ pub struct Snapshot {
     pub seq: u64,
     pub own_uid: Option<UserId>,
     pub contacts: Vec<ContactView>,
+    pub groups: Vec<GroupView>,
     pub messages: Vec<(ConversationId, Vec<ChatMessage>)>,
     pub queued: usize,
 }
@@ -47,6 +58,10 @@ pub enum EngineEvent {
     MessageStatusChanged {
         message_id: MessageId,
         status: DeliveryState,
+    },
+    /// A group's membership, name or history changed (or you joined or left it).
+    GroupChanged {
+        group_id: String,
     },
     MessageRefused {
         message_id: MessageId,

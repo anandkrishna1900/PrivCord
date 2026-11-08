@@ -1,0 +1,248 @@
+//! Group behaviour through the engine: three real engines, fake radios.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+
+use privcord_crypto::rng::SeededEntropy;
+use privcord_domain::{
+    message::DeliveryState, privacy::ContactTrust, state::ConnectionPath, UserId,
+};
+use privcord_engine::{Core, Ports};
+use privcord_ports::testing::{
+    FakeClock, MemorySecureStore, MemoryStorage, RecordingNotifier, RecordingTransport,
+};
+use std::sync::Arc;
+
+struct Node {
+    core: Core,
+    transport: Arc<RecordingTransport>,
+    storage: Arc<MemoryStorage>,
+    secure: Arc<MemorySecureStore>,
+    clock: Arc<FakeClock>,
+    uid: UserId,
+}
+
+fn start(
+    seed: &str,
+    storage: Arc<MemoryStorage>,
+    secure: Arc<MemorySecureStore>,
+    clock: Arc<FakeClock>,
+    create: bool,
+) -> Node {
+    let transport = RecordingTransport::new();
+    let mut core = Core::new(Ports {
+        storage: storage.clone(),
+        secure: secure.clone(),
+        transport: transport.clone(),
+        clock: clock.clone(),
+        notifier: RecordingNotifier::new(),
+        entropy: Box::new(SeededEntropy::new(seed)),
+    })
+    .unwrap();
+    if create {
+        core.create_identity().unwrap();
+    }
+    let uid = core.own_uid().unwrap().clone();
+    Node {
+        core,
+        transport,
+        storage,
+        secure,
+        clock,
+        uid,
+    }
+}
+
+fn node(seed: &str, clock: &Arc<FakeClock>) -> Node {
+    start(
+        seed,
+        MemoryStorage::new(),
+        MemorySecureStore::new(),
+        clock.clone(),
+        true,
+    )
+}
+
+fn befriend(a: &mut Node, b: &mut Node) {
+    let (ac, bc) = (
+        a.core.own_card(None).unwrap(),
+        b.core.own_card(None).unwrap(),
+    );
+    a.core.add_contact(&bc, ContactTrust::Verified).unwrap();
+    b.core.add_contact(&ac, ContactTrust::Verified).unwrap();
+}
+
+/// Deliver every frame in flight between all nodes until quiet.
+fn pump(nodes: &mut [&mut Node]) {
+    loop {
+        let mut moved = false;
+        let uids: Vec<UserId> = nodes.iter().map(|n| n.uid.clone()).collect();
+        for i in 0..nodes.len() {
+            for (to, frame) in nodes[i].transport.drain() {
+                moved = true;
+                if let Some(j) = uids.iter().position(|u| *u == to) {
+                    let from = uids[i].clone();
+                    nodes[j].core.frame_received(&from, &frame);
+                }
+            }
+        }
+        if !moved {
+            return;
+        }
+    }
+}
+
+fn link(nodes: &mut [&mut Node], i: usize, j: usize) {
+    let (ui, uj) = (nodes[i].uid.clone(), nodes[j].uid.clone());
+    nodes[i].transport.set_connected(&uj, true);
+    nodes[j].transport.set_connected(&ui, true);
+    nodes[i]
+        .core
+        .link_up(&uj, ConnectionPath::DirectLan)
+        .unwrap();
+    nodes[j]
+        .core
+        .link_up(&ui, ConnectionPath::DirectLan)
+        .unwrap();
+    pump(nodes);
+}
+
+fn group_texts(n: &Node, gid: &str) -> Vec<String> {
+    n.core
+        .snapshot()
+        .messages
+        .into_iter()
+        .filter(|(c, _)| c.storage_key() == gid)
+        .flat_map(|(_, v)| v.into_iter().map(|m| m.text))
+        .collect()
+}
+
+#[test]
+fn a_group_reaches_members_who_never_met_and_introduces_them() {
+    let clock = FakeClock::at(1_700_000_000_000);
+    let (mut a, mut b, mut c) = (
+        node("alice", &clock),
+        node("bob", &clock),
+        node("carol", &clock),
+    );
+    befriend(&mut a, &mut b);
+    befriend(&mut a, &mut c);
+    let gid = a
+        .core
+        .create_group("Trip", &[b.uid.clone(), c.uid.clone()])
+        .unwrap();
+    let mut all = [&mut a, &mut b, &mut c];
+    link(&mut all, 0, 1);
+    link(&mut all, 0, 2);
+    let [a, b, c] = all;
+
+    for n in [&*b, &*c] {
+        let snap = n.core.snapshot();
+        assert_eq!(snap.groups.len(), 1, "member learns of the group");
+        assert_eq!(snap.groups[0].name, "Trip");
+        assert_eq!(snap.groups[0].members.len(), 3);
+    }
+    // Bob now holds Carol's card, as an introduced contact only.
+    let bob_view = b.core.snapshot();
+    let carol = bob_view.contacts.iter().find(|x| x.uid == c.uid).unwrap();
+    assert_eq!(carol.trust, ContactTrust::Introduced);
+    assert!(a.core.snapshot().groups[0]
+        .members
+        .iter()
+        .any(|(u, admin)| *u == a.uid.as_str() && *admin));
+    assert_eq!(a.core.snapshot().groups[0].group_id, gid);
+}
+
+#[test]
+fn group_messages_fan_out_are_stored_once_and_acknowledged() {
+    let clock = FakeClock::at(1_700_000_000_000);
+    let (mut a, mut b, mut c) = (
+        node("alice", &clock),
+        node("bob", &clock),
+        node("carol", &clock),
+    );
+    befriend(&mut a, &mut b);
+    befriend(&mut a, &mut c);
+    let gid = a
+        .core
+        .create_group("Trip", &[b.uid.clone(), c.uid.clone()])
+        .unwrap();
+    let mut all = [&mut a, &mut b, &mut c];
+    link(&mut all, 0, 1);
+    link(&mut all, 0, 2);
+    let [a, b, c] = all;
+    let clock = a.clock.clone();
+
+    let id = a.core.send_group_message(&gid, "meet at 9", None).unwrap();
+    let mut all = [&mut *a, &mut *b, &mut *c];
+    pump(&mut all);
+    assert_eq!(group_texts(b, &gid), ["meet at 9"]);
+    assert_eq!(group_texts(c, &gid), ["meet at 9"]);
+    let sent = a
+        .core
+        .snapshot()
+        .messages
+        .into_iter()
+        .flat_map(|(_, v)| v)
+        .find(|m| m.message_id == id)
+        .unwrap();
+    assert_eq!(sent.delivery_state, DeliveryState::Delivered);
+    assert_eq!(a.core.snapshot().queued, 0, "every member acknowledged");
+
+    // A reply from Bob, relayed to Carol only through the group's own links? Bob has no link to Carol: it waits.
+    clock.advance(1000);
+    b.core.send_group_message(&gid, "ok", None).unwrap();
+    assert_eq!(b.core.snapshot().queued, 2, "one entry per other member");
+    let mut all = [&mut *a, &mut *b, &mut *c];
+    pump(&mut all);
+    assert_eq!(group_texts(a, &gid), ["meet at 9", "ok"]);
+    assert_eq!(
+        b.core.snapshot().queued,
+        1,
+        "Carol is unreachable and still queued"
+    );
+}
+
+#[test]
+fn outsiders_and_removed_members_cannot_post_and_groups_survive_a_restart() {
+    let clock = FakeClock::at(1_700_000_000_000);
+    let (mut a, mut b, mut c) = (
+        node("alice", &clock),
+        node("bob", &clock),
+        node("carol", &clock),
+    );
+    befriend(&mut a, &mut b);
+    befriend(&mut a, &mut c);
+    let gid = a.core.create_group("Trip", &[b.uid.clone()]).unwrap();
+    let mut all = [&mut a, &mut b, &mut c];
+    link(&mut all, 0, 1);
+    link(&mut all, 0, 2);
+    let [a, b, c] = all;
+
+    // Carol is not in the group: she cannot post to it and does not even learn it exists.
+    assert!(c.core.snapshot().groups.is_empty());
+    assert_eq!(
+        c.core.send_group_message(&gid, "hi", None),
+        Err(privcord_engine::ErrorCode::NoSuchGroup)
+    );
+
+    // Bob is removed: Alice stops accepting his messages.
+    a.core.remove_group_member(&gid, &b.uid).unwrap();
+    let mut all = [&mut *a, &mut *b, &mut *c];
+    pump(&mut all);
+    // Bob learned of his removal over the link, so he can no longer write to it.
+    assert!(b.core.snapshot().groups.is_empty());
+    assert_eq!(
+        b.core.send_group_message(&gid, "still here?", None),
+        Err(privcord_engine::ErrorCode::NoSuchGroup)
+    );
+
+    // Restart Alice from the same storage: the group, its membership and its messages are back.
+    let before = a.core.snapshot().groups.clone();
+    let (storage, secure, clock) = (a.storage.clone(), a.secure.clone(), a.clock.clone());
+    let again = start("alice-2", storage, secure, clock, false);
+    assert_eq!(again.core.snapshot().groups, before);
+}

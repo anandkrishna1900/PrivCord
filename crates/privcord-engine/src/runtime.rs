@@ -57,6 +57,11 @@ enum Command {
         peer: UserId,
         reply: Reply<()>,
     },
+    Group {
+        op: GroupOp,
+        /// The new group's id, or the new message's id; empty for operations that return nothing.
+        reply: Reply<String>,
+    },
     LinkUp {
         peer: UserId,
         path: ConnectionPath,
@@ -72,6 +77,35 @@ enum Command {
     },
     Snapshot(Reply<Snapshot>),
     Shutdown(oneshot::Sender<()>),
+}
+
+/// A group operation (one command variant for all of them keeps the queue's shape small).
+#[derive(Debug)]
+pub enum GroupOp {
+    Create {
+        name: String,
+        members: Vec<UserId>,
+    },
+    Add {
+        group: String,
+        uid: UserId,
+    },
+    Remove {
+        group: String,
+        uid: UserId,
+    },
+    Leave {
+        group: String,
+    },
+    Rename {
+        group: String,
+        name: String,
+    },
+    Message {
+        group: String,
+        text: String,
+        reply_to: Option<MessageId>,
+    },
 }
 
 /// A handle to a running engine. Cheap to share by reference; dropping it shuts the engine down.
@@ -106,6 +140,28 @@ fn pump(core: &mut Core, cmd: Command) -> bool {
             reply,
         } => drop(reply.send(core.send_message(&peer, &text, reply_to.as_ref()))),
         Command::MarkRead { peer, reply } => drop(reply.send(core.mark_read(&peer))),
+        Command::Group { op, reply } => drop(
+            reply.send(match op {
+                GroupOp::Create { name, members } => core.create_group(&name, &members),
+                GroupOp::Add { group, uid } => {
+                    core.add_group_member(&group, &uid).map(|()| String::new())
+                }
+                GroupOp::Remove { group, uid } => core
+                    .remove_group_member(&group, &uid)
+                    .map(|()| String::new()),
+                GroupOp::Leave { group } => core.leave_group(&group).map(|()| String::new()),
+                GroupOp::Rename { group, name } => {
+                    core.rename_group(&group, &name).map(|()| String::new())
+                }
+                GroupOp::Message {
+                    group,
+                    text,
+                    reply_to,
+                } => core
+                    .send_group_message(&group, &text, reply_to.as_ref())
+                    .map(|id| id.to_string()),
+            }),
+        ),
         Command::LinkUp {
             peer,
             path,
@@ -237,6 +293,10 @@ impl EngineHandle {
             reply,
         })
         .await
+    }
+    /// Run one group operation. Returns the new group's or message's id where there is one, else an empty string.
+    pub async fn group(&self, op: GroupOp) -> Result<String, ErrorCode> {
+        self.ask(|reply| Command::Group { op, reply }).await
     }
     pub async fn snapshot(&self) -> Result<Snapshot, ErrorCode> {
         self.ask(Command::Snapshot).await

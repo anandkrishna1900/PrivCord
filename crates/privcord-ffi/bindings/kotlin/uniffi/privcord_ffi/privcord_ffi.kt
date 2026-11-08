@@ -830,6 +830,18 @@ internal open class UniffiVTableCallbackInterfaceTransportCallbacks(
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -868,9 +880,15 @@ internal interface UniffiLib : Library {
     ): Pointer
     fun uniffi_privcord_ffi_fn_method_privcordengine_add_contact(`ptr`: Pointer,`card`: RustBuffer.ByValue,`verified`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_method_privcordengine_add_group_member(`ptr`: Pointer,`group`: RustBuffer.ByValue,`uid`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_create_group(`ptr`: Pointer,`name`: RustBuffer.ByValue,`members`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_method_privcordengine_create_identity(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_method_privcordengine_frame_received(`ptr`: Pointer,`peer`: RustBuffer.ByValue,`frame`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_leave_group(`ptr`: Pointer,`group`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_link_down(`ptr`: Pointer,`peer`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
@@ -884,6 +902,12 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_method_privcordengine_recover_identity(`ptr`: Pointer,`phrase`: RustBuffer.ByValue,`passphrase`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_remove_group_member(`ptr`: Pointer,`group`: RustBuffer.ByValue,`uid`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_rename_group(`ptr`: Pointer,`group`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_send_group_message(`ptr`: Pointer,`group`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`replyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_method_privcordengine_send_message(`ptr`: Pointer,`peer`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`replyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_method_privcordengine_set_group_only(`ptr`: Pointer,`value`: Byte,uniffi_out_err: UniffiRustCallStatus, 
@@ -1028,9 +1052,15 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_add_contact(
     ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_add_group_member(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_create_group(
+    ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_create_identity(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_frame_received(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_leave_group(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_link_down(
     ): Short
@@ -1043,6 +1073,12 @@ internal interface UniffiLib : Library {
     fun uniffi_privcord_ffi_checksum_method_privcordengine_own_card(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_recover_identity(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_remove_group_member(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_rename_group(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_send_group_message(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_send_message(
     ): Short
@@ -1085,10 +1121,19 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_add_contact() != 51286.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_add_group_member() != 42035.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_create_group() != 11412.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_create_identity() != 18742.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_frame_received() != 36264.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_leave_group() != 65470.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_link_down() != 49639.toShort()) {
@@ -1107,6 +1152,15 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_recover_identity() != 65257.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_remove_group_member() != 4702.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_rename_group() != 8179.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_send_group_message() != 844.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_send_message() != 34839.toShort()) {
@@ -1825,6 +1879,13 @@ public interface PrivcordEngineInterface {
      */
     fun `addContact`(`card`: kotlin.String, `verified`: kotlin.Boolean): kotlin.String
     
+    fun `addGroupMember`(`group`: kotlin.String, `uid`: kotlin.String)
+    
+    /**
+     * Make a group with these contacts. Returns the group's id.
+     */
+    fun `createGroup`(`name`: kotlin.String, `members`: List<kotlin.String>): kotlin.String
+    
     /**
      * Make a new identity. Returns the 12 recovery words, once. Show them, make the person save them, then drop them.
      */
@@ -1834,6 +1895,8 @@ public interface PrivcordEngineInterface {
      * A frame arrived from `peer`.
      */
     fun `frameReceived`(`peer`: kotlin.String, `frame`: kotlin.String)
+    
+    fun `leaveGroup`(`group`: kotlin.String)
     
     fun `linkDown`(`peer`: kotlin.String)
     
@@ -1853,6 +1916,12 @@ public interface PrivcordEngineInterface {
     fun `ownCard`(`name`: kotlin.String?): kotlin.String
     
     fun `recoverIdentity`(`phrase`: kotlin.String, `passphrase`: kotlin.String)
+    
+    fun `removeGroupMember`(`group`: kotlin.String, `uid`: kotlin.String)
+    
+    fun `renameGroup`(`group`: kotlin.String, `name`: kotlin.String)
+    
+    fun `sendGroupMessage`(`group`: kotlin.String, `text`: kotlin.String, `replyTo`: kotlin.String?): kotlin.String
     
     fun `sendMessage`(`peer`: kotlin.String, `text`: kotlin.String, `replyTo`: kotlin.String?): kotlin.String
     
@@ -1972,6 +2041,34 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
     
 
     
+    @Throws(FfiException::class)override fun `addGroupMember`(`group`: kotlin.String, `uid`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_add_group_member(
+        it, FfiConverterString.lower(`group`),FfiConverterString.lower(`uid`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Make a group with these contacts. Returns the group's id.
+     */
+    @Throws(FfiException::class)override fun `createGroup`(`name`: kotlin.String, `members`: List<kotlin.String>): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_create_group(
+        it, FfiConverterString.lower(`name`),FfiConverterSequenceString.lower(`members`),_status)
+}
+    }
+    )
+    }
+    
+
+    
     /**
      * Make a new identity. Returns the 12 recovery words, once. Show them, make the person save them, then drop them.
      */
@@ -1997,6 +2094,18 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_frame_received(
         it, FfiConverterString.lower(`peer`),FfiConverterString.lower(`frame`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(FfiException::class)override fun `leaveGroup`(`group`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_leave_group(
+        it, FfiConverterString.lower(`group`),_status)
 }
     }
     
@@ -2080,6 +2189,43 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
 }
     }
     
+    
+
+    
+    @Throws(FfiException::class)override fun `removeGroupMember`(`group`: kotlin.String, `uid`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_remove_group_member(
+        it, FfiConverterString.lower(`group`),FfiConverterString.lower(`uid`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(FfiException::class)override fun `renameGroup`(`group`: kotlin.String, `name`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_rename_group(
+        it, FfiConverterString.lower(`group`),FfiConverterString.lower(`name`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(FfiException::class)override fun `sendGroupMessage`(`group`: kotlin.String, `text`: kotlin.String, `replyTo`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_send_group_message(
+        it, FfiConverterString.lower(`group`),FfiConverterString.lower(`text`),FfiConverterOptionalString.lower(`replyTo`),_status)
+}
+    }
+    )
+    }
     
 
     
@@ -2880,6 +3026,78 @@ public object FfiConverterTypeConversationDto: FfiConverterRustBuffer<Conversati
 
 
 
+data class GroupDto (
+    var `id`: kotlin.String, 
+    var `name`: kotlin.String, 
+    var `createdBy`: kotlin.String, 
+    var `members`: List<GroupMemberDto>
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeGroupDto: FfiConverterRustBuffer<GroupDto> {
+    override fun read(buf: ByteBuffer): GroupDto {
+        return GroupDto(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterSequenceTypeGroupMemberDto.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: GroupDto) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterString.allocationSize(value.`createdBy`) +
+            FfiConverterSequenceTypeGroupMemberDto.allocationSize(value.`members`)
+    )
+
+    override fun write(value: GroupDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterString.write(value.`createdBy`, buf)
+            FfiConverterSequenceTypeGroupMemberDto.write(value.`members`, buf)
+    }
+}
+
+
+
+data class GroupMemberDto (
+    var `uid`: kotlin.String, 
+    var `admin`: kotlin.Boolean
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeGroupMemberDto: FfiConverterRustBuffer<GroupMemberDto> {
+    override fun read(buf: ByteBuffer): GroupMemberDto {
+        return GroupMemberDto(
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: GroupMemberDto) = (
+            FfiConverterString.allocationSize(value.`uid`) +
+            FfiConverterBoolean.allocationSize(value.`admin`)
+    )
+
+    override fun write(value: GroupMemberDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`uid`, buf)
+            FfiConverterBoolean.write(value.`admin`, buf)
+    }
+}
+
+
+
 data class MessageDto (
     var `id`: kotlin.String, 
     var `sender`: kotlin.String, 
@@ -2933,6 +3151,7 @@ data class SnapshotDto (
     var `ownUid`: kotlin.String?, 
     var `contacts`: List<ContactDto>, 
     var `conversations`: List<ConversationDto>, 
+    var `groups`: List<GroupDto>, 
     var `queued`: kotlin.ULong
 ) {
     
@@ -2949,6 +3168,7 @@ public object FfiConverterTypeSnapshotDto: FfiConverterRustBuffer<SnapshotDto> {
             FfiConverterOptionalString.read(buf),
             FfiConverterSequenceTypeContactDto.read(buf),
             FfiConverterSequenceTypeConversationDto.read(buf),
+            FfiConverterSequenceTypeGroupDto.read(buf),
             FfiConverterULong.read(buf),
         )
     }
@@ -2958,6 +3178,7 @@ public object FfiConverterTypeSnapshotDto: FfiConverterRustBuffer<SnapshotDto> {
             FfiConverterOptionalString.allocationSize(value.`ownUid`) +
             FfiConverterSequenceTypeContactDto.allocationSize(value.`contacts`) +
             FfiConverterSequenceTypeConversationDto.allocationSize(value.`conversations`) +
+            FfiConverterSequenceTypeGroupDto.allocationSize(value.`groups`) +
             FfiConverterULong.allocationSize(value.`queued`)
     )
 
@@ -2966,6 +3187,7 @@ public object FfiConverterTypeSnapshotDto: FfiConverterRustBuffer<SnapshotDto> {
             FfiConverterOptionalString.write(value.`ownUid`, buf)
             FfiConverterSequenceTypeContactDto.write(value.`contacts`, buf)
             FfiConverterSequenceTypeConversationDto.write(value.`conversations`, buf)
+            FfiConverterSequenceTypeGroupDto.write(value.`groups`, buf)
             FfiConverterULong.write(value.`queued`, buf)
     }
 }
@@ -3045,6 +3267,11 @@ sealed class EventDto {
     /**
      * This reader fell behind; ask for a snapshot.
      */
+    data class GroupChanged(
+        val `groupId`: kotlin.String) : EventDto() {
+        companion object
+    }
+    
     data class Lagged(
         val `missed`: kotlin.ULong) : EventDto() {
         companion object
@@ -3085,10 +3312,13 @@ public object FfiConverterTypeEventDto : FfiConverterRustBuffer<EventDto>{
                 FfiConverterString.read(buf),
                 FfiConverterTypeLinkState.read(buf),
                 )
-            8 -> EventDto.Lagged(
+            8 -> EventDto.GroupChanged(
+                FfiConverterString.read(buf),
+                )
+            9 -> EventDto.Lagged(
                 FfiConverterULong.read(buf),
                 )
-            9 -> EventDto.ShutDown
+            10 -> EventDto.ShutDown
             else -> throw RuntimeException("invalid enum value, something is very wrong!!")
         }
     }
@@ -3145,6 +3375,13 @@ public object FfiConverterTypeEventDto : FfiConverterRustBuffer<EventDto>{
                 + FfiConverterTypeLinkState.allocationSize(value.`link`)
             )
         }
+        is EventDto.GroupChanged -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`groupId`)
+            )
+        }
         is EventDto.Lagged -> {
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
@@ -3199,13 +3436,18 @@ public object FfiConverterTypeEventDto : FfiConverterRustBuffer<EventDto>{
                 FfiConverterTypeLinkState.write(value.`link`, buf)
                 Unit
             }
-            is EventDto.Lagged -> {
+            is EventDto.GroupChanged -> {
                 buf.putInt(8)
+                FfiConverterString.write(value.`groupId`, buf)
+                Unit
+            }
+            is EventDto.Lagged -> {
+                buf.putInt(9)
                 FfiConverterULong.write(value.`missed`, buf)
                 Unit
             }
             is EventDto.ShutDown -> {
-                buf.putInt(9)
+                buf.putInt(10)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -3319,6 +3561,24 @@ sealed class FfiException: kotlin.Exception() {
             get() = ""
     }
     
+    class NoSuchGroup(
+        ) : FfiException() {
+        override val message
+            get() = ""
+    }
+    
+    class GroupRefused(
+        ) : FfiException() {
+        override val message
+            get() = ""
+    }
+    
+    class GroupFull(
+        ) : FfiException() {
+        override val message
+            get() = ""
+    }
+    
 
     companion object ErrorHandler : UniffiRustCallStatusErrorHandler<FfiException> {
         override fun lift(error_buf: RustBuffer.ByValue): FfiException = FfiConverterTypeFfiError.lift(error_buf)
@@ -3351,6 +3611,9 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
             14 -> FfiException.ShuttingDown()
             15 -> FfiException.Busy()
             16 -> FfiException.InvalidArgument()
+            17 -> FfiException.NoSuchGroup()
+            18 -> FfiException.GroupRefused()
+            19 -> FfiException.GroupFull()
             else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
         }
     }
@@ -3421,6 +3684,18 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
                 4UL
             )
+            is FfiException.NoSuchGroup -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is FfiException.GroupRefused -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
+            is FfiException.GroupFull -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+            )
         }
     }
 
@@ -3488,6 +3763,18 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
             }
             is FfiException.InvalidArgument -> {
                 buf.putInt(16)
+                Unit
+            }
+            is FfiException.NoSuchGroup -> {
+                buf.putInt(17)
+                Unit
+            }
+            is FfiException.GroupRefused -> {
+                buf.putInt(18)
+                Unit
+            }
+            is FfiException.GroupFull -> {
+                buf.putInt(19)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -3783,6 +4070,34 @@ public object FfiConverterOptionalTypeEventDto: FfiConverterRustBuffer<EventDto?
 /**
  * @suppress
  */
+public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.String>> {
+    override fun read(buf: ByteBuffer): List<kotlin.String> {
+        val len = buf.getInt()
+        return List<kotlin.String>(len) {
+            FfiConverterString.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<kotlin.String>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterString.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<kotlin.String>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterString.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeContactDto: FfiConverterRustBuffer<List<ContactDto>> {
     override fun read(buf: ByteBuffer): List<ContactDto> {
         val len = buf.getInt()
@@ -3829,6 +4144,62 @@ public object FfiConverterSequenceTypeConversationDto: FfiConverterRustBuffer<Li
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeConversationDto.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeGroupDto: FfiConverterRustBuffer<List<GroupDto>> {
+    override fun read(buf: ByteBuffer): List<GroupDto> {
+        val len = buf.getInt()
+        return List<GroupDto>(len) {
+            FfiConverterTypeGroupDto.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<GroupDto>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeGroupDto.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<GroupDto>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeGroupDto.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeGroupMemberDto: FfiConverterRustBuffer<List<GroupMemberDto>> {
+    override fun read(buf: ByteBuffer): List<GroupMemberDto> {
+        val len = buf.getInt()
+        return List<GroupMemberDto>(len) {
+            FfiConverterTypeGroupMemberDto.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<GroupMemberDto>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeGroupMemberDto.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<GroupMemberDto>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeGroupMemberDto.write(it, buf)
         }
     }
 }

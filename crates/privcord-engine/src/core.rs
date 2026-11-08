@@ -7,12 +7,16 @@
 //! state snapshots and events.
 
 use crate::{
-    api::{ContactView, EngineEvent, Snapshot},
+    api::{ContactView, EngineEvent, GroupView, Snapshot},
     error::ErrorCode,
     events::{EventHub, EventStream},
 };
 use privcord_crypto::{
     card::{Contact, ContactCard},
+    group::Role,
+    group_coordinator::{
+        GroupCoordinator, GroupError, GroupFrame, GroupMessage, GroupResult, MessageVerdict, Who,
+    },
     identity::{Identity, StoredSecrets},
     peer_auth::{Expected, PeerAuth},
     rng::Entropy,
@@ -28,7 +32,7 @@ use privcord_domain::{
     ordering::sort_messages,
     privacy::{accepts_direct, can_start_direct, ContactTrust},
     state::{ConnectionEvent, ConnectionFailure, ConnectionPath, ConnectionState},
-    ConversationId, MessageId, UserId,
+    ConversationId, GroupId, MessageId, UserId,
 };
 use privcord_ports::{
     Clock, Notification, Notifier, OutboxEntry, SecureStore, Storage, StorageOp, StoredContact,
@@ -36,7 +40,7 @@ use privcord_ports::{
 };
 use serde_json::{json, Value};
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     sync::Arc,
 };
 use zeroize::Zeroizing;
@@ -49,6 +53,7 @@ pub const RETRY_AFTER_MS: i64 = 20_000;
 const EARLY_HELLO_MS: i64 = 10_000;
 const KV_DEVICE_ID: &str = "device_id";
 const KV_GROUP_ONLY: &str = "settings.group_only";
+const KV_GROUPS: &str = "groups.v1";
 
 /// Everything the engine reaches the outside world through.
 pub struct Ports {
@@ -124,6 +129,8 @@ pub struct Core {
     shut_down: bool,
     /// Names the conversation in the legacy handshake challenge. Must equal the other app's setting ("duo" by default).
     context: String,
+    /// Group logs and their rules; built once there is an identity.
+    groups: Option<GroupCoordinator>,
 }
 
 struct StoredContactState {
@@ -160,6 +167,7 @@ impl Core {
             hub: EventHub::default(),
             shut_down: false,
             context: context.to_owned(),
+            groups: None,
         };
         if let Some(secrets) = core.ports.secure.load_identity()? {
             let mut stored = StoredSecrets {
@@ -194,6 +202,7 @@ impl Core {
             .storage
             .kv(KV_GROUP_ONLY)?
             .is_some_and(|v| v == b"1");
+        core.ensure_groups()?;
         core.hub.publish(EngineEvent::Ready);
         Ok(core)
     }
@@ -229,6 +238,8 @@ impl Core {
         self.ports.secure.save_identity(&both)?;
         self.uid = Some(identity.uid()?);
         self.identity = Some(identity);
+        self.groups = None;
+        self.ensure_groups()?;
         self.hub.publish(EngineEvent::IdentityCreated);
         Ok(())
     }
@@ -274,6 +285,15 @@ impl Core {
         card_text: &str,
         trust: ContactTrust,
     ) -> Result<UserId, ErrorCode> {
+        self.add_contact_from(card_text, trust, None)
+    }
+
+    fn add_contact_from(
+        &mut self,
+        card_text: &str,
+        trust: ContactTrust,
+        introduced_by: Option<UserId>,
+    ) -> Result<UserId, ErrorCode> {
         self.require_live()?;
         let own = self.uid.clone().ok_or(ErrorCode::NoIdentity)?;
         let contact = ContactCard::decode(card_text).ok_or(ErrorCode::InvalidCard)?;
@@ -296,7 +316,7 @@ impl Core {
                 .contacts
                 .get(&contact.uid)
                 .is_some_and(|c| c.stored.checked),
-            introduced_by: None,
+            introduced_by,
             created_at: self.now(),
         };
         self.ports
@@ -601,6 +621,7 @@ impl Core {
                         .map_or(ConnectionPath::Unknown, |p| p.path);
                     self.step(peer, ConnectionEvent::Established(path));
                     self.send_privacy(peer);
+                    self.send_group_hello(peer);
                     self.flush(peer);
                 }
             }
@@ -640,6 +661,8 @@ impl Core {
             Some("message") => self.on_message(peer, frame),
             Some("ack") => self.on_ack(peer, frame),
             Some("declined") => self.on_declined(peer, frame),
+            Some("group_push" | "group_events" | "group_have") => self.on_group_frame(peer, frame),
+            Some("gmsg") => self.on_group_message(peer, frame),
             Some("privacy") => {
                 if let Some(g) = frame.get("groupOnly").and_then(Value::as_bool) {
                     if let Some(p) = self.peers.get_mut(peer) {
@@ -732,8 +755,16 @@ impl Core {
         };
         // Only the person we sent it to may acknowledge it.
         let ours = self.messages.get(&id).is_some_and(|m| {
-            m.conversation == ConversationId::Direct(peer.clone())
-                && Some(&m.message.sender_id) == self.uid.as_ref()
+            Some(&m.message.sender_id) == self.uid.as_ref()
+                && match &m.conversation {
+                    ConversationId::Direct(p) => p == peer,
+                    // A group message was sent to each member separately: that member (and only they) may acknowledge.
+                    ConversationId::Group(_) => self
+                        .outbox
+                        .iter()
+                        .any(|o| o.message_id == id && &o.recipient == peer),
+                    ConversationId::Channel(_) => false,
+                }
         });
         if !ours {
             return;
@@ -895,7 +926,17 @@ impl Core {
             let Some(row) = self.messages.get(&entry.message_id) else {
                 continue;
             };
-            let frame = row.message.to_peer_frame();
+            let frame = match &row.conversation {
+                ConversationId::Group(g) => GroupFrame::Message(GroupMessage {
+                    group_id: g.as_str().to_owned(),
+                    message_id: row.message.message_id.clone(),
+                    text: row.message.text.clone(),
+                    client_created_at: row.message.client_created_at,
+                    reply_to: row.message.reply_to.clone(),
+                })
+                .to_value(),
+                _ => row.message.to_peer_frame(),
+            };
             let was_queued = row.message.delivery_state == DeliveryState::Queued;
             if !self.send_secure(peer, &frame) {
                 return;
@@ -980,6 +1021,315 @@ impl Core {
         }
     }
 
+    /* ---------------------------------------------------------------- groups */
+
+    /// Build the coordinator from the saved group logs (events that no longer verify are dropped).
+    fn ensure_groups(&mut self) -> Result<(), ErrorCode> {
+        if self.groups.is_some() {
+            return Ok(());
+        }
+        let (Some(id), Some(uid)) = (self.identity.as_ref(), self.uid.as_ref()) else {
+            return Ok(());
+        };
+        let mut coordinator = GroupCoordinator::new(uid.as_str(), ContactCard::of(id, None)?);
+        if let Some(bytes) = self.ports.storage.kv(KV_GROUPS)? {
+            if let Ok(saved) = serde_json::from_slice::<BTreeMap<String, Vec<Value>>>(&bytes) {
+                coordinator.load(&saved);
+            }
+        }
+        self.groups = Some(coordinator);
+        Ok(())
+    }
+
+    fn persist_groups(&mut self) -> Result<(), ErrorCode> {
+        let Some(g) = self.groups.as_ref() else {
+            return Ok(());
+        };
+        let value = serde_json::to_vec(&g.export()).map_err(|_| ErrorCode::Storage)?;
+        self.ports.storage.apply(&[StorageOp::SetKv {
+            key: KV_GROUPS.into(),
+            value,
+        }])?;
+        Ok(())
+    }
+
+    fn group_error(e: &GroupError) -> ErrorCode {
+        match e {
+            GroupError::NotMember => ErrorCode::NoSuchGroup,
+            GroupError::NotAllowed | GroupError::AlreadyMember => ErrorCode::GroupRefused,
+            GroupError::Full | GroupError::TooManyMembers => ErrorCode::GroupFull,
+            GroupError::Crypto(_) => ErrorCode::Crypto,
+        }
+    }
+
+    fn card_of(&self, uid: &UserId) -> Result<ContactCard, ErrorCode> {
+        Ok(self
+            .contacts
+            .get(uid)
+            .ok_or(ErrorCode::UnknownContact)?
+            .contact
+            .card
+            .clone())
+    }
+
+    /// Save what a group operation changed, tell members, add the people it introduced and publish the news.
+    fn finish_group_result(&mut self, result: GroupResult) -> Result<(), ErrorCode> {
+        // Write only when something changed: a plain "here is what I have" must not touch the disk.
+        let changed =
+            !(result.changed.is_empty() && result.joined.is_empty() && result.left.is_empty());
+        let saved = if changed {
+            self.persist_groups()
+        } else {
+            Ok(())
+        };
+        for nc in &result.new_contacts {
+            let (Ok(text), Ok(introducer)) =
+                (nc.card.encode(), UserId::new(nc.introduced_by.as_str()))
+            else {
+                continue;
+            };
+            // Introduced people are never trusted more than "introduced": only a safety-number check raises that.
+            let _ = self.add_contact_from(&text, ContactTrust::Introduced, Some(introducer));
+        }
+        for out in &result.outgoing {
+            if let Ok(to) = UserId::new(out.to.as_str()) {
+                if self.peers.get(&to).is_some_and(Peer::ready) {
+                    self.send_secure(&to, &out.frame.to_value());
+                }
+            }
+        }
+        for group_id in result.changed.iter().chain(result.joined.iter()) {
+            self.hub.publish(EngineEvent::GroupChanged {
+                group_id: group_id.clone(),
+            });
+        }
+        saved
+    }
+
+    /// Tell a newly authenticated peer which groups we share and what we hold, so both sides catch up.
+    fn send_group_hello(&mut self, peer: &UserId) {
+        let frames = self
+            .groups
+            .as_ref()
+            .map(|g| g.on_link_open(peer.as_str()))
+            .unwrap_or_default();
+        for f in frames {
+            self.send_secure(peer, &f.frame.to_value());
+        }
+    }
+
+    fn on_group_frame(&mut self, peer: &UserId, value: &Value) {
+        let Some(frame) = GroupFrame::parse(value) else {
+            return;
+        };
+        let known: BTreeSet<String> = self.contacts.keys().map(ToString::to_string).collect();
+        let Some(groups) = self.groups.as_mut() else {
+            return;
+        };
+        let result = groups.handle(
+            peer.as_str(),
+            &frame,
+            &Who {
+                known: &known,
+                trusted: None,
+            },
+        );
+        let _ = self.finish_group_result(result);
+    }
+
+    pub fn create_group(&mut self, name: &str, members: &[UserId]) -> Result<String, ErrorCode> {
+        self.require_live()?;
+        let cards = members
+            .iter()
+            .map(|u| self.card_of(u))
+            .collect::<Result<Vec<_>, _>>()?;
+        let now = self.now();
+        let (Some(groups), Some(id)) = (self.groups.as_mut(), self.identity.as_ref()) else {
+            return Err(ErrorCode::NoIdentity);
+        };
+        let (group_id, result) = groups
+            .create_group(id, name, &cards, now)
+            .map_err(|e| Self::group_error(&e))?;
+        self.finish_group_result(result)?;
+        Ok(group_id)
+    }
+
+    pub fn add_group_member(&mut self, group_id: &str, uid: &UserId) -> Result<(), ErrorCode> {
+        self.require_live()?;
+        let card = self.card_of(uid)?;
+        let now = self.now();
+        let (Some(groups), Some(id)) = (self.groups.as_mut(), self.identity.as_ref()) else {
+            return Err(ErrorCode::NoIdentity);
+        };
+        let result = groups
+            .add_member(id, group_id, &card, now)
+            .map_err(|e| Self::group_error(&e))?;
+        self.finish_group_result(result)
+    }
+
+    pub fn remove_group_member(&mut self, group_id: &str, uid: &UserId) -> Result<(), ErrorCode> {
+        self.require_live()?;
+        let now = self.now();
+        let (Some(groups), Some(id)) = (self.groups.as_mut(), self.identity.as_ref()) else {
+            return Err(ErrorCode::NoIdentity);
+        };
+        let result = groups
+            .remove_member(id, group_id, uid.as_str(), now)
+            .map_err(|e| Self::group_error(&e))?;
+        self.finish_group_result(result)
+    }
+
+    pub fn leave_group(&mut self, group_id: &str) -> Result<(), ErrorCode> {
+        self.require_live()?;
+        let now = self.now();
+        let (Some(groups), Some(id)) = (self.groups.as_mut(), self.identity.as_ref()) else {
+            return Err(ErrorCode::NoIdentity);
+        };
+        let result = groups
+            .leave(id, group_id, now)
+            .map_err(|e| Self::group_error(&e))?;
+        self.finish_group_result(result)
+    }
+
+    pub fn rename_group(&mut self, group_id: &str, name: &str) -> Result<(), ErrorCode> {
+        self.require_live()?;
+        let now = self.now();
+        let (Some(groups), Some(id)) = (self.groups.as_mut(), self.identity.as_ref()) else {
+            return Err(ErrorCode::NoIdentity);
+        };
+        let result = groups
+            .rename(id, group_id, name, now)
+            .map_err(|e| Self::group_error(&e))?;
+        self.finish_group_result(result)
+    }
+
+    /// Write to a group: stored once, with one outbox entry per other member, each sent when that member's link is up.
+    pub fn send_group_message(
+        &mut self,
+        group_id: &str,
+        text: &str,
+        reply_to: Option<&MessageId>,
+    ) -> Result<MessageId, ErrorCode> {
+        self.require_live()?;
+        let own = self.uid.clone().ok_or(ErrorCode::NoIdentity)?;
+        let groups = self.groups.as_ref().ok_or(ErrorCode::NoIdentity)?;
+        if !groups.is_member(group_id, own.as_str()) {
+            return Err(ErrorCode::NoSuchGroup);
+        }
+        let recipients: Vec<UserId> = groups
+            .recipients(group_id)
+            .iter()
+            .filter_map(|u| UserId::new(u.as_str()).ok())
+            .collect();
+        let gid = GroupId::new(group_id).map_err(|_| ErrorCode::NoSuchGroup)?;
+        let reply = match reply_to {
+            None => None,
+            Some(id) => {
+                let m = self.messages.get(id).ok_or(ErrorCode::UnknownMessage)?;
+                Some(ReplyRef::quoting(
+                    &m.message.message_id,
+                    &m.message.sender_id,
+                    &m.message.text,
+                ))
+            }
+        };
+        let id = self.new_message_id()?;
+        let now = self.now();
+        let message =
+            ChatMessage::outgoing(own, text, now, id.clone(), reply).map_err(|e| match e {
+                privcord_domain::DomainError::EmptyMessage => ErrorCode::EmptyMessage,
+                _ => ErrorCode::MessageTooLong,
+            })?;
+        let conversation = ConversationId::Group(gid);
+        let row = StoredMessage {
+            conversation: conversation.clone(),
+            message,
+        };
+        let entries: Vec<OutboxEntry> = recipients
+            .iter()
+            .map(|r| OutboxEntry {
+                message_id: id.clone(),
+                recipient: r.clone(),
+                attempts: 0,
+                next_try_ms: now,
+            })
+            .collect();
+        let mut ops = vec![StorageOp::InsertMessage(row.clone())];
+        ops.extend(entries.iter().cloned().map(StorageOp::PutOutbox));
+        self.ports.storage.apply(&ops)?;
+        self.messages.insert(id.clone(), row);
+        self.outbox.extend(entries);
+        self.hub.publish(EngineEvent::MessageAdded {
+            conversation,
+            message_id: id.clone(),
+            own: true,
+        });
+        for r in &recipients {
+            self.flush(r);
+        }
+        Ok(id)
+    }
+
+    fn on_group_message(&mut self, peer: &UserId, value: &Value) {
+        let Some(GroupFrame::Message(m)) = GroupFrame::parse(value) else {
+            return;
+        };
+        let Some(groups) = self.groups.as_ref() else {
+            return;
+        };
+        if groups.check_message(peer.as_str(), &m.group_id) != MessageVerdict::Ok {
+            return;
+        }
+        let Ok(gid) = GroupId::new(m.group_id.as_str()) else {
+            return;
+        };
+        let ack = |core: &mut Self, id: &MessageId| {
+            let at = core.now();
+            core.send_secure(peer, &json!({ "v": PROTOCOL_VERSION, "kind": "ack", "messageId": id, "state": "DELIVERED", "at": at }));
+        };
+        if self.messages.contains_key(&m.message_id) {
+            ack(self, &m.message_id);
+            return;
+        }
+        let message = ChatMessage {
+            message_id: m.message_id.clone(),
+            client_message_id: m.message_id.clone(),
+            sender_id: peer.clone(),
+            text: m.text,
+            client_created_at: m.client_created_at,
+            kind: privcord_domain::message::MessageKind::Text,
+            transport: privcord_domain::message::TransportKind::P2p,
+            delivery_state: DeliveryState::Delivered,
+            reply_to: m.reply_to,
+            read_at: None,
+        };
+        let conversation = ConversationId::Group(gid);
+        let row = StoredMessage {
+            conversation: conversation.clone(),
+            message: message.clone(),
+        };
+        if self
+            .ports
+            .storage
+            .apply(&[StorageOp::InsertMessage(row.clone())])
+            .is_err()
+        {
+            return;
+        }
+        self.messages.insert(message.message_id.clone(), row);
+        self.hub.publish(EngineEvent::MessageAdded {
+            conversation: conversation.clone(),
+            message_id: message.message_id.clone(),
+            own: false,
+        });
+        self.ports.notifier.notify(Notification::MessageReceived {
+            conversation,
+            sender: peer.clone(),
+            preview: message.text.chars().take(80).collect(),
+        });
+        ack(self, &message.message_id);
+    }
+
     /* ---------------------------------------------------------------- state */
 
     pub fn snapshot(&self) -> Snapshot {
@@ -1016,10 +1366,26 @@ impl Core {
                 (c, v)
             })
             .collect();
+        let groups = self.groups.as_ref().map_or_else(Vec::new, |g| {
+            g.my_groups()
+                .into_iter()
+                .map(|s| GroupView {
+                    group_id: s.group_id.clone(),
+                    name: s.name.clone(),
+                    created_by: s.created_by.clone(),
+                    members: s
+                        .members
+                        .values()
+                        .map(|m| (m.uid.clone(), m.role == Role::Admin))
+                        .collect(),
+                })
+                .collect()
+        });
         Snapshot {
             seq: self.hub.seq(),
             own_uid: self.uid.clone(),
             contacts,
+            groups,
             messages,
             queued: self.outbox.len(),
         }

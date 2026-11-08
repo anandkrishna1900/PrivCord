@@ -23,6 +23,12 @@ pub enum ErrorCode {
     DirectNotAllowed,
     #[error("No such message.")]
     UnknownMessage,
+    #[error("You are not in that group.")]
+    NoSuchGroup,
+    #[error("That group change is not allowed.")]
+    GroupRefused,
+    #[error("The group is full.")]
+    GroupFull,
     #[error("Storage failed; nothing was changed.")]
     Storage,
     #[error("Secure storage failed.")]

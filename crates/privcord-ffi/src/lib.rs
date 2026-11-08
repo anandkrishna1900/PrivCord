@@ -18,7 +18,9 @@ use privcord_domain::{
     state::{ConnectionFailure, ConnectionPath, ConnectionState},
     ConversationId, MessageId, UserId,
 };
-use privcord_engine::{EngineEvent, EngineHandle, ErrorCode, EventStream, LinkSecurity, Ports};
+use privcord_engine::{
+    EngineEvent, EngineHandle, ErrorCode, EventStream, GroupOp, LinkSecurity, Ports,
+};
 use privcord_ports::{
     Clock, IdentitySecrets, Notification, Notifier, SecureStore, SecureStoreError, Transport,
     TransportError,
@@ -66,6 +68,12 @@ pub enum FfiError {
     Busy,
     #[error("invalid argument")]
     InvalidArgument,
+    #[error("not in that group")]
+    NoSuchGroup,
+    #[error("group change not allowed")]
+    GroupRefused,
+    #[error("group is full")]
+    GroupFull,
 }
 
 impl From<ErrorCode> for FfiError {
@@ -86,6 +94,9 @@ impl From<ErrorCode> for FfiError {
             ErrorCode::Crypto => Self::Crypto,
             ErrorCode::ShuttingDown => Self::ShuttingDown,
             ErrorCode::Busy => Self::Busy,
+            ErrorCode::NoSuchGroup => Self::NoSuchGroup,
+            ErrorCode::GroupRefused => Self::GroupRefused,
+            ErrorCode::GroupFull => Self::GroupFull,
         }
     }
 }
@@ -296,7 +307,22 @@ pub struct SnapshotDto {
     pub own_uid: Option<String>,
     pub contacts: Vec<ContactDto>,
     pub conversations: Vec<ConversationDto>,
+    pub groups: Vec<GroupDto>,
     pub queued: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct GroupMemberDto {
+    pub uid: String,
+    pub admin: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct GroupDto {
+    pub id: String,
+    pub name: String,
+    pub created_by: String,
+    pub members: Vec<GroupMemberDto>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
@@ -323,6 +349,9 @@ pub enum EventDto {
         link: LinkState,
     },
     /// This reader fell behind; ask for a snapshot.
+    GroupChanged {
+        group_id: String,
+    },
     Lagged {
         missed: u64,
     },
@@ -358,6 +387,7 @@ fn event_dto(e: EngineEvent) -> EventDto {
             peer: peer.to_string(),
             link: state.into(),
         },
+        EngineEvent::GroupChanged { group_id } => EventDto::GroupChanged { group_id },
         EngineEvent::Lagged { missed } => EventDto::Lagged { missed },
         EngineEvent::ShutDown => EventDto::ShutDown,
     }
@@ -456,6 +486,55 @@ impl PrivcordEngine {
         .to_string())
     }
 
+    /// Make a group with these contacts. Returns the group's id.
+    pub fn create_group(&self, name: String, members: Vec<String>) -> Result<String, FfiError> {
+        let members = members
+            .iter()
+            .map(|m| user(m))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(pollster::block_on(
+            self.handle.group(GroupOp::Create { name, members }),
+        )?)
+    }
+
+    pub fn add_group_member(&self, group: String, uid: String) -> Result<(), FfiError> {
+        let uid = user(&uid)?;
+        pollster::block_on(self.handle.group(GroupOp::Add { group, uid }))?;
+        Ok(())
+    }
+
+    pub fn remove_group_member(&self, group: String, uid: String) -> Result<(), FfiError> {
+        let uid = user(&uid)?;
+        pollster::block_on(self.handle.group(GroupOp::Remove { group, uid }))?;
+        Ok(())
+    }
+
+    pub fn leave_group(&self, group: String) -> Result<(), FfiError> {
+        pollster::block_on(self.handle.group(GroupOp::Leave { group }))?;
+        Ok(())
+    }
+
+    pub fn rename_group(&self, group: String, name: String) -> Result<(), FfiError> {
+        pollster::block_on(self.handle.group(GroupOp::Rename { group, name }))?;
+        Ok(())
+    }
+
+    pub fn send_group_message(
+        &self,
+        group: String,
+        text: String,
+        reply_to: Option<String>,
+    ) -> Result<String, FfiError> {
+        let reply_to = reply_to
+            .map(|r| MessageId::new(r).map_err(|_| FfiError::InvalidArgument))
+            .transpose()?;
+        Ok(pollster::block_on(self.handle.group(GroupOp::Message {
+            group,
+            text,
+            reply_to,
+        }))?)
+    }
+
     pub fn mark_read(&self, peer: String) -> Result<(), FfiError> {
         Ok(pollster::block_on(self.handle.mark_read(&user(&peer)?))?)
     }
@@ -499,6 +578,20 @@ impl PrivcordEngine {
                     safety_number: c.safety_number,
                     link: c.connection.into(),
                     can_message: c.can_message,
+                })
+                .collect(),
+            groups: s
+                .groups
+                .into_iter()
+                .map(|g| GroupDto {
+                    id: g.group_id,
+                    name: g.name,
+                    created_by: g.created_by,
+                    members: g
+                        .members
+                        .into_iter()
+                        .map(|(uid, admin)| GroupMemberDto { uid, admin })
+                        .collect(),
                 })
                 .collect(),
             conversations: s
