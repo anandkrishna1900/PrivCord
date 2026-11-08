@@ -145,6 +145,12 @@ pub fn parse_timestamp(value: &Value) -> Option<i64> {
     ok.then_some(n as i64)
 }
 
+/// A timestamp from the wire for events that sign it: same rule as [`parse_timestamp`], allowing zero.
+pub fn parse_timestamp_any(value: &Value) -> Option<i64> {
+    let n = value.as_f64()?;
+    (n.is_finite() && n.fract() == 0.0 && n.abs() <= 9_007_199_254_740_991.0).then_some(n as i64)
+}
+
 impl ChatMessage {
     /// A new outgoing text message. The caller supplies the id and the clock (the domain has neither).
     pub fn outgoing(

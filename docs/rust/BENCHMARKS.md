@@ -21,6 +21,6 @@ PRD section 11 asks for baselines before claiming improvements, and says gains m
 
 * The large identity gap is mostly the TypeScript code's hand-written BigInt scalar multiplication (`recovery/nistP256.ts`), which the Rust version replaces with a vetted library. It happens once per install or recovery.
 * Message sealing and opening are already sub-millisecond in both; at chat rates the user will not notice the difference.
-* The two sides are not the same kind of thing: Node's WebCrypto calls OpenSSL; the Rust crates are pure Rust. Phones and the WebView on Windows, Linux and macOS will differ from this container, and **no mobile or desktop-app numbers were taken**.
+* The two sides are not the same kind of thing: Node's WebCrypto calls OpenSSL; the Rust crates are pure Rust. Phones and the WebView on Windows will differ from this container, and **no mobile or desktop-app numbers were taken**.
 
 **Not measured yet (PRD section 11)**: cold start and engine-ready latency, allocations per message, storage insert/query/recovery latency, peak memory for files of different sizes, CPU and task count with many peers, idle CPU and memory, shutdown time. Setting numeric targets is deferred until those baselines exist, as the PRD says.

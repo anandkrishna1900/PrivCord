@@ -16,6 +16,7 @@ pub mod canonical;
 pub mod card;
 pub mod channel;
 pub mod error;
+pub mod group;
 pub mod identity;
 pub mod invite;
 pub mod kdf;

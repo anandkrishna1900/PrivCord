@@ -1,6 +1,6 @@
 # PrivCord Rust engine
 
-One Rust implementation of PrivCord's rules for Android, Windows, Linux and macOS, replacing the duplicated TypeScript (`packages/protocol`, `apps/desktop/src/lib`) and Kotlin (`apps/android/.../{data,security,engine,groups,p2p}`) logic. This follows [the product requirements document](../../README.md) "Unified Rust Engine PRD v1.0" and its phases M0 to M9.
+One Rust implementation of PrivCord's rules for Android and Windows (Linux and macOS are not targets for now), replacing the duplicated TypeScript (`packages/protocol`, `apps/desktop/src/lib`) and Kotlin (`apps/android/.../{data,security,engine,groups,p2p}`) logic. This follows [the product requirements document](../../README.md) "Unified Rust Engine PRD v1.0" and its phases M0 to M9.
 
 **Status: foundation built and tested; the apps do not call it yet.** See [Status](#status) before relying on any of it.
 
@@ -19,7 +19,7 @@ Dependency rule (checked by cargo, not by convention): domain depends on nothing
 
 ## How the engine is used
 
-A UI (or the FFI) sends typed commands and listens to typed events; it holds no business state. Platform code implements the ports: Android Keystore, Windows Credential Manager, Linux Secret Service or macOS Keychain for `SecureStore`; WebRTC or Bluetooth for `Transport`; and so on. Link changes and received frames flow into the engine as inputs (`link_up`, `link_down`, `frame_received`). The engine core is a synchronous, deterministic state machine; `runtime.rs` is a thin shell that owns one thread and one current-thread Tokio runtime, a bounded command queue (a full queue answers `Busy`), and a timer for retries. `shutdown()` stops accepting commands, ends every session and joins the thread.
+A UI (or the FFI) sends typed commands and listens to typed events; it holds no business state. Platform code implements the ports: Android Keystore or Windows Credential Manager for `SecureStore`; WebRTC or Bluetooth for `Transport`; and so on. Link changes and received frames flow into the engine as inputs (`link_up`, `link_down`, `frame_received`). The engine core is a synchronous, deterministic state machine; `runtime.rs` is a thin shell that owns one thread and one current-thread Tokio runtime, a bounded command queue (a full queue answers `Busy`), and a timer for retries. `shutdown()` stops accepting commands, ends every session and joins the thread.
 
 Events are numbered and delivered through bounded queues. A reader that falls behind never blocks the engine: it receives `Lagged { missed }` and asks for a snapshot, which contains everything a recreated UI needs.
 
@@ -29,9 +29,9 @@ Events are numbered and delivered through bounded queues. A reader that falls be
 |---|---|
 | M0 Audit | Done: [MIGRATION_MAP.md](MIGRATION_MAP.md) maps all 164 source files (32,238 lines); the generator fails if a file is unmapped. |
 | M1 Foundation | Done: workspace, crate boundaries, error types, port traits, lint rules (`unsafe` forbidden, no `unwrap`/`expect`/`panic` in library code), CI job. |
-| M2 Pure domain | Done for what the apps use today. Not ported: group event log and coordinator, BLE chunk framing, manual pairing codes, kill-switch plans. |
+| M2 Pure domain | Done for what the apps use today. Not ported: BLE chunk framing, manual pairing codes, kill-switch plans. |
 | M3 Cryptography | Done for what the apps use: identity, signatures, ECDH, sealed blobs, cards, safety numbers, invites, channels, backups, secure channel. Verified against TypeScript output **and** TypeScript verifies Rust output. X3DH, Double Ratchet, envelopes and group keys exist in the TypeScript package but the apps never call them; they are not ported ([ADR-009](adr/ADR-009-x3dh-ratchet.md)). |
-| M4 Protocol services | Partly: direct messages, receipts, privacy frames, handshake. Not done: groups, files over the engine, channels and mesh in the engine, invites in the engine, signaling (Nostr/relay) rules, wire-compatible legacy handshake, kill switch. |
+| M4 Protocol services | Partly: direct messages, receipts, privacy frames, handshake, and the group event log (`privcord-crypto::group`: signed events, deterministic fold, 10-member cap; reproduces every TypeScript trace in `docs/group-vectors.json`). Not done: the group coordinator and group messages in the engine, files over the engine, channels and mesh in the engine, invites in the engine, signaling (Nostr/relay) rules, wire-compatible legacy handshake, kill switch. |
 | M5 Engine | Done for the vertical slice above, with mock-adapter integration tests, crash and restart tests, shutdown tests. |
 | M6 Storage | SQLite storage, migrations and crash-safety tests done. **Not done: importing existing desktop and Android databases**, so there is no migration for real user data yet. |
 | M7 Desktop | Not started: the Tauri shell does not host the engine. |
