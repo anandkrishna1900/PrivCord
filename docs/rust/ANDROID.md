@@ -16,5 +16,11 @@ What stage 1 does:
 Building locally needs the Android NDK, `cargo-ndk` and the four Rust targets; otherwise download the APK from the CI
 run's `duochat-android-debug` artifact.
 
-Stage 2 (not done): move identity, contacts, direct messages, groups and files in `ChatEngine.kt` onto `PrivcordEngine`,
+**Stage 2, first piece: the engine probe.** Settings > About > **Rust engine** starts a real Rust engine on the phone
+against a throwaway database and Keystore slot, creates an identity, reads its card and snapshot, checks the secret
+round-trips through the Android Keystore (`rustcore/KeystoreSecureStore.kt`), then deletes everything. "ok" means the
+engine, its SQLite storage and the Keystore adapter work on that device. It never touches your real data. The chat
+screens are still on the Kotlin engine.
+
+Stage 2, the rest (not done): move identity, contacts, direct messages, groups and files in `ChatEngine.kt` onto `PrivcordEngine`,
 with WebRTC, Bluetooth and the relay sockets staying as thin Kotlin adapters (for Bluetooth use `LinkKind::Layered`).

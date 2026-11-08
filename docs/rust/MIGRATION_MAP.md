@@ -11,10 +11,10 @@ Status meanings: **Ported, tested** = the Rust implementation exists and is chec
 | Ported, tested | 75 | 11094 |
 | Partly ported | 2 | 4633 |
 | Not yet ported | 0 | 0 |
-| Stays (UI) | 53 | 10779 |
-| Stays (platform adapter) | 31 | 5425 |
+| Stays (UI) | 53 | 10786 |
+| Stays (platform adapter) | 33 | 5546 |
 | Replaced by a library | 4 | 333 |
-| **All mapped files** | **165** | **32264** |
+| **All mapped files** | **167** | **32392** |
 
 Ported does not mean retired: the TypeScript and Kotlin versions stay in production until the apps call the Rust engine (M7 desktop, M8 Android) and the compatibility gates pass (PRD section 16).
 
@@ -167,6 +167,8 @@ Ported does not mean retired: the TypeScript and Kotlin versions stay in product
 | `apps/android/app/src/main/java/com/duochat/app/p2p/ManualSignal.kt` | 140 | `ManualSignal`, `ManualSignalCodec` | Liveness probe, manual connection code | domain::link_policy, domain::signaling; engine::core (ping, dead-link timer) | Engine | Ported, tested | M8 | misc vectors; engine lifecycle tests |
 | `apps/android/app/src/main/java/com/duochat/app/p2p/PeerSession.kt` | 569 | `PeerSession` | WebRTC peer session (handshake, receipts, liveness and framing rules are in the engine) | crypto::peer_auth + engine; the WebRTC session itself is platform code | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/p2p/WebRtcTransport.kt` | 398 | `WebRtcTransport`, `PeerConnectionFactoryHolder` | ICE servers, WebRTC data channel | WebRTC adapter | Adapter | Stays (platform adapter) | Stays | n/a |
+| `apps/android/app/src/main/java/com/duochat/app/rustcore/KeystoreSecureStore.kt` | 59 | `KeystoreSecureStore` | Android adapters for the Rust engine (Keystore secret store, on-device probe) | Platform adapter for engine ports | Adapter | Stays (platform adapter) | Stays | n/a |
+| `apps/android/app/src/main/java/com/duochat/app/rustcore/RustEngineProbe.kt` | 62 | `RustEngineProbe` | Android adapters for the Rust engine (Keystore secret store, on-device probe) | Platform adapter for engine ports | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/security/AndroidIdentity.kt` | 252 | `PublicJwk`, `DeviceIdentity`, `PinnedPeer`, `AndroidIdentityManager` | Keystore identity storage, at-rest encryption, biometric lock | SecureStore adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/security/AppLock.kt` | 51 | `AppLock` | Keystore identity storage, at-rest encryption, biometric lock | SecureStore adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/security/Bip39.kt` | 67 | `Bip39` | Cryptography duplicated from TypeScript | crypto | Crypto | Ported, tested | M8 | n/a |
@@ -199,6 +201,6 @@ Ported does not mean retired: the TypeScript and Kotlin versions stay in product
 | `apps/android/app/src/main/java/com/duochat/app/ui/ManualConnectDialog.kt` | 520 | `ManualMode`, `ManualConnectDialog`, `ModeChip`, `CodeBlock` | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ui/Onboarding.kt` | 271 | `Step`, `OnboardingScreen`, `ShowPhrase`, `ConfirmPhrase`, `RestorePhrase` | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ui/QrUtils.kt` | 34 | `qrBitmap` | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/ui/SettingsDialog.kt` | 914 | `SettingsDialog`, `SectionTitle`, `DetailRow`, `ToggleRow`, `ChoiceChip`, `parseColor` +2 | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
+| `apps/android/app/src/main/java/com/duochat/app/ui/SettingsDialog.kt` | 921 | `SettingsDialog`, `SectionTitle`, `DetailRow`, `ToggleRow`, `ChoiceChip`, `parseColor` +2 | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ui/StatusScreens.kt` | 84 | `LoadingScreen`, `FatalScreen` | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ui/Theme.kt` | 98 | `DuoChatTheme`, `parseColor` | Compose screens | UI | UI | Stays (UI) | Stays | n/a |

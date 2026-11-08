@@ -684,6 +684,13 @@ SectionTitle("About DuoChat")
                 DetailRow("Version", AppConfig.APP_VERSION)
                 DetailRow("Platform", "Android · Kotlin/Compose")
                 DetailRow("Rust core", com.duochat.app.RustCore.status)
+                val context = androidx.compose.ui.platform.LocalContext.current
+                val probe by androidx.compose.runtime.produceState("running…") {
+                    value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                        com.duochat.app.rustcore.RustEngineProbe.run(context)
+                    }
+                }
+                DetailRow("Rust engine", probe)
                 DetailRow("Created by", "anandkrishna1900")
                 DetailRow("License", "PC-NC (non-commercial)")
                 Spacer(Modifier.height(12.dp))
