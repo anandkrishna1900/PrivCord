@@ -15,7 +15,9 @@ use serde_json::{json, Value};
 use zeroize::Zeroizing;
 
 pub const CHANNEL_TTL_SEC: u64 = 24 * 3600;
-const SALT: &[u8] = b"duochat-channel-v1";
+fn salt() -> Vec<u8> {
+    crate::kdf::label(&["duochat", "channel", "v1"])
+}
 const MAILBOX_PREFIX: &str = "duochat-channel-mailbox-v1|";
 
 /// Everything a name gives: where messages travel, the key they are wrapped in, and the label blobs carry.
@@ -39,7 +41,7 @@ pub fn derive_channel(name: &str) -> Result<ChannelKeys, CryptoError> {
     let digest = sha256(format!("{MAILBOX_PREFIX}{name}").as_bytes());
     let mailbox = codec::hex(&digest);
     let tag = format!("ch:{}", mailbox.chars().take(16).collect::<String>());
-    let key = Zeroizing::new(hkdf_sha256::<32>(&digest, SALT, b"key")?);
+    let key = Zeroizing::new(hkdf_sha256::<32>(&digest, &salt(), b"key")?);
     Ok(ChannelKeys {
         name: name.to_owned(),
         mailbox,

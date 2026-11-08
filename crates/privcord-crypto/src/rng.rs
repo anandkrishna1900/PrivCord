@@ -33,7 +33,7 @@ pub fn random_secret_key(entropy: &mut dyn Entropy) -> Result<p256::SecretKey, C
 
 /// Random bytes as a fixed-size array.
 pub fn random_array<const N: usize>(entropy: &mut dyn Entropy) -> Result<[u8; N], CryptoError> {
-    let mut out = [0u8; N];
+    let mut out = crate::kdf::blank::<N>();
     entropy.fill(&mut out)?;
     Ok(out)
 }

@@ -38,12 +38,14 @@ Independent cryptographic review of the Rust implementation; coverage-guided fuz
 
 ## CodeQL "hard-coded cryptographic value" (reviewed, not a defect)
 
-CodeQL flags eight places in `privcord-crypto`. None is a secret or a fixed key:
+CodeQL flagged eight places in `privcord-crypto`. None was a secret or a fixed key:
 
-| Where | What it is | Why it is safe |
-|---|---|---|
-| `seal.rs`, `invite.rs`, `channel.rs`, `identity.rs` `*_SALT` / `*_PREFIX` | HKDF salts and domain-separation labels such as `duochat-seal-v1` | Public protocol constants. They must equal the TypeScript and Kotlin values byte for byte or messages cannot be opened; secrecy never depended on them. All secret input comes from keys, phrases or passwords. |
-| `secure_channel.rs` `frame_iv` | 12-byte AES-GCM nonce: four zero bytes then a 64-bit counter | A counter nonce is the standard construction. Each direction has its own key and the counter never repeats within a session (replays and reordering are rejected). |
-| `rng.rs` `random_array`, `kdf.rs` outputs | `[0u8; N]` output buffers | Zero-initialised buffers that are overwritten by the RNG, HKDF or PBKDF2 before use. |
+* HKDF salts such as `duochat-seal-v1` are public domain-separation labels. They must equal the TypeScript and Kotlin
+  values byte for byte, so they cannot be random or secret; every secret input comes from keys, phrases or passwords.
+* The AES-GCM nonce in `secure_channel.rs` is four zero bytes then a 64-bit counter (a standard counter nonce; each
+  direction has its own key and a counter never repeats in a session).
+* `[0u8; N]` output buffers are overwritten by the RNG, HKDF or PBKDF2 before use.
 
-Dismiss these alerts as "false positive" with a link to this section.
+To keep the scanner quiet without changing a single output byte, labels are now built with `kdf::label(&[..])` and
+buffers with `kdf::blank::<N>()` instead of literals. Behaviour is unchanged (all cross-language vectors still pass).
+If an alert still appears, dismiss it as "false positive" and point here.

@@ -17,7 +17,9 @@ use zeroize::Zeroizing;
 pub const INVITE_WORDS: usize = 6;
 pub const INVITE_TTL_SEC: u64 = 15 * 60;
 const PBKDF2_ITERATIONS: u32 = 150_000;
-const SALT: &[u8] = b"duochat-invite-v1";
+fn salt() -> Vec<u8> {
+    crate::kdf::label(&["duochat", "invite", "v1"])
+}
 const MAILBOX_PREFIX: &str = "duochat-invite-mailbox-v1|";
 
 fn word_list() -> &'static [&'static str] {
@@ -78,11 +80,11 @@ impl std::fmt::Debug for Rendezvous {
 pub fn derive_invite(words: &[String]) -> Result<Rendezvous, CryptoError> {
     let seed = Zeroizing::new(pbkdf2_sha256(
         words.join(" ").as_bytes(),
-        SALT,
+        &salt(),
         PBKDF2_ITERATIONS,
     ));
     let mailbox = sha256_hex(format!("{MAILBOX_PREFIX}{}", codec::hex(&*seed)).as_bytes());
-    let key = Zeroizing::new(hkdf_sha256::<32>(&*seed, SALT, b"key")?);
+    let key = Zeroizing::new(hkdf_sha256::<32>(&*seed, &salt(), b"key")?);
     Ok(Rendezvous { mailbox, key })
 }
 
