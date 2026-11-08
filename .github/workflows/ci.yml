@@ -179,11 +179,11 @@ jobs:
         run: |
           unzip -l apps/android/app/build/outputs/apk/classic/debug/app-classic-debug.apk | grep libprivcord_ffi.so | tee /tmp/libs.txt
           test "$(wc -l < /tmp/libs.txt)" -eq 4
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: duochat-android-debug
           path: apps/android/app/build/outputs/apk/classic/debug/app-classic-debug.apk
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: duochat-android-rust-preview
           path: apps/android/app/build/outputs/apk/rust/debug/app-rust-debug.apk
@@ -214,7 +214,7 @@ jobs:
             Start-Sleep -Seconds 60
           }
           exit 1
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: duochat-windows-unsigned
           path: apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
