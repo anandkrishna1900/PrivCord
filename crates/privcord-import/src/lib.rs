@@ -10,6 +10,7 @@
 //! interrupted import is simply run again. Each write batch is atomic.
 
 pub mod android;
+pub mod backup;
 pub mod desktop;
 mod pipeline;
 
@@ -47,6 +48,8 @@ impl FileSource for NoFiles {
 pub enum Source {
     Desktop,
     Android,
+    /// A backup file made by the apps (or the engine). Importing it adds to what is there and can be done again.
+    Backup,
 }
 
 impl Source {
@@ -54,6 +57,7 @@ impl Source {
         match self {
             Self::Desktop => "desktop",
             Self::Android => "android",
+            Self::Backup => "backup",
         }
     }
 }
@@ -94,8 +98,10 @@ pub struct LegacyMessage {
     pub delivery: DeliveryState,
     pub read_at: Option<i64>,
     pub transport: TransportKind,
+    /// Deleted for everyone: only a tombstone comes over.
     pub deleted: bool,
-    pub has_reactions: bool,
+    /// Who reacted with what.
+    pub reactions: Vec<(String, String)>,
     /// People this message still has to reach (group messages, or the one recipient of a direct one).
     pub pending: Vec<(String, u32)>,
 }
@@ -106,6 +112,8 @@ pub struct LegacyBundle {
     /// Group id to its signed events, exactly as the old app saved them.
     pub groups: BTreeMap<String, Vec<Value>>,
     pub channels: Vec<String>,
+    /// People whose channel messages are hidden.
+    pub muted: Vec<String>,
     pub messages: Vec<LegacyMessage>,
 }
 
@@ -149,4 +157,43 @@ pub enum ReadError {
     Database,
     #[error("the database is not a PrivCord database")]
     NotPrivcord,
+}
+
+pub(crate) fn reactions_from(v: Option<&Value>) -> Vec<(String, String)> {
+    v.and_then(Value::as_object)
+        .map(|o| {
+            o.iter()
+                .filter_map(|(u, e)| Some((u.clone(), e.as_str()?.to_owned())))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Contacts as the desktop app and its backups write them (`ContactRecord`).
+pub(crate) fn contacts_from_json(
+    list: &[Value],
+    muted: &std::collections::HashSet<String>,
+) -> Vec<LegacyContact> {
+    list.iter()
+        .filter_map(|c| {
+            let uid = c.get("uid")?.as_str()?;
+            Some(LegacyContact {
+                uid: uid.to_owned(),
+                card: c.get("card").cloned().unwrap_or(Value::Null),
+                nickname: c
+                    .get("nickname")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+                    .filter(|n| !n.is_empty()),
+                trust: parse_trust(c.get("trust").and_then(Value::as_str).unwrap_or("")),
+                checked: c.get("checked").and_then(Value::as_bool).unwrap_or(false),
+                introduced_by: c
+                    .get("introducedBy")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                created_at: c.get("addedAt").and_then(Value::as_i64).unwrap_or(0),
+                muted: muted.contains(uid),
+            })
+        })
+        .collect()
 }

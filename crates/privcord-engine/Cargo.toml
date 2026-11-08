@@ -13,6 +13,7 @@ workspace = true
 privcord-domain.workspace = true
 privcord-crypto.workspace = true
 privcord-ports.workspace = true
+privcord-import.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true

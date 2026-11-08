@@ -4,7 +4,7 @@
 use crate::{
     Clock, EraseScope, IdentitySecrets, Notification, Notifier, OutboxEntry, SecureStore,
     SecureStoreError, Storage, StorageError, StorageOp, StoredContact, StoredFile, StoredMessage,
-    Transport, TransportError,
+    StoredReaction, Transport, TransportError,
 };
 use privcord_domain::{signaling::PutKind, MessageId, UserId};
 use std::{
@@ -45,6 +45,8 @@ struct Data {
     outbox: Vec<OutboxEntry>,
     kv: HashMap<String, Vec<u8>>,
     files: HashMap<MessageId, StoredFile>,
+    reactions: Vec<StoredReaction>,
+    deleted: Vec<MessageId>,
 }
 
 /// Atomic in-memory storage: a batch is applied to a copy and swapped in only if every op succeeds.
@@ -119,6 +121,8 @@ impl Storage for MemoryStorage {
                     next.messages.retain(|x| &x.message.message_id != id);
                     next.outbox.retain(|o| &o.message_id != id);
                     next.files.remove(id);
+                    next.reactions.retain(|r| &r.message_id != id);
+                    next.deleted.retain(|d| d != id);
                 }
                 StorageOp::PutOutbox(e) => {
                     if !next
@@ -139,6 +143,44 @@ impl Storage for MemoryStorage {
                     next.outbox
                         .retain(|o| !(&o.message_id == message_id && &o.recipient == recipient));
                 }
+                StorageOp::SetReaction {
+                    message_id,
+                    uid,
+                    emoji,
+                } => {
+                    if !next
+                        .messages
+                        .iter()
+                        .any(|x| &x.message.message_id == message_id)
+                    {
+                        return Err(StorageError::Rejected);
+                    }
+                    next.reactions
+                        .retain(|r| !(&r.message_id == message_id && &r.uid == uid));
+                    if let Some(e) = emoji {
+                        next.reactions.push(StoredReaction {
+                            message_id: message_id.clone(),
+                            uid: uid.clone(),
+                            emoji: e.clone(),
+                        });
+                    }
+                }
+                StorageOp::Tombstone(id) => {
+                    let m = next
+                        .messages
+                        .iter_mut()
+                        .find(|x| &x.message.message_id == id)
+                        .ok_or(StorageError::Rejected)?;
+                    m.message.text.clear();
+                    m.message.kind = privcord_domain::message::MessageKind::Text;
+                    m.message.reply_to = None;
+                    next.files.remove(id);
+                    next.reactions.retain(|r| &r.message_id != id);
+                    next.outbox.retain(|o| &o.message_id != id);
+                    if !next.deleted.contains(id) {
+                        next.deleted.push(id.clone());
+                    }
+                }
                 StorageOp::Erase(scope) => match scope {
                     EraseScope::Conversation(c) => {
                         let ids: Vec<MessageId> = next
@@ -150,11 +192,15 @@ impl Storage for MemoryStorage {
                         next.messages.retain(|m| &m.conversation != c);
                         next.outbox.retain(|o| !ids.contains(&o.message_id));
                         next.files.retain(|k, _| !ids.contains(k));
+                        next.reactions.retain(|r| !ids.contains(&r.message_id));
+                        next.deleted.retain(|d| !ids.contains(d));
                     }
                     EraseScope::Messages => {
                         next.messages.clear();
                         next.outbox.clear();
                         next.files.clear();
+                        next.reactions.clear();
+                        next.deleted.clear();
                     }
                     EraseScope::Contacts => next.contacts.clear(),
                     EraseScope::Files => next.files.clear(),
@@ -194,6 +240,12 @@ impl Storage for MemoryStorage {
     }
     fn file(&self, id: &MessageId) -> Result<Option<StoredFile>, StorageError> {
         Ok(lock(&self.data).files.get(id).cloned())
+    }
+    fn reactions(&self) -> Result<Vec<StoredReaction>, StorageError> {
+        Ok(lock(&self.data).reactions.clone())
+    }
+    fn deleted(&self) -> Result<Vec<MessageId>, StorageError> {
+        Ok(lock(&self.data).deleted.clone())
     }
     fn kv(&self, key: &str) -> Result<Option<Vec<u8>>, StorageError> {
         Ok(lock(&self.data).kv.get(key).cloned())

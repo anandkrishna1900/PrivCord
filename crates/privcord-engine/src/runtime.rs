@@ -130,6 +130,27 @@ pub enum Op {
     RemoveContact(UserId),
     SetStoreForward(bool),
     SetDisplayName(String),
+    DeleteMessage {
+        id: MessageId,
+        everyone: bool,
+    },
+    React {
+        id: MessageId,
+        emoji: String,
+    },
+    SetMuted {
+        uid: UserId,
+        muted: bool,
+    },
+    Search {
+        query: String,
+        limit: usize,
+    },
+    ExportBackup(String),
+    ImportBackup {
+        text: String,
+        passphrase: String,
+    },
     SendSignal {
         peer: UserId,
         message: crate::api::SignalMessage,
@@ -150,6 +171,9 @@ pub enum Answer {
     Preview(Option<InvitePreview>),
     Person(UserId),
     Report(Option<KillSwitchReport>),
+    Hits(Vec<crate::core::SearchHit>),
+    Text(String),
+    Restored(crate::core::RestoreSummary),
 }
 
 /// A channel operation. Returns the channel's normalised name or the new message's id, else an empty string.
@@ -266,6 +290,16 @@ fn pump(core: &mut Core, cmd: Command) -> bool {
                 Op::RemoveContact(u) => core.remove_contact(&u).map(|()| Answer::Done),
                 Op::SetStoreForward(v) => core.set_store_forward(v).map(|()| Answer::Done),
                 Op::SetDisplayName(n) => core.set_display_name(&n).map(|()| Answer::Done),
+                Op::DeleteMessage { id, everyone } => {
+                    core.delete_message(&id, everyone).map(|()| Answer::Done)
+                }
+                Op::React { id, emoji } => core.react(&id, &emoji).map(|()| Answer::Done),
+                Op::SetMuted { uid, muted } => core.set_muted(&uid, muted).map(|()| Answer::Done),
+                Op::Search { query, limit } => Ok(Answer::Hits(core.search(&query, limit))),
+                Op::ExportBackup(p) => core.export_backup(&p).map(Answer::Text),
+                Op::ImportBackup { text, passphrase } => {
+                    core.import_backup(&text, &passphrase).map(Answer::Restored)
+                }
                 Op::SendSignal { peer, message } => {
                     core.send_signal(&peer, &message).map(|()| Answer::Done)
                 }

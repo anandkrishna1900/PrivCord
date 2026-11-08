@@ -77,6 +77,14 @@ pub struct OutboxEntry {
     pub next_try_ms: i64,
 }
 
+/// One person's reaction to one message (one emoji each).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredReaction {
+    pub message_id: MessageId,
+    pub uid: UserId,
+    pub emoji: String,
+}
+
 /// What an erase removes (emergency deletion and "delete this chat").
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EraseScope {
@@ -115,6 +123,14 @@ pub enum StorageOp {
     },
     /// Keeps a file's bytes with its (already stored, or same-batch) message.
     PutFile(StoredFile),
+    /// Set (`Some`) or remove (`None`) someone's reaction. The message must exist.
+    SetReaction {
+        message_id: MessageId,
+        uid: UserId,
+        emoji: Option<String>,
+    },
+    /// Deleted for everyone: keep only a tombstone (no text, file, reply, reactions or unsent copies).
+    Tombstone(MessageId),
     Erase(EraseScope),
 }
 
@@ -127,6 +143,9 @@ pub trait Storage: Send + Sync {
     fn outbox(&self) -> Result<Vec<OutboxEntry>, StorageError>;
     fn kv(&self, key: &str) -> Result<Option<Vec<u8>>, StorageError>;
     fn file(&self, id: &MessageId) -> Result<Option<StoredFile>, StorageError>;
+    fn reactions(&self) -> Result<Vec<StoredReaction>, StorageError>;
+    /// Messages that were deleted for everyone.
+    fn deleted(&self) -> Result<Vec<MessageId>, StorageError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

@@ -105,6 +105,9 @@ impl Wipe<'_> {
 
     fn forget_messages_where(&mut self, keep: impl Fn(&ConversationId) -> bool) {
         self.core.messages.retain(|_, m| keep(&m.conversation));
+        let present: std::collections::HashSet<_> = self.core.messages.keys().cloned().collect();
+        self.core.reactions.retain(|id, _| present.contains(id));
+        self.core.deleted.retain(|id| present.contains(id));
         let alive = |id: &privcord_domain::MessageId, core: &Core| core.messages.contains_key(id);
         let ids: Vec<_> = self
             .core
@@ -147,6 +150,8 @@ impl Wipe<'_> {
                 if r.is_ok() {
                     self.core.messages.clear();
                     self.core.outbox.clear();
+                    self.core.reactions.clear();
+                    self.core.deleted.clear();
                 }
                 r
             }
@@ -188,6 +193,7 @@ impl Wipe<'_> {
             "settings.erase" => {
                 self.core.group_only = false;
                 self.core.display_name = None;
+                self.core.muted.clear();
                 self.core.channels.clear();
                 self.core.invites = super::invites::InviteState::default();
                 Ok((StepStatus::Erased, None))

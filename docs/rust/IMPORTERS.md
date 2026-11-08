@@ -28,12 +28,15 @@ and left behind.
 | contacts whose card verifies, with nickname, trust ("confirmed" from older builds counts as verified), checked flag, who introduced them | `contact_card_not_valid`, `contact_uid_mismatch` |
 | groups, only the events that verify | `group_has_no_valid_events`, `group_event_not_valid` |
 | joined channels (names normalised) | `channel_name_not_valid` |
-| messages with replies, delivery state, read time, transport | `deleted_message` (only a tombstone was kept), `message_id_not_valid`, `message_text_not_valid`, `conversation_with_nobody_we_know`, `old_single_chat_with_several_friends` |
+| messages with replies, delivery state, read time, transport, reactions, and deleted-for-everyone tombstones | `message_id_not_valid`, `message_text_not_valid`, `conversation_with_nobody_we_know`, `old_single_chat_with_several_friends`, `reaction_not_valid` |
 | file messages and their bytes | `file_bytes_missing`, `file_failed_its_hash_check` (the message itself still comes over) |
 | unsent messages, still queued for the same people | |
-| | **`reactions_not_kept`**: the message comes over, its reactions do not (the engine has no reactions yet) |
 
-Muted people (`muted` flag) are read but not stored: the engine has no mute list yet.
+Muted people come over into the engine's mute list.
+
+## Backups
+
+`Source::Backup` reads the JSON inside a `PRIVCORD-BACKUP1:` file (`backup::read_bundle`) through the same checks, but writes no marker, so a backup can be restored again; it only adds. The engine's `import_backup` refuses a backup of a different identity and reloads its state afterwards. A backup made by the desktop app (`gen-legacy-fixtures.ts` uses the app's own `sealBackup`) restores into the engine in a test; the engine's own backups use the same field names, but **no test has yet run the apps' `importBackup` on a file the engine made**.
 
 ## What has been tested, honestly
 

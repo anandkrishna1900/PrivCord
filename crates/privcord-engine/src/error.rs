@@ -47,6 +47,14 @@ pub enum ErrorCode {
     StillInGroup,
     #[error("No way to reach them right now.")]
     NoRoute,
+    #[error("That is not one of the reactions.")]
+    BadReaction,
+    #[error("Use at least 8 characters for the backup passphrase.")]
+    WeakPassphrase,
+    #[error("That did not open. Check the passphrase and that this is a PrivCord backup file.")]
+    BackupUnreadable,
+    #[error("That backup belongs to a different identity.")]
+    BackupNotYours,
     #[error("Storage failed; nothing was changed.")]
     Storage,
     #[error("Secure storage failed.")]

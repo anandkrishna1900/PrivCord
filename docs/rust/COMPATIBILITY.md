@@ -45,13 +45,14 @@ These are stricter than TypeScript, and none can affect a peer that behaves like
 | Pairing records, reconnect backoff, kill-switch plans and reports, manual connection codes | parse and validate cases, status table, delay table, every summary case, a run and a resume, every decode error | `docs/misc-vectors.json` made by `scripts/gen-misc-vectors.ts`; reproducible in CI |
 | Nostr events | event id, BIP-340 signature, the rules for which relay messages become blobs | a TypeScript-made event verifies in Rust; a Rust-made event verifies in TypeScript (`rustInterop.test.ts`) |
 | Group messages, files, channels, mesh | frame shapes, ordering, delivery, persistence | engine tests with real crypto and fake radios; two-hop mesh across three real engines through the facade |
+| Delete for everyone, reactions, search, muting, backups | frames and rules; a backup made by the app's own `sealBackup` restores into the engine | engine tests (`social.rs`), `docs/legacy-fixtures.json` |
 | Importers | both old databases on generated data | `docs/legacy-fixtures.json` (see [IMPORTERS.md](IMPORTERS.md)) |
 
 Additional deliberate differences: the kill-switch runner takes a clock instead of reading one, and failure text is cut to 160 UTF-16 units without splitting a character; pairing timestamps are whole milliseconds like every other timestamp here; a relayed (`relay_blob`) frame is passed on at most twice, as in the apps.
 
 ## Not yet compatible (not ported)
 
-* Reactions, delete for everyone, search and backup restore are still TypeScript and Kotlin only (the frames are ported in `domain::social`, but the engine does not act on them).
+* Disappearing messages and translations were removed from the apps and are not in the engine.
 * The Double Ratchet and X3DH code in `packages/protocol/src/e2ee` is not used by either app and is not ported (ADR-009).
 * The WebRTC session, sockets, the Bluetooth radio, the keychain and all UI stay in the platform adapters by design.
 

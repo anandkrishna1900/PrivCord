@@ -305,11 +305,20 @@ fn check_common(f: &Value, db: &SqliteStorage, r: &ImportReport) {
     );
     let m9 = msg(db, 9).unwrap();
     assert_eq!(m9.conversation, ConversationId::Channel("town".into()));
-    assert!(
-        msg(db, 10).is_none(),
-        "a deleted-for-everyone tombstone is not imported"
+    // Deleted for everyone: only a tombstone (no text), marked as deleted.
+    assert!(msg(db, 10).unwrap().message.text.is_empty());
+    assert_eq!(
+        db.deleted().unwrap(),
+        [MessageId::new("00000000-0000-4000-8000-000000000010").unwrap()]
     );
-    assert!(msg(db, 11).is_some() && r.skipped["reactions_not_kept"] == 1);
+    // The reaction on message 11 came over.
+    let reactions = db.reactions().unwrap();
+    assert_eq!(reactions.len(), 1);
+    assert_eq!(
+        (reactions[0].uid.clone(), reactions[0].emoji.as_str()),
+        (me.clone(), "\u{1F44D}")
+    );
+    assert!(msg(db, 11).is_some());
     assert!(
         msg(db, 12).is_none(),
         "text that cannot be decrypted is not imported"
@@ -391,11 +400,10 @@ fn a_desktop_database_comes_over_verified_and_a_second_run_changes_nothing() {
     .unwrap();
     assert_eq!(
         (r.contacts, r.messages, r.files, r.outbox),
-        (3, 13, 1, 3),
+        (3, 14, 1, 3),
         "{r:?}"
     );
     assert_eq!(r.skipped["contact_card_not_valid"], 1);
-    assert_eq!(r.skipped["deleted_message"], 1);
     check_common(&f, &db, &r);
     assert_eq!(
         r.skipped["channel_name_not_valid"], 1,
@@ -548,7 +556,6 @@ fn the_engine_opens_what_was_imported_and_carries_on() {
     use privcord_ports::testing::{
         FakeClock, MemorySecureStore, RecordingNotifier, RecordingTransport,
     };
-    use std::sync::Arc;
 
     let f = fixtures();
     let dir = tempfile::tempdir().unwrap();
@@ -582,7 +589,7 @@ fn the_engine_opens_what_was_imported_and_carries_on() {
     // A fresh install of the new app: same person (recovered from the phrase), the imported database.
     let transport = RecordingTransport::new();
     let mut core = Core::new(Ports {
-        storage: Arc::new(SqliteStorage::open(&new_path).unwrap()),
+        storage: std::sync::Arc::new(SqliteStorage::open(&new_path).unwrap()),
         secure: MemorySecureStore::new(),
         transport: transport.clone(),
         clock: FakeClock::at(1_700_000_300_000),
@@ -604,7 +611,7 @@ fn the_engine_opens_what_was_imported_and_carries_on() {
     assert_eq!(snap.groups[0].name, "Trip");
     assert_eq!(snap.groups[0].members.len(), 3);
     let total: usize = snap.messages.iter().map(|(_, v)| v.len()).sum();
-    assert_eq!(total, 13);
+    assert_eq!(total, 14);
     assert_eq!(snap.queued, 3, "unsent messages are still waiting");
     // The imported file opens, and the old group can be written to straight away.
     let id = MessageId::new("00000000-0000-4000-8000-000000000004").unwrap();
@@ -614,4 +621,56 @@ fn the_engine_opens_what_was_imported_and_carries_on() {
     );
     core.send_group_message(f["groupId"].as_str().unwrap(), "back again", None)
         .unwrap();
+}
+
+#[test]
+fn a_backup_made_by_the_desktop_app_restores_into_the_engine() {
+    use privcord_crypto::rng::SeededEntropy;
+    use privcord_engine::{Core, ErrorCode, Ports};
+    use privcord_ports::testing::{
+        FakeClock, MemorySecureStore, MemoryStorage, RecordingNotifier, RecordingTransport,
+    };
+
+    let f = fixtures();
+    let mut core = Core::new(Ports {
+        storage: MemoryStorage::new(),
+        secure: MemorySecureStore::new(),
+        transport: RecordingTransport::new(),
+        clock: FakeClock::at(1_700_000_300_000),
+        notifier: RecordingNotifier::new(),
+        entropy: Box::new(SeededEntropy::new("restore")),
+    })
+    .unwrap();
+    core.recover_identity(f["me"]["phrase"].as_str().unwrap(), "")
+        .unwrap();
+    let backup = f["backup"].as_str().unwrap();
+    assert_eq!(
+        core.import_backup(backup, "not the passphrase"),
+        Err(ErrorCode::BackupUnreadable)
+    );
+    let r = core.import_backup(backup, "correct horse battery").unwrap();
+    assert_eq!((r.friends, r.groups, r.messages), (1, 1, 4));
+    let snap = core.snapshot();
+    assert_eq!(snap.contacts.len(), 1);
+    assert_eq!(snap.groups[0].name, "Trip");
+    assert_eq!(snap.channels, ["town"]);
+    assert_eq!(snap.muted, [uid(&f, "carol")]);
+    assert_eq!(snap.deleted.len(), 1);
+    assert_eq!(snap.reactions.len(), 1);
+    assert_eq!(snap.queued, 1, "the group note still owes Bob a copy");
+    // A backup is for one person: someone else's identity refuses it.
+    let mut other = Core::new(Ports {
+        storage: MemoryStorage::new(),
+        secure: MemorySecureStore::new(),
+        transport: RecordingTransport::new(),
+        clock: FakeClock::at(1),
+        notifier: RecordingNotifier::new(),
+        entropy: Box::new(SeededEntropy::new("other")),
+    })
+    .unwrap();
+    other.create_identity().unwrap();
+    assert_eq!(
+        other.import_backup(backup, "correct horse battery"),
+        Err(ErrorCode::BackupNotYours)
+    );
 }

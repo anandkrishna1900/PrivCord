@@ -77,6 +77,12 @@ pub struct Snapshot {
     pub groups: Vec<GroupView>,
     /// Names of the public channels joined.
     pub channels: Vec<String>,
+    /// Reactions per message: who reacted with what.
+    pub reactions: Vec<(MessageId, Vec<(UserId, String)>)>,
+    /// Messages deleted for everyone (they show as removed).
+    pub deleted: Vec<MessageId>,
+    /// People whose channel messages are hidden.
+    pub muted: Vec<UserId>,
     pub invite: Option<InviteView>,
     pub requests: Vec<RequestView>,
     pub answer: Option<AnswerView>,
@@ -137,6 +143,18 @@ pub enum EngineEvent {
         peer: UserId,
         message: SignalMessage,
     },
+    /// A message's reactions or its deleted mark changed.
+    MessageChanged {
+        message_id: MessageId,
+    },
+    /// A message was removed from this device ("delete for me").
+    MessageRemoved {
+        message_id: MessageId,
+    },
+    /// A backup was restored: ask for a snapshot.
+    Restored,
+    /// A setting the snapshot shows changed (the muted list).
+    SettingsChanged,
     MessageRefused {
         message_id: MessageId,
     },

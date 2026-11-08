@@ -1244,6 +1244,7 @@ version = "0.1.0"
 dependencies = [
  "privcord-crypto",
  "privcord-domain",
+ "privcord-import",
  "privcord-ports",
  "privcord-storage",
  "serde_json",

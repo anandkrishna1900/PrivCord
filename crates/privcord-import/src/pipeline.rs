@@ -7,6 +7,7 @@ use privcord_domain::{
     limits::MAX_TEXT_LENGTH,
     message::{ChatMessage, DeliveryState, MessageKind},
     privacy::ContactTrust,
+    social::REACTION_EMOJI,
     ConversationId, GroupId, MessageId, UserId,
 };
 use privcord_ports::{
@@ -60,7 +61,8 @@ pub fn import(
     now_ms: i64,
 ) -> Result<ImportReport, ImportError> {
     let mut report = ImportReport::default();
-    if storage.kv(&marker_key(source))?.is_some() {
+    let marked = source != Source::Backup;
+    if marked && storage.kv(&marker_key(source))?.is_some() {
         report.already_done = true;
         return Ok(report);
     }
@@ -180,7 +182,7 @@ pub fn import(
             conversation,
             message: message.clone(),
         }));
-        if let Some(meta) = &m.file {
+        if let (Some(meta), false) = (&m.file, m.deleted) {
             match files.file(&m.id) {
                 None => report.skip("file_bytes_missing"),
                 Some(bytes)
@@ -201,10 +203,29 @@ pub fn import(
                 }
             }
         }
-        if matches!(
-            message.delivery_state,
-            DeliveryState::Queued | DeliveryState::Sent | DeliveryState::Failed
-        ) && message.sender_id == *own_uid
+        if m.deleted {
+            ops.push(StorageOp::Tombstone(id.clone()));
+        } else {
+            for (who, emoji) in &m.reactions {
+                match (
+                    UserId::new(who.as_str()),
+                    REACTION_EMOJI.contains(&emoji.as_str()),
+                ) {
+                    (Ok(uid), true) => ops.push(StorageOp::SetReaction {
+                        message_id: id.clone(),
+                        uid,
+                        emoji: Some(emoji.clone()),
+                    }),
+                    _ => report.skip("reaction_not_valid"),
+                }
+            }
+        }
+        if !m.deleted
+            && matches!(
+                message.delivery_state,
+                DeliveryState::Queued | DeliveryState::Sent | DeliveryState::Failed
+            )
+            && message.sender_id == *own_uid
         {
             for (to, attempts) in &m.pending {
                 if let Ok(recipient) = UserId::new(to.as_str()) {
@@ -226,7 +247,27 @@ pub fn import(
         }
     }
 
+    // ---- muted people
+    let mut muted: BTreeSet<String> = storage
+        .kv("muted.v1")?
+        .and_then(|b| serde_json::from_slice::<Vec<String>>(&b).ok())
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
+    muted.extend(bundle.muted.iter().cloned());
+    muted.extend(
+        bundle
+            .contacts
+            .iter()
+            .filter(|c| c.muted)
+            .map(|c| c.uid.clone()),
+    );
+
     // ---- settings and the marker, last
+    ops.push(StorageOp::SetKv {
+        key: "muted.v1".into(),
+        value: serde_json::to_vec(&muted).unwrap_or_default(),
+    });
     ops.push(StorageOp::SetKv {
         key: KV_GROUPS.into(),
         value: serde_json::to_vec(&groups).unwrap_or_default(),
@@ -235,10 +276,12 @@ pub fn import(
         key: KV_CHANNELS.into(),
         value: serde_json::to_vec(&channels).unwrap_or_default(),
     });
-    ops.push(StorageOp::SetKv {
-        key: marker_key(source),
-        value: codec::hex(&now_ms.to_be_bytes()).into_bytes(),
-    });
+    if marked {
+        ops.push(StorageOp::SetKv {
+            key: marker_key(source),
+            value: codec::hex(&now_ms.to_be_bytes()).into_bytes(),
+        });
+    }
     storage.apply(&ops)?;
     Ok(report)
 }
@@ -251,15 +294,6 @@ fn convert_message(
     only_contact: Option<&UserId>,
     report: &mut ImportReport,
 ) -> Option<(ConversationId, ChatMessage)> {
-    if m.deleted {
-        // Deleted for everyone: only a tombstone was kept, there is nothing to show.
-        report.skip("deleted_message");
-        return None;
-    }
-    if m.has_reactions {
-        // The engine does not keep reactions yet; the message itself still comes over.
-        report.skip("reactions_not_kept");
-    }
     let (Ok(id), Ok(client_id), Ok(sender)) = (
         MessageId::new(m.id.as_str()),
         MessageId::new(m.client_id.as_str()),
@@ -304,6 +338,7 @@ fn convert_message(
         None => (MessageKind::Text, m.text.clone()),
     };
     if kind == MessageKind::Text
+        && !m.deleted
         && (text.trim().is_empty() || text.chars().count() > MAX_TEXT_LENGTH)
     {
         report.skip("message_text_not_valid");
@@ -321,7 +356,7 @@ fn convert_message(
             kind,
             transport: m.transport,
             delivery_state: m.delivery,
-            reply_to: m.reply.clone(),
+            reply_to: if m.deleted { None } else { m.reply.clone() },
             read_at: m.read_at,
         },
     ))

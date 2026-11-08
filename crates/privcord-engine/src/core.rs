@@ -54,9 +54,14 @@ use std::{
 };
 use zeroize::Zeroizing;
 
+mod backup;
 mod invites;
 mod privacy;
 mod signaling;
+mod social;
+
+pub use backup::RestoreSummary;
+pub use social::SearchHit;
 
 pub use invites::InvitePreview;
 
@@ -168,6 +173,12 @@ pub struct Core {
     mesh: MeshNode,
     invites: invites::InviteState,
     sealed: signaling::SealedState,
+    /// Everyone's reactions, per message.
+    reactions: HashMap<MessageId, BTreeMap<UserId, String>>,
+    /// Messages deleted for everyone (only a tombstone is kept).
+    deleted: std::collections::HashSet<MessageId>,
+    /// People whose channel messages we hide.
+    muted: BTreeSet<UserId>,
     /// True only while a message that came through the signaling service is being handled.
     relay_inbound: bool,
     /// The name on our invite cards.
@@ -213,6 +224,9 @@ impl Core {
             mesh: MeshNode::default(),
             invites: invites::InviteState::default(),
             sealed: signaling::SealedState::default(),
+            reactions: HashMap::new(),
+            deleted: std::collections::HashSet::new(),
+            muted: BTreeSet::new(),
             relay_inbound: false,
             display_name: None,
         };
@@ -233,40 +247,66 @@ impl Core {
             core.uid = Some(identity.uid()?);
             core.identity = Some(identity);
         }
-        for stored in core.ports.storage.contacts()? {
+        core.reload_from_storage()?;
+        core.hub.publish(EngineEvent::Ready);
+        Ok(core)
+    }
+
+    /// (Re)read everything the engine keeps from storage: after start, and after a backup was restored into it.
+    fn reload_from_storage(&mut self) -> Result<(), ErrorCode> {
+        self.contacts.clear();
+        self.messages.clear();
+        self.reactions.clear();
+        self.channels.clear();
+        self.groups = None;
+        for stored in self.ports.storage.contacts()? {
             if let Some(contact) = ContactCard::decode(&stored.card).filter(|c| c.uid == stored.uid)
             {
-                core.contacts
+                self.contacts
                     .insert(stored.uid.clone(), StoredContactState { stored, contact });
             }
         }
-        for m in core.ports.storage.messages()? {
-            core.messages.insert(m.message.message_id.clone(), m);
+        for m in self.ports.storage.messages()? {
+            self.messages.insert(m.message.message_id.clone(), m);
         }
-        core.outbox = core.ports.storage.outbox()?;
-        core.group_only = core
+        self.outbox = self.ports.storage.outbox()?;
+        for r in self.ports.storage.reactions()? {
+            self.reactions
+                .entry(r.message_id)
+                .or_default()
+                .insert(r.uid, r.emoji);
+        }
+        self.deleted = self.ports.storage.deleted()?.into_iter().collect();
+        if let Some(bytes) = self.ports.storage.kv(social::KV_MUTED)? {
+            if let Ok(list) = serde_json::from_slice::<Vec<String>>(&bytes) {
+                self.muted = list
+                    .iter()
+                    .filter_map(|u| UserId::new(u.as_str()).ok())
+                    .collect();
+            }
+        }
+        self.group_only = self
             .ports
             .storage
             .kv(KV_GROUP_ONLY)?
             .is_some_and(|v| v == b"1");
-        core.ensure_groups()?;
-        if let Some(bytes) = core.ports.storage.kv(KV_CHANNELS)? {
+        self.ensure_groups()?;
+        if let Some(bytes) = self.ports.storage.kv(KV_CHANNELS)? {
             if let Ok(names) = serde_json::from_slice::<Vec<String>>(&bytes) {
                 for n in names {
                     if let Some(name) = normalize_channel_name(&n) {
-                        core.channels.insert(name.clone(), derive_channel(&name)?);
+                        self.channels.insert(name.clone(), derive_channel(&name)?);
                     }
                 }
             }
         }
-        core.display_name = core
+        self.display_name = self
             .ports
             .storage
             .kv(invites::KV_NAME)?
             .and_then(|b| String::from_utf8(b).ok())
             .filter(|n| !n.is_empty());
-        core.hub.publish(EngineEvent::Ready);
-        Ok(core)
+        Ok(())
     }
 
     pub fn subscribe(&mut self) -> EventStream {
@@ -702,6 +742,7 @@ impl Core {
                     self.step(peer, ConnectionEvent::Established(path));
                     self.send_privacy(peer);
                     self.send_group_hello(peer);
+                    self.sync_social(peer);
                     self.flush(peer);
                 }
             }
@@ -744,6 +785,8 @@ impl Core {
             Some("group_push" | "group_events" | "group_have") => self.on_group_frame(peer, frame),
             Some("gmsg") => self.on_group_message(peer, frame),
             Some("relay_blob") => self.on_relay_blob(peer, frame),
+            Some("delete") => self.on_delete_frame(peer, frame),
+            Some("react") => self.on_react_frame(peer, frame),
             Some("file_offer") => self.on_file_offer(peer, frame),
             Some("file_chunk") => self.on_file_chunk(peer, frame),
             Some("privacy") => {
@@ -2003,6 +2046,9 @@ impl Core {
             contacts,
             groups,
             channels: self.channels.keys().cloned().collect(),
+            reactions: self.reaction_views(),
+            deleted: self.deleted.iter().cloned().collect(),
+            muted: self.muted.iter().cloned().collect(),
             invite,
             requests,
             answer,

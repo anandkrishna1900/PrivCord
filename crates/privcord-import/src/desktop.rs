@@ -3,8 +3,8 @@
 //! people are small encrypted JSON values in `meta` under `secret.<name>`.
 
 use crate::{
-    file_meta_from, parse_delivery, parse_trust, reply_from, Decryptor, LegacyBundle,
-    LegacyContact, LegacyMessage, ReadError,
+    contacts_from_json, file_meta_from, parse_delivery, reactions_from, reply_from, Decryptor,
+    LegacyBundle, LegacyMessage, ReadError,
 };
 use privcord_crypto::aead;
 use privcord_domain::{codec, message::TransportKind};
@@ -85,29 +85,10 @@ pub fn read_bundle(db_path: &Path, dec: &dyn Decryptor) -> Result<LegacyBundle, 
         muted.extend(list.iter().filter_map(|v| v.as_str().map(str::to_owned)));
     }
     if let Some(Value::Array(list)) = secret(&conn, dec, "contacts") {
-        for c in &list {
-            let Some(uid) = c.get("uid").and_then(Value::as_str) else {
-                continue;
-            };
-            bundle.contacts.push(LegacyContact {
-                uid: uid.to_owned(),
-                card: c.get("card").cloned().unwrap_or(Value::Null),
-                nickname: c
-                    .get("nickname")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-                    .filter(|n| !n.is_empty()),
-                trust: parse_trust(c.get("trust").and_then(Value::as_str).unwrap_or("")),
-                checked: c.get("checked").and_then(Value::as_bool).unwrap_or(false),
-                introduced_by: c
-                    .get("introducedBy")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned),
-                created_at: c.get("addedAt").and_then(Value::as_i64).unwrap_or(0),
-                muted: muted.contains(uid),
-            });
-        }
+        bundle.contacts = contacts_from_json(&list, &muted);
     }
+    bundle.muted = muted.iter().cloned().collect();
+    bundle.muted.sort();
     if let Some(Value::Object(groups)) = secret(&conn, dec, "groups") {
         for (id, events) in groups {
             if let Value::Array(events) = events {
@@ -224,10 +205,7 @@ pub fn read_bundle(db_path: &Path, dec: &dyn Decryptor) -> Result<LegacyBundle, 
                 .get("deleted")
                 .and_then(Value::as_bool)
                 .unwrap_or(false),
-            has_reactions: extra
-                .get("reactions")
-                .and_then(Value::as_object)
-                .is_some_and(|o| !o.is_empty()),
+            reactions: reactions_from(extra.get("reactions")),
             pending,
         });
     }

@@ -93,6 +93,14 @@ pub enum FfiError {
     StillInGroup,
     #[error("no way to reach them")]
     NoRoute,
+    #[error("bad reaction")]
+    BadReaction,
+    #[error("passphrase too short")]
+    WeakPassphrase,
+    #[error("backup unreadable")]
+    BackupUnreadable,
+    #[error("backup belongs to someone else")]
+    BackupNotYours,
 }
 
 impl From<ErrorCode> for FfiError {
@@ -125,6 +133,10 @@ impl From<ErrorCode> for FfiError {
             ErrorCode::OwnInvite => Self::OwnInvite,
             ErrorCode::StillInGroup => Self::StillInGroup,
             ErrorCode::NoRoute => Self::NoRoute,
+            ErrorCode::BadReaction => Self::BadReaction,
+            ErrorCode::WeakPassphrase => Self::WeakPassphrase,
+            ErrorCode::BackupUnreadable => Self::BackupUnreadable,
+            ErrorCode::BackupNotYours => Self::BackupNotYours,
         }
     }
 }
@@ -394,6 +406,33 @@ pub struct MessageDto {
     pub reply_to: Option<String>,
     /// A file message: `text` is the file's name and `load_file` returns its bytes.
     pub is_file: bool,
+    /// Deleted for everyone: show it as removed (there is no text).
+    pub deleted: bool,
+    /// Reactions in the fixed emoji order: how many, and whether you reacted.
+    pub reactions: Vec<ReactionChipDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ReactionChipDto {
+    pub emoji: String,
+    pub count: u32,
+    pub mine: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SearchHitDto {
+    pub message_id: String,
+    pub conversation: String,
+    pub sender: String,
+    pub text: String,
+    pub at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct RestoreDto {
+    pub friends: u64,
+    pub groups: u64,
+    pub messages: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -417,6 +456,8 @@ pub struct SnapshotDto {
     pub conversations: Vec<ConversationDto>,
     pub groups: Vec<GroupDto>,
     pub channels: Vec<String>,
+    /// People whose channel messages you hid.
+    pub muted: Vec<String>,
     pub invite: Option<InviteDto>,
     pub requests: Vec<RequestDto>,
     pub answer: Option<AnswerDto>,
@@ -551,6 +592,16 @@ pub enum EventDto {
         kind: SignalKindDto,
         sdp: Option<String>,
     },
+    /// A message's reactions or its deleted mark changed.
+    MessageChanged {
+        message_id: String,
+    },
+    /// A message was removed from this device.
+    MessageRemoved {
+        message_id: String,
+    },
+    /// A backup was restored, or a setting changed: ask for a snapshot.
+    SnapshotChanged,
     /// An emergency deletion ran; ask for its report.
     Wiped,
     Lagged {
@@ -614,6 +665,13 @@ fn event_dto(e: EngineEvent) -> EventDto {
             initiator,
         },
         EngineEvent::Wiped => EventDto::Wiped,
+        EngineEvent::MessageChanged { message_id } => EventDto::MessageChanged {
+            message_id: message_id.to_string(),
+        },
+        EngineEvent::MessageRemoved { message_id } => EventDto::MessageRemoved {
+            message_id: message_id.to_string(),
+        },
+        EngineEvent::Restored | EngineEvent::SettingsChanged => EventDto::SnapshotChanged,
         EngineEvent::SignalReceived { peer, message } => {
             let (kind, sdp) = match message {
                 privcord_engine::SignalMessage::Ready => (SignalKindDto::Ready, None),
@@ -961,6 +1019,66 @@ impl PrivcordEngine {
         })
     }
 
+    /// Delete a message. `everyone` (your own messages only) also asks the others to remove it, and leaves a tombstone.
+    pub fn delete_message(&self, message_id: String, everyone: bool) -> Result<(), FfiError> {
+        let id = MessageId::new(message_id).map_err(|_| FfiError::InvalidArgument)?;
+        self.misc(Op::DeleteMessage { id, everyone })
+    }
+
+    /// Toggle your reaction (one of 👍 ❤️ 😂 😮 😢 🙏) on a message; the same one again removes it.
+    pub fn react(&self, message_id: String, emoji: String) -> Result<(), FfiError> {
+        let id = MessageId::new(message_id).map_err(|_| FfiError::InvalidArgument)?;
+        self.misc(Op::React { id, emoji })
+    }
+
+    /// Hide (or show again) a person's channel messages, on this device only.
+    pub fn set_muted(&self, uid: String, muted: bool) -> Result<(), FfiError> {
+        self.misc(Op::SetMuted {
+            uid: user(&uid)?,
+            muted,
+        })
+    }
+
+    /// Search messages on this device (two characters at least). Newest first.
+    pub fn search(&self, query: String, limit: u32) -> Result<Vec<SearchHitDto>, FfiError> {
+        match pollster::block_on(self.handle.op(Op::Search {
+            query,
+            limit: usize::try_from(limit).unwrap_or(usize::MAX),
+        }))? {
+            Answer::Hits(h) => Ok(h
+                .into_iter()
+                .map(|h| SearchHitDto {
+                    message_id: h.message_id.to_string(),
+                    conversation: h.conversation.storage_key(),
+                    sender: h.sender.to_string(),
+                    text: h.text,
+                    at: h.at,
+                })
+                .collect()),
+            _ => Err(FfiError::InvalidArgument),
+        }
+    }
+
+    /// A passphrase-protected copy of friends, groups, channels, muted people and messages (no files, no recovery phrase).
+    pub fn export_backup(&self, passphrase: String) -> Result<String, FfiError> {
+        match pollster::block_on(self.handle.op(Op::ExportBackup(passphrase)))? {
+            Answer::Text(t) => Ok(t),
+            _ => Err(FfiError::InvalidArgument),
+        }
+    }
+
+    /// Add what is in a backup to what is here. Never replaces or removes anything that already exists.
+    pub fn import_backup(&self, text: String, passphrase: String) -> Result<RestoreDto, FfiError> {
+        match pollster::block_on(self.handle.op(Op::ImportBackup { text, passphrase }))? {
+            Answer::Restored(r) => Ok(RestoreDto {
+                friends: u64::try_from(r.friends).unwrap_or(u64::MAX),
+                groups: u64::try_from(r.groups).unwrap_or(u64::MAX),
+                messages: u64::try_from(r.messages).unwrap_or(u64::MAX),
+            }),
+            _ => Err(FfiError::InvalidArgument),
+        }
+    }
+
     pub fn mark_read(&self, peer: String) -> Result<(), FfiError> {
         Ok(pollster::block_on(self.handle.mark_read(&user(&peer)?))?)
     }
@@ -990,6 +1108,24 @@ impl PrivcordEngine {
     /// Everything a recreated UI needs, so it never depends on having seen every event.
     pub fn snapshot(&self) -> Result<SnapshotDto, FfiError> {
         let s = pollster::block_on(self.handle.snapshot())?;
+        let own = s
+            .own_uid
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_default();
+        let deleted: std::collections::HashSet<_> = s.deleted.iter().cloned().collect();
+        let reactions: std::collections::HashMap<_, _> = s
+            .reactions
+            .iter()
+            .map(|(id, r)| {
+                (
+                    id.clone(),
+                    r.iter()
+                        .map(|(u, e)| (u.to_string(), e.clone()))
+                        .collect::<std::collections::BTreeMap<String, String>>(),
+                )
+            })
+            .collect();
         Ok(SnapshotDto {
             seq: s.seq,
             own_uid: s.own_uid.map(|u| u.to_string()),
@@ -1007,6 +1143,7 @@ impl PrivcordEngine {
                 })
                 .collect(),
             channels: s.channels,
+            muted: s.muted.iter().map(ToString::to_string).collect(),
             invite: s.invite.map(|i| InviteDto {
                 words: i.words,
                 expires_at: i.expires_at,
@@ -1057,6 +1194,8 @@ impl PrivcordEngine {
                             delivery: m.delivery_state.into(),
                             reply_to: m.reply_to.map(|r| r.id),
                             is_file: m.kind == privcord_domain::message::MessageKind::File,
+                            deleted: deleted.contains(&m.message_id),
+                            reactions: chips(reactions.get(&m.message_id), &own),
                         })
                         .collect(),
                 })
@@ -1299,4 +1438,20 @@ pub fn import_legacy_android(
         &own_uid,
         &FilesAdapter(files),
     )
+}
+
+fn chips(
+    reactions: Option<&std::collections::BTreeMap<String, String>>,
+    own: &str,
+) -> Vec<ReactionChipDto> {
+    reactions.map_or_else(Vec::new, |r| {
+        privcord_domain::social::summarize_reactions(r, own)
+            .into_iter()
+            .map(|c| ReactionChipDto {
+                emoji: c.emoji.to_owned(),
+                count: u32::try_from(c.count).unwrap_or(u32::MAX),
+                mine: c.mine,
+            })
+            .collect()
+    })
 }

@@ -3,8 +3,8 @@
 //! and can never be read out, so the caller supplies a [`Decryptor`] that asks the Keystore.
 
 use crate::{
-    desktop::columns, file_meta_from, parse_delivery, parse_trust, reply_from, Decryptor,
-    LegacyBundle, LegacyContact, LegacyMessage, ReadError,
+    desktop::columns, file_meta_from, parse_delivery, parse_trust, reactions_from, reply_from,
+    Decryptor, LegacyBundle, LegacyContact, LegacyMessage, ReadError,
 };
 use privcord_domain::message::TransportKind;
 use rusqlite::{Connection, OpenFlags};
@@ -42,6 +42,8 @@ pub fn read_bundle(db_path: &Path, dec: &dyn Decryptor) -> Result<LegacyBundle, 
     if let Some(Value::Array(list)) = kv("muted") {
         muted.extend(list.iter().filter_map(|n| n.as_str().map(str::to_owned)));
     }
+
+    bundle.muted = muted.clone();
 
     // Contacts: the card is rebuilt from the stored keys and proof, then verified on import.
     if !columns(&conn, "contacts")?.is_empty() {
@@ -95,6 +97,9 @@ pub fn read_bundle(db_path: &Path, dec: &dyn Decryptor) -> Result<LegacyBundle, 
                 o.insert("name".into(), json!(n));
             }
             let nickname = Some(name).filter(|n| !n.is_empty() && Some(n) != card_name.as_ref());
+            if blocked && !bundle.muted.contains(&uid) {
+                bundle.muted.push(uid.clone());
+            }
             bundle.contacts.push(LegacyContact {
                 muted: blocked || muted.contains(&uid),
                 uid,
@@ -221,10 +226,7 @@ pub fn read_bundle(db_path: &Path, dec: &dyn Decryptor) -> Result<LegacyBundle, 
                 .get("deleted")
                 .and_then(Value::as_bool)
                 .unwrap_or(false),
-            has_reactions: extra
-                .get("reactions")
-                .and_then(Value::as_object)
-                .is_some_and(|o| !o.is_empty()),
+            reactions: reactions_from(extra.get("reactions")),
         });
     }
     Ok(bundle)
