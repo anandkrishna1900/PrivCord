@@ -1080,6 +1080,20 @@ impl PrivcordEngine {
         self.misc(Op::React { id, emoji })
     }
 
+    /// Tell the engine how a link that is already up is really routed (found out after it opened).
+    pub fn set_link_path(&self, peer: String, path: PathKind) -> Result<(), FfiError> {
+        self.misc(Op::SetLinkPath {
+            peer: user(&peer)?,
+            path: path.into(),
+        })
+    }
+
+    /// Dial again at the next tick instead of waiting out the retry delay: for one friend, or for everyone not linked.
+    pub fn reset_dial_backoff(&self, peer: Option<String>) -> Result<(), FfiError> {
+        let peer = peer.map(|p| user(&p)).transpose()?;
+        self.misc(Op::ResetDialBackoff { peer })
+    }
+
     /// The 32-byte secret shared with a friend. Bluetooth uses it only to choose which advertisements to accept; do not
     /// store it or send it anywhere.
     pub fn ble_secret(&self, peer: String) -> Result<Vec<u8>, FfiError> {

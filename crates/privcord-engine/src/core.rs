@@ -1284,6 +1284,35 @@ impl Core {
         Ok(())
     }
 
+    /// The adapter found out how a link is really routed (this can take a moment, so the link is opened first).
+    pub fn set_link_path(&mut self, peer: &UserId, path: ConnectionPath) {
+        let Some(p) = self.peers.get_mut(peer) else {
+            return;
+        };
+        p.path = path;
+        if matches!(p.state, ConnectionState::Connected { .. }) {
+            p.state = ConnectionState::Connected { path };
+            let state = p.state;
+            self.hub.publish(EngineEvent::PeerStateChanged {
+                peer: peer.clone(),
+                state,
+            });
+        }
+    }
+
+    /// Forget the retry back-off so the next tick dials again at once: for one contact, or for every contact that is not
+    /// linked. An adapter calls this when something that was in the way is gone (signaling came online, the other side
+    /// announced it is online), so a link does not wait out a delay that was earned while it could not have worked.
+    pub fn reset_dial_backoff(&mut self, peer: Option<&UserId>) {
+        for (uid, p) in &mut self.peers {
+            if p.ready() || peer.is_some_and(|only| only != uid) {
+                continue;
+            }
+            p.attempts = 0;
+            p.last_attempt_at = 0;
+        }
+    }
+
     /// Time passes: ping live links, drop silent ones, ask adapters to dial what is due, resend what was never
     /// acknowledged, and keep invites moving.
     pub fn tick(&mut self) {

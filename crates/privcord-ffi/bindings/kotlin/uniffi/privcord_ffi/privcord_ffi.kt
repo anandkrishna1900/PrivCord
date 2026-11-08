@@ -1016,6 +1016,10 @@ internal open class UniffiVTableCallbackInterfaceTransportCallbacks(
 
 
 
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1140,6 +1144,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_rename_group(`ptr`: Pointer,`group`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_reset_dial_backoff(`ptr`: Pointer,`peer`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_retry_answer(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_search(`ptr`: Pointer,`query`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
@@ -1161,6 +1167,8 @@ internal interface UniffiLib : Library {
     fun uniffi_privcord_ffi_fn_method_privcordengine_set_display_name(`ptr`: Pointer,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_set_group_only(`ptr`: Pointer,`value`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_set_link_path(`ptr`: Pointer,`peer`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_set_muted(`ptr`: Pointer,`uid`: RustBuffer.ByValue,`muted`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
@@ -1414,6 +1422,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_rename_group(
     ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_reset_dial_backoff(
+    ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_retry_answer(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_search(
@@ -1435,6 +1445,8 @@ internal interface UniffiLib : Library {
     fun uniffi_privcord_ffi_checksum_method_privcordengine_set_display_name(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_set_group_only(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_set_link_path(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_set_muted(
     ): Short
@@ -1617,6 +1629,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_rename_group() != 8179.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_reset_dial_backoff() != 27923.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_retry_answer() != 39887.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1648,6 +1663,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_set_group_only() != 19562.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_set_link_path() != 30727.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_set_muted() != 63712.toShort()) {
@@ -3084,6 +3102,11 @@ public interface PrivcordEngineInterface {
     
     fun `renameGroup`(`group`: kotlin.String, `name`: kotlin.String)
     
+    /**
+     * Dial again at the next tick instead of waiting out the retry delay: for one friend, or for everyone not linked.
+     */
+    fun `resetDialBackoff`(`peer`: kotlin.String?)
+    
     fun `retryAnswer`()
     
     /**
@@ -3127,6 +3150,11 @@ public interface PrivcordEngineInterface {
     fun `setDisplayName`(`name`: kotlin.String)
     
     fun `setGroupOnly`(`value`: kotlin.Boolean)
+    
+    /**
+     * Tell the engine how a link that is already up is really routed (found out after it opened).
+     */
+    fun `setLinkPath`(`peer`: kotlin.String, `path`: PathKind)
     
     /**
      * Hide (or show again) a person's channel messages, on this device only.
@@ -3757,6 +3785,21 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
     
 
     
+    /**
+     * Dial again at the next tick instead of waiting out the retry delay: for one friend, or for everyone not linked.
+     */
+    @Throws(FfiException::class)override fun `resetDialBackoff`(`peer`: kotlin.String?)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_reset_dial_backoff(
+        it, FfiConverterOptionalString.lower(`peer`),_status)
+}
+    }
+    
+    
+
+    
     @Throws(FfiException::class)override fun `retryAnswer`()
         = 
     callWithPointer {
@@ -3911,6 +3954,21 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_set_group_only(
         it, FfiConverterBoolean.lower(`value`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Tell the engine how a link that is already up is really routed (found out after it opened).
+     */
+    @Throws(FfiException::class)override fun `setLinkPath`(`peer`: kotlin.String, `path`: PathKind)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_set_link_path(
+        it, FfiConverterString.lower(`peer`),FfiConverterTypePathKind.lower(`path`),_status)
 }
     }
     

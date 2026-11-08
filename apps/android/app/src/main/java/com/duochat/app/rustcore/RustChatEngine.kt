@@ -124,6 +124,87 @@ class RustChatEngine(
     }
 
     private val manual = ManualHold()
+    /**
+     * Everything that flows INTO the engine from the radio links goes through this one queue, in order: link up and down and
+     * every frame. Frames must reach the engine in the order they arrived (a file is chunks, the handshake is a sequence),
+     * and the engine's own queue is bounded and refuses when full, so a refused call is retried rather than dropped.
+     */
+    private sealed class Inbound {
+        class Up(val peer: String, val path: PathKind, val kind: LinkKind) : Inbound()
+        class Down(val peer: String) : Inbound()
+        class Frame(val peer: String, val text: String) : Inbound()
+        class MeshUp(val link: String) : Inbound()
+        class MeshDown(val link: String) : Inbound()
+        class MeshFrame(val link: String, val text: String) : Inbound()
+    }
+
+    private val inbound = Channel<Inbound>(Channel.UNLIMITED)
+    private var inboundJob: Job? = null
+
+    private suspend fun deliver(block: () -> Unit) {
+        var tries = 0
+        while (true) {
+            try {
+                block()
+                return
+            } catch (busy: uniffi.privcord_ffi.FfiException.Busy) {
+                if (++tries > 4000) return // the engine has been busy for 20 s: give up on this one
+                delay(5)
+            } catch (t: Throwable) {
+                return
+            }
+        }
+    }
+
+    private suspend fun handleInbound(e: PrivcordEngine, op: Inbound) {
+        when (op) {
+            is Inbound.Up -> deliver { e.linkUp(op.peer, op.path, op.kind) }
+            is Inbound.Down -> deliver { e.linkDown(op.peer) }
+            is Inbound.Frame -> deliver { e.frameReceived(op.peer, op.text) }
+            is Inbound.MeshUp -> deliver { e.meshLinkUp(op.link) }
+            is Inbound.MeshDown -> deliver { e.meshLinkDown(op.link) }
+            is Inbound.MeshFrame -> deliver { e.meshFrame(op.link, op.text) }
+        }
+    }
+
+    /**
+     * Frames the engine sends to one friend go out in order, one at a time, waiting while the data channel's buffer is full
+     * (a photo is hundreds of chunks; pushing them all at once would overflow it and end the link).
+     */
+    private inner class Outbound(val peer: String) {
+        private val queue = Channel<String>(Channel.UNLIMITED)
+        private val job = scope.launch(Dispatchers.Default) {
+            for (frame in queue) {
+                val web = links[peer]
+                val ok = if (web != null && web.isOpen) {
+                    web.awaitWritable() && web.sendJson(frame)
+                } else {
+                    bleLinks[peer]?.takeIf { it.isOpen }?.sendJson(frame) == true
+                }
+                if (!ok) {
+                    senders.remove(peer, this@Outbound)
+                    inbound.trySend(Inbound.Down(peer))
+                    links.remove(peer)?.close()
+                    bleLinks.remove(peer)?.close()
+                    break
+                }
+            }
+        }
+
+        fun add(frame: String): Boolean = queue.trySend(frame).isSuccess
+
+        fun stop() {
+            queue.close()
+            job.cancel()
+        }
+    }
+
+    private val senders = ConcurrentHashMap<String, Outbound>()
+
+    private fun stopSender(peer: String) {
+        senders.remove(peer)?.stop()
+    }
+
     private val bleEnv = AndroidBleEnvironment(app)
     private val bleLinks = ConcurrentHashMap<String, BleTransport>()
     private val bleLastAttempt = ConcurrentHashMap<String, Long>()
@@ -144,14 +225,15 @@ class RustChatEngine(
 
     private val transport = object : TransportCallbacks {
         override fun send(peer: String, frame: String): Boolean {
-            val web = links[peer]
-            if (web != null && web.isOpen) return web.sendJson(frame)
-            return bleLinks[peer]?.takeIf { it.isOpen }?.sendJson(frame) == true
+            val open = links[peer]?.isOpen == true || bleLinks[peer]?.isOpen == true
+            if (!open) return false
+            return senders.getOrPut(peer) { Outbound(peer) }.add(frame)
         }
 
         override fun sendRaw(link: String, frame: String): Boolean = meshRadio?.send(link, frame) == true
 
         override fun close(peer: String) {
+            stopSender(peer)
             links.remove(peer)?.close()
             bleLinks.remove(peer)?.close()
         }
@@ -220,6 +302,8 @@ class RustChatEngine(
                 publish(snapshot)
             }
             startPump(started)
+            inboundJob = scope.launch(Dispatchers.IO) { for (op in inbound) handleInbound(started, op) }
+            watchSignaling()
             refreshJob = scope.launch {
                 for (signal in refreshRequests) {
                     delay(60) // coalesce bursts
@@ -251,6 +335,8 @@ class RustChatEngine(
         stopped = true
         refreshJob?.cancel()
         refreshRequests.close()
+        inbound.close()
+        for (peer in senders.keys.toList()) stopSender(peer)
         for (t in links.values) runCatching { t.close() }
         links.clear()
         for (t in bleLinks.values) runCatching { t.close() }
@@ -337,14 +423,20 @@ class RustChatEngine(
     private fun isInitiator(peer: String): Boolean = (last?.ownUid ?: "") < peer
 
     private suspend fun dial(peer: String, initiator: Boolean) {
+        val mode = networkConfig().transportMode
+        if (mode != TransportMode.INTERNET_ONLY) tryBluetooth(peer)
+        if (mode == TransportMode.BLUETOOTH_ONLY) return
+        if (hubStatus() != SignalingStatus.ONLINE) {
+            // The relays are not up yet, so this try could not have worked. Do not let it count against the retry delay:
+            // the engine asks again at its next tick, and the watcher below dials the moment the relays are online.
+            io { runCatching { engine?.resetDialBackoff(peer) } }
+            return
+        }
         val now = System.currentTimeMillis()
         val existing = links[peer]
         if (existing != null && !existing.isOpen && now - (dialStartedAt[peer] ?: 0L) < OFFER_TIMEOUT_MS) return
         dialStartedAt[peer] = now
         attempts.merge(peer, 1, Int::plus)
-        val mode = networkConfig().transportMode
-        if (mode != TransportMode.INTERNET_ONLY) tryBluetooth(peer)
-        if (mode == TransportMode.BLUETOOTH_ONLY) return
         if (initiator) {
             offer(peer)
         } else {
@@ -353,29 +445,63 @@ class RustChatEngine(
         }
     }
 
+    /**
+     * Dial the moment the relays come online instead of waiting for the engine's retry delay, which grows after every try
+     * and was being used up while the sockets were still opening.
+     */
+    private fun watchSignaling() {
+        scope.launch {
+            var wasOnline = false
+            while (!stopped) {
+                val online = hubStatus() == SignalingStatus.ONLINE
+                if (online && !wasOnline) {
+                    android.util.Log.i("RustEngine", "signaling online: dialing everyone not linked")
+                    io { runCatching { engine?.resetDialBackoff(null) } }
+                    val snapshot = last
+                    if (snapshot != null) {
+                        for (c in snapshot.contacts) {
+                            if (c.link !is LinkState.Connected) dial(c.uid, isInitiator(c.uid))
+                        }
+                    }
+                }
+                wasOnline = online
+                delay(250)
+            }
+        }
+    }
+
     private fun newTransport(peer: String): WebRtcTransport {
+        stopSender(peer)
         links.remove(peer)?.close()
         val created = WebRtcTransport(
             networkConfig().iceServers(), networkConfig().forceRelay,
             object : WebRtcTransport.Handlers {
                 override fun onOpen() {
+                    // Open the link in the engine at once; how it is routed (direct, relayed) is found out in the background and
+                    // corrected afterwards, so connecting never waits for the statistics.
+                    inbound.trySend(Inbound.Up(peer, PathKind.UNKNOWN, LinkKind.ENCRYPTED))
                     scope.launch {
                         val current = links[peer] ?: return@launch
-                        val path = runCatching { current.connectionPath() }.getOrNull()
-                        io { engine?.linkUp(peer, path.toKind(), LinkKind.ENCRYPTED) }
+                        for (wait in longArrayOf(0L, 1_500L)) {
+                            delay(wait)
+                            val path = runCatching { current.connectionPath() }.getOrNull()
+                            if (path != null) {
+                                io { runCatching { engine?.setLinkPath(peer, path.toKind()) } }
+                                break
+                            }
+                        }
                         requestRefresh()
                     }
                 }
 
                 override fun onClose() {
-                    scope.launch {
-                        io { runCatching { engine?.linkDown(peer) } }
-                        requestRefresh()
-                    }
+                    stopSender(peer)
+                    inbound.trySend(Inbound.Down(peer))
+                    scope.launch { requestRefresh() }
                 }
 
                 override fun onFrame(data: String) {
-                    scope.launch { io { runCatching { engine?.frameReceived(peer, data) } } }
+                    inbound.trySend(Inbound.Frame(peer, data))
                 }
 
                 override fun onError(message: String) {
@@ -396,7 +522,16 @@ class RustChatEngine(
     private suspend fun onSignal(peer: String, kind: SignalKindDto, sdp: String?) {
         heardFrom[peer] = true
         when (kind) {
-            SignalKindDto.READY -> if (isInitiator(peer)) offer(peer)
+            SignalKindDto.READY -> {
+                // They are online right now: forget the retry delay for this friend and offer without waiting.
+                io { runCatching { engine?.resetDialBackoff(peer) } }
+                val ex = links[peer]
+                val busy = ex != null && !ex.isOpen && System.currentTimeMillis() - (dialStartedAt[peer] ?: 0L) < READY_GUARD_MS
+                if (isInitiator(peer) && !busy) {
+                    dialStartedAt[peer] = System.currentTimeMillis()
+                    offer(peer)
+                }
+            }
             SignalKindDto.OFFER -> {
                 if (sdp == null) return
                 val t = newTransport(peer)
@@ -443,22 +578,19 @@ class RustChatEngine(
                 own < uid,
                 object : BleTransport.Handlers {
                     override fun onOpen() {
-                        scope.launch {
-                            io { engine?.linkUp(uid, PathKind.BLUETOOTH, LinkKind.LAYERED) }
-                            requestRefresh()
-                        }
+                        inbound.trySend(Inbound.Up(uid, PathKind.BLUETOOTH, LinkKind.LAYERED))
+                        scope.launch { requestRefresh() }
                     }
 
                     override fun onClose() {
                         bleLinks.remove(uid)
-                        scope.launch {
-                            io { runCatching { engine?.linkDown(uid) } }
-                            requestRefresh()
-                        }
+                        stopSender(uid)
+                        inbound.trySend(Inbound.Down(uid))
+                        scope.launch { requestRefresh() }
                     }
 
                     override fun onFrame(data: String) {
-                        scope.launch { io { runCatching { engine?.frameReceived(uid, data) } } }
+                        inbound.trySend(Inbound.Frame(uid, data))
                     }
 
                     override fun onError(message: String) {
@@ -505,15 +637,17 @@ class RustChatEngine(
             meshRadio = radio
             radio.start(object : MeshRadio.Listener {
                 override fun onLinkUp(link: String) {
-                    scope.launch { io { runCatching { engine?.meshLinkUp(link) } }; requestRefresh() }
+                    inbound.trySend(Inbound.MeshUp(link))
+                    scope.launch { requestRefresh() }
                 }
 
                 override fun onLinkDown(link: String) {
-                    scope.launch { io { runCatching { engine?.meshLinkDown(link) } }; requestRefresh() }
+                    inbound.trySend(Inbound.MeshDown(link))
+                    scope.launch { requestRefresh() }
                 }
 
                 override fun onPacket(link: String, json: String) {
-                    scope.launch { io { runCatching { engine?.meshFrame(link, json) } }; requestRefresh() }
+                    inbound.trySend(Inbound.MeshFrame(link, json))
                 }
             })
         } else if (!on) {
@@ -717,6 +851,11 @@ class RustChatEngine(
         is uniffi.privcord_ffi.FfiException.InvalidCard -> "That is not a valid invite. Check the words, or ask your friend to share it again."
         is uniffi.privcord_ffi.FfiException.OwnCard -> "That is your own invite. Send it to a friend instead."
         is uniffi.privcord_ffi.FfiException.UnknownContact -> "Unknown friend."
+        is uniffi.privcord_ffi.FfiException.BadFile -> "That file cannot be sent. It must not be empty and can be 8 MB at most."
+        is uniffi.privcord_ffi.FfiException.Busy -> "The app is busy. Try again in a moment."
+        is uniffi.privcord_ffi.FfiException.GroupFull -> "That group is full (10 members at most)."
+        is uniffi.privcord_ffi.FfiException.NoSuchGroup -> "That group no longer exists."
+        is uniffi.privcord_ffi.FfiException.Storage, is uniffi.privcord_ffi.FfiException.SecureStorage -> "This phone could not save that. Check free storage and try again."
         is uniffi.privcord_ffi.FfiException.InviteNotFound -> "Could not find that invite. Check the words, or ask your friend to share it again."
         is uniffi.privcord_ffi.FfiException.InvalidInvite -> "That is not a valid invite. Check the words, or ask your friend to share it again."
         is uniffi.privcord_ffi.FfiException.NoSignaling -> "No connection service is set up, so six words cannot be looked up. Turn one on in Settings > Connection, or use the long invite."
@@ -942,14 +1081,14 @@ class RustChatEngine(
                 override fun onClose() {
                     scope.launch {
                         val bound = manual.bound
-                        if (bound != null) io { runCatching { engine?.linkDown(bound) } } else _state.update { it.copy(manual = ManualState()) }
+                        if (bound != null) inbound.trySend(Inbound.Down(bound)) else _state.update { it.copy(manual = ManualState()) }
                         requestRefresh()
                     }
                 }
 
                 override fun onFrame(data: String) {
                     val bound = manual.bound
-                    if (bound != null) scope.launch { io { runCatching { engine?.frameReceived(bound, data) } } }
+                    if (bound != null) inbound.trySend(Inbound.Frame(bound, data))
                     else if (manual.pending.size < 20) manual.pending.addLast(data)
                 }
 
@@ -1016,12 +1155,12 @@ class RustChatEngine(
             links[uid] = t
             manual.bound = uid
             manual.transport = null
-            val path = runCatching { t.connectionPath() }.getOrNull()
-            io { engine?.linkUp(uid, path.toKind(), LinkKind.ENCRYPTED) }
-            // Frames the other side sent while we were still comparing numbers.
-            while (manual.pending.isNotEmpty()) {
-                val frame = manual.pending.removeFirst()
-                io { runCatching { engine?.frameReceived(uid, frame) } }
+            inbound.trySend(Inbound.Up(uid, PathKind.UNKNOWN, LinkKind.ENCRYPTED))
+            // Frames the other side sent while we were still comparing numbers, in the order they came.
+            while (manual.pending.isNotEmpty()) inbound.trySend(Inbound.Frame(uid, manual.pending.removeFirst()))
+            scope.launch {
+                val path = runCatching { t.connectionPath() }.getOrNull()
+                if (path != null) io { runCatching { engine?.setLinkPath(uid, path.toKind()) } }
             }
             _state.update { it.copy(manual = ManualState()) }
             say("Added. Both phones have to confirm within a few seconds for the secure link to finish.")
@@ -1041,7 +1180,8 @@ class RustChatEngine(
         const val OFFER_TIMEOUT_MS = 25_000L
         const val LOOKUP_WAIT_MS = 17_000L
         const val PUT_WAIT_MS = 30_000L
-        const val PUT_RETRY_MS = 400L
+        const val PUT_RETRY_MS = 100L
+        const val READY_GUARD_MS = 8_000L
         const val MANUAL_PREFIX = "RUST1:"
         const val BLE_SEARCH_MS = 30_000L
         const val BLE_RETRY_MS = 60_000L

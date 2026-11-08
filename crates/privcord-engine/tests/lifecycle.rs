@@ -739,3 +739,32 @@ fn without_the_internet_a_contact_in_the_middle_hands_connection_setup_on() {
     }
     assert!(drain_events(&mut b).iter().any(|e| matches!(e, EngineEvent::SignalReceived { peer, message: SignalMessage::Ready } if *peer == a.uid)));
 }
+
+#[test]
+fn resetting_the_dial_backoff_dials_again_at_the_next_tick_instead_of_waiting() {
+    let clock = FakeClock::at(1_700_000_000_000);
+    let mut me = node("me", &clock);
+    let mut friend = node("friend", &clock);
+    befriend(&mut me, &mut friend);
+    let dials = |n: &mut Node| {
+        drain_events(n)
+            .into_iter()
+            .filter(|e| matches!(e, EngineEvent::DialRequested { .. }))
+            .count()
+    };
+    drain_events(&mut me);
+    me.core.tick();
+    assert_eq!(dials(&mut me), 1, "the first dial is immediate");
+    // The first try failed (say, signaling was not up yet). After the 8 s grace the 5 s back-off has passed...
+    me.clock.advance(1_000);
+    me.core.tick();
+    assert_eq!(
+        dials(&mut me),
+        0,
+        "while that try is still in progress nothing more is asked"
+    );
+    // ...but a reset makes the very next tick dial again, with no waiting.
+    me.core.reset_dial_backoff(None);
+    me.core.tick();
+    assert_eq!(dials(&mut me), 1);
+}

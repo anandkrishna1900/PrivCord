@@ -910,3 +910,23 @@ fn a_friend_can_be_given_a_name_of_your_own_and_it_can_be_cleared() {
     a.core.rename_contact(&bu, "   ").unwrap();
     assert!(shown(&a).starts_with("Friend"), "{}", shown(&a));
 }
+
+#[test]
+fn the_route_of_a_link_that_is_already_up_can_be_corrected_afterwards() {
+    use privcord_engine::LinkSecurity;
+    let (mut a, mut b, au, bu) = pair();
+    connect_with(&mut a, &mut b, &au, &bu, LinkSecurity::TransportEncrypted);
+    assert_eq!(
+        state_of(&a, &bu),
+        ConnectionState::Connected {
+            path: ConnectionPath::DirectNat
+        }
+    );
+    a.core.set_link_path(&bu, ConnectionPath::Relayed);
+    assert_eq!(
+        state_of(&a, &bu),
+        ConnectionState::Connected {
+            path: ConnectionPath::Relayed
+        }
+    );
+}

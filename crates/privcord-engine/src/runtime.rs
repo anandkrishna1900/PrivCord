@@ -149,6 +149,13 @@ pub enum Op {
     BleSecret {
         peer: UserId,
     },
+    ResetDialBackoff {
+        peer: Option<UserId>,
+    },
+    SetLinkPath {
+        peer: UserId,
+        path: ConnectionPath,
+    },
     MarkConversationRead {
         conversation: ConversationId,
     },
@@ -306,6 +313,14 @@ fn pump(core: &mut Core, cmd: Command) -> bool {
                 }
                 Op::React { id, emoji } => core.react(&id, &emoji).map(|()| Answer::Done),
                 Op::SetMuted { uid, muted } => core.set_muted(&uid, muted).map(|()| Answer::Done),
+                Op::SetLinkPath { peer, path } => {
+                    core.set_link_path(&peer, path);
+                    Ok(Answer::Done)
+                }
+                Op::ResetDialBackoff { peer } => {
+                    core.reset_dial_backoff(peer.as_ref());
+                    Ok(Answer::Done)
+                }
                 Op::BleSecret { peer } => core.ble_secret(&peer).map(Answer::Bytes),
                 Op::RenameContact { uid, name } => {
                     core.rename_contact(&uid, &name).map(|()| Answer::Done)
