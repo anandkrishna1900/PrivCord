@@ -53,4 +53,4 @@ privcord-crypto = { path = "crates/privcord-crypto" }
 privcord-ports = { path = "crates/privcord-ports" }
 privcord-engine = { path = "crates/privcord-engine" }
 privcord-storage = { path = "crates/privcord-storage" }
-privcord-import = { path = "crates/privcord-import" }
+privcord-import = { path = "crates/privcord-import", default-features = false }

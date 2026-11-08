@@ -9,8 +9,10 @@
 //! Safe to run twice: contacts, messages and files are written without duplicating, and a marker is written last, so an
 //! interrupted import is simply run again. Each write batch is atomic.
 
+#[cfg(feature = "readers")]
 pub mod android;
 pub mod backup;
+#[cfg(feature = "readers")]
 pub mod desktop;
 mod pipeline;
 
@@ -151,6 +153,7 @@ pub(crate) fn file_meta_from(v: Option<&Value>) -> Option<LegacyFileMeta> {
     })
 }
 
+#[cfg(feature = "readers")]
 #[derive(Debug, thiserror::Error)]
 pub enum ReadError {
     #[error("the database could not be opened or read")]

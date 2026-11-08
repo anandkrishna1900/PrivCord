@@ -9,15 +9,21 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = ["readers"]
+# Reading the old apps' SQLite files. The engine needs only the importer itself (backups), not SQLite.
+readers = ["dep:rusqlite"]
+
 [dependencies]
 privcord-domain.workspace = true
 privcord-crypto.workspace = true
 privcord-ports.workspace = true
-rusqlite.workspace = true
+rusqlite = { workspace = true, optional = true }
 serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+rusqlite.workspace = true
 privcord-ports = { workspace = true, features = ["testing"] }
 privcord-storage.workspace = true
 privcord-crypto = { workspace = true, features = ["test-support"] }
