@@ -24,13 +24,22 @@ export function build() {
 export function serve(dir) {
   return new Promise((resolve) => {
     const types = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html' };
+    // Read the build output once into a map keyed by URL. A request is only ever a lookup in this map, so no part of
+    // the URL reaches the file system.
+    const files = new Map();
+    const walk = (d, prefix) => {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        if (e.isDirectory()) walk(path.join(d, e.name), `${prefix}${e.name}/`);
+        else files.set(`/${prefix}${e.name}`, { body: fs.readFileSync(path.join(d, e.name)), type: types[path.extname(e.name)] ?? 'application/octet-stream' });
+      }
+    };
+    walk(dir, '');
     const server = http.createServer((req, res) => {
-      // Never serve anything outside `dir`, whatever the URL says (../ or encoded forms).
-      const root = path.resolve(dir);
-      let p = path.resolve(root, '.' + path.sep + decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, ''));
-      if (!p.startsWith(root + path.sep) || !fs.existsSync(p) || fs.statSync(p).isDirectory()) p = path.join(root, 'index.html');
-      res.setHeader('content-type', types[path.extname(p)] ?? 'application/octet-stream');
-      res.end(fs.readFileSync(p));
+      let key = '/';
+      try { key = decodeURIComponent(req.url.split('?')[0]); } catch { /* bad escape: serve the index */ }
+      const f = files.get(key) ?? files.get('/index.html');
+      res.setHeader('content-type', f.type);
+      res.end(f.body);
     });
     server.listen(0, '127.0.0.1', () => resolve({ server, url: `http://127.0.0.1:${server.address().port}` }));
   });
