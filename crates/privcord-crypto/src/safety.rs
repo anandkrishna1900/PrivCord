@@ -11,7 +11,10 @@ fn long_enough(jwk: &PublicJwk) -> bool {
 
 fn thumbprint_hash(jwk: &PublicJwk) -> String {
     // `JSON.stringify({ crv, kty, x, y })`, in that order.
-    let text = format!(r#"{{"crv":"{}","kty":"{}","x":"{}","y":"{}"}}"#, jwk.crv, jwk.kty, jwk.x, jwk.y);
+    let text = format!(
+        r#"{{"crv":"{}","kty":"{}","x":"{}","y":"{}"}}"#,
+        jwk.crv, jwk.kty, jwk.x, jwk.y
+    );
     sha256_hex(text.as_bytes())
 }
 
@@ -29,7 +32,10 @@ pub fn derive_safety_number(first: &PublicJwk, second: &PublicJwk) -> Result<Str
         .chunks_exact(3)
         .take(6)
         .map(|c| {
-            let v = c.iter().fold(0u32, |acc, byte| (acc << 8) | u32::from(*byte)) % 100_000;
+            let v = c
+                .iter()
+                .fold(0u32, |acc, byte| (acc << 8) | u32::from(*byte))
+                % 100_000;
             format!("{v:05}")
         })
         .collect();

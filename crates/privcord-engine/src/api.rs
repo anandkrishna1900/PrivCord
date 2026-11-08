@@ -36,12 +36,28 @@ pub struct Snapshot {
 pub enum EngineEvent {
     Ready,
     IdentityCreated,
-    ContactAdded { uid: UserId },
-    MessageAdded { conversation: ConversationId, message_id: MessageId, own: bool },
-    MessageStatusChanged { message_id: MessageId, status: DeliveryState },
-    MessageRefused { message_id: MessageId },
-    PeerStateChanged { peer: UserId, state: ConnectionState },
+    ContactAdded {
+        uid: UserId,
+    },
+    MessageAdded {
+        conversation: ConversationId,
+        message_id: MessageId,
+        own: bool,
+    },
+    MessageStatusChanged {
+        message_id: MessageId,
+        status: DeliveryState,
+    },
+    MessageRefused {
+        message_id: MessageId,
+    },
+    PeerStateChanged {
+        peer: UserId,
+        state: ConnectionState,
+    },
     /// This subscriber fell behind and `missed` events were dropped. Ask for a snapshot.
-    Lagged { missed: u64 },
+    Lagged {
+        missed: u64,
+    },
     ShutDown,
 }

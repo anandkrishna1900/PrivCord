@@ -8,7 +8,9 @@
 use crate::api::EngineEvent;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
-    mpsc::{sync_channel, Receiver, RecvError, RecvTimeoutError, SyncSender, TryRecvError, TrySendError},
+    mpsc::{
+        sync_channel, Receiver, RecvError, RecvTimeoutError, SyncSender, TryRecvError, TrySendError,
+    },
     Arc,
 };
 use std::time::Duration;
@@ -37,7 +39,7 @@ pub struct EventStream {
 impl EventStream {
     fn lagged(&mut self) -> Option<(u64, EngineEvent)> {
         let missed = self.missed.swap(0, Ordering::SeqCst);
-        (missed > 0).then(|| (self.last_seq, EngineEvent::Lagged { missed }))
+        (missed > 0).then_some((self.last_seq, EngineEvent::Lagged { missed }))
     }
 
     pub fn try_recv(&mut self) -> Result<(u64, EngineEvent), TryRecvError> {
@@ -60,7 +62,10 @@ impl EventStream {
         }
     }
 
-    pub fn recv_timeout(&mut self, timeout: Duration) -> Result<(u64, EngineEvent), RecvTimeoutError> {
+    pub fn recv_timeout(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<(u64, EngineEvent), RecvTimeoutError> {
         match self.rx.recv_timeout(timeout) {
             Ok(item) => {
                 self.last_seq = item.0;
@@ -73,7 +78,10 @@ impl EventStream {
 
 impl std::fmt::Debug for EventHub {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("EventHub").field("seq", &self.seq).field("subscribers", &self.subscribers.len()).finish()
+        f.debug_struct("EventHub")
+            .field("seq", &self.seq)
+            .field("subscribers", &self.subscribers.len())
+            .finish()
     }
 }
 
@@ -81,8 +89,15 @@ impl EventHub {
     pub fn subscribe(&mut self) -> EventStream {
         let (tx, rx) = sync_channel(SUBSCRIBER_QUEUE);
         let missed = Arc::new(AtomicU64::new(0));
-        self.subscribers.push(Subscriber { tx, missed: missed.clone() });
-        EventStream { rx, missed, last_seq: self.seq }
+        self.subscribers.push(Subscriber {
+            tx,
+            missed: missed.clone(),
+        });
+        EventStream {
+            rx,
+            missed,
+            last_seq: self.seq,
+        }
     }
 
     pub fn seq(&self) -> u64 {
@@ -96,9 +111,15 @@ impl EventHub {
             // If this subscriber fell behind and there is room again, say so first so the marker stays in order.
             let pending = s.missed.load(Ordering::SeqCst);
             if pending > 0 {
-                match s.tx.try_send((seq, EngineEvent::Lagged { missed: pending })) {
+                match s
+                    .tx
+                    .try_send((seq, EngineEvent::Lagged { missed: pending }))
+                {
                     Ok(()) => {
-                        s.missed.fetch_sub(pending.min(s.missed.load(Ordering::SeqCst)), Ordering::SeqCst);
+                        s.missed.fetch_sub(
+                            pending.min(s.missed.load(Ordering::SeqCst)),
+                            Ordering::SeqCst,
+                        );
                     }
                     Err(TrySendError::Full(_)) => {
                         s.missed.fetch_add(1, Ordering::SeqCst);

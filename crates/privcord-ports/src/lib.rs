@@ -74,11 +74,21 @@ pub enum StorageOp {
     DeleteContact(UserId),
     /// Stores a message unless one with the same id exists (so receiving twice is harmless).
     InsertMessage(StoredMessage),
-    SetDelivery { id: MessageId, state: DeliveryState, read_at: Option<i64> },
+    SetDelivery {
+        id: MessageId,
+        state: DeliveryState,
+        read_at: Option<i64>,
+    },
     DeleteMessage(MessageId),
     PutOutbox(OutboxEntry),
-    RemoveOutbox { message_id: MessageId, recipient: UserId },
-    SetKv { key: String, value: Vec<u8> },
+    RemoveOutbox {
+        message_id: MessageId,
+        recipient: UserId,
+    },
+    SetKv {
+        key: String,
+        value: Vec<u8>,
+    },
 }
 
 /// Persistent state. `apply` is the only way to change it, and it is atomic: a crash or an error part-way leaves
@@ -127,7 +137,11 @@ pub trait Transport: Send + Sync {
 /// Something worth telling the person about while the app may be in the background.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Notification {
-    MessageReceived { conversation: ConversationId, sender: UserId, preview: String },
+    MessageReceived {
+        conversation: ConversationId,
+        sender: UserId,
+        preview: String,
+    },
 }
 
 pub trait Notifier: Send + Sync {

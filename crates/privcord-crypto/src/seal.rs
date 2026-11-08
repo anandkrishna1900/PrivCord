@@ -35,12 +35,22 @@ pub fn mailbox_for(uid: &str) -> String {
 }
 
 /// Seal `payload` for one contact, signed by `identity`.
-pub fn seal(identity: &Identity, to: &UserId, to_dh: &PublicJwk, payload: &Value, entropy: &mut dyn Entropy) -> Result<SealedBlob, CryptoError> {
+pub fn seal(
+    identity: &Identity,
+    to: &UserId,
+    to_dh: &PublicJwk,
+    payload: &Value,
+    entropy: &mut dyn Entropy,
+) -> Result<SealedBlob, CryptoError> {
     let from = identity.uid()?;
     let ephemeral = SecretKey::random(&mut RngAdapter(entropy));
     let peer = public_key_from_jwk(to_dh)?;
     let shared = diffie_hellman(ephemeral.to_nonzero_scalar(), peer.as_affine());
-    let key = hkdf_sha256::<32>(shared.raw_secret_bytes(), SEAL_SALT, format!("{to}|{from}").as_bytes())?;
+    let key = hkdf_sha256::<32>(
+        shared.raw_secret_bytes(),
+        SEAL_SALT,
+        format!("{to}|{from}").as_bytes(),
+    )?;
     let iv: [u8; 12] = random_array(entropy)?;
     let plaintext = serde_json::to_vec(payload).map_err(|_| CryptoError::Invalid)?;
     let ct = aead::encrypt(&key, &iv, &plaintext, format!("{to}|{from}").as_bytes())?;
@@ -62,16 +72,26 @@ pub fn seal(identity: &Identity, to: &UserId, to_dh: &PublicJwk, payload: &Value
 
 /// Signs a blob that is not ECDH-sealed (invite and channel blobs keep the same shape).
 pub fn sign_blob(identity: &Identity, unsigned: &SealedBlob) -> Result<String, CryptoError> {
-    Ok(codec::encode(&identity.sign_message(&signed_part(unsigned)?)))
+    Ok(codec::encode(
+        &identity.sign_message(&signed_part(unsigned)?),
+    ))
 }
 
 pub fn verify_blob_signature(blob: &SealedBlob, sign_pub: &PublicJwk) -> bool {
-    let (Some(sig), Ok(part)) = (codec::decode(&blob.sig), signed_part(blob)) else { return false };
+    let (Some(sig), Ok(part)) = (codec::decode(&blob.sig), signed_part(blob)) else {
+        return false;
+    };
     verify_signature(sign_pub, &sig, &part)
 }
 
 /// The payload, or `None` for anything not addressed to us, not from the pinned sender, or changed in transit.
-pub fn open(blob: &SealedBlob, own_uid: &UserId, own: &Identity, sender_sign: &PublicJwk, sender_uid: &UserId) -> Option<Value> {
+pub fn open(
+    blob: &SealedBlob,
+    own_uid: &UserId,
+    own: &Identity,
+    sender_sign: &PublicJwk,
+    sender_uid: &UserId,
+) -> Option<Value> {
     if blob.v != 1 || blob.to != own_uid.as_str() || blob.from != sender_uid.as_str() {
         return None;
     }
@@ -79,8 +99,19 @@ pub fn open(blob: &SealedBlob, own_uid: &UserId, own: &Identity, sender_sign: &P
         return None;
     }
     let shared = own.agree(&blob.epk).ok()?;
-    let key = hkdf_sha256::<32>(&*shared, SEAL_SALT, format!("{}|{}", blob.to, blob.from).as_bytes()).ok()?;
-    let plain = aead::decrypt(&key, &codec::decode(&blob.iv)?, &codec::decode(&blob.ct)?, format!("{}|{}", blob.to, blob.from).as_bytes()).ok()?;
+    let key = hkdf_sha256::<32>(
+        &*shared,
+        SEAL_SALT,
+        format!("{}|{}", blob.to, blob.from).as_bytes(),
+    )
+    .ok()?;
+    let plain = aead::decrypt(
+        &key,
+        &codec::decode(&blob.iv)?,
+        &codec::decode(&blob.ct)?,
+        format!("{}|{}", blob.to, blob.from).as_bytes(),
+    )
+    .ok()?;
     serde_json::from_slice(&plain).ok()
 }
 

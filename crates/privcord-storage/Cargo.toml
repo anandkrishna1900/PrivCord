@@ -1,5 +1,6 @@
 [package]
 name = "privcord-storage"
+description = "SQLite implementation of the engine's Storage port: versioned schema, atomic batches, integrity checks, backup before migration."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,3 +10,10 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+privcord-domain.workspace = true
+privcord-ports.workspace = true
+rusqlite.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+rusqlite.workspace = true

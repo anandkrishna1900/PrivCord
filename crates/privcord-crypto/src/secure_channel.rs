@@ -40,7 +40,11 @@ impl Hello {
         if nonce.encode_utf16().count() < 16 {
             return None;
         }
-        Some(Self { epk: PublicJwk::from_value(o.get("epk")?)?, nonce: nonce.to_owned(), sig: o.get("sig")?.as_str()?.to_owned() })
+        Some(Self {
+            epk: PublicJwk::from_value(o.get("epk")?)?,
+            nonce: nonce.to_owned(),
+            sig: o.get("sig")?.as_str()?.to_owned(),
+        })
     }
 }
 
@@ -60,12 +64,23 @@ impl Data {
         if o.get("v")?.as_u64()? != 1 || o.get("kind")?.as_str()? != "sc_data" {
             return None;
         }
-        let n = o.get("n")?.as_u64().filter(|n| *n <= 9_007_199_254_740_991)?;
-        Some(Self { n, ct: o.get("ct")?.as_str()?.to_owned() })
+        let n = o
+            .get("n")?
+            .as_u64()
+            .filter(|n| *n <= 9_007_199_254_740_991)?;
+        Some(Self {
+            n,
+            ct: o.get("ct")?.as_str()?.to_owned(),
+        })
     }
 }
 
-fn hello_payload(own_uid: &str, peer_uid: &str, epk: &PublicJwk, nonce: &str) -> Result<Vec<u8>, CryptoError> {
+fn hello_payload(
+    own_uid: &str,
+    peer_uid: &str,
+    epk: &PublicJwk,
+    nonce: &str,
+) -> Result<Vec<u8>, CryptoError> {
     let thumb = canonical_json(&json!({ "crv": epk.crv, "kty": epk.kty, "x": epk.x, "y": epk.y }))?;
     Ok(format!("duochat-sc-v1|{own_uid}|{peer_uid}|{thumb}|{nonce}").into_bytes())
 }
@@ -113,26 +128,63 @@ pub struct SecureChannel {
 
 impl std::fmt::Debug for SecureChannel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SecureChannel").field("ready", &self.ready()).finish_non_exhaustive()
+        f.debug_struct("SecureChannel")
+            .field("ready", &self.ready())
+            .finish_non_exhaustive()
     }
 }
 
 impl SecureChannel {
-    pub fn new(own_uid: &str, peer_uid: &str, peer_sign: PublicJwk, entropy: &mut dyn Entropy) -> Result<Self, CryptoError> {
+    pub fn new(
+        own_uid: &str,
+        peer_uid: &str,
+        peer_sign: PublicJwk,
+        entropy: &mut dyn Entropy,
+    ) -> Result<Self, CryptoError> {
         let ephemeral = SecretKey::random(&mut RngAdapter(entropy));
         let nonce = codec::encode(&random_array::<16>(entropy)?);
-        Ok(Self::with_parts(own_uid, peer_uid, peer_sign, ephemeral, nonce))
+        Ok(Self::with_parts(
+            own_uid, peer_uid, peer_sign, ephemeral, nonce,
+        ))
     }
 
     /// For tests that must reproduce exact bytes.
     #[cfg(any(test, feature = "test-support"))]
-    pub fn with_fixed(own_uid: &str, peer_uid: &str, peer_sign: PublicJwk, ephemeral_scalar: &[u8; 32], nonce: &str) -> Result<Self, CryptoError> {
-        let ephemeral = SecretKey::from_slice(ephemeral_scalar).map_err(|_| CryptoError::InvalidKey)?;
-        Ok(Self::with_parts(own_uid, peer_uid, peer_sign, ephemeral, nonce.to_owned()))
+    pub fn with_fixed(
+        own_uid: &str,
+        peer_uid: &str,
+        peer_sign: PublicJwk,
+        ephemeral_scalar: &[u8; 32],
+        nonce: &str,
+    ) -> Result<Self, CryptoError> {
+        let ephemeral =
+            SecretKey::from_slice(ephemeral_scalar).map_err(|_| CryptoError::InvalidKey)?;
+        Ok(Self::with_parts(
+            own_uid,
+            peer_uid,
+            peer_sign,
+            ephemeral,
+            nonce.to_owned(),
+        ))
     }
 
-    fn with_parts(own_uid: &str, peer_uid: &str, peer_sign: PublicJwk, ephemeral: SecretKey, nonce: String) -> Self {
-        Self { own_uid: own_uid.to_owned(), peer_uid: peer_uid.to_owned(), peer_sign, ephemeral, nonce, keys: None, send_counter: 0, recv_counter: None }
+    fn with_parts(
+        own_uid: &str,
+        peer_uid: &str,
+        peer_sign: PublicJwk,
+        ephemeral: SecretKey,
+        nonce: String,
+    ) -> Self {
+        Self {
+            own_uid: own_uid.to_owned(),
+            peer_uid: peer_uid.to_owned(),
+            peer_sign,
+            ephemeral,
+            nonce,
+            keys: None,
+            send_counter: 0,
+            recv_counter: None,
+        }
     }
 
     pub fn ready(&self) -> bool {
@@ -143,7 +195,11 @@ impl SecureChannel {
     pub fn hello(&self, identity: &Identity) -> Result<Hello, CryptoError> {
         let epk = jwk_of(&self.ephemeral.public_key());
         let payload = hello_payload(&self.own_uid, &self.peer_uid, &epk, &self.nonce)?;
-        Ok(Hello { sig: codec::encode(&identity.sign_message(&payload)), epk, nonce: self.nonce.clone() })
+        Ok(Hello {
+            sig: codec::encode(&identity.sign_message(&payload)),
+            epk,
+            nonce: self.nonce.clone(),
+        })
     }
 
     /// Their hello: check it was signed by the paired contact, then derive the keys.
@@ -160,11 +216,33 @@ impl SecureChannel {
         let peer = public_key_from_jwk(&hello.epk).map_err(|_| ChannelError::BadHandshake)?;
         let shared = diffie_hellman(self.ephemeral.to_nonzero_scalar(), peer.as_affine());
         let low_is_me = cmp_utf16(&self.own_uid, &self.peer_uid).is_lt();
-        let (n_low, n_high) = if low_is_me { (&self.nonce, &hello.nonce) } else { (&hello.nonce, &self.nonce) };
+        let (n_low, n_high) = if low_is_me {
+            (&self.nonce, &hello.nonce)
+        } else {
+            (&hello.nonce, &self.nonce)
+        };
         let salt = format!("{n_low}|{n_high}");
-        let low = Zeroizing::new(hkdf_sha256::<32>(shared.raw_secret_bytes(), salt.as_bytes(), b"duochat-sc-v1|low->high")?);
-        let high = Zeroizing::new(hkdf_sha256::<32>(shared.raw_secret_bytes(), salt.as_bytes(), b"duochat-sc-v1|high->low")?);
-        self.keys = Some(if low_is_me { Keys { send: low, recv: high } } else { Keys { send: high, recv: low } });
+        let low = Zeroizing::new(hkdf_sha256::<32>(
+            shared.raw_secret_bytes(),
+            salt.as_bytes(),
+            b"duochat-sc-v1|low->high",
+        )?);
+        let high = Zeroizing::new(hkdf_sha256::<32>(
+            shared.raw_secret_bytes(),
+            salt.as_bytes(),
+            b"duochat-sc-v1|high->low",
+        )?);
+        self.keys = Some(if low_is_me {
+            Keys {
+                send: low,
+                recv: high,
+            }
+        } else {
+            Keys {
+                send: high,
+                recv: low,
+            }
+        });
         Ok(())
     }
 
@@ -175,8 +253,16 @@ impl SecureChannel {
         }
         let n = self.send_counter;
         self.send_counter += 1;
-        let ct = aead::encrypt(&*keys.send, &frame_iv(n), value.to_string().as_bytes(), format!("sc|{n}").as_bytes())?;
-        Ok(Data { n, ct: codec::encode(&ct) })
+        let ct = aead::encrypt(
+            &*keys.send,
+            &frame_iv(n),
+            value.to_string().as_bytes(),
+            format!("sc|{n}").as_bytes(),
+        )?;
+        Ok(Data {
+            n,
+            ct: codec::encode(&ct),
+        })
     }
 
     pub fn decrypt(&mut self, frame: &Data) -> Result<Value, ChannelError> {
@@ -185,7 +271,13 @@ impl SecureChannel {
             return Err(ChannelError::Replay);
         }
         let ct = codec::decode(&frame.ct).ok_or(ChannelError::Decrypt)?;
-        let plain = aead::decrypt(&*keys.recv, &frame_iv(frame.n), &ct, format!("sc|{}", frame.n).as_bytes()).map_err(|_| ChannelError::Decrypt)?;
+        let plain = aead::decrypt(
+            &*keys.recv,
+            &frame_iv(frame.n),
+            &ct,
+            format!("sc|{}", frame.n).as_bytes(),
+        )
+        .map_err(|_| ChannelError::Decrypt)?;
         self.recv_counter = Some(frame.n);
         serde_json::from_slice(&plain).map_err(|_| ChannelError::Decrypt)
     }

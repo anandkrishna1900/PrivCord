@@ -20,7 +20,11 @@ fn key_from(passphrase: &str, salt: &[u8], iterations: u32) -> [u8; 32] {
     pbkdf2_sha256(normalised.as_bytes(), salt, iterations)
 }
 
-pub fn seal_backup(data: &Value, passphrase: &str, entropy: &mut dyn Entropy) -> Result<String, CryptoError> {
+pub fn seal_backup(
+    data: &Value,
+    passphrase: &str,
+    entropy: &mut dyn Entropy,
+) -> Result<String, CryptoError> {
     if passphrase.encode_utf16().count() < BACKUP_MIN_PASSPHRASE {
         return Err(CryptoError::WeakPassphrase(BACKUP_MIN_PASSPHRASE));
     }
@@ -40,7 +44,8 @@ pub fn seal_backup(data: &Value, passphrase: &str, entropy: &mut dyn Entropy) ->
 
 pub fn open_backup(text: &str, passphrase: &str) -> Option<Value> {
     let trimmed = privcord_domain::text::js_trim(text);
-    let body: Value = serde_json::from_slice(&codec::decode(trimmed.strip_prefix(BACKUP_PREFIX)?)?).ok()?;
+    let body: Value =
+        serde_json::from_slice(&codec::decode(trimmed.strip_prefix(BACKUP_PREFIX)?)?).ok()?;
     if body.get("v")?.as_u64()? != 1 {
         return None;
     }

@@ -14,9 +14,15 @@ pub fn sha256_hex(data: &[u8]) -> String {
 }
 
 /// HKDF-SHA-256 (RFC 5869) into `N` bytes.
-pub fn hkdf_sha256<const N: usize>(ikm: &[u8], salt: &[u8], info: &[u8]) -> Result<[u8; N], CryptoError> {
+pub fn hkdf_sha256<const N: usize>(
+    ikm: &[u8],
+    salt: &[u8],
+    info: &[u8],
+) -> Result<[u8; N], CryptoError> {
     let mut out = [0u8; N];
-    Hkdf::<Sha256>::new(Some(salt), ikm).expand(info, &mut out).map_err(|_| CryptoError::Invalid)?;
+    Hkdf::<Sha256>::new(Some(salt), ikm)
+        .expand(info, &mut out)
+        .map_err(|_| CryptoError::Invalid)?;
     Ok(out)
 }
 

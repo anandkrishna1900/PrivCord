@@ -1,5 +1,10 @@
 //! The real engine runtime: one thread per engine, bounded command queues, timers, and a clean shutdown.
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 
 use privcord_crypto::rng::OsEntropy;
 use privcord_domain::{
@@ -21,7 +26,13 @@ use std::{
 struct SystemClock;
 impl Clock for SystemClock {
     fn now_ms(&self) -> i64 {
-        i64::try_from(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()).unwrap()
+        i64::try_from(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis(),
+        )
+        .unwrap()
     }
 }
 
@@ -34,8 +45,12 @@ struct Wire {
 
 impl Transport for Wire {
     fn send(&self, _peer: &UserId, frame: &str) -> Result<(), TransportError> {
-        let (to, me) = (self.to.get().ok_or(TransportError::NotConnected)?, self.me.get().ok_or(TransportError::NotConnected)?);
-        to.frame_received(me, frame.to_owned()).map_err(|_| TransportError::Refused)
+        let (to, me) = (
+            self.to.get().ok_or(TransportError::NotConnected)?,
+            self.me.get().ok_or(TransportError::NotConnected)?,
+        );
+        to.frame_received(me, frame.to_owned())
+            .map_err(|_| TransportError::Refused)
     }
 }
 
@@ -66,13 +81,32 @@ async fn two_running_engines_talk_and_shut_down_cleanly() {
     wb.to.set(a.clone()).unwrap();
     wb.me.set(bu.clone()).unwrap();
 
-    a.add_contact(&b.own_card(Some("Bob")).await.unwrap(), ContactTrust::Verified).await.unwrap();
-    b.add_contact(&a.own_card(Some("Alice")).await.unwrap(), ContactTrust::Verified).await.unwrap();
+    a.add_contact(
+        &b.own_card(Some("Bob")).await.unwrap(),
+        ContactTrust::Verified,
+    )
+    .await
+    .unwrap();
+    b.add_contact(
+        &a.own_card(Some("Alice")).await.unwrap(),
+        ContactTrust::Verified,
+    )
+    .await
+    .unwrap();
     a.link_up(&bu, ConnectionPath::DirectLan).await.unwrap();
     b.link_up(&au, ConnectionPath::DirectLan).await.unwrap();
 
     let connected = |h: Arc<EngineHandle>, who: UserId| async move {
-        matches!(h.snapshot().await.unwrap().contacts.iter().find(|c| c.uid == who).map(|c| c.connection), Some(ConnectionState::Connected { .. }))
+        matches!(
+            h.snapshot()
+                .await
+                .unwrap()
+                .contacts
+                .iter()
+                .find(|c| c.uid == who)
+                .map(|c| c.connection),
+            Some(ConnectionState::Connected { .. })
+        )
     };
     for _ in 0..200 {
         if connected(a.clone(), bu.clone()).await && connected(b.clone(), au.clone()).await {
@@ -80,37 +114,66 @@ async fn two_running_engines_talk_and_shut_down_cleanly() {
         }
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
-    assert!(connected(a.clone(), bu.clone()).await, "handshake completed");
+    assert!(
+        connected(a.clone(), bu.clone()).await,
+        "handshake completed"
+    );
 
-    let id = a.send_message(&bu, "across two real engines", None).await.unwrap();
+    let id = a
+        .send_message(&bu, "across two real engines", None)
+        .await
+        .unwrap();
     let mut delivered = false;
     for _ in 0..200 {
         let snap = a.snapshot().await.unwrap();
-        delivered = snap.messages.iter().flat_map(|(_, v)| v).any(|m| m.message_id == id && m.delivery_state == DeliveryState::Delivered);
+        delivered = snap
+            .messages
+            .iter()
+            .flat_map(|(_, v)| v)
+            .any(|m| m.message_id == id && m.delivery_state == DeliveryState::Delivered);
         if delivered {
             break;
         }
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
-    if !delivered { eprintln!("A: {:?}\nB: {:?}", a.snapshot().await.unwrap(), b.snapshot().await.unwrap()); }
+    if !delivered {
+        eprintln!(
+            "A: {:?}\nB: {:?}",
+            a.snapshot().await.unwrap(),
+            b.snapshot().await.unwrap()
+        );
+    }
     assert!(delivered);
     let got = b.snapshot().await.unwrap();
-    assert_eq!(got.messages.iter().find(|(c, _)| c == &ConversationId::Direct(au.clone())).unwrap().1[0].text, "across two real engines");
+    assert_eq!(
+        got.messages
+            .iter()
+            .find(|(c, _)| c == &ConversationId::Direct(au.clone()))
+            .unwrap()
+            .1[0]
+            .text,
+        "across two real engines"
+    );
 
     // Shutdown joins the thread; commands afterwards are refused; the stream ends with ShutDown.
     a.shutdown().await.unwrap();
     a.shutdown().await.unwrap();
     assert_eq!(a.snapshot().await.unwrap_err(), ErrorCode::ShuttingDown);
-    assert_eq!(a.send_message(&bu, "late", None).await.unwrap_err(), ErrorCode::ShuttingDown);
+    assert_eq!(
+        a.send_message(&bu, "late", None).await.unwrap_err(),
+        ErrorCode::ShuttingDown
+    );
     let mut last = None;
     while let Ok((_, e)) = a_events.try_recv() {
         last = Some(e);
     }
     assert_eq!(last, Some(EngineEvent::ShutDown));
     b.shutdown().await.unwrap();
+    let mut b_last = None;
     while let Ok((_, e)) = b_events.try_recv() {
-        last = Some(e);
+        b_last = Some(e);
     }
+    assert_eq!(b_last, Some(EngineEvent::ShutDown));
 }
 
 #[tokio::test]

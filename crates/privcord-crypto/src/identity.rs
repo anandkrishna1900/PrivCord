@@ -41,7 +41,9 @@ pub enum PhraseError {
 }
 
 fn canonical_phrase(phrase: &str) -> String {
-    phrase.trim_matches(privcord_domain::text::is_js_whitespace).to_lowercase()
+    phrase
+        .trim_matches(privcord_domain::text::is_js_whitespace)
+        .to_lowercase()
 }
 
 /// Word count, word list and checksum, without deriving anything. Words must be separated by single spaces (after
@@ -51,7 +53,10 @@ pub fn validate_recovery_phrase(phrase: &str) -> Result<(), PhraseError> {
     if trimmed.is_empty() {
         return Err(PhraseError::Empty);
     }
-    let count = trimmed.split(privcord_domain::text::is_js_whitespace).filter(|w| !w.is_empty()).count();
+    let count = trimmed
+        .split(privcord_domain::text::is_js_whitespace)
+        .filter(|w| !w.is_empty())
+        .count();
     if count != REQUIRED_WORDS {
         return Err(PhraseError::WrongWordCount);
     }
@@ -65,10 +70,13 @@ pub fn validate_recovery_phrase(phrase: &str) -> Result<(), PhraseError> {
 }
 
 /// A new 12-word phrase from 128 bits of entropy.
-pub fn generate_recovery_phrase(entropy: &mut dyn Entropy) -> Result<Zeroizing<String>, CryptoError> {
+pub fn generate_recovery_phrase(
+    entropy: &mut dyn Entropy,
+) -> Result<Zeroizing<String>, CryptoError> {
     let mut bytes = [0u8; 16];
     entropy.fill(&mut bytes)?;
-    let m = bip39::Mnemonic::from_entropy_in(bip39::Language::English, &bytes).map_err(|_| CryptoError::Invalid);
+    let m = bip39::Mnemonic::from_entropy_in(bip39::Language::English, &bytes)
+        .map_err(|_| CryptoError::Invalid);
     bytes.zeroize();
     Ok(Zeroizing::new(m?.to_string()))
 }
@@ -76,8 +84,14 @@ pub fn generate_recovery_phrase(entropy: &mut dyn Entropy) -> Result<Zeroizing<S
 /// The BIP-39 seed for a phrase (identical across platforms for the same phrase and passphrase).
 pub fn derive_seed(phrase: &str, passphrase: &str) -> Result<Zeroizing<[u8; 64]>, CryptoError> {
     validate_recovery_phrase(phrase).map_err(|_| CryptoError::InvalidPhrase)?;
-    let m = bip39::Mnemonic::parse_in_normalized(bip39::Language::English, &canonical_phrase(phrase).split(' ').collect::<Vec<_>>().join(" "))
-        .map_err(|_| CryptoError::InvalidPhrase)?;
+    let m = bip39::Mnemonic::parse_in_normalized(
+        bip39::Language::English,
+        &canonical_phrase(phrase)
+            .split(' ')
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
+    .map_err(|_| CryptoError::InvalidPhrase)?;
     let pass: String = passphrase.nfkd().collect();
     Ok(Zeroizing::new(m.to_seed_normalized(&pass)))
 }
@@ -99,9 +113,16 @@ impl Purpose {
 }
 
 /// 32 bytes of key material for one purpose.
-pub fn derive_key_material(seed: &[u8], purpose: Purpose) -> Result<Zeroizing<[u8; 32]>, CryptoError> {
+pub fn derive_key_material(
+    seed: &[u8],
+    purpose: Purpose,
+) -> Result<Zeroizing<[u8; 32]>, CryptoError> {
     let info = format!("{DERIVE_PREFIX}/{}", purpose.label());
-    Ok(Zeroizing::new(hkdf_sha256::<32>(seed, DERIVE_SALT, info.as_bytes())?))
+    Ok(Zeroizing::new(hkdf_sha256::<32>(
+        seed,
+        DERIVE_SALT,
+        info.as_bytes(),
+    )?))
 }
 
 fn secret_from_material(material: &[u8; 32]) -> Result<SecretKey, CryptoError> {
@@ -122,9 +143,17 @@ pub fn public_key_from_jwk(jwk: &PublicJwk) -> Result<PublicKey, CryptoError> {
     if jwk.kty != "EC" || jwk.crv != "P-256" {
         return Err(CryptoError::InvalidKey);
     }
-    let x = codec::decode(&jwk.x).filter(|b| b.len() == 32).ok_or(CryptoError::InvalidKey)?;
-    let y = codec::decode(&jwk.y).filter(|b| b.len() == 32).ok_or(CryptoError::InvalidKey)?;
-    let point = EncodedPoint::from_affine_coordinates(FieldBytes::from_slice(&x), FieldBytes::from_slice(&y), false);
+    let x = codec::decode(&jwk.x)
+        .filter(|b| b.len() == 32)
+        .ok_or(CryptoError::InvalidKey)?;
+    let y = codec::decode(&jwk.y)
+        .filter(|b| b.len() == 32)
+        .ok_or(CryptoError::InvalidKey)?;
+    let point = EncodedPoint::from_affine_coordinates(
+        FieldBytes::from_slice(&x),
+        FieldBytes::from_slice(&y),
+        false,
+    );
     PublicKey::from_sec1_bytes(point.as_bytes()).map_err(|_| CryptoError::InvalidKey)
 }
 
@@ -149,15 +178,23 @@ pub fn uid_from_dh(dh: &PublicJwk) -> Result<UserId, CryptoError> {
 
 /// ECDSA P-256 / SHA-256 signature check; the signature is the 64-byte `r || s` form WebCrypto produces.
 pub fn verify_signature(public: &PublicJwk, signature: &[u8], message: &[u8]) -> bool {
-    let Ok(key) = public_key_from_jwk(public) else { return false };
-    let Ok(sig) = Signature::from_slice(signature) else { return false };
+    let Ok(key) = public_key_from_jwk(public) else {
+        return false;
+    };
+    let Ok(sig) = Signature::from_slice(signature) else {
+        return false;
+    };
     VerifyingKey::from(&key).verify(message, &sig).is_ok()
 }
 
 /// Checks that an ECDH key and a signing key belong together (the owner signed the ECDH key).
 pub fn verify_identity_proof(sign: &PublicJwk, dh: &PublicJwk, proof_b64: &str) -> bool {
-    let Some(sig) = codec::decode(proof_b64) else { return false };
-    let Ok(payload) = identity_proof_payload(dh) else { return false };
+    let Some(sig) = codec::decode(proof_b64) else {
+        return false;
+    };
+    let Ok(payload) = identity_proof_payload(dh) else {
+        return false;
+    };
     verify_signature(sign, &sig, &payload)
 }
 
@@ -173,7 +210,12 @@ pub struct Identity {
 impl std::fmt::Debug for Identity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Never prints key material.
-        f.debug_struct("Identity").field("uid", &self.uid().map(|u| u.to_string()).unwrap_or_default()).finish_non_exhaustive()
+        f.debug_struct("Identity")
+            .field(
+                "uid",
+                &self.uid().map(|u| u.to_string()).unwrap_or_default(),
+            )
+            .finish_non_exhaustive()
     }
 }
 
@@ -196,7 +238,10 @@ impl Identity {
         let seed = derive_seed(phrase, passphrase)?;
         let sign = secret_from_material(&*derive_key_material(&*seed, Purpose::IdentitySign)?)?;
         let dh = secret_from_material(&*derive_key_material(&*seed, Purpose::IdentityAgreement)?)?;
-        Ok(Self { sign: SigningKey::from(&sign), dh })
+        Ok(Self {
+            sign: SigningKey::from(&sign),
+            dh,
+        })
     }
 
     /// A fresh random identity (not recoverable from a phrase).
@@ -204,14 +249,20 @@ impl Identity {
         let mut a = RngAdapter(entropy);
         let sign = SecretKey::random(&mut a);
         let dh = SecretKey::random(&mut a);
-        Ok(Self { sign: SigningKey::from(&sign), dh })
+        Ok(Self {
+            sign: SigningKey::from(&sign),
+            dh,
+        })
     }
 
     /// Rebuild from scalars read back from secure storage.
     pub fn from_stored(secrets: &StoredSecrets) -> Result<Self, CryptoError> {
         let sign = SecretKey::from_slice(&secrets.sign).map_err(|_| CryptoError::InvalidKey)?;
         let dh = SecretKey::from_slice(&secrets.dh).map_err(|_| CryptoError::InvalidKey)?;
-        Ok(Self { sign: SigningKey::from(&sign), dh })
+        Ok(Self {
+            sign: SigningKey::from(&sign),
+            dh,
+        })
     }
 
     /// For the secure-storage adapter only.
@@ -262,7 +313,10 @@ impl Identity {
     /// that key order, which is what the TypeScript code hashes.
     pub fn recovery_fingerprint(&self) -> String {
         let dh = self.dh_public();
-        let text = format!(r#"{{"kty":"{}","crv":"{}","x":"{}","y":"{}"}}"#, dh.kty, dh.crv, dh.x, dh.y);
+        let text = format!(
+            r#"{{"kty":"{}","crv":"{}","x":"{}","y":"{}"}}"#,
+            dh.kty, dh.crv, dh.x, dh.y
+        );
         crate::kdf::sha256_hex(text.as_bytes())
     }
 }

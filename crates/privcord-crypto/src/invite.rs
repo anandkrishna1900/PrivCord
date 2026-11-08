@@ -31,9 +31,13 @@ pub fn new_invite_words(entropy: &mut dyn Entropy) -> Result<Vec<String>, Crypto
     bytes
         .chunks_exact(2)
         .map(|c| {
-            let [hi, lo] = c else { return Err(CryptoError::Invalid) };
+            let [hi, lo] = c else {
+                return Err(CryptoError::Invalid);
+            };
             let index = ((usize::from(*hi) << 8) | usize::from(*lo)) & 0x7ff;
-            list.get(index).map(|w| (*w).to_owned()).ok_or(CryptoError::Invalid)
+            list.get(index)
+                .map(|w| (*w).to_owned())
+                .ok_or(CryptoError::Invalid)
         })
         .collect()
 }
@@ -41,12 +45,19 @@ pub fn new_invite_words(entropy: &mut dyn Entropy) -> Result<Vec<String>, Crypto
 /// Lower-cases, splits on anything that is not a letter, and requires exactly six known words.
 pub fn parse_invite_words(text: &str) -> Option<Vec<String>> {
     let lower = text.to_lowercase();
-    let parts: Vec<String> = lower.split(|c: char| !c.is_ascii_lowercase()).filter(|s| !s.is_empty()).map(str::to_owned).collect();
+    let parts: Vec<String> = lower
+        .split(|c: char| !c.is_ascii_lowercase())
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .collect();
     if parts.len() != INVITE_WORDS {
         return None;
     }
     let list = word_list();
-    parts.iter().all(|w| list.contains(&w.as_str())).then_some(parts)
+    parts
+        .iter()
+        .all(|w| list.contains(&w.as_str()))
+        .then_some(parts)
 }
 
 /// Where both people meet, and the key that protects what they leave there.
@@ -57,13 +68,19 @@ pub struct Rendezvous {
 
 impl std::fmt::Debug for Rendezvous {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Rendezvous").field("mailbox", &self.mailbox).finish_non_exhaustive()
+        f.debug_struct("Rendezvous")
+            .field("mailbox", &self.mailbox)
+            .finish_non_exhaustive()
     }
 }
 
 /// Slow on purpose (150,000 PBKDF2 rounds): it is what makes guessing the words expensive.
 pub fn derive_invite(words: &[String]) -> Result<Rendezvous, CryptoError> {
-    let seed = Zeroizing::new(pbkdf2_sha256(words.join(" ").as_bytes(), SALT, PBKDF2_ITERATIONS));
+    let seed = Zeroizing::new(pbkdf2_sha256(
+        words.join(" ").as_bytes(),
+        SALT,
+        PBKDF2_ITERATIONS,
+    ));
     let mailbox = sha256_hex(format!("{MAILBOX_PREFIX}{}", codec::hex(&*seed)).as_bytes());
     let key = Zeroizing::new(hkdf_sha256::<32>(&*seed, SALT, b"key")?);
     Ok(Rendezvous { mailbox, key })
@@ -92,12 +109,23 @@ pub struct InviteMessage {
     pub contact: Contact,
 }
 
-pub fn seal_invite(rendezvous: &Rendezvous, kind: InviteKind, identity: &Identity, name: Option<&str>, entropy: &mut dyn Entropy) -> Result<SealedBlob, CryptoError> {
+pub fn seal_invite(
+    rendezvous: &Rendezvous,
+    kind: InviteKind,
+    identity: &Identity,
+    name: Option<&str>,
+    entropy: &mut dyn Entropy,
+) -> Result<SealedBlob, CryptoError> {
     let card = ContactCard::of(identity, name)?;
     let uid = identity.uid()?;
     let iv: [u8; 12] = random_array(entropy)?;
     let body = json!({ "t": kind.tag(), "card": card.encode()? });
-    let ct = aead::encrypt(&*rendezvous.key, &iv, body.to_string().as_bytes(), format!("invite|{uid}").as_bytes())?;
+    let ct = aead::encrypt(
+        &*rendezvous.key,
+        &iv,
+        body.to_string().as_bytes(),
+        format!("invite|{uid}").as_bytes(),
+    )?;
     let mut blob = SealedBlob {
         v: 1,
         to: "invite".into(),
@@ -116,7 +144,13 @@ pub fn open_invite(rendezvous: &Rendezvous, blob: &Value) -> Option<InviteMessag
     if blob.to != "invite" {
         return None;
     }
-    let plain = aead::decrypt(&*rendezvous.key, &codec::decode(&blob.iv)?, &codec::decode(&blob.ct)?, format!("invite|{}", blob.from).as_bytes()).ok()?;
+    let plain = aead::decrypt(
+        &*rendezvous.key,
+        &codec::decode(&blob.iv)?,
+        &codec::decode(&blob.ct)?,
+        format!("invite|{}", blob.from).as_bytes(),
+    )
+    .ok()?;
     let body: Value = serde_json::from_slice(&plain).ok()?;
     let kind = match body.get("t")?.as_str()? {
         "card" => InviteKind::Card,

@@ -28,7 +28,9 @@ pub struct ChannelKeys {
 
 impl std::fmt::Debug for ChannelKeys {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ChannelKeys").field("name", &self.name).finish_non_exhaustive()
+        f.debug_struct("ChannelKeys")
+            .field("name", &self.name)
+            .finish_non_exhaustive()
     }
 }
 
@@ -38,7 +40,12 @@ pub fn derive_channel(name: &str) -> Result<ChannelKeys, CryptoError> {
     let mailbox = codec::hex(&digest);
     let tag = format!("ch:{}", mailbox.chars().take(16).collect::<String>());
     let key = Zeroizing::new(hkdf_sha256::<32>(&digest, SALT, b"key")?);
-    Ok(ChannelKeys { name: name.to_owned(), mailbox, tag, key })
+    Ok(ChannelKeys {
+        name: name.to_owned(),
+        mailbox,
+        tag,
+        key,
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,7 +56,14 @@ pub struct ChannelMessage {
     pub contact: Contact,
 }
 
-pub fn seal_channel_message(channel: &ChannelKeys, identity: &Identity, name: Option<&str>, text: &str, at: i64, entropy: &mut dyn Entropy) -> Result<SealedBlob, CryptoError> {
+pub fn seal_channel_message(
+    channel: &ChannelKeys,
+    identity: &Identity,
+    name: Option<&str>,
+    text: &str,
+    at: i64,
+    entropy: &mut dyn Entropy,
+) -> Result<SealedBlob, CryptoError> {
     let text: String = js_trim(text).chars().take(MAX_CHANNEL_TEXT).collect();
     if text.is_empty() {
         return Err(CryptoError::EmptyMessage);
@@ -58,7 +72,12 @@ pub fn seal_channel_message(channel: &ChannelKeys, identity: &Identity, name: Op
     let uid = identity.uid()?;
     let iv: [u8; 12] = random_array(entropy)?;
     let body = json!({ "c": channel.name, "t": text, "at": at, "card": card.encode()? });
-    let ct = aead::encrypt(&*channel.key, &iv, body.to_string().as_bytes(), format!("{}|{uid}", channel.tag).as_bytes())?;
+    let ct = aead::encrypt(
+        &*channel.key,
+        &iv,
+        body.to_string().as_bytes(),
+        format!("{}|{uid}", channel.tag).as_bytes(),
+    )?;
     let mut blob = SealedBlob {
         v: 1,
         to: channel.tag.clone(),
@@ -77,19 +96,34 @@ pub fn open_channel_message(channel: &ChannelKeys, blob: &Value) -> Option<Chann
     if blob.to != channel.tag {
         return None;
     }
-    let plain = aead::decrypt(&*channel.key, &codec::decode(&blob.iv)?, &codec::decode(&blob.ct)?, format!("{}|{}", channel.tag, blob.from).as_bytes()).ok()?;
+    let plain = aead::decrypt(
+        &*channel.key,
+        &codec::decode(&blob.iv)?,
+        &codec::decode(&blob.ct)?,
+        format!("{}|{}", channel.tag, blob.from).as_bytes(),
+    )
+    .ok()?;
     let body: Value = serde_json::from_slice(&plain).ok()?;
     if body.get("c")?.as_str()? != channel.name {
         return None;
     }
     let text = body.get("t")?.as_str()?;
     let at = body.get("at")?.as_f64()?;
-    if !at.is_finite() || at <= 0.0 || js_trim(text).is_empty() || text.chars().count() > MAX_CHANNEL_TEXT {
+    if !at.is_finite()
+        || at <= 0.0
+        || js_trim(text).is_empty()
+        || text.chars().count() > MAX_CHANNEL_TEXT
+    {
         return None;
     }
     let contact = ContactCard::decode(body.get("card")?.as_str()?)?;
     if contact.uid.as_str() != blob.from || !verify_blob_signature(&blob, &contact.card.sign) {
         return None;
     }
-    Some(ChannelMessage { channel: channel.name.clone(), text: text.to_owned(), at: at as i64, contact })
+    Some(ChannelMessage {
+        channel: channel.name.clone(),
+        text: text.to_owned(),
+        at: at as i64,
+        contact,
+    })
 }

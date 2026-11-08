@@ -2,8 +2,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use crate::{
-    Clock, IdentitySecrets, Notification, Notifier, OutboxEntry, SecureStore, SecureStoreError, Storage, StorageError, StorageOp,
-    StoredContact, StoredMessage, Transport, TransportError,
+    Clock, IdentitySecrets, Notification, Notifier, OutboxEntry, SecureStore, SecureStoreError,
+    Storage, StorageError, StorageOp, StoredContact, StoredMessage, Transport, TransportError,
 };
 use privcord_domain::UserId;
 use std::{
@@ -85,12 +85,20 @@ impl Storage for MemoryStorage {
                     next.contacts.remove(u);
                 }
                 StorageOp::InsertMessage(m) => {
-                    if !next.messages.iter().any(|x| x.message.message_id == m.message.message_id) {
+                    if !next
+                        .messages
+                        .iter()
+                        .any(|x| x.message.message_id == m.message.message_id)
+                    {
                         next.messages.push(m.clone());
                     }
                 }
                 StorageOp::SetDelivery { id, state, read_at } => {
-                    let m = next.messages.iter_mut().find(|x| &x.message.message_id == id).ok_or(StorageError::Rejected)?;
+                    let m = next
+                        .messages
+                        .iter_mut()
+                        .find(|x| &x.message.message_id == id)
+                        .ok_or(StorageError::Rejected)?;
                     m.message.delivery_state = *state;
                     m.message.read_at = read_at.or(m.message.read_at);
                 }
@@ -99,14 +107,23 @@ impl Storage for MemoryStorage {
                     next.outbox.retain(|o| &o.message_id != id);
                 }
                 StorageOp::PutOutbox(e) => {
-                    if !next.messages.iter().any(|x| x.message.message_id == e.message_id) {
+                    if !next
+                        .messages
+                        .iter()
+                        .any(|x| x.message.message_id == e.message_id)
+                    {
                         return Err(StorageError::Rejected);
                     }
-                    next.outbox.retain(|o| !(o.message_id == e.message_id && o.recipient == e.recipient));
+                    next.outbox
+                        .retain(|o| !(o.message_id == e.message_id && o.recipient == e.recipient));
                     next.outbox.push(e.clone());
                 }
-                StorageOp::RemoveOutbox { message_id, recipient } => {
-                    next.outbox.retain(|o| !(&o.message_id == message_id && &o.recipient == recipient));
+                StorageOp::RemoveOutbox {
+                    message_id,
+                    recipient,
+                } => {
+                    next.outbox
+                        .retain(|o| !(&o.message_id == message_id && &o.recipient == recipient));
                 }
                 StorageOp::SetKv { key, value } => {
                     next.kv.insert(key.clone(), value.clone());

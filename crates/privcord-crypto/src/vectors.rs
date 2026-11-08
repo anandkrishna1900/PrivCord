@@ -11,7 +11,8 @@ use crate::{
 };
 use serde_json::{json, Value};
 
-const ANN: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+const ANN: &str =
+    "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 const BOB: &str = "legal winner thank year wave sausage worth useful legal winner thank yellow";
 
 pub fn build() -> Result<Value, crate::CryptoError> {
@@ -25,13 +26,23 @@ pub fn build() -> Result<Value, crate::CryptoError> {
     let ab = seal(&ann, &bob_uid, &bob.dh_public(), &payload_ab, &mut rng)?;
     let ba = seal(&bob, &ann_uid, &ann.dh_public(), &payload_ba, &mut rng)?;
 
-    let words: Vec<String> = ["apple", "river", "tiger", "moon", "cloud", "seven"].iter().map(|s| (*s).to_owned()).collect();
+    let words: Vec<String> = ["apple", "river", "tiger", "moon", "cloud", "seven"]
+        .iter()
+        .map(|s| (*s).to_owned())
+        .collect();
     let rv = derive_invite(&words)?;
     let invite_card = seal_invite(&rv, InviteKind::Card, &ann, Some("Ann"), &mut rng)?;
     let invite_reply = seal_invite(&rv, InviteKind::Reply, &bob, Some("Bob"), &mut rng)?;
 
     let general = derive_channel("general")?;
-    let channel_blob = seal_channel_message(&general, &ann, Some("Ann"), "hello from Rust", 1_700_000_000_123, &mut rng)?;
+    let channel_blob = seal_channel_message(
+        &general,
+        &ann,
+        Some("Ann"),
+        "hello from Rust",
+        1_700_000_000_123,
+        &mut rng,
+    )?;
 
     let backup_data = json!({ "v": 1, "uid": "uid-rust", "messages": ["héllo backup ✓"] });
     let backup = seal_backup(&backup_data, "correct horse battery", &mut rng)?;
@@ -52,4 +63,3 @@ pub fn build() -> Result<Value, crate::CryptoError> {
         "backup": { "passphrase": "correct horse battery", "text": backup, "data": backup_data }
     }))
 }
-

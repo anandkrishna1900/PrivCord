@@ -64,7 +64,11 @@ pub struct SeededEntropy {
 #[cfg(any(test, feature = "test-support"))]
 impl SeededEntropy {
     pub fn new(seed: &str) -> Self {
-        Self { seed: seed.as_bytes().to_vec(), counter: 0, buffer: Vec::new() }
+        Self {
+            seed: seed.as_bytes().to_vec(),
+            counter: 0,
+            buffer: Vec::new(),
+        }
     }
 }
 

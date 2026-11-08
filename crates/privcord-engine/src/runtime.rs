@@ -24,16 +24,51 @@ type Reply<T> = oneshot::Sender<Result<T, ErrorCode>>;
 
 enum Command {
     CreateIdentity(Reply<Zeroizing<String>>),
-    RecoverIdentity { phrase: Zeroizing<String>, passphrase: Zeroizing<String>, reply: Reply<()> },
-    OwnCard { name: Option<String>, reply: Reply<String> },
-    AddContact { card: String, trust: ContactTrust, reply: Reply<UserId> },
-    SetChecked { uid: UserId, checked: bool, reply: Reply<()> },
-    SetGroupOnly { value: bool, reply: Reply<()> },
-    SendMessage { peer: UserId, text: String, reply_to: Option<MessageId>, reply: Reply<MessageId> },
-    MarkRead { peer: UserId, reply: Reply<()> },
-    LinkUp { peer: UserId, path: ConnectionPath, reply: Reply<()> },
-    LinkDown { peer: UserId },
-    Frame { peer: UserId, text: String },
+    RecoverIdentity {
+        phrase: Zeroizing<String>,
+        passphrase: Zeroizing<String>,
+        reply: Reply<()>,
+    },
+    OwnCard {
+        name: Option<String>,
+        reply: Reply<String>,
+    },
+    AddContact {
+        card: String,
+        trust: ContactTrust,
+        reply: Reply<UserId>,
+    },
+    SetChecked {
+        uid: UserId,
+        checked: bool,
+        reply: Reply<()>,
+    },
+    SetGroupOnly {
+        value: bool,
+        reply: Reply<()>,
+    },
+    SendMessage {
+        peer: UserId,
+        text: String,
+        reply_to: Option<MessageId>,
+        reply: Reply<MessageId>,
+    },
+    MarkRead {
+        peer: UserId,
+        reply: Reply<()>,
+    },
+    LinkUp {
+        peer: UserId,
+        path: ConnectionPath,
+        reply: Reply<()>,
+    },
+    LinkDown {
+        peer: UserId,
+    },
+    Frame {
+        peer: UserId,
+        text: String,
+    },
     Snapshot(Reply<Snapshot>),
     Shutdown(oneshot::Sender<()>),
 }
@@ -48,12 +83,27 @@ pub struct EngineHandle {
 fn pump(core: &mut Core, cmd: Command) -> bool {
     match cmd {
         Command::CreateIdentity(r) => drop(r.send(core.create_identity())),
-        Command::RecoverIdentity { phrase, passphrase, reply } => drop(reply.send(core.recover_identity(&phrase, &passphrase))),
+        Command::RecoverIdentity {
+            phrase,
+            passphrase,
+            reply,
+        } => drop(reply.send(core.recover_identity(&phrase, &passphrase))),
         Command::OwnCard { name, reply } => drop(reply.send(core.own_card(name.as_deref()))),
-        Command::AddContact { card, trust, reply } => drop(reply.send(core.add_contact(&card, trust))),
-        Command::SetChecked { uid, checked, reply } => drop(reply.send(core.set_checked(&uid, checked))),
+        Command::AddContact { card, trust, reply } => {
+            drop(reply.send(core.add_contact(&card, trust)))
+        }
+        Command::SetChecked {
+            uid,
+            checked,
+            reply,
+        } => drop(reply.send(core.set_checked(&uid, checked))),
         Command::SetGroupOnly { value, reply } => drop(reply.send(core.set_group_only(value))),
-        Command::SendMessage { peer, text, reply_to, reply } => drop(reply.send(core.send_message(&peer, &text, reply_to.as_ref()))),
+        Command::SendMessage {
+            peer,
+            text,
+            reply_to,
+            reply,
+        } => drop(reply.send(core.send_message(&peer, &text, reply_to.as_ref()))),
         Command::MarkRead { peer, reply } => drop(reply.send(core.mark_read(&peer))),
         Command::LinkUp { peer, path, reply } => drop(reply.send(core.link_up(&peer, path))),
         Command::LinkDown { peer } => core.link_down(&peer),
@@ -77,7 +127,12 @@ impl EngineHandle {
         let thread = std::thread::Builder::new()
             .name("privcord-engine".into())
             .spawn(move || {
-                let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_time().build() else { return };
+                let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                    .enable_time()
+                    .build()
+                else {
+                    return;
+                };
                 rt.block_on(async move {
                     let mut timer = tokio::time::interval(TICK);
                     loop {
@@ -92,7 +147,13 @@ impl EngineHandle {
                 });
             })
             .map_err(|_| ErrorCode::Busy)?;
-        Ok((Self { tx, thread: Mutex::new(Some(thread)) }, events))
+        Ok((
+            Self {
+                tx,
+                thread: Mutex::new(Some(thread)),
+            },
+            events,
+        ))
     }
 
     async fn ask<T>(&self, build: impl FnOnce(Reply<T>) -> Command) -> Result<T, ErrorCode> {
@@ -108,25 +169,60 @@ impl EngineHandle {
         self.ask(Command::CreateIdentity).await
     }
     pub async fn recover_identity(&self, phrase: &str, passphrase: &str) -> Result<(), ErrorCode> {
-        self.ask(|reply| Command::RecoverIdentity { phrase: Zeroizing::new(phrase.to_owned()), passphrase: Zeroizing::new(passphrase.to_owned()), reply }).await
+        self.ask(|reply| Command::RecoverIdentity {
+            phrase: Zeroizing::new(phrase.to_owned()),
+            passphrase: Zeroizing::new(passphrase.to_owned()),
+            reply,
+        })
+        .await
     }
     pub async fn own_card(&self, name: Option<&str>) -> Result<String, ErrorCode> {
-        self.ask(|reply| Command::OwnCard { name: name.map(str::to_owned), reply }).await
+        self.ask(|reply| Command::OwnCard {
+            name: name.map(str::to_owned),
+            reply,
+        })
+        .await
     }
     pub async fn add_contact(&self, card: &str, trust: ContactTrust) -> Result<UserId, ErrorCode> {
-        self.ask(|reply| Command::AddContact { card: card.to_owned(), trust, reply }).await
+        self.ask(|reply| Command::AddContact {
+            card: card.to_owned(),
+            trust,
+            reply,
+        })
+        .await
     }
     pub async fn set_checked(&self, uid: &UserId, checked: bool) -> Result<(), ErrorCode> {
-        self.ask(|reply| Command::SetChecked { uid: uid.clone(), checked, reply }).await
+        self.ask(|reply| Command::SetChecked {
+            uid: uid.clone(),
+            checked,
+            reply,
+        })
+        .await
     }
     pub async fn set_group_only(&self, value: bool) -> Result<(), ErrorCode> {
-        self.ask(|reply| Command::SetGroupOnly { value, reply }).await
+        self.ask(|reply| Command::SetGroupOnly { value, reply })
+            .await
     }
-    pub async fn send_message(&self, peer: &UserId, text: &str, reply_to: Option<&MessageId>) -> Result<MessageId, ErrorCode> {
-        self.ask(|reply| Command::SendMessage { peer: peer.clone(), text: text.to_owned(), reply_to: reply_to.cloned(), reply }).await
+    pub async fn send_message(
+        &self,
+        peer: &UserId,
+        text: &str,
+        reply_to: Option<&MessageId>,
+    ) -> Result<MessageId, ErrorCode> {
+        self.ask(|reply| Command::SendMessage {
+            peer: peer.clone(),
+            text: text.to_owned(),
+            reply_to: reply_to.cloned(),
+            reply,
+        })
+        .await
     }
     pub async fn mark_read(&self, peer: &UserId) -> Result<(), ErrorCode> {
-        self.ask(|reply| Command::MarkRead { peer: peer.clone(), reply }).await
+        self.ask(|reply| Command::MarkRead {
+            peer: peer.clone(),
+            reply,
+        })
+        .await
     }
     pub async fn snapshot(&self) -> Result<Snapshot, ErrorCode> {
         self.ask(Command::Snapshot).await
@@ -134,7 +230,12 @@ impl EngineHandle {
 
     /// An adapter reports that a link to a contact is up.
     pub async fn link_up(&self, peer: &UserId, path: ConnectionPath) -> Result<(), ErrorCode> {
-        self.ask(|reply| Command::LinkUp { peer: peer.clone(), path, reply }).await
+        self.ask(|reply| Command::LinkUp {
+            peer: peer.clone(),
+            path,
+            reply,
+        })
+        .await
     }
     /// An adapter reports that the link went away. Fire and forget; the queue is bounded, so a full queue is reported.
     pub fn link_down(&self, peer: &UserId) -> Result<(), ErrorCode> {
@@ -142,7 +243,10 @@ impl EngineHandle {
     }
     /// An adapter hands over a frame it received.
     pub fn frame_received(&self, peer: &UserId, text: String) -> Result<(), ErrorCode> {
-        self.push(Command::Frame { peer: peer.clone(), text })
+        self.push(Command::Frame {
+            peer: peer.clone(),
+            text,
+        })
     }
 
     fn push(&self, cmd: Command) -> Result<(), ErrorCode> {
@@ -162,7 +266,11 @@ impl EngineHandle {
     }
 
     fn join(&self) -> Result<(), ErrorCode> {
-        let handle = self.thread.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
+        let handle = self
+            .thread
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
         match handle {
             Some(h) => h.join().map_err(|_| ErrorCode::ShuttingDown),
             None => Ok(()),

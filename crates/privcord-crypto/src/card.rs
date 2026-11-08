@@ -62,7 +62,10 @@ impl ContactCard {
         if let Some(n) = self.name.as_ref().filter(|n| !n.is_empty()) {
             o.insert("name".into(), json!(cut_name(n)));
         }
-        Ok(format!("{CONTACT_CARD_PREFIX}{}", codec::encode(canonical_json(&Value::Object(o))?.as_bytes())))
+        Ok(format!(
+            "{CONTACT_CARD_PREFIX}{}",
+            codec::encode(canonical_json(&Value::Object(o))?.as_bytes())
+        ))
     }
 
     /// Parses and cryptographically validates a card. `None` if anything is off.
@@ -92,6 +95,14 @@ impl ContactCard {
         let uid = uid_from_dh(&dh).ok()?;
         let name = name.filter(|n| !n.is_empty()).map(|n| cut_name(&n));
         debug_assert!(name.as_ref().is_none_or(|n| utf16_len(n) <= MAX_NAME_UNITS));
-        Some(Contact { uid, card: ContactCard { sign, dh, proof: proof.to_owned(), name } })
+        Some(Contact {
+            uid,
+            card: ContactCard {
+                sign,
+                dh,
+                proof: proof.to_owned(),
+                name,
+            },
+        })
     }
 }

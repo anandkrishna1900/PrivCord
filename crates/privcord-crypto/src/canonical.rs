@@ -24,7 +24,9 @@ fn write(value: &Value, out: &mut String) -> Result<(), CryptoError> {
                 return Err(CryptoError::Canonical);
             }
         }
-        Value::String(s) => out.push_str(&serde_json::to_string(s).map_err(|_| CryptoError::Canonical)?),
+        Value::String(s) => {
+            out.push_str(&serde_json::to_string(s).map_err(|_| CryptoError::Canonical)?)
+        }
         Value::Array(a) => {
             out.push('[');
             for (i, v) in a.iter().enumerate() {
