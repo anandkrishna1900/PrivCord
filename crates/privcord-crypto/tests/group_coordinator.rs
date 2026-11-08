@@ -201,7 +201,7 @@ fn history_syncs_on_link_open_and_a_missing_group_is_pushed() {
     bob.known = BTreeSet::from([ann.uid.clone()]);
     let (gid, created) = ann
         .coord
-        .create_group(&ann.id, "G", &[bob.card.clone()], 1000)
+        .create_group(&ann.id, "G", std::slice::from_ref(&bob.card), 1000)
         .unwrap();
     // Bob never got the frames (he was offline). When the link opens he says "I have nothing"; Ann pushes the group.
     drop(created);
@@ -227,7 +227,7 @@ fn only_members_can_pull_history_and_spam_for_a_foreign_group_is_forgotten() {
     eve.known = BTreeSet::from([ann.uid.clone()]);
     let (gid, _) = ann
         .coord
-        .create_group(&ann.id, "Secret", &[bob.card.clone()], 1000)
+        .create_group(&ann.id, "Secret", std::slice::from_ref(&bob.card), 1000)
         .unwrap();
     // Eve is a contact but not a member: asking about the group gets nothing back, not even a hint it exists.
     let ask = GroupFrame::Have {
@@ -260,7 +260,7 @@ fn only_members_can_pull_history_and_spam_for_a_foreign_group_is_forgotten() {
     let mut mallory = person(6);
     let (m_gid, _) = mallory
         .coord
-        .create_group(&mallory.id, "Hi", &[bob.card.clone()], 1000)
+        .create_group(&mallory.id, "Hi", std::slice::from_ref(&bob.card), 1000)
         .unwrap();
     let m_frames: Vec<GroupFrame> = mallory.coord.export()[&m_gid]
         .iter()
@@ -313,7 +313,7 @@ fn the_ten_member_cap_removal_leaving_and_messages_are_enforced() {
     bob.known = BTreeSet::from([ann.uid.clone()]);
     let (gid2, created) = ann
         .coord
-        .create_group(&ann.id, "Small", &[bob.card.clone()], 3000)
+        .create_group(&ann.id, "Small", std::slice::from_ref(&bob.card), 3000)
         .unwrap();
     let a = ann.uid.clone();
     flood(&mut [&mut bob], &a, created.outgoing);
@@ -353,7 +353,7 @@ fn big_histories_travel_in_batches_and_saved_groups_reload() {
     let bob = person(2);
     let (gid, _) = ann
         .coord
-        .create_group(&ann.id, "Chatty", &[bob.card.clone()], 1000)
+        .create_group(&ann.id, "Chatty", std::slice::from_ref(&bob.card), 1000)
         .unwrap();
     for i in 0..(MAX_EVENTS_PER_FRAME + 5) {
         ann.coord
