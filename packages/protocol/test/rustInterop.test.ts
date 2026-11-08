@@ -1,7 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  authChallenge,
   decodeBlob,
+  parsePeerFrame,
+  uidFromDh,
   decodeContactCard,
   deriveChannel,
   deriveIdentityFromPhrase,
@@ -65,5 +68,25 @@ describe('artifacts produced by the Rust engine', () => {
   it('backups open with the passphrase and not without it', async () => {
     expect(await openBackup(v.backup.text, v.backup.passphrase)).toEqual(v.backup.data);
     expect(await openBackup(v.backup.text, 'wrong passphrase')).toBeNull();
+  });
+
+  it('a legacy handshake made by Rust is accepted by the TypeScript checks', async () => {
+    const h = v.peerAuth;
+    const ann = (await deriveIdentityFromPhrase(v.people.ann.phrase)).identity;
+    const bob = (await deriveIdentityFromPhrase(v.people.bob.phrase)).identity;
+    for (const f of [h.annHello, h.bobHello, h.annProof[0], h.bobProof[0], h.annOk[0], h.bobOk[0]]) expect(parsePeerFrame(f)).not.toBeNull();
+    // Hellos: the uid is the fingerprint of the ECDH key, and the identity proof binds it to the signing key.
+    for (const [hello, id] of [[h.annHello, ann], [h.bobHello, bob]] as const) {
+      expect(hello.uid).toBe(await uidFromDh(id.dhKey.pubJwk));
+      expect(await verifyIdentityProof(hello.publicKeyJwk, hello.dhJwk, hello.identityProof)).toBe(true);
+    }
+    // Proofs: each signs the challenge built from both nonces, verified with the sender's signing key.
+    const check = async (proof: { uid: string; signature: string }, signer: typeof h.annHello, other: typeof h.annHello) => {
+      const challenge = authChallenge({ conversationId: h.context, uid: signer.uid, deviceId: signer.deviceId, nonceSelf: signer.nonce, noncePeer: other.nonce });
+      return ecdsaVerify(signer.publicKeyJwk, fromB64Url(proof.signature), new TextEncoder().encode(challenge));
+    };
+    expect(await check(h.annProof[0], h.annHello, h.bobHello)).toBe(true);
+    expect(await check(h.bobProof[0], h.bobHello, h.annHello)).toBe(true);
+    expect(h.annOk[0]).toEqual({ v: 1, kind: 'auth_ok', uid: h.annHello.uid });
   });
 });

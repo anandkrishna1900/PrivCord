@@ -11,7 +11,7 @@ pub mod events;
 pub mod runtime;
 
 pub use api::{ContactView, EngineEvent, Snapshot};
-pub use core::{Core, Ports};
+pub use core::{Core, LinkSecurity, Ports};
 pub use error::ErrorCode;
 pub use events::EventStream;
 pub use runtime::EngineHandle;

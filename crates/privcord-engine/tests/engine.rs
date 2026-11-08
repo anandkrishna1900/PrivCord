@@ -758,3 +758,99 @@ fn the_engine_runs_on_real_sqlite_and_recovers_after_a_restart() {
         DeliveryState::Delivered
     );
 }
+
+fn connect_with(
+    a: &mut Node,
+    b: &mut Node,
+    au: &UserId,
+    bu: &UserId,
+    security: privcord_engine::LinkSecurity,
+) {
+    a.transport.set_connected(bu, true);
+    b.transport.set_connected(au, true);
+    a.core
+        .link_up_with(bu, ConnectionPath::DirectNat, security)
+        .unwrap();
+    b.core
+        .link_up_with(au, ConnectionPath::DirectNat, security)
+        .unwrap();
+    pump(a, b, au, bu);
+}
+
+#[test]
+fn over_an_already_encrypted_link_the_engine_uses_the_legacy_handshake_and_plain_frames() {
+    use privcord_engine::LinkSecurity;
+    let (mut a, mut b, au, bu) = pair();
+    connect_with(&mut a, &mut b, &au, &bu, LinkSecurity::TransportEncrypted);
+    assert_eq!(
+        state_of(&a, &bu),
+        ConnectionState::Connected {
+            path: ConnectionPath::DirectNat
+        }
+    );
+    assert_eq!(
+        state_of(&b, &au),
+        ConnectionState::Connected {
+            path: ConnectionPath::DirectNat
+        }
+    );
+
+    // After the handshake frames are plain JSON, like the existing apps send.
+    let id = a.core.send_message(&bu, "plain over DTLS", None).unwrap();
+    let frames = a.transport.drain();
+    assert_eq!(frames.len(), 1);
+    let v: Value = serde_json::from_str(&frames[0].1).unwrap();
+    assert_eq!(v["kind"], "message");
+    assert_eq!(v["text"], "plain over DTLS");
+    b.core.frame_received(&au, &frames[0].1);
+    pump(&mut a, &mut b, &au, &bu);
+    assert_eq!(texts(&b, &au), vec!["plain over DTLS"]);
+    assert_eq!(status(&a, &id), DeliveryState::Delivered);
+}
+
+#[test]
+fn the_legacy_handshake_refuses_a_stranger_and_ignores_frames_before_it_finishes() {
+    use privcord_crypto::peer_auth::{Expected, PeerAuth};
+    use privcord_engine::LinkSecurity;
+    let (_a, mut b, au, bu) = pair();
+    b.transport.set_connected(&au, true);
+    b.core
+        .link_up_with(
+            &au,
+            ConnectionPath::DirectNat,
+            LinkSecurity::TransportEncrypted,
+        )
+        .unwrap();
+    let sent = b.transport.drain();
+    assert_eq!(
+        serde_json::from_str::<Value>(&sent[0].1).unwrap()["kind"],
+        "hello"
+    );
+    // A message before the handshake completes is not believed.
+    b.core.frame_received(
+        &au,
+        &json!({ "v": 1, "kind": "message", "messageId": "x", "clientMessageId": "x", "senderId": au.to_string(), "text": "too early", "clientCreatedAt": 5 }).to_string(),
+    );
+    assert!(texts(&b, &au).is_empty());
+    // A stranger answers as Alice with their own keys: authentication fails.
+    let mallory = Identity::generate(&mut SeededEntropy::new("mallory")).unwrap();
+    let fake = PeerAuth::with_nonce(
+        "duo",
+        mallory.uid().unwrap().as_str(),
+        "dev",
+        Expected {
+            uid: bu.to_string(),
+            sign: mallory.sign_public(),
+            dh: mallory.dh_public(),
+        },
+        "c3".repeat(24),
+    );
+    b.core
+        .frame_received(&au, &fake.hello(&mallory).unwrap().to_string());
+    assert_eq!(
+        state_of(&b, &au),
+        ConnectionState::Failed {
+            reason: ConnectionFailure::AuthenticationFailed
+        }
+    );
+}

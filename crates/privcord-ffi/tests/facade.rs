@@ -55,6 +55,7 @@ fn start(
 ) -> Arc<PrivcordEngine> {
     PrivcordEngine::start(
         dir.join(name).to_string_lossy().into_owned(),
+        "duo".into(),
         keystore,
         wire,
         bell,
@@ -102,8 +103,10 @@ fn the_facade_runs_a_whole_conversation_with_plain_data() {
             .unwrap(),
         au
     );
-    a.link_up(bu.clone(), PathKind::Bluetooth).unwrap();
-    b.link_up(au.clone(), PathKind::Bluetooth).unwrap();
+    a.link_up(bu.clone(), PathKind::Bluetooth, LinkKind::Open)
+        .unwrap();
+    b.link_up(au.clone(), PathKind::Bluetooth, LinkKind::Open)
+        .unwrap();
     let up = |e: &PrivcordEngine, who: &str| {
         for _ in 0..200 {
             if matches!(
@@ -217,6 +220,7 @@ fn bad_input_gives_stable_codes() {
     *bad.0.lock().unwrap() = Some(vec![1, 2, 3]);
     assert!(PrivcordEngine::start(
         dir.path().join("y.db").to_string_lossy().into_owned(),
+        "duo".into(),
         bad,
         Arc::new(Wire::default()),
         Arc::new(Bell::default())

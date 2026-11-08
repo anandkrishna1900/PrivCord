@@ -864,7 +864,7 @@ internal interface UniffiLib : Library {
     ): Pointer
     fun uniffi_privcord_ffi_fn_free_privcordengine(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    fun uniffi_privcord_ffi_fn_constructor_privcordengine_start(`dbPath`: RustBuffer.ByValue,`secure`: Pointer,`transport`: Pointer,`notifier`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_privcord_ffi_fn_constructor_privcordengine_start(`dbPath`: RustBuffer.ByValue,`context`: RustBuffer.ByValue,`secure`: Pointer,`transport`: Pointer,`notifier`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Pointer
     fun uniffi_privcord_ffi_fn_method_privcordengine_add_contact(`ptr`: Pointer,`card`: RustBuffer.ByValue,`verified`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -874,7 +874,7 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_link_down(`ptr`: Pointer,`peer`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    fun uniffi_privcord_ffi_fn_method_privcordengine_link_up(`ptr`: Pointer,`peer`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_privcord_ffi_fn_method_privcordengine_link_up(`ptr`: Pointer,`peer`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,`kind`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_mark_read(`ptr`: Pointer,`peer`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
@@ -1094,7 +1094,7 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_link_down() != 49639.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_link_up() != 9121.toShort()) {
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_link_up() != 12869.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_mark_read() != 53077.toShort()) {
@@ -1133,7 +1133,7 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_privcord_ffi_checksum_method_transportcallbacks_send() != 17330.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_privcord_ffi_checksum_constructor_privcordengine_start() != 22793.toShort()) {
+    if (lib.uniffi_privcord_ffi_checksum_constructor_privcordengine_start() != 20200.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
 }
@@ -1838,9 +1838,9 @@ public interface PrivcordEngineInterface {
     fun `linkDown`(`peer`: kotlin.String)
     
     /**
-     * The platform's link to `peer` is up.
+     * The platform's link to `peer` is up, protected the way `kind` says.
      */
-    fun `linkUp`(`peer`: kotlin.String, `path`: PathKind)
+    fun `linkUp`(`peer`: kotlin.String, `path`: PathKind, `kind`: LinkKind)
     
     fun `markRead`(`peer`: kotlin.String)
     
@@ -2016,14 +2016,14 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
 
     
     /**
-     * The platform's link to `peer` is up.
+     * The platform's link to `peer` is up, protected the way `kind` says.
      */
-    @Throws(FfiException::class)override fun `linkUp`(`peer`: kotlin.String, `path`: PathKind)
+    @Throws(FfiException::class)override fun `linkUp`(`peer`: kotlin.String, `path`: PathKind, `kind`: LinkKind)
         = 
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_link_up(
-        it, FfiConverterString.lower(`peer`),FfiConverterTypePathKind.lower(`path`),_status)
+        it, FfiConverterString.lower(`peer`),FfiConverterTypePathKind.lower(`path`),FfiConverterTypeLinkKind.lower(`kind`),_status)
 }
     }
     
@@ -2145,12 +2145,13 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
         
     /**
      * Start an engine on the database at `db_path` (the platform picks the folder; the schema is the same everywhere).
+     * `context` is the app's conversation id ("duo" unless the build sets another); it must match the other app's.
      */
-    @Throws(FfiException::class) fun `start`(`dbPath`: kotlin.String, `secure`: SecureStoreCallbacks, `transport`: TransportCallbacks, `notifier`: NotifierCallbacks): PrivcordEngine {
+    @Throws(FfiException::class) fun `start`(`dbPath`: kotlin.String, `context`: kotlin.String, `secure`: SecureStoreCallbacks, `transport`: TransportCallbacks, `notifier`: NotifierCallbacks): PrivcordEngine {
             return FfiConverterTypePrivcordEngine.lift(
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_constructor_privcordengine_start(
-        FfiConverterString.lower(`dbPath`),FfiConverterTypeSecureStoreCallbacks.lower(`secure`),FfiConverterTypeTransportCallbacks.lower(`transport`),FfiConverterTypeNotifierCallbacks.lower(`notifier`),_status)
+        FfiConverterString.lower(`dbPath`),FfiConverterString.lower(`context`),FfiConverterTypeSecureStoreCallbacks.lower(`secure`),FfiConverterTypeTransportCallbacks.lower(`transport`),FfiConverterTypeNotifierCallbacks.lower(`notifier`),_status)
 }
     )
     }
@@ -3493,6 +3494,41 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
     }
 
 }
+
+
+
+/**
+ * How a link is protected. `Encrypted` is a WebRTC data channel (already encrypted by DTLS): the engine uses the
+ * handshake the existing apps speak and plain frames. `Open` is a link that is not encrypted (Bluetooth): the engine
+ * encrypts every frame itself.
+ */
+
+enum class LinkKind {
+    
+    ENCRYPTED,
+    OPEN;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeLinkKind: FfiConverterRustBuffer<LinkKind> {
+    override fun read(buf: ByteBuffer) = try {
+        LinkKind.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: LinkKind) = 4UL
+
+    override fun write(value: LinkKind, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
 
 
 

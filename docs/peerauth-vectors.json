@@ -1,0 +1,241 @@
+{
+  "generatedBy": "packages/protocol/scripts/gen-peerauth-vectors.ts",
+  "context": "duo",
+  "ann": {
+    "phrase": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+    "uid": "bf9861c45fd771142637ca6a8ec6b22ba848e4f0758311f9b173bc546aae65de",
+    "deviceId": "device-ann",
+    "nonce": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+  },
+  "bob": {
+    "phrase": "legal winner thank year wave sausage worth useful legal winner thank yellow",
+    "uid": "83f73744bf8a8006334ba2a309be5c27a4f05fe081897de3266f37238dea1170",
+    "deviceId": "device-bob",
+    "nonce": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+  },
+  "frames": {
+    "annHello": {
+      "v": 1,
+      "kind": "hello",
+      "uid": "bf9861c45fd771142637ca6a8ec6b22ba848e4f0758311f9b173bc546aae65de",
+      "deviceId": "device-ann",
+      "publicKeyJwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "Uc8IF7pvcRozSRkkKdFCb5slOPsdIBqXIhdgofU7S80",
+        "y": "tKBDXXrCyNVxGKO1z3TGzL0r-PT4nukAWfmE1ptutdk"
+      },
+      "dhJwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "OyVbnLBhsYLY9xRJkEXDYQz_L532SLotLsmv-PKstiQ",
+        "y": "wJX41dT23t_LnQYG6RhIrWrupy2J4uw32tcwu90-reg"
+      },
+      "identityProof": "odExuabbRzvU5jxHj5m12snDb6D6d3CH8_4cVeUCHf5v2dvZdkfjirUfpOjBfJmrlNlq8nZFM6fSd2XSB7HAOg",
+      "nonce": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+    },
+    "bobHello": {
+      "v": 1,
+      "kind": "hello",
+      "uid": "83f73744bf8a8006334ba2a309be5c27a4f05fe081897de3266f37238dea1170",
+      "deviceId": "device-bob",
+      "publicKeyJwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "6FuZPlrFou-tgfeRIYH6TGDLvMRoqPwU7HBP7hlcjdA",
+        "y": "whVjT1kBuYn2gDuSfBq2z2r1lbxqOillhJbTWOUsuDk"
+      },
+      "dhJwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "zYcBKuj3Ij1qQqN-liw_a8DhfZvDG6tKgxCfRFG6uxU",
+        "y": "5mMzHrj708RGhJ15I1IYdy4cL8RFJxq9HeU0bjRmBl0"
+      },
+      "identityProof": "bjqg5ACC9nNmxxB_1qajVjzx6DhiCw7b1H_RxzJ44lBA7OwRRYxDD13jPdebu1QKKYgrekVcZjRsLwD-f2yLzQ",
+      "nonce": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+    },
+    "annProof": {
+      "v": 1,
+      "kind": "auth_proof",
+      "uid": "bf9861c45fd771142637ca6a8ec6b22ba848e4f0758311f9b173bc546aae65de",
+      "signature": "RcG4oVx7aFSfjjmbG72g3CERjK01cvWq1k6c-FWjEnfWx4K4FGDTwvsndNv520Y2PalzObcOuUZ0us-dW9eDxw"
+    },
+    "bobProof": {
+      "v": 1,
+      "kind": "auth_proof",
+      "uid": "83f73744bf8a8006334ba2a309be5c27a4f05fe081897de3266f37238dea1170",
+      "signature": "QQwWB7nIurQJZYUJdWXuZs9s2sHPEQBvJSukhTb1obHtwBnqlAGxGMk_UJzScp49QSXxbj2dnw91vH2WHCSOaw"
+    },
+    "annOk": {
+      "v": 1,
+      "kind": "auth_ok",
+      "uid": "bf9861c45fd771142637ca6a8ec6b22ba848e4f0758311f9b173bc546aae65de"
+    },
+    "bobOk": {
+      "v": 1,
+      "kind": "auth_ok",
+      "uid": "83f73744bf8a8006334ba2a309be5c27a4f05fe081897de3266f37238dea1170"
+    }
+  },
+  "challenges": {
+    "ann": "duochat-peer-auth-v1\nduo\nbf9861c45fd771142637ca6a8ec6b22ba848e4f0758311f9b173bc546aae65de\ndevice-ann\na1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\nb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+    "bob": "duochat-peer-auth-v1\nduo\n83f73744bf8a8006334ba2a309be5c27a4f05fe081897de3266f37238dea1170\ndevice-bob\nb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\na1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+  },
+  "other": [
+    {
+      "frame": {
+        "v": 1,
+        "kind": "ping",
+        "at": 1700000000123
+      },
+      "parsed": {
+        "v": 1,
+        "kind": "ping",
+        "at": 1700000000123
+      }
+    },
+    {
+      "frame": {
+        "v": 1,
+        "kind": "pong",
+        "at": 1700000000123
+      },
+      "parsed": {
+        "v": 1,
+        "kind": "pong",
+        "at": 1700000000123
+      }
+    },
+    {
+      "frame": {
+        "v": 1,
+        "kind": "ack",
+        "messageId": "m-1",
+        "state": "DELIVERED",
+        "at": 5
+      },
+      "parsed": {
+        "v": 1,
+        "kind": "ack",
+        "messageId": "m-1",
+        "state": "DELIVERED",
+        "at": 5
+      }
+    },
+    {
+      "frame": {
+        "v": 1,
+        "kind": "ack",
+        "messageId": "m-1",
+        "state": "READ",
+        "at": 6
+      },
+      "parsed": {
+        "v": 1,
+        "kind": "ack",
+        "messageId": "m-1",
+        "state": "READ",
+        "at": 6
+      }
+    },
+    {
+      "frame": {
+        "v": 1,
+        "kind": "read",
+        "lastReadMessageId": "m-9",
+        "at": 7
+      },
+      "parsed": {
+        "v": 1,
+        "kind": "read",
+        "lastReadMessageId": "m-9",
+        "at": 7
+      }
+    }
+  ],
+  "rejected": [
+    {
+      "label": "short nonce",
+      "frame": {
+        "v": 1,
+        "kind": "hello",
+        "uid": "bf9861c45fd771142637ca6a8ec6b22ba848e4f0758311f9b173bc546aae65de",
+        "deviceId": "device-ann",
+        "publicKeyJwk": {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "Uc8IF7pvcRozSRkkKdFCb5slOPsdIBqXIhdgofU7S80",
+          "y": "tKBDXXrCyNVxGKO1z3TGzL0r-PT4nukAWfmE1ptutdk"
+        },
+        "dhJwk": {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "OyVbnLBhsYLY9xRJkEXDYQz_L532SLotLsmv-PKstiQ",
+          "y": "wJX41dT23t_LnQYG6RhIrWrupy2J4uw32tcwu90-reg"
+        },
+        "identityProof": "odExuabbRzvU5jxHj5m12snDb6D6d3CH8_4cVeUCHf5v2dvZdkfjirUfpOjBfJmrlNlq8nZFM6fSd2XSB7HAOg",
+        "nonce": "short"
+      },
+      "parsed": null
+    },
+    {
+      "label": "no device id",
+      "frame": {
+        "v": 1,
+        "kind": "hello",
+        "uid": "bf9861c45fd771142637ca6a8ec6b22ba848e4f0758311f9b173bc546aae65de",
+        "deviceId": "",
+        "publicKeyJwk": {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "Uc8IF7pvcRozSRkkKdFCb5slOPsdIBqXIhdgofU7S80",
+          "y": "tKBDXXrCyNVxGKO1z3TGzL0r-PT4nukAWfmE1ptutdk"
+        },
+        "dhJwk": {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "OyVbnLBhsYLY9xRJkEXDYQz_L532SLotLsmv-PKstiQ",
+          "y": "wJX41dT23t_LnQYG6RhIrWrupy2J4uw32tcwu90-reg"
+        },
+        "identityProof": "odExuabbRzvU5jxHj5m12snDb6D6d3CH8_4cVeUCHf5v2dvZdkfjirUfpOjBfJmrlNlq8nZFM6fSd2XSB7HAOg",
+        "nonce": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+      },
+      "parsed": null
+    },
+    {
+      "label": "short proof",
+      "frame": {
+        "v": 1,
+        "kind": "hello",
+        "uid": "bf9861c45fd771142637ca6a8ec6b22ba848e4f0758311f9b173bc546aae65de",
+        "deviceId": "device-ann",
+        "publicKeyJwk": {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "Uc8IF7pvcRozSRkkKdFCb5slOPsdIBqXIhdgofU7S80",
+          "y": "tKBDXXrCyNVxGKO1z3TGzL0r-PT4nukAWfmE1ptutdk"
+        },
+        "dhJwk": {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "OyVbnLBhsYLY9xRJkEXDYQz_L532SLotLsmv-PKstiQ",
+          "y": "wJX41dT23t_LnQYG6RhIrWrupy2J4uw32tcwu90-reg"
+        },
+        "identityProof": "xxxxxxxxxx",
+        "nonce": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+      },
+      "parsed": null
+    },
+    {
+      "label": "bad ack state",
+      "frame": {
+        "v": 1,
+        "kind": "ack",
+        "messageId": "m",
+        "state": "SENT",
+        "at": 1
+      },
+      "parsed": null
+    }
+  ]
+}
