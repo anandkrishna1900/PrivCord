@@ -40,6 +40,26 @@ pub fn hkdf_sha256<const N: usize>(
 /// PBKDF2-HMAC-SHA-256 into 32 bytes.
 pub fn pbkdf2_sha256(password: &[u8], salt: &[u8], iterations: u32) -> [u8; 32] {
     let mut out = blank::<32>();
-    pbkdf2::pbkdf2_hmac::<Sha256>(password, salt, iterations, &mut out);
+    // PBKDF2 0.13 needs digest 0.11; HKDF 0.12 above still needs sha2 0.10.
+    // k256 0.14 already re-exports the compatible SHA-256 implementation.
+    pbkdf2::pbkdf2_hmac::<k256::sha2::Sha256>(password, salt, iterations, &mut out);
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pbkdf2_sha256;
+    use privcord_domain::codec;
+
+    #[test]
+    fn pbkdf2_sha256_known_answers() {
+        assert_eq!(
+            codec::hex(&pbkdf2_sha256(b"password", b"salt", 1)),
+            "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b"
+        );
+        assert_eq!(
+            codec::hex(&pbkdf2_sha256(b"password", b"salt", 2)),
+            "ae4d0c95af6b46d32d0adff928f06dd02a303f8ef3c251dfd6e2d85a95474c43"
+        );
+    }
 }
