@@ -38,7 +38,7 @@ base64 = "0.22"
 sha2 = "0.10"
 hkdf = "0.12"
 hmac = "0.12"
-pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
+pbkdf2 = { version = "0.13", default-features = false, features = ["hmac"] }
 aes-gcm = "0.10"
 p256 = { version = "0.14", features = ["ecdsa", "ecdh", "arithmetic"] }
 k256 = { version = "0.14", default-features = false, features = ["schnorr", "arithmetic", "std"] }
