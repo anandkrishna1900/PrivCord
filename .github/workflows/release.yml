@@ -40,7 +40,7 @@ jobs:
           java-version: 17
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager --licenses > /dev/null || true
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
       - name: Build release bundle
         working-directory: apps/android
         run: ./gradlew :app:bundleRelease :app:assembleRelease --console=plain

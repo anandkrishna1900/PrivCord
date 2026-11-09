@@ -43,7 +43,7 @@ jobs:
         run: npm ci
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager --licenses > /dev/null || true
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
       - name: Build
         working-directory: apps/android
         run: ./gradlew :app:assembleClassicDebug --console=plain
