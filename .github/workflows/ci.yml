@@ -63,7 +63,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
       # The Nostr client is tested against an independent real relay (Python `nostr-relay`). Python 3.12 has prebuilt
       # wheels for its dependencies; the runner's default (3.14) tries to build coincurve from source and fails.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: matrix.os == 'ubuntu-latest'
         with:
           python-version: '3.12'
