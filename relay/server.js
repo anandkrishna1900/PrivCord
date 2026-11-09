@@ -1,4 +1,4 @@
-// DuoChat relay: a mailbox for sealed blobs. It never parses, logs or
+// PrivCord relay: a mailbox for sealed blobs. It never parses, logs or
 // decrypts blob contents; it sees mailbox hashes, sizes and timing only.
 import { createServer } from 'node:http';
 import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync, existsSync } from 'node:fs';
@@ -20,12 +20,18 @@ export function startRelay({
   rateLimit = 120, // frames per window per IP
   rateWindowMs = 60_000,
   sweepMs = 500,
+  trustProxy = false, // read the client IP from X-Forwarded-For (only behind a proxy you control)
+  maxQueued = 50_000, // total stored messages across all mailboxes
+  maxConnsPerIp = 20,
+  heartbeatMs = 30_000,
+  compactMs = 10 * 60_000,
 } = {}) {
   /** @type {Map<string, Map<string, {id:string, blob:string, ts:number, exp:number}>>} persisted msg items */
   const queues = new Map();
   /** @type {Map<string, Set<import('ws').WebSocket>>} */
   const subs = new Map();
   const rates = new Map(); // ip -> {n, reset}
+  const conns = new Map(); // ip -> open connection count
   const stats = { connections: 0, put: 0, delivered: 0, rejected: 0 };
   const logFile = join(dataDir, 'queue.jsonl');
 
@@ -62,17 +68,31 @@ export function startRelay({
   // Rewrite the log from live state: drops deleted/expired lines.
   function compact() {
     if (!allowStoreForward) return;
-    const lines = [];
-    for (const [mailbox, q] of queues) {
-      for (const it of q.values()) lines.push(JSON.stringify({ op: 'put', mailbox, ...it }));
+    try {
+      const now = Date.now();
+      const lines = [];
+      for (const [mailbox, q] of queues) {
+        for (const it of q.values()) {
+          if (it.exp > now) lines.push(JSON.stringify({ op: 'put', mailbox, ...it }));
+        }
+      }
+      const tmp = logFile + '.tmp';
+      writeFileSync(tmp, lines.length ? lines.join('\n') + '\n' : '');
+      renameSync(tmp, logFile);
+    } catch (err) {
+      console.error('privcord-relay: compaction failed:', err && err.message ? err.message : err);
     }
-    const tmp = logFile + '.tmp';
-    writeFileSync(tmp, lines.length ? lines.join('\n') + '\n' : '');
-    renameSync(tmp, logFile);
   }
 
+  // Returns false if the record could not be written to disk.
   function persist(rec) {
-    appendFileSync(logFile, JSON.stringify(rec) + '\n');
+    try {
+      appendFileSync(logFile, JSON.stringify(rec) + '\n');
+      return true;
+    } catch (err) {
+      console.error('privcord-relay: persist failed:', err && err.message ? err.message : err);
+      return false;
+    }
   }
 
   function sweep() {
@@ -86,6 +106,9 @@ export function startRelay({
   const sweeper = setInterval(sweep, sweepMs);
   sweeper.unref();
 
+  const compactor = allowStoreForward ? setInterval(compact, compactMs) : null;
+  compactor?.unref();
+
   const send = (ws, obj) => ws.readyState === 1 && ws.send(JSON.stringify(obj));
   const str = (v) => typeof v === 'string' && v.length > 0 && v.length <= MAX_FIELD;
 
@@ -94,6 +117,17 @@ export function startRelay({
     let r = rates.get(ip);
     if (!r || r.reset <= now) rates.set(ip, (r = { n: 0, reset: now + rateWindowMs }));
     return ++r.n > rateLimit;
+  }
+
+  function clientIp(req) {
+    if (trustProxy) {
+      const xff = req.headers['x-forwarded-for'];
+      if (typeof xff === 'string' && xff) {
+        const first = xff.split(',')[0].trim();
+        if (first) return first;
+      }
+    }
+    return req.socket.remoteAddress ?? 'unknown';
   }
 
   function handle(ws, ip, raw) {
@@ -136,12 +170,18 @@ export function startRelay({
         if (m.kind === 'msg') {
           if (!allowStoreForward) return fail('store-and-forward disabled');
           let q = queues.get(m.mailbox);
-          if (!q) queues.set(m.mailbox, (q = new Map()));
-          if (!q.has(m.id)) {
-            if (q.size >= MAX_PER_MAILBOX) return fail('mailbox full');
+          const isNew = !q?.has(m.id);
+          if (isNew) {
+            if (q && q.size >= MAX_PER_MAILBOX) return fail('mailbox full');
+            if (queued() >= maxQueued) return fail('relay full');
+            if (!q) { q = new Map(); queues.set(m.mailbox, q); }
             const it = { id: m.id, blob: m.blob, ts, exp: ts + m.ttl * 1000 };
             q.set(m.id, it);
-            persist({ op: 'put', mailbox: m.mailbox, ...it });
+            if (!persist({ op: 'put', mailbox: m.mailbox, ...it })) {
+              q.delete(m.id);
+              if (q.size === 0) queues.delete(m.mailbox);
+              return fail('storage error');
+            }
           }
         }
         // sig: live delivery only, never stored.
@@ -169,18 +209,50 @@ export function startRelay({
   const http = createServer((req, res) => {
     if (req.url === '/healthz') {
       res.writeHead(200, { 'content-type': 'application/json' });
+      // Requests that came through the proxy carry X-Forwarded-For: give them a minimal answer.
+      if (req.headers['x-forwarded-for']) return res.end(JSON.stringify({ ok: true }));
       return res.end(JSON.stringify({ ok: true, queued: queued(), mailboxes: subs.size, ...stats }));
     }
     res.writeHead(404).end();
   });
   const wss = new WebSocketServer({ server: http, maxPayload: MAX_BLOB + 1024 });
+
+  const heartbeat = setInterval(() => {
+    for (const ws of wss.clients) {
+      if (ws.isAlive === false) { ws.terminate(); continue; }
+      ws.isAlive = false;
+      try { ws.ping(); } catch { /* socket already closing */ }
+    }
+  }, heartbeatMs);
+  heartbeat.unref();
+
   wss.on('connection', (ws, req) => {
     // IP is used in memory for rate limiting only; never logged or stored.
-    const ip = req.socket.remoteAddress ?? 'unknown';
+    const ip = clientIp(req);
+    const open = conns.get(ip) ?? 0;
+    if (open >= maxConnsPerIp) {
+      stats.rejected++;
+      ws.close(1013, 'too many connections');
+      return;
+    }
+    conns.set(ip, open + 1);
     ws.mailboxes = new Set();
+    ws.isAlive = true;
     stats.connections++;
-    ws.on('message', (raw) => handle(ws, ip, raw));
+    ws.on('pong', () => { ws.isAlive = true; });
+    ws.on('message', (raw) => {
+      ws.isAlive = true;
+      try {
+        handle(ws, ip, raw);
+      } catch (err) {
+        stats.rejected++;
+        console.error('privcord-relay: handler error:', err && err.message ? err.message : err);
+        send(ws, { op: 'err', reason: 'internal error' });
+      }
+    });
     ws.on('close', () => {
+      const left = (conns.get(ip) ?? 1) - 1;
+      if (left <= 0) conns.delete(ip); else conns.set(ip, left);
       for (const mb of ws.mailboxes) {
         const set = subs.get(mb);
         set?.delete(ws);
@@ -196,6 +268,8 @@ export function startRelay({
         port: http.address().port,
         async close() {
           clearInterval(sweeper);
+          clearInterval(heartbeat);
+          if (compactor) clearInterval(compactor);
           for (const ws of wss.clients) ws.close(1001);
           await new Promise((r) => wss.close(r));
           await new Promise((r) => { http.close(r); http.closeAllConnections?.(); });
