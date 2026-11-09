@@ -349,13 +349,13 @@ impl FileAssembler {
     /// Start a transfer, or say why it is refused.
     pub fn begin(&mut self, offer: FileOffer) -> BeginOutcome {
         let key = offer.message_id.to_string();
-        if self.active.contains_key(&key) {
-            return BeginOutcome::Ok;
-        }
+        // A repeated offer is the sender starting over (its retry timer ran out): the link is ordered, so whatever
+        // chunks of the first attempt are still ahead of it have already been applied. Start again from nothing.
+        let restart = self.active.remove(&key).is_some();
         if validate_file_size(offer.size).is_err() {
             return BeginOutcome::TooLarge;
         }
-        if self.active.len() >= MAX_INCOMING_PER_PEER {
+        if !restart && self.active.len() >= MAX_INCOMING_PER_PEER {
             return BeginOutcome::Busy;
         }
         let capacity = offer.size;

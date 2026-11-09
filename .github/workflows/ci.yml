@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -45,7 +45,7 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -63,7 +63,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
       # The Nostr client is tested against an independent real relay (Python `nostr-relay`). Python 3.12 has prebuilt
       # wheels for its dependencies; the runner's default (3.14) tries to build coincurve from source and fails.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: matrix.os == 'ubuntu-latest'
         with:
           python-version: '3.12'
@@ -123,7 +123,7 @@ jobs:
     needs: node
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -149,7 +149,7 @@ jobs:
           distribution: temurin
           java-version: 17
       # The Android interop tests start the real relay and a Nostr relay with node.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: Relay dependencies
@@ -171,7 +171,7 @@ jobs:
           export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
           cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -t x86 \
             -o apps/android/app/src/main/jniLibs build -p privcord-ffi --release --locked
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
       - name: Test and assemble
         working-directory: apps/android
         run: ./gradlew :app:testClassicDebugUnitTest :app:assembleClassicDebug :app:assembleRustDebug --console=plain
@@ -193,7 +193,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm

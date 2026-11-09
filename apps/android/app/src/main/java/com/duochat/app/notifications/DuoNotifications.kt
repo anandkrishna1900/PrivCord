@@ -33,7 +33,8 @@ object DuoNotifications {
     }
 
     fun showNotice(context: Context, notice: com.duochat.app.engine.IncomingNotice, settings: AppSettings) {
-        val body = if (notice.isMessage && !settings.notificationPreviews) "Open DuoChat to read it." else preview(notice.body)
+        // With the app lock on, a message must not be readable from the lock screen either.
+        val body = if (notice.isMessage && (!settings.notificationPreviews || settings.appLock)) "Open DuoChat to read it." else preview(notice.body)
         show(
             context = context,
             notificationId = notice.id.hashCode(),
@@ -78,6 +79,7 @@ object DuoNotifications {
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
         try {
