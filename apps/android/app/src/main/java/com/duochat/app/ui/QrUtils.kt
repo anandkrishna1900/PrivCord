@@ -5,6 +5,17 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+import android.Manifest
+import android.content.pm.PackageManager
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 
 /** Shared QR-code bitmap helper used by ContactDialog and ManualConnectDialog. */
 internal fun qrBitmap(text: String, size: Int = 900): Bitmap? = try {
@@ -32,3 +43,37 @@ internal fun qrBitmap(text: String, size: Int = 900): Bitmap? = try {
     null
 }
 
+
+/** QR-only, upright, no beep: the options every scan in the app uses. */
+internal fun qrScanOptions(prompt: String): ScanOptions = ScanOptions().apply {
+    setDesiredBarcodeFormats(listOf("QR_CODE"))
+    setPrompt(prompt)
+    setBeepEnabled(false)
+    setOrientationLocked(true)
+    setCaptureActivity(PortraitCaptureActivity::class.java)
+}
+
+/**
+ * Returns a function that opens the QR scanner. It asks for the camera first and says so if it is refused, so the user
+ * never lands on a black viewfinder; [onScanned] gets the text of the code.
+ */
+@Composable
+internal fun rememberQrScanner(prompt: String, onScanned: (String) -> Unit): () -> Unit {
+    val context = LocalContext.current
+    val scanner = rememberLauncherForActivityResult(ScanContract()) { result ->
+        result.contents?.takeIf { it.isNotBlank() }?.let(onScanned)
+    }
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) scanner.launch(qrScanOptions(prompt))
+        else Toast.makeText(context, "Allow the camera in Settings to scan a code, or type the six words instead.", Toast.LENGTH_LONG).show()
+    }
+    return remember(prompt) {
+        {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                scanner.launch(qrScanOptions(prompt))
+            } else {
+                permission.launch(Manifest.permission.CAMERA)
+            }
+        }
+    }
+}

@@ -474,6 +474,12 @@ pub struct LastMessageDto {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ChannelPersonDto {
+    pub uid: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct SnapshotDto {
     pub seq: u64,
     pub own_uid: Option<String>,
@@ -488,6 +494,8 @@ pub struct SnapshotDto {
     pub answer: Option<AnswerDto>,
     pub lookup_pending: bool,
     pub queued: u64,
+    /// The name each person gave in a public channel (they are not contacts).
+    pub channel_people: Vec<ChannelPersonDto>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -637,6 +645,19 @@ pub enum EventDto {
         message_id: String,
         percent: u32,
     },
+    /// A file has started to arrive in `conversation` (it is not stored until it is whole).
+    FileIncoming {
+        conversation: String,
+        message_id: String,
+        name: String,
+        size: u64,
+    },
+    /// A file was handed to the link to `peer`, as `frames` frames.
+    FileQueued {
+        peer: String,
+        message_id: String,
+        frames: u32,
+    },
     /// An emergency deletion ran; ask for its report.
     Wiped,
     Lagged {
@@ -713,6 +734,26 @@ fn event_dto(e: EngineEvent) -> EventDto {
         } => EventDto::FileProgress {
             message_id: message_id.to_string(),
             percent: u32::from(percent),
+        },
+        EngineEvent::FileIncoming {
+            conversation,
+            message_id,
+            name,
+            size,
+        } => EventDto::FileIncoming {
+            conversation: conversation.storage_key(),
+            message_id: message_id.to_string(),
+            name,
+            size: size as u64,
+        },
+        EngineEvent::FileQueued {
+            peer,
+            message_id,
+            frames,
+        } => EventDto::FileQueued {
+            peer: peer.to_string(),
+            message_id: message_id.to_string(),
+            frames,
         },
         EngineEvent::SignalReceived { peer, message } => {
             let (kind, sdp) = match message {
@@ -1080,6 +1121,26 @@ impl PrivcordEngine {
         self.misc(Op::React { id, emoji })
     }
 
+    /// Send one of your own messages again from the start (it was refused, or never got through).
+    pub fn retry_message(&self, message_id: String) -> Result<(), FfiError> {
+        let id = MessageId::new(message_id).map_err(|_| FfiError::InvalidArgument)?;
+        self.misc(Op::RetryMessage { id })
+    }
+
+    /// Tell the engine how a link that is already up is really routed (found out after it opened).
+    pub fn set_link_path(&self, peer: String, path: PathKind) -> Result<(), FfiError> {
+        self.misc(Op::SetLinkPath {
+            peer: user(&peer)?,
+            path: path.into(),
+        })
+    }
+
+    /// Dial again at the next tick instead of waiting out the retry delay: for one friend, or for everyone not linked.
+    pub fn reset_dial_backoff(&self, peer: Option<String>) -> Result<(), FfiError> {
+        let peer = peer.map(|p| user(&p)).transpose()?;
+        self.misc(Op::ResetDialBackoff { peer })
+    }
+
     /// The 32-byte secret shared with a friend. Bluetooth uses it only to choose which advertisements to accept; do not
     /// store it or send it anywhere.
     pub fn ble_secret(&self, peer: String) -> Result<Vec<u8>, FfiError> {
@@ -1315,6 +1376,14 @@ impl PrivcordEngine {
                 })
                 .collect(),
             queued: u64::try_from(s.queued).unwrap_or(u64::MAX),
+            channel_people: s
+                .channel_people
+                .iter()
+                .map(|(u, n)| ChannelPersonDto {
+                    uid: u.to_string(),
+                    name: n.clone(),
+                })
+                .collect(),
         })
     }
 

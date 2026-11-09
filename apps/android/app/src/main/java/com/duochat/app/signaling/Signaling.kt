@@ -161,6 +161,11 @@ class SignalingHub(private val transports: List<SignalingTransport>) {
 
     fun remove(via: SignalingTransport, mailbox: String, id: String) = via.remove(mailbox, id)
 
+    /** Which servers are reachable and what they said, in words (for "could not find that invite"). */
+    fun describe(): String = transports.joinToString(" | ") { t ->
+        (t as? NostrTransport)?.describe() ?: (t.name + " " + t.status().name.lowercase())
+    }
+
     fun status(): SignalingStatus {
         val states = transports.map { it.status() }
         return when {

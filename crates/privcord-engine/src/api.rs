@@ -134,6 +134,8 @@ pub struct Snapshot {
     pub lookup_pending: bool,
     pub messages: Vec<(ConversationId, Vec<ChatMessage>)>,
     pub queued: usize,
+    /// The name each person gave in a public channel (they are not contacts).
+    pub channel_people: Vec<(UserId, String)>,
     /// Type and size of every file message that is stored.
     pub files: Vec<(MessageId, privcord_ports::FileInfo)>,
 }
@@ -205,6 +207,19 @@ pub enum EngineEvent {
     FileProgress {
         message_id: MessageId,
         percent: u8,
+    },
+    /// A file from `conversation` has started to arrive (so the chat can show it before it is whole).
+    FileIncoming {
+        conversation: ConversationId,
+        message_id: MessageId,
+        name: String,
+        size: usize,
+    },
+    /// A file has been handed to the link for `peer`: `frames` frames, the first of which is the offer.
+    FileQueued {
+        peer: UserId,
+        message_id: MessageId,
+        frames: u32,
     },
     MessageRefused {
         message_id: MessageId,

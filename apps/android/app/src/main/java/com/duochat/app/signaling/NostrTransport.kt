@@ -19,7 +19,31 @@ class NostrTransport(
     private var onBlob: ((SealedBlob, String) -> Unit)? = null
     private val seen = LinkedHashSet<String>()
     private val subId = "duo-" + java.util.UUID.randomUUID().toString().take(8)
-    private val sockets = relays.map { url -> ManagedSocket(client, url, scope, ::opened) { handle(it) } }
+    private val urls = relays
+    private val sockets = relays.map { url -> ManagedSocket(client, url, scope, ::opened) { handle(url, it) } }
+
+    /** What relays said about our events and requests (refusals, notices), newest last. For the diagnosis only. */
+    private val notes = java.util.concurrent.ConcurrentLinkedQueue<String>()
+
+    private fun note(text: String) {
+        android.util.Log.w("RustEngine", "nostr $text")
+        notes.add(text)
+        while (notes.size > 6) notes.poll()
+    }
+
+    /** One line per relay (connected or not) plus the last refusals: shown when a lookup finds nothing. */
+    fun describe(): String {
+        val relays = urls.indices.joinToString(", ") { i ->
+            val state = when {
+                sockets[i].isOpen -> "connected"
+                sockets[i].isConnecting -> "connecting"
+                else -> "not reachable"
+            }
+            urls[i].removePrefix("wss://") + " " + state
+        }
+        val said = notes.toList().takeLast(2)
+        return relays + if (said.isEmpty()) "" else " · relay said: " + said.joinToString("; ")
+    }
 
     override fun start(mailbox: String, onBlob: (SealedBlob, String) -> Unit) {
         this.mailbox = mailbox
@@ -36,9 +60,14 @@ class NostrTransport(
         s.send(JSONArray(listOf("REQ", subId, filter)).toString())
     }
 
-    private fun handle(text: String) {
+    private fun handle(url: String, text: String) {
         try {
             val frame = JSONArray(text)
+            when (frame.optString(0)) {
+                "OK" -> if (!frame.optBoolean(2, true)) note(url.removePrefix("wss://") + " refused an event: " + frame.optString(3))
+                "NOTICE" -> note(url.removePrefix("wss://") + " notice: " + frame.optString(1))
+                "CLOSED" -> note(url.removePrefix("wss://") + " closed the subscription: " + frame.optString(2))
+            }
             if (frame.optString(0) != "EVENT" || frame.optString(1) != subId) return
             val event = NostrEvent.fromJson(frame.getJSONObject(2)) ?: return
             if (!NostrCodec.verify(event)) return

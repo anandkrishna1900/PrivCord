@@ -29,6 +29,14 @@ pub fn packet_id(blob: &SealedBlob) -> String {
 }
 
 impl MeshPacket {
+    /// What this phone remembers a packet by: the wire id plus a hash of the whole blob. The wire id is only a prefix of
+    /// the signature, so a neighbour could send junk with a real message's id first; keyed this way the junk and the
+    /// real message are different packets and the real one still gets through.
+    fn key(&self) -> String {
+        let body = serde_json::to_string(&self.blob).unwrap_or_default();
+        format!("{}:{}", self.id, crate::files::sha256_b64(body.as_bytes()))
+    }
+
     pub fn new(blob: SealedBlob, ttl: u32) -> Self {
         Self {
             v: 1,
@@ -75,7 +83,9 @@ impl MeshPacket {
 
 #[derive(Debug, Clone)]
 pub struct MeshOptions {
-    /// How many different messages one sender may put into the mesh per minute before we stop passing them on.
+    /// How many new messages one neighbour may hand us per minute before we stop taking them. This is counted per radio
+    /// link, not per sender name: the name inside a message is not verified by relays, so anyone could use up another
+    /// person's allowance by writing it into junk.
     pub per_sender_per_minute: usize,
     pub seen_capacity: usize,
     pub carry_ms: u64,
@@ -85,7 +95,7 @@ pub struct MeshOptions {
 impl Default for MeshOptions {
     fn default() -> Self {
         Self {
-            per_sender_per_minute: 30,
+            per_sender_per_minute: 60,
             seen_capacity: 4000,
             carry_ms: MESH_CARRY_MS,
             carry_capacity: 300,
@@ -109,6 +119,8 @@ pub struct HandleResult {
 #[derive(Debug)]
 struct Carried {
     packet: MeshPacket,
+    /// Who handed it to us ("" for a message we wrote ourselves).
+    via: String,
     stored_at: u64,
     sent_to: HashSet<String>,
 }
@@ -153,9 +165,9 @@ impl MeshNode {
     /// A message we wrote: send it to every neighbour and keep it for ones that arrive later.
     pub fn inject(&mut self, blob: SealedBlob, now_ms: u64) -> Vec<Outgoing> {
         let packet = MeshPacket::new(blob, MESH_MAX_TTL);
-        self.remember(&packet.id);
+        self.remember(&packet.key());
         let links = self.sorted_links();
-        self.carry(packet.clone(), now_ms, links.iter().cloned());
+        self.carry(packet.clone(), "", now_ms, links.iter().cloned());
         links
             .into_iter()
             .map(|link| Outgoing {
@@ -170,13 +182,15 @@ impl MeshNode {
         let Some(packet) = MeshPacket::parse(raw) else {
             return HandleResult::default();
         };
-        if self.seen_set.contains(&packet.id) {
+        let key = packet.key();
+        if self.seen_set.contains(&key) {
             return HandleResult::default();
         }
-        self.remember(&packet.id);
-        if !self.allow_sender(&packet.blob.from, now_ms) {
+        // Over the sender's limit: not remembered, so it is accepted when it comes round again after the window.
+        if !self.allow_sender(from, now_ms) {
             return HandleResult::default();
         }
+        self.remember(&key);
         let mut forward = Vec::new();
         if packet.ttl > 1 {
             let next = MeshPacket {
@@ -190,7 +204,7 @@ impl MeshNode {
                 .collect();
             let mut sent: Vec<String> = vec![from.to_owned()];
             sent.extend(targets.iter().cloned());
-            self.carry(next.clone(), now_ms, sent);
+            self.carry(next.clone(), from, now_ms, sent);
             forward.extend(targets.into_iter().map(|link| Outgoing {
                 link,
                 packet: next.clone(),
@@ -247,6 +261,7 @@ impl MeshNode {
     fn carry(
         &mut self,
         packet: MeshPacket,
+        via: &str,
         now_ms: u64,
         sent_to: impl IntoIterator<Item = String>,
     ) {
@@ -254,18 +269,34 @@ impl MeshNode {
             return;
         }
         self.expire(now_ms);
-        let id = packet.id.clone();
-        self.carried.retain(|(k, _)| *k != id);
+        let key = packet.key();
+        self.carried.retain(|(k, _)| *k != key);
         self.carried.push((
-            id,
+            key,
             Carried {
                 packet,
+                via: via.to_owned(),
                 stored_at: now_ms,
                 sent_to: sent_to.into_iter().collect(),
             },
         ));
+        // Full: drop the oldest packet of whichever neighbour has handed us the most, so one noisy (or hostile) neighbour
+        // cannot push everybody else's messages out of the buffer. Messages we wrote ourselves go last.
         while self.carried.len() > self.options.carry_capacity {
-            self.carried.remove(0);
+            let mut count: HashMap<&str, usize> = HashMap::new();
+            for (_, c) in &self.carried {
+                if !c.via.is_empty() {
+                    *count.entry(c.via.as_str()).or_default() += 1;
+                }
+            }
+            let heaviest = count
+                .into_iter()
+                .max_by_key(|(via, n)| (*n, std::cmp::Reverse(*via)))
+                .map(|(via, _)| via.to_owned());
+            let at = heaviest
+                .and_then(|v| self.carried.iter().position(|(_, c)| c.via == v))
+                .unwrap_or(0);
+            self.carried.remove(at);
         }
     }
 

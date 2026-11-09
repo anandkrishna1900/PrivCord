@@ -15,8 +15,6 @@ import com.duochat.app.notifications.DuoNotifications
 import com.duochat.app.security.AndroidIdentityManager
 import com.duochat.app.security.LOCAL_ID
 import com.duochat.app.security.LocalCrypto
-import android.net.ConnectivityManager
-import android.net.Network
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,23 +52,26 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _chat = MutableStateFlow<ChatState?>(null)
     val chat: StateFlow<ChatState?> = _chat.asStateFlow()
 
-    private var engine: com.duochat.app.engine.ChatEngineApi? = null
-    private var startJob: Job? = null
+    // The engine lives in the process (EngineHost), so it can outlive this screen when it is asked to keep running.
+    private var engine: com.duochat.app.engine.ChatEngineApi?
+        get() = com.duochat.app.engine.EngineHost.engine
+        set(value) { com.duochat.app.engine.EngineHost.engine = value }
     private var stateJob: Job? = null
     private var visible = false
 
-    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
-        override fun onAvailable(network: Network) {
-            // A new network is a reason to retry signaling now instead of waiting out the backoff.
-            viewModelScope.launch { engine?.onNetworkAvailable() }
-        }
+    init {
+        attachEngine()
+        com.duochat.app.engine.EngineHost.watchNetwork(application)
     }
 
-    init {
-        startEngine()
-        runCatching {
-            application.getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(networkCallback)
+    /** Picks up the engine that kept running after the last screen closed, or starts one. */
+    private fun attachEngine() {
+        val running = engine
+        if (running == null) {
+            startEngine()
+            return
         }
+        stateJob = viewModelScope.launch { running.state.collect { _chat.value = it } }
     }
 
     /** First run / restore: derive the identity from the 12-word phrase, then start the engine. */
@@ -97,12 +98,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun startEngine() {
         stopEngine()
         val application = getApplication<Application>()
+        val scope = com.duochat.app.engine.EngineHost.newScope()
         val crypto = LocalCrypto(application, LOCAL_ID)
         val store = MessageStore(database.dao(), crypto, java.io.File(application.filesDir, "privcord-files"))
         val created: com.duochat.app.engine.ChatEngineApi = if (com.duochat.app.BuildConfig.RUST_ENGINE) {
             com.duochat.app.rustcore.RustChatEngine(
                 app = application,
-                scope = viewModelScope,
+                scope = scope,
                 conversationId = AppConfig.conversationId,
                 networkConfig = { settingsRepository.settings.value.network },
                 ownName = { settingsRepository.settings.value.displayName },
@@ -111,7 +113,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 initialGroupOnly = settingsRepository.settings.value.groupOnly,
             )
         } else ChatEngine(
-            scope = viewModelScope,
+            scope = scope,
             handshakeId = AppConfig.conversationId,
             store = store,
             identityManager = identityManager,
@@ -131,16 +133,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         stateJob = viewModelScope.launch {
             created.state.collect { _chat.value = it }
         }
-        startJob = viewModelScope.launch { created.start() }
+        com.duochat.app.engine.EngineHost.startJob = scope.launch { created.start() }
     }
 
     private fun stopEngine() {
-        startJob?.cancel()
         stateJob?.cancel()
-        startJob = null
         stateJob = null
-        engine?.stop()
-        engine = null
+        com.duochat.app.engine.EngineHost.stop()
         _chat.value = null
     }
 
@@ -372,10 +371,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
-        runCatching {
-            getApplication<Application>().getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(networkCallback)
+        if (settingsRepository.settings.value.keepRunning && engine != null) {
+            // The screen is gone but the engine is asked to keep running: tell it nobody is looking (so messages notify)
+            // and leave it going; the next screen attaches to it.
+            engine?.setVisible(false)
+            engine?.setOpenChat(null)
+            stateJob?.cancel()
+        } else {
+            stopEngine()
         }
-        stopEngine()
         super.onCleared()
     }
 }

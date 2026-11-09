@@ -25,6 +25,7 @@ use privcord_crypto::{
     secure_channel::{Data, Hello, SecureChannel},
     CryptoError,
 };
+use privcord_domain::{blob::SealedBlob, signaling::PutKind};
 use privcord_domain::{
     channel::normalize_channel_name,
     files::{file_chunks, AssembleResult, BeginOutcome, FileAssembler, FileChunk, FileOffer},
@@ -49,7 +50,7 @@ use privcord_ports::{
 };
 use serde_json::{json, Value};
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     sync::Arc,
 };
 use zeroize::Zeroizing;
@@ -69,6 +70,10 @@ pub use invites::InvitePreview;
 pub const MAX_FRAME_BYTES: usize = 128 * 1024;
 /// How long to wait for a delivery receipt before sending a message again.
 pub const RETRY_AFTER_MS: i64 = 20_000;
+/// How long a file is left to arrive (and be acknowledged) before it is sent again.
+pub const FILE_RETRY_AFTER_MS: i64 = 120_000;
+/// How long to wait before offering a file again to someone who was busy receiving others.
+const BUSY_RETRY_MS: i64 = 8_000;
 /// How long a hello that arrived early stays valid.
 const EARLY_HELLO_MS: i64 = 10_000;
 /// A dial request counts as in progress for this long unless the link comes up or fails sooner.
@@ -77,6 +82,7 @@ const KV_DEVICE_ID: &str = "device_id";
 const KV_GROUP_ONLY: &str = "settings.group_only";
 const KV_GROUPS: &str = "groups.v1";
 const KV_CHANNELS: &str = "channels.v1";
+const KV_CHANNEL_PEOPLE: &str = "channel.people.v1";
 
 /// Everything the engine reaches the outside world through.
 pub struct Ports {
@@ -137,6 +143,8 @@ struct Peer {
     /// Dial bookkeeping for the reconnect backoff.
     attempts: u32,
     last_attempt_at: i64,
+    /// Frames in a row that failed to decrypt: a link that only produces those is out of step and is restarted.
+    bad_frames: u32,
 }
 
 impl Peer {
@@ -152,6 +160,7 @@ impl Peer {
             last_ping_at: 0,
             attempts: 0,
             last_attempt_at: 0,
+            bad_frames: 0,
         }
     }
     fn ready(&self) -> bool {
@@ -185,6 +194,10 @@ pub struct Core {
     mesh: MeshNode,
     invites: invites::InviteState,
     sealed: signaling::SealedState,
+    /// Channel mailboxes we are listening on (the adapter opens the sockets).
+    channel_subscribed: HashSet<String>,
+    /// The name each person gave in a channel message (they are not contacts).
+    channel_people: BTreeMap<UserId, String>,
     /// Group messages that arrived before we knew the group: held for a minute, then dropped.
     pending_group: PendingGroupBuffer<Value>,
     /// Everyone's reactions, per message.
@@ -238,6 +251,8 @@ impl Core {
             mesh: MeshNode::default(),
             invites: invites::InviteState::default(),
             sealed: signaling::SealedState::default(),
+            channel_subscribed: HashSet::new(),
+            channel_people: BTreeMap::new(),
             pending_group: PendingGroupBuffer::default(),
             reactions: HashMap::new(),
             deleted: std::collections::HashSet::new(),
@@ -273,6 +288,8 @@ impl Core {
         self.messages.clear();
         self.reactions.clear();
         self.channels.clear();
+        self.channel_subscribed.clear();
+        self.channel_people.clear();
         self.groups = None;
         for stored in self.ports.storage.contacts()? {
             if let Some(contact) = ContactCard::decode(&stored.card).filter(|c| c.uid == stored.uid)
@@ -311,6 +328,15 @@ impl Core {
                 for n in names {
                     if let Some(name) = normalize_channel_name(&n) {
                         self.channels.insert(name.clone(), derive_channel(&name)?);
+                    }
+                }
+            }
+        }
+        if let Some(bytes) = self.ports.storage.kv(KV_CHANNEL_PEOPLE)? {
+            if let Ok(list) = serde_json::from_slice::<Vec<(String, String)>>(&bytes) {
+                for (u, n) in list {
+                    if let Ok(uid) = UserId::new(u) {
+                        self.channel_people.insert(uid, n);
                     }
                 }
             }
@@ -730,7 +756,10 @@ impl Core {
                 };
                 match c.decrypt(&data) {
                     Ok(v) => v,
-                    Err(_) => return,
+                    Err(_) => {
+                        self.bad_frame(peer);
+                        return;
+                    }
                 }
             }
             Some(Session::Layered(l)) => {
@@ -739,7 +768,10 @@ impl Core {
                 };
                 match l.channel.decrypt(&data) {
                     Ok(v) => v,
-                    Err(_) => return,
+                    Err(_) => {
+                        self.bad_frame(peer);
+                        return;
+                    }
                 }
             }
             // Transport-encrypted: the frame is already plain JSON.
@@ -747,8 +779,25 @@ impl Core {
             None => return,
         };
         // Anything that decrypted and passed the counter check is proof the other side is alive.
+        if let Some(p) = self.peers.get_mut(peer) {
+            p.bad_frames = 0;
+        }
         self.heard_from(peer);
         self.dispatch(peer, &inner);
+    }
+
+    /// A frame would not decrypt. One is noise; several in a row mean the two ends are out of step (a lost frame, a
+    /// replayed counter), so the link is closed and made again instead of staying up and deaf.
+    fn bad_frame(&mut self, peer: &UserId) {
+        let Some(p) = self.peers.get_mut(peer) else {
+            return;
+        };
+        p.bad_frames += 1;
+        if p.bad_frames >= 20 {
+            p.bad_frames = 0;
+            self.fail(peer, ConnectionFailure::AuthenticationFailed);
+            self.ports.transport.close(peer);
+        }
     }
 
     fn heard_from(&mut self, peer: &UserId) {
@@ -1060,34 +1109,65 @@ impl Core {
     }
 
     fn on_declined(&mut self, peer: &UserId, frame: &Value) {
-        let Some((id, _reason)) = parse_declined_frame(frame) else {
+        let Some((id, reason)) = parse_declined_frame(frame) else {
             return;
         };
         let ours = self.is_ours_to(&id, peer);
         if !ours {
             return;
         }
-        let ops = [
-            StorageOp::SetDelivery {
+        // "Busy" is not a refusal of the message, only of this moment (they are already receiving other files): keep it
+        // queued and offer it again shortly.
+        if reason == DeclineReason::Busy {
+            let next_try = self.now() + BUSY_RETRY_MS;
+            if let Some(entry) = self
+                .outbox
+                .iter_mut()
+                .find(|o| o.message_id == id && &o.recipient == peer)
+            {
+                entry.next_try_ms = next_try;
+                let saved = entry.clone();
+                let _ = self.ports.storage.apply(&[StorageOp::PutOutbox(saved)]);
+            }
+            return;
+        }
+        let in_group = matches!(
+            self.messages.get(&id).map(|m| &m.conversation),
+            Some(ConversationId::Group(_))
+        );
+        let others_pending = self
+            .outbox
+            .iter()
+            .any(|o| o.message_id == id && &o.recipient != peer);
+        let current = self.messages.get(&id).map(|m| m.message.delivery_state);
+        // In a group one person refusing does not make the message a failure for everybody else: it only fails when
+        // nobody else has it and nobody else is still to get it.
+        let fail = !in_group
+            || (!others_pending
+                && matches!(current, Some(DeliveryState::Queued | DeliveryState::Sent)));
+        let mut ops = vec![StorageOp::RemoveOutbox {
+            message_id: id.clone(),
+            recipient: peer.clone(),
+        }];
+        if fail {
+            ops.push(StorageOp::SetDelivery {
                 id: id.clone(),
                 state: DeliveryState::Failed,
                 read_at: None,
-            },
-            StorageOp::RemoveOutbox {
-                message_id: id.clone(),
-                recipient: peer.clone(),
-            },
-        ];
+            });
+        }
         if self.ports.storage.apply(&ops).is_err() {
             return;
         }
         self.outbox
             .retain(|o| !(o.message_id == id && &o.recipient == peer));
-        if let Some(m) = self.messages.get_mut(&id) {
-            m.message.delivery_state = DeliveryState::Failed;
+        if fail {
+            if let Some(m) = self.messages.get_mut(&id) {
+                m.message.delivery_state = DeliveryState::Failed;
+            }
+            self.hub
+                .publish(EngineEvent::MessageRefused { message_id: id });
         }
-        self.hub
-            .publish(EngineEvent::MessageRefused { message_id: id });
     }
 
     /* ---------------------------------------------------------------- messaging and delivery */
@@ -1216,13 +1296,28 @@ impl Core {
                 }]
             };
             let was_queued = row.message.delivery_state == DeliveryState::Queued;
+            let file_frames = (row.message.kind == MessageKind::File)
+                .then(|| u32::try_from(frames.len()).unwrap_or(u32::MAX));
+            // A file is hundreds of frames: give the whole transfer time to finish before sending it again.
+            let wait = if row.message.kind == MessageKind::File {
+                FILE_RETRY_AFTER_MS
+            } else {
+                RETRY_AFTER_MS
+            };
             let all_sent = frames.iter().all(|f| self.send_secure(peer, f));
             if !all_sent {
                 return;
             }
+            if let Some(frames) = file_frames {
+                self.hub.publish(EngineEvent::FileQueued {
+                    peer: peer.clone(),
+                    message_id: entry.message_id.clone(),
+                    frames,
+                });
+            }
             let next = OutboxEntry {
                 attempts: entry.attempts + 1,
-                next_try_ms: now + RETRY_AFTER_MS,
+                next_try_ms: now + wait,
                 ..entry.clone()
             };
             let mut ops = vec![StorageOp::PutOutbox(next.clone())];
@@ -1284,6 +1379,35 @@ impl Core {
         Ok(())
     }
 
+    /// The adapter found out how a link is really routed (this can take a moment, so the link is opened first).
+    pub fn set_link_path(&mut self, peer: &UserId, path: ConnectionPath) {
+        let Some(p) = self.peers.get_mut(peer) else {
+            return;
+        };
+        p.path = path;
+        if matches!(p.state, ConnectionState::Connected { .. }) {
+            p.state = ConnectionState::Connected { path };
+            let state = p.state;
+            self.hub.publish(EngineEvent::PeerStateChanged {
+                peer: peer.clone(),
+                state,
+            });
+        }
+    }
+
+    /// Forget the retry back-off so the next tick dials again at once: for one contact, or for every contact that is not
+    /// linked. An adapter calls this when something that was in the way is gone (signaling came online, the other side
+    /// announced it is online), so a link does not wait out a delay that was earned while it could not have worked.
+    pub fn reset_dial_backoff(&mut self, peer: Option<&UserId>) {
+        for (uid, p) in &mut self.peers {
+            if p.ready() || peer.is_some_and(|only| only != uid) {
+                continue;
+            }
+            p.attempts = 0;
+            p.last_attempt_at = 0;
+        }
+    }
+
     /// Time passes: ping live links, drop silent ones, ask adapters to dial what is due, resend what was never
     /// acknowledged, and keep invites moving.
     pub fn tick(&mut self) {
@@ -1320,6 +1444,7 @@ impl Core {
         self.request_dials(now);
         self.tick_invites();
         self.tick_sealed();
+        self.tick_channels();
     }
 
     /// Ask for a dial to each person whose link is down and whose backoff has passed (5 s doubling to 2 minutes, a few
@@ -1598,11 +1723,15 @@ impl Core {
         };
         let id = self.new_message_id()?;
         let now = self.now();
-        let message =
+        let mut message =
             ChatMessage::outgoing(own, text, now, id.clone(), reply).map_err(|e| match e {
                 privcord_domain::DomainError::EmptyMessage => ErrorCode::EmptyMessage,
                 _ => ErrorCode::MessageTooLong,
             })?;
+        // Alone in the group: there is nobody to wait for, so it must not sit "waiting to send" forever.
+        if recipients.is_empty() {
+            message.delivery_state = DeliveryState::Sent;
+        }
         let conversation = ConversationId::Group(gid);
         let row = StoredMessage {
             conversation: conversation.clone(),
@@ -1631,6 +1760,66 @@ impl Core {
             self.flush(r);
         }
         Ok(id)
+    }
+
+    /// Send one of our own messages again from the start: after a friend refused it (a file that arrived while they were busy,
+    /// say), or when the person taps "retry". Everyone it was for gets it again; receivers ignore a message they have.
+    pub fn retry_message(&mut self, id: &MessageId) -> Result<(), ErrorCode> {
+        self.require_live()?;
+        let own = self.uid.clone().ok_or(ErrorCode::NoIdentity)?;
+        let row = self.messages.get(id).ok_or(ErrorCode::UnknownMessage)?;
+        if row.message.sender_id != own || row.message.delivery_state == DeliveryState::Read {
+            return Err(ErrorCode::UnknownMessage);
+        }
+        let recipients: Vec<UserId> = match &row.conversation {
+            ConversationId::Direct(p) => vec![p.clone()],
+            ConversationId::Group(g) => self
+                .groups
+                .as_ref()
+                .map(|gr| {
+                    gr.recipients(g.as_str())
+                        .iter()
+                        .filter_map(|u| UserId::new(u.as_str()).ok())
+                        .collect()
+                })
+                .unwrap_or_default(),
+            ConversationId::Channel(_) => return Ok(()),
+        };
+        let now = self.now();
+        let entries: Vec<OutboxEntry> = recipients
+            .iter()
+            .filter(|r| {
+                !self
+                    .outbox
+                    .iter()
+                    .any(|o| &o.message_id == id && &o.recipient == *r)
+            })
+            .map(|r| OutboxEntry {
+                message_id: id.clone(),
+                recipient: r.clone(),
+                attempts: 0,
+                next_try_ms: now,
+            })
+            .collect();
+        let mut ops = vec![StorageOp::SetDelivery {
+            id: id.clone(),
+            state: DeliveryState::Queued,
+            read_at: None,
+        }];
+        ops.extend(entries.iter().cloned().map(StorageOp::PutOutbox));
+        self.ports.storage.apply(&ops)?;
+        if let Some(m) = self.messages.get_mut(id) {
+            m.message.delivery_state = DeliveryState::Queued;
+        }
+        self.outbox.extend(entries);
+        self.hub.publish(EngineEvent::MessageStatusChanged {
+            message_id: id.clone(),
+            status: DeliveryState::Queued,
+        });
+        for r in &recipients {
+            self.flush(r);
+        }
+        Ok(())
     }
 
     fn on_group_message(&mut self, peer: &UserId, value: &Value) {
@@ -1851,6 +2040,7 @@ impl Core {
             return;
         };
         let id = offer.message_id.clone();
+        let (group, name, size) = (offer.group_id.clone(), offer.name.clone(), offer.size);
         match &offer.group_id {
             None => {
                 let trust = self
@@ -1884,7 +2074,20 @@ impl Core {
             .map(|p| p.files.begin(offer))
             .unwrap_or(BeginOutcome::Busy);
         match outcome {
-            BeginOutcome::Ok => {}
+            BeginOutcome::Ok => {
+                let conversation = match group {
+                    None => Some(ConversationId::Direct(peer.clone())),
+                    Some(g) => GroupId::new(g.as_str()).ok().map(ConversationId::Group),
+                };
+                if let Some(conversation) = conversation {
+                    self.hub.publish(EngineEvent::FileIncoming {
+                        conversation,
+                        message_id: id,
+                        name,
+                        size,
+                    });
+                }
+            }
             BeginOutcome::TooLarge => self.decline(peer, &id, DeclineReason::TooLarge),
             BeginOutcome::Busy => self.decline(peer, &id, DeclineReason::Busy),
         }
@@ -1895,6 +2098,14 @@ impl Core {
             return;
         };
         let id = chunk.message_id.clone();
+        // A chunk of a transfer we are not receiving (left over from before a reconnect): nothing to refuse, just drop it.
+        if self
+            .peers
+            .get(peer)
+            .is_none_or(|p| p.files.progress(&id).is_none())
+        {
+            return;
+        }
         let result = match self.peers.get_mut(peer) {
             Some(p) => p.files.chunk(&chunk),
             None => return,
@@ -1913,9 +2124,23 @@ impl Core {
                     percent,
                 });
             }
-            AssembleResult::Failed(reason) => self.decline(peer, &id, reason),
-            AssembleResult::Done { offer, bytes } => self.store_received_file(peer, *offer, bytes),
+            AssembleResult::Failed(reason) => {
+                self.finish_progress(&id);
+                self.decline(peer, &id, reason);
+            }
+            AssembleResult::Done { offer, bytes } => {
+                self.finish_progress(&id);
+                self.store_received_file(peer, *offer, bytes);
+            }
         }
+    }
+
+    /// Tell the app a transfer is over (arrived or abandoned) so it stops showing a progress bar.
+    fn finish_progress(&mut self, id: &MessageId) {
+        self.hub.publish(EngineEvent::FileProgress {
+            message_id: id.clone(),
+            percent: 100,
+        });
     }
 
     fn store_received_file(&mut self, peer: &UserId, offer: FileOffer, bytes: Vec<u8>) {
@@ -2006,12 +2231,55 @@ impl Core {
                 self.channels.insert(name, keys);
                 return Err(e);
             }
+            if self.channel_subscribed.remove(&keys.mailbox) {
+                self.ports.transport.signal_unsubscribe(&keys.mailbox);
+            }
         }
         Ok(())
     }
 
-    /// Write to a channel you joined: sealed, signed, stored and flooded over the mesh to every neighbour (and carried
-    /// for neighbours that arrive later). Nobody is told it arrived: a channel is a broadcast.
+    /// Listen on the mailbox of every channel we joined, once signaling is up (the adapter opens the sockets).
+    fn tick_channels(&mut self) {
+        if !self.ports.transport.signal_available() {
+            self.channel_subscribed.clear();
+            return;
+        }
+        let mailboxes: Vec<String> = self.channels.values().map(|k| k.mailbox.clone()).collect();
+        for m in mailboxes {
+            if !self.channel_subscribed.contains(&m)
+                && self.ports.transport.signal_subscribe(&m).is_ok()
+            {
+                self.channel_subscribed.insert(m);
+            }
+        }
+    }
+
+    /// Hand a channel message to the signaling service: a live copy always, and a stored copy (history for people who
+    /// join later) only when store-and-forward is on. True if the service took at least one.
+    fn put_channel(&self, mailbox: &str, blob: &SealedBlob) -> bool {
+        let text = blob.encode();
+        let live = self
+            .ports
+            .transport
+            .signal_put(mailbox, &text, PutKind::Sig, 120)
+            .is_ok();
+        let stored = self.store_forward()
+            && self
+                .ports
+                .transport
+                .signal_put(
+                    mailbox,
+                    &text,
+                    PutKind::Msg,
+                    u32::try_from(privcord_crypto::channel::CHANNEL_TTL_SEC).unwrap_or(86_400),
+                )
+                .is_ok();
+        live || stored
+    }
+
+    /// Write to a channel you joined: sealed, signed, stored, sent through the signaling service and flooded over the
+    /// mesh to every neighbour (and carried for neighbours that arrive later). Nobody is told it arrived: a channel is a
+    /// broadcast.
     pub fn send_channel_message(&mut self, raw: &str, text: &str) -> Result<MessageId, ErrorCode> {
         self.require_live()?;
         let own = self.uid.clone().ok_or(ErrorCode::NoIdentity)?;
@@ -2021,17 +2289,34 @@ impl Core {
         else {
             return Err(ErrorCode::NotJoined);
         };
-        let blob = seal_channel_message(keys, identity, None, text, now, &mut *self.ports.entropy)
-            .map_err(|e| match e {
-                CryptoError::EmptyMessage => ErrorCode::EmptyMessage,
-                other => ErrorCode::from(other),
-            })?;
+        let mailbox = keys.mailbox.clone();
+        let blob = seal_channel_message(
+            keys,
+            identity,
+            self.display_name.as_deref(),
+            text,
+            now,
+            &mut *self.ports.entropy,
+        )
+        .map_err(|e| match e {
+            CryptoError::EmptyMessage => ErrorCode::EmptyMessage,
+            other => ErrorCode::from(other),
+        })?;
         let id = MessageId::new(privcord_domain::mesh::packet_id(&blob))
             .map_err(|_| ErrorCode::Crypto)?;
         let text: String = privcord_domain::text::js_trim(text)
             .chars()
             .take(privcord_domain::limits::MAX_CHANNEL_TEXT)
             .collect();
+        let out = self
+            .mesh
+            .inject(blob.clone(), u64::try_from(now).unwrap_or(0));
+        let over_signaling = self.put_channel(&mailbox, &blob);
+        // A signaling service is configured but took nothing, and no neighbour can carry it: say so instead of storing a
+        // message that nobody will ever get. (With no service configured the mesh may still carry it later.)
+        if self.ports.transport.signal_available() && !over_signaling && out.is_empty() {
+            return Err(ErrorCode::NoSignaling);
+        }
         let conversation = ConversationId::Channel(name);
         let row = StoredMessage {
             conversation: conversation.clone(),
@@ -2057,7 +2342,6 @@ impl Core {
             message_id: id.clone(),
             own: true,
         });
-        let out = self.mesh.inject(blob, u64::try_from(now).unwrap_or(0));
         self.mesh_send(out);
         Ok(id)
     }
@@ -2099,10 +2383,15 @@ impl Core {
         let now = u64::try_from(self.now()).unwrap_or(0);
         let result = self.mesh.handle(&value, link, now);
         self.mesh_send(result.forward);
-        let Some(blob) = result.accepted else {
-            return;
-        };
-        let Ok(blob_value) = serde_json::to_value(&blob) else {
+        if let Some(blob) = result.accepted {
+            self.accept_channel_blob(&blob);
+        }
+    }
+
+    /// A sealed blob for one of our channels, from the mesh or from the signaling service: open it, remember who wrote
+    /// it, keep it, tell the app. Repeats, our own messages and people we muted are dropped.
+    fn accept_channel_blob(&mut self, blob: &SealedBlob) {
+        let Ok(blob_value) = serde_json::to_value(blob) else {
             return;
         };
         let opened = self
@@ -2113,11 +2402,30 @@ impl Core {
         let Some(m) = opened else {
             return;
         };
-        let Ok(id) = MessageId::new(privcord_domain::mesh::packet_id(&blob)) else {
+        let Ok(id) = MessageId::new(privcord_domain::mesh::packet_id(blob)) else {
             return;
         };
-        if self.messages.contains_key(&id) || Some(&m.contact.uid) == self.uid.as_ref() {
+        if self.messages.contains_key(&id)
+            || Some(&m.contact.uid) == self.uid.as_ref()
+            || self.muted.contains(&m.contact.uid)
+        {
             return;
+        }
+        if let Some(n) = m.contact.card.name.as_ref().filter(|n| !n.is_empty()) {
+            if self.channel_people.get(&m.contact.uid) != Some(n) {
+                self.channel_people.insert(m.contact.uid.clone(), n.clone());
+                let list: Vec<(&str, &String)> = self
+                    .channel_people
+                    .iter()
+                    .map(|(u, n)| (u.as_str(), n))
+                    .collect();
+                if let Ok(value) = serde_json::to_vec(&list) {
+                    let _ = self.ports.storage.apply(&[StorageOp::SetKv {
+                        key: KV_CHANNEL_PEOPLE.into(),
+                        value,
+                    }]);
+                }
+            }
         }
         let conversation = ConversationId::Channel(m.channel.clone());
         let row = StoredMessage {
@@ -2272,6 +2580,11 @@ impl Core {
             lookup_pending,
             messages,
             queued: self.outbox.len(),
+            channel_people: self
+                .channel_people
+                .iter()
+                .map(|(u, n)| (u.clone(), n.clone()))
+                .collect(),
             files,
         }
     }

@@ -145,3 +145,80 @@ fn a_message_is_carried_for_a_neighbour_who_arrives_later_and_never_stored_twice
     a.core.mesh_link_up("bob-phone").unwrap();
     assert_eq!(a.transport.drain_raw().len(), 1);
 }
+
+#[test]
+fn a_channel_also_travels_through_the_signaling_service() {
+    use privcord_domain::signaling::PutKind;
+    use privcord_ports::testing::SignalOp;
+    let clock = FakeClock::at(1_700_000_000_000);
+    let (mut ann, mut bob) = (node("ann", &clock), node("bob", &clock));
+    for n in [&mut ann, &mut bob] {
+        n.transport.set_signaling(true);
+        n.core.join_channel("general").unwrap();
+        n.core.tick();
+    }
+    // Each listens on the channel's mailbox.
+    let subscribed = |n: &Node| -> Vec<String> {
+        n.transport
+            .drain_signals()
+            .into_iter()
+            .filter_map(|op| match op {
+                SignalOp::Subscribe(m) => Some(m),
+                _ => None,
+            })
+            .collect()
+    };
+    let (ann_boxes, bob_boxes) = (subscribed(&ann), subscribed(&bob));
+    let mailbox = ann_boxes
+        .iter()
+        .find(|m| bob_boxes.contains(m) && !m.is_empty())
+        .cloned()
+        .expect("both listen on the channel's mailbox");
+    // Ann writes: a live copy goes to the service.
+    ann.core.set_display_name("Ann").unwrap();
+    ann.core
+        .send_channel_message("general", "hello all")
+        .unwrap();
+    let puts: Vec<_> = ann
+        .transport
+        .drain_signals()
+        .into_iter()
+        .filter_map(|op| match op {
+            SignalOp::Put {
+                mailbox: m,
+                blob,
+                kind,
+                ..
+            } if m == mailbox => Some((blob, kind)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        puts.len(),
+        1,
+        "a live copy, and no stored copy while store-and-forward is off"
+    );
+    assert_eq!(puts[0].1, PutKind::Sig);
+    // Bob's service delivers it: it is kept, and Ann's chosen name is remembered.
+    bob.core.signal_blob(&mailbox, &puts[0].0);
+    assert_eq!(channel_texts(&bob, "general"), vec!["hello all"]);
+    assert!(bob
+        .core
+        .snapshot()
+        .channel_people
+        .iter()
+        .any(|(_, name)| name == "Ann"));
+    // The same blob arriving again (several relays) is kept once.
+    bob.core.signal_blob(&mailbox, &puts[0].0);
+    assert_eq!(channel_texts(&bob, "general"), vec!["hello all"]);
+    // A service is configured but unreachable, and no neighbour is near: refused, nothing is stored.
+    let mut lonely = node("lonely", &clock);
+    lonely.transport.set_signaling(true);
+    lonely.transport.set_signal_fails(true);
+    lonely.core.join_channel("general").unwrap();
+    assert!(lonely
+        .core
+        .send_channel_message("general", "anyone?")
+        .is_err());
+    assert!(channel_texts(&lonely, "general").is_empty());
+}

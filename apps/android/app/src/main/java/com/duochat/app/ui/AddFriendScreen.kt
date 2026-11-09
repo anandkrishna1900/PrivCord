@@ -55,8 +55,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.duochat.app.data.ChatState
-import com.journeyapps.barcodescanner.ScanContract
-import com.journeyapps.barcodescanner.ScanOptions
 
 /**
  * One screen to add a friend: show your invite (QR, copy, share) and scan or paste theirs. Afterwards an
@@ -104,10 +102,7 @@ fun AddFriendScreen(
         }
     }
 
-    val scanner = rememberLauncherForActivityResult(ScanContract()) { result ->
-        val contents = result.contents ?: return@rememberLauncherForActivityResult
-        add(contents)
-    }
+    val scan = rememberQrScanner("Scan your friend's invite code") { add(it) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -260,16 +255,7 @@ fun AddFriendScreen(
             )
             Spacer(Modifier.height(12.dp))
             Button(
-                onClick = {
-                    scanner.launch(
-                        ScanOptions().apply {
-                            setDesiredBarcodeFormats(listOf("QR_CODE"))
-                            setPrompt("Scan your friend's invite code")
-                            setBeepEnabled(false)
-                            setOrientationLocked(false)
-                        },
-                    )
-                },
+                onClick = scan,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(Icons.Filled.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))

@@ -52,8 +52,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.duochat.app.data.ChatState
 import com.duochat.app.data.PeerTrust
-import com.journeyapps.barcodescanner.ScanContract
-import com.journeyapps.barcodescanner.ScanOptions
 
 private enum class ManualMode { HOST, GUEST }
 
@@ -76,9 +74,7 @@ fun ManualConnectDialog(
     var error by remember { mutableStateOf<String?>(null) }
     val clipboard = LocalClipboardManager.current
 
-    val scanner = rememberLauncherForActivityResult(ScanContract()) { result ->
-        val contents = result.contents
-        if (contents.isNullOrBlank()) return@rememberLauncherForActivityResult
+    val scan = rememberQrScanner("Scan a DuoChat code") { contents ->
         if (mode == ManualMode.HOST) {
             answerInput = contents
             status = "Scanned an answer. Apply it to finish the handshake."
@@ -86,16 +82,6 @@ fun ManualConnectDialog(
             joinInput = contents
             status = "Scanned an offer. Tap Accept offer to answer it."
         }
-    }
-
-    val scan = {
-        val options = ScanOptions().apply {
-            setDesiredBarcodeFormats(listOf("QR_CODE"))
-            setPrompt("Scan a DuoChat code")
-            setBeepEnabled(false)
-            setOrientationLocked(false)
-        }
-        scanner.launch(options)
     }
 
     Dialog(onDismissRequest = onDismiss) {

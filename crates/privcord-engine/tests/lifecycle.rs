@@ -361,12 +361,12 @@ fn an_open_invite_is_republished_expires_and_a_failed_answer_can_be_retried() {
     );
     assert_eq!(first[1].1, 900);
 
-    a.clock.advance(7_000);
+    a.clock.advance(3_000);
     a.core.tick();
     assert!(puts(&a).is_empty(), "not yet");
     a.clock.advance(2_000);
     a.core.tick();
-    assert_eq!(puts(&a).len(), 2, "republished after 8 s");
+    assert_eq!(puts(&a).len(), 2, "republished after 4 s");
 
     // Bob finds the invite but the service fails when he answers: the answer is marked failed, and retrying works.
     let (_, _, blob, mailbox) = first[0].clone();
@@ -400,7 +400,7 @@ fn an_open_invite_is_republished_expires_and_a_failed_answer_can_be_retried() {
 }
 
 #[test]
-fn a_search_that_finds_nothing_gives_up_after_fifteen_seconds() {
+fn a_search_that_finds_nothing_gives_up_after_forty_seconds() {
     let clock = FakeClock::at(1_700_000_000_000);
     let mut b = node("bob", &clock);
     b.transport.set_signaling(true);
@@ -411,7 +411,7 @@ fn a_search_that_finds_nothing_gives_up_after_fifteen_seconds() {
             .unwrap(),
         None
     );
-    b.clock.advance(14_000);
+    b.clock.advance(39_000);
     b.core.tick();
     assert!(b.core.snapshot().lookup_pending);
     b.clock.advance(2_000);
@@ -738,4 +738,33 @@ fn without_the_internet_a_contact_in_the_middle_hands_connection_setup_on() {
         }
     }
     assert!(drain_events(&mut b).iter().any(|e| matches!(e, EngineEvent::SignalReceived { peer, message: SignalMessage::Ready } if *peer == a.uid)));
+}
+
+#[test]
+fn resetting_the_dial_backoff_dials_again_at_the_next_tick_instead_of_waiting() {
+    let clock = FakeClock::at(1_700_000_000_000);
+    let mut me = node("me", &clock);
+    let mut friend = node("friend", &clock);
+    befriend(&mut me, &mut friend);
+    let dials = |n: &mut Node| {
+        drain_events(n)
+            .into_iter()
+            .filter(|e| matches!(e, EngineEvent::DialRequested { .. }))
+            .count()
+    };
+    drain_events(&mut me);
+    me.core.tick();
+    assert_eq!(dials(&mut me), 1, "the first dial is immediate");
+    // The first try failed (say, signaling was not up yet). After the 8 s grace the 5 s back-off has passed...
+    me.clock.advance(1_000);
+    me.core.tick();
+    assert_eq!(
+        dials(&mut me),
+        0,
+        "while that try is still in progress nothing more is asked"
+    );
+    // ...but a reset makes the very next tick dial again, with no waiting.
+    me.core.reset_dial_backoff(None);
+    me.core.tick();
+    assert_eq!(dials(&mut me), 1);
 }
