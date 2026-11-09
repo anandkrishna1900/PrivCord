@@ -25,4 +25,4 @@ privcord-crypto = { workspace = true, features = ["test-support"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "sync", "rt"] }
 privcord-storage = { workspace = true }
 tempfile = "3"
-tungstenite = "0.24"
+tungstenite = "0.30"
