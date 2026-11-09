@@ -1227,7 +1227,7 @@ version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "bip39",
- "getrandom 0.2.17",
+ "getrandom 0.4.3",
  "hkdf 0.12.4",
  "hmac 0.12.1",
  "k256",

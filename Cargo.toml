@@ -43,7 +43,7 @@ aes-gcm = "0.10"
 p256 = { version = "0.14", features = ["ecdsa", "ecdh", "arithmetic"] }
 k256 = { version = "0.14", default-features = false, features = ["schnorr", "arithmetic", "std"] }
 bip39 = "2"
-getrandom = "0.2"
+getrandom = "0.4"
 unicode-normalization = "0.1"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "time", "macros"] }
 rusqlite = { version = "0.41", features = ["bundled"] }
