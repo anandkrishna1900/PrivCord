@@ -42,7 +42,7 @@ pbkdf2 = { version = "0.13", default-features = false, features = ["hmac"] }
 aes-gcm = "0.10"
 p256 = { version = "0.14", features = ["ecdsa", "ecdh", "arithmetic"] }
 k256 = { version = "0.14", default-features = false, features = ["schnorr", "arithmetic", "std"] }
-bip39 = "2"
+bip39 = "3"
 getrandom = "0.2"
 unicode-normalization = "0.1"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "time", "macros"] }
