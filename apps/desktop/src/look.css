@@ -22,7 +22,7 @@
   --surface-strong: #2f2a2c;
   --text: #f1ecea;
   --text-soft: #c5bfbd;
-  --muted: #a29b99;
+  --muted: #b3adab;
   --border: rgba(241, 236, 234, 0.09);
   --border-strong: rgba(241, 236, 234, 0.18);
   --accent: #7a3e73;
@@ -187,7 +187,7 @@ h3 {
   align-items: center;
   justify-content: center;
   background: hsl(var(--hue) 62% 89%);
-  color: hsl(var(--hue) 55% 32%);
+  color: hsl(var(--hue) 60% 26%);
   font-weight: 750;
   box-shadow: none;
   text-shadow: none;
@@ -357,9 +357,7 @@ textarea.code-area {
   background: var(--ink);
   color: var(--on-ink);
 }
-.switch[aria-checked='true'] {
-  background: var(--accent-fill);
-}
+
 
 /* ---------------------------------------------------------------- dialogs, inside */
 
@@ -444,4 +442,31 @@ input[type='radio'] {
   border: 0;
   border-radius: 18px;
   background: var(--danger-soft);
+}
+
+/* Click targets: at least 28 px in both directions. */
+.switch {
+  width: 48px;
+  height: 28px;
+}
+.switch span {
+  width: 22px;
+  height: 22px;
+}
+.switch.on {
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+}
+.switch.on span {
+  transform: translateX(20px);
+}
+.chip,
+.chip-button {
+  min-height: 32px;
+  padding-left: 12px;
+  padding-right: 12px;
+}
+.jump-latest {
+  background: var(--accent-fill);
+  color: #fff;
 }

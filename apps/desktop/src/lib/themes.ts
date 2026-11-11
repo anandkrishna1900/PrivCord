@@ -115,8 +115,9 @@ export function themeVars(t: ThemeDef): Record<string, string> {
     '--surface-hover': mix(t.surface, t.text, 0.06),
     '--surface-strong': mix(t.surface, t.text, 0.12),
     '--text': t.text,
-    '--text-soft': mix(t.text, t.bg, 0.2),
-    '--muted': mix(t.text, t.bg, 0.42),
+    '--text-soft': mix(t.text, t.bg, 0.16),
+    // Secondary text: as light as it can be while still reading at 4.5:1 on the ground and on tonal surfaces.
+    '--muted': mix(t.text, t.bg, 0.3),
     '--border': rgba(t.text, 0.1),
     '--border-strong': rgba(t.text, 0.2),
     // Text, links, dots and outlines use a readable accent; filled things (buttons, your bubbles) use --accent-fill.
@@ -137,7 +138,7 @@ export function themeVars(t: ThemeDef): Record<string, string> {
     '--on-apricot-container': t.dark ? '#ffd2b3' : '#5a2a0c',
     '--accent-container': mix(t.bg, t.accent, t.dark ? 0.22 : 0.14),
     '--on-accent-container': t.dark ? mix(t.accent, '#ffffff', 0.55) : mix(t.accent, '#000000', 0.45),
-    '--danger': t.dark ? '#f87171' : '#dc2626',
+    '--danger': t.dark ? '#ff8a80' : '#b42318',
     '--danger-soft': t.dark ? 'rgba(248, 113, 113, 0.14)' : 'rgba(220, 38, 38, 0.09)',
     '--warning': t.dark ? '#fbbf24' : '#b45309',
     '--success': t.dark ? '#34d399' : '#059669',

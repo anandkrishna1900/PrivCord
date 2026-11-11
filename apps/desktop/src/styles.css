@@ -1887,7 +1887,7 @@ textarea:focus {
 
 /* ---------- Responsive ---------- */
 
-@media (max-width: 900px) {
+@media (max-width: 720px) {
   .app-shell {
     grid-template-columns: 1fr;
   }
@@ -2563,7 +2563,7 @@ div:has(+ div > .message-row.grouped.own) > .message-row .bubble {
 
 /* ---------- Drawer scrim and small screens ---------- */
 
-@media (max-width: 900px) {
+@media (max-width: 720px) {
   .app-shell::after {
     content: '';
     position: fixed;
@@ -3070,7 +3070,7 @@ input[type='checkbox'] {
   background: var(--success);
 }
 
-@media (max-width: 900px) {
+@media (max-width: 720px) {
   .app-shell {
     grid-template-columns: 1fr;
   }

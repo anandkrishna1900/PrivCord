@@ -92,7 +92,8 @@ private fun scheme(dark: Boolean, bg: Color, card: Color, text: Color, accent: C
         i++
     }
     val base = if (dark) darkColorScheme() else lightColorScheme()
-    val muted = mix(text, bg, if (dark) 0.36f else 0.40f)
+    // Secondary text: as light as it can be while still reading at 4.5:1 on the ground and on tonal surfaces.
+    val muted = mix(text, bg, if (dark) 0.30f else 0.30f)
     val step = { t: Float -> mix(bg, text, t) }
     return base.copy(
         primary = if (dark) readable else fill,

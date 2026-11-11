@@ -1110,7 +1110,7 @@ fun InitialsAvatar(name: String, size: Int, online: Boolean = false, group: Bool
     val hue = avatarHue(name.ifBlank { "duochat" }).toFloat()
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val fill = if (dark) Color.hsl(hue, 0.32f, 0.26f) else Color.hsl(hue, 0.62f, 0.89f)
-    val ink = if (dark) Color.hsl(hue, 0.70f, 0.82f) else Color.hsl(hue, 0.55f, 0.32f)
+    val ink = if (dark) Color.hsl(hue, 0.70f, 0.82f) else Color.hsl(hue, 0.60f, 0.26f)
     val shape = if (group) RoundedCornerShape((size * 0.32f).dp) else CircleShape
     Box(contentAlignment = Alignment.BottomEnd) {
         Box(

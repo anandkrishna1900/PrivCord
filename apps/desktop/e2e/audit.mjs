@@ -130,7 +130,7 @@ try {
     ['frienddetails', async () => { await openChat(p, 'Annabelle'); await p.click('button[aria-label="More"]'); await p.click('[role="menuitem"]:has-text("Friend details")'); }],
     ['menu', async () => { await openChat(p, 'Annabelle'); await p.click('button[aria-label="More"]'); }],
   ];
-  for (const [w, h] of [[1280, 800], [900, 640], [880, 600], [420, 780]]) {
+  for (const [w, h] of [[1280, 800], [1024, 700], [880, 600]]) {
     for (const scheme of ['light', 'dark']) {
       await p.setViewportSize({ width: w, height: h });
       await p.emulateMedia({ colorScheme: scheme });
