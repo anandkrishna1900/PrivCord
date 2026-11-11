@@ -113,6 +113,8 @@ try {
   await sleep(1500);
 
   const p = a.page;
+  // A screen that cannot be opened at some size is reported, not waited on for 30 s.
+  p.setDefaultTimeout(4000);
   const screens = [
     ['chat', async () => openChat(p, 'Annabelle')],
     ['group', async () => openChat(p, 'A group')],
