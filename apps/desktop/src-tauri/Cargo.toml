@@ -21,6 +21,10 @@ tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# The Rust engine, hosted in the shell (milestone M7; docs/rust/M7_DESKTOP_PLAN.md).
+privcord-desktop-host = { path = "../../../crates/privcord-desktop-host" }
+privcord-ffi = { path = "../../../crates/privcord-ffi" }
+
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
 

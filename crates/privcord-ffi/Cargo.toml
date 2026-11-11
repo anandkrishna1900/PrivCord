@@ -22,6 +22,8 @@ panic = "deny"
 [features]
 # Builds the `uniffi-bindgen` tool used to generate the Kotlin bindings.
 cli = ["uniffi/cli"]
+# Lets a host (the desktop shell) turn snapshots and events into JSON.
+serde = ["dep:serde"]
 
 [[bin]]
 name = "uniffi-bindgen"
@@ -39,6 +41,7 @@ uniffi = "0.28"
 pollster = "1"
 thiserror.workspace = true
 serde_json.workspace = true
+serde = { version = "1", features = ["derive"], optional = true }
 zeroize.workspace = true
 
 [dev-dependencies]

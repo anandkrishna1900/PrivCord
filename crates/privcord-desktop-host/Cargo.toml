@@ -1,0 +1,19 @@
+[package]
+name = "privcord-desktop-host"
+description = "Hosts the PrivCord engine inside the Windows desktop shell behind a JSON command and event interface"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+privcord-ffi = { path = "../privcord-ffi", features = ["serde"] }
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

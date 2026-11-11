@@ -5,6 +5,23 @@ preview; the **Windows app still runs on its own TypeScript engine** (`apps/desk
 "partly ported" in [MIGRATION_MAP.md](MIGRATION_MAP.md)). This file says what moving the desktop onto the engine involves,
 and what has to be true before any old engine is deleted. It is a plan, not a record of work done.
 
+## Done so far (the seam, not the switch)
+
+* `crates/privcord-desktop-host`: the engine behind a JSON command/event interface (`invoke`, `next_event`), no Tauri code. Tested by
+  two hosted engines that pair, connect over an in-memory link and exchange a message using only that interface.
+* `privcord-ffi` has an optional `serde` feature so snapshots and events can be turned into JSON.
+* `apps/desktop/src-tauri/src/engine_host.rs`: Tauri commands `engine_start`, `engine_invoke`, `engine_stop`; the identity's
+  secrets in Windows Credential Manager; events to the page (`privcord://frame`, `privcord://signal-put`, ...). Compiles on
+  Linux and Windows CI. **Nothing in the app calls it yet.**
+* `apps/desktop/src/lib/engineBridge.ts`: the page side, with strictly ordered inbound calls and a retry while the engine is busy.
+* The shell and the engine now share one SQLite build: `rusqlite` was moved from 0.41 to 0.31 so it links the same
+  `libsqlite3-sys` as `tauri-plugin-sql`. (Two copies of the native library cannot be linked.) When `tauri-plugin-sql` is
+  removed (the engine owns the database) this can move forward again.
+
+**Not done:** the page still runs on `engine.ts`; only a handful of commands are exposed (identity, contacts, invites, messages,
+links, signaling, snapshot); files, groups, channels, search, backup, wipe and the rest need adding as the page moves over;
+the WebRTC and relay adapters in the page are not written; nothing has run on Windows.
+
 ## Why this is not a quick job
 
 * The desktop UI is a web page (React in a Tauri webview). WebRTC lives **in the webview**; Bluetooth, SQLite and secure storage

@@ -169,6 +169,7 @@ pub trait TransportCallbacks: Send + Sync {
 }
 
 /// Connection setup sent to or received from a contact.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum SignalKindDto {
     Ready,
@@ -177,6 +178,7 @@ pub enum SignalKindDto {
 }
 
 /// How long a published blob should live.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum SignalKind {
     /// Short-lived live signaling.
@@ -300,6 +302,7 @@ impl Clock for SystemClock {
 
 /* ------------------------------------------------------------------ data the UI sees */
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum PathKind {
     DirectLan,
@@ -335,6 +338,7 @@ impl From<ConnectionPath> for PathKind {
 /// How a link is protected. `Encrypted` is a WebRTC data channel (already encrypted by DTLS): the engine uses the
 /// handshake the existing apps speak and plain frames. `Open` is a link that is not encrypted (Bluetooth): the engine
 /// encrypts every frame itself.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum LinkKind {
     Encrypted,
@@ -344,6 +348,7 @@ pub enum LinkKind {
     Layered,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
 pub enum LinkState {
     Offline,
@@ -367,6 +372,7 @@ impl From<ConnectionState> for LinkState {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum Delivery {
     Queued,
@@ -388,6 +394,7 @@ impl From<DeliveryState> for Delivery {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct ContactDto {
     pub uid: String,
@@ -403,6 +410,7 @@ pub struct ContactDto {
     pub can_message: bool,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct MessageDto {
     pub id: String,
@@ -425,6 +433,7 @@ pub struct MessageDto {
     pub total: u32,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct ReactionChipDto {
     pub emoji: String,
@@ -432,6 +441,7 @@ pub struct ReactionChipDto {
     pub mine: bool,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct SearchHitDto {
     pub message_id: String,
@@ -441,6 +451,7 @@ pub struct SearchHitDto {
     pub at: i64,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct RestoreDto {
     pub friends: u64,
@@ -448,6 +459,7 @@ pub struct RestoreDto {
     pub messages: u64,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct FileDto {
     pub name: String,
@@ -455,6 +467,7 @@ pub struct FileDto {
     pub data: Vec<u8>,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct ConversationDto {
     pub id: String,
@@ -465,6 +478,7 @@ pub struct ConversationDto {
     pub unread: u32,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct LastMessageDto {
     pub text: String,
@@ -473,12 +487,14 @@ pub struct LastMessageDto {
     pub sender: String,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct ChannelPersonDto {
     pub uid: String,
     pub name: String,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct SnapshotDto {
     pub seq: u64,
@@ -498,12 +514,14 @@ pub struct SnapshotDto {
     pub channel_people: Vec<ChannelPersonDto>,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct InviteDto {
     pub words: String,
     pub expires_at: i64,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct RequestDto {
     pub uid: String,
@@ -511,12 +529,14 @@ pub struct RequestDto {
     pub safety_number: String,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum AnswerState {
     Sent,
     Failed,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct AnswerDto {
     pub uid: String,
@@ -524,6 +544,7 @@ pub struct AnswerDto {
 }
 
 /// What a person sees before saving a friend.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct PreviewDto {
     pub uid: String,
@@ -532,6 +553,7 @@ pub struct PreviewDto {
     pub already: bool,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum WipeStatus {
     Erased,
@@ -539,6 +561,7 @@ pub enum WipeStatus {
     Failed,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct WipeStepDto {
     pub step_id: String,
@@ -547,6 +570,7 @@ pub struct WipeStepDto {
 }
 
 /// The truthful result of an emergency deletion. Show exactly this, never a false "complete".
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct WipeReportDto {
     pub application: bool,
@@ -558,12 +582,14 @@ pub struct WipeReportDto {
     pub finished: bool,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct GroupMemberDto {
     pub uid: String,
     pub admin: bool,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct GroupDto {
     pub id: String,
@@ -577,6 +603,7 @@ pub struct GroupDto {
     pub connected: u32,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
 pub enum EventDto {
     Ready,
@@ -1515,6 +1542,7 @@ impl privcord_import::FileSource for FilesAdapter {
 }
 
 /// What was brought over and why anything was left behind.
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct ImportSummary {
     pub already_done: bool,
@@ -1528,6 +1556,7 @@ pub struct ImportSummary {
     pub skipped: Vec<SkippedCount>,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct SkippedCount {
     pub reason: String,

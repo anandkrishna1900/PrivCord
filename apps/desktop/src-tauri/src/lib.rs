@@ -1,5 +1,7 @@
 #[cfg(desktop)]
 mod ble;
+#[cfg(desktop)]
+mod engine_host;
 
 const SERVICE: &str = "com.duochat.desktop";
 
@@ -117,7 +119,9 @@ pub fn run() {
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_notification::init());
     #[cfg(desktop)]
-    let builder = builder.manage(ble_commands::BleState::default());
+    let builder = builder
+        .manage(ble_commands::BleState::default())
+        .manage(engine_host::EngineState::default());
     #[cfg(desktop)]
     let builder = builder.invoke_handler(tauri::generate_handler![
         secret_get,
@@ -126,7 +130,10 @@ pub fn run() {
         ble_commands::ble_capabilities,
         ble_commands::ble_connect,
         ble_commands::ble_write,
-        ble_commands::ble_disconnect
+        ble_commands::ble_disconnect,
+        engine_host::engine_start,
+        engine_host::engine_invoke,
+        engine_host::engine_stop
     ]);
     #[cfg(not(desktop))]
     let builder = builder.invoke_handler(tauri::generate_handler![
