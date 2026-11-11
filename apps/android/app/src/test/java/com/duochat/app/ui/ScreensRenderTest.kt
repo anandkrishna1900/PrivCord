@@ -56,6 +56,7 @@ class ScreensRenderTest {
                 msg("5", ann, "Perfect, booking now. It is usually busy on Fridays so this might take a minute, but I will let you know as soon as it's confirmed.", 20),
                 msg("6", me, "Great, see you there", 3, DeliveryState.DELIVERED, reply = ReplyRef("5", ann, "Perfect, booking now")),
                 msg("7", ann, "See you at 7 then 👋", 2),
+                msg("8", me, "On my way", 1, DeliveryState.FAILED),
             ),
         ),
     )
@@ -144,6 +145,23 @@ class ScreensRenderTest {
 
     @Test
     fun chatLight() = paparazzi.snapshot { chat(AppSettings(theme = "light")) }
+
+    /** Larger system font (Settings > Display > Font size): nothing may be cut off or overlap. */
+    @Test
+    fun chatLargeText() {
+        paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_5.copy(fontScale = 1.3f))
+        paparazzi.snapshot { chat(AppSettings(theme = "dark")) }
+    }
+
+    @Test
+    fun homeLargeText() {
+        paparazzi.unsafeUpdateConfig(deviceConfig = DeviceConfig.PIXEL_5.copy(fontScale = 1.3f))
+        paparazzi.snapshot {
+            DuoChatTheme(AppSettings(theme = "dark")) {
+                HomeScreen(state = state, onOpenChat = {}, onAddFriend = {}, onNewGroup = {}, onChannels = {}, onOpenSettings = {}, onClearNotice = {})
+            }
+        }
+    }
 
     private val registryOwner = object : androidx.activity.result.ActivityResultRegistryOwner {
         override val activityResultRegistry = object : androidx.activity.result.ActivityResultRegistry() {

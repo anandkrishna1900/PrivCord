@@ -11,10 +11,10 @@ Status meanings: **Ported, tested** = the Rust implementation exists and is chec
 | Ported, tested | 75 | 11133 |
 | Partly ported | 2 | 4634 |
 | Not yet ported | 0 | 0 |
-| Stays (UI) | 54 | 11067 |
+| Stays (UI) | 54 | 11082 |
 | Stays (platform adapter) | 49 | 9954 |
 | Replaced by a library | 4 | 333 |
-| **All mapped files** | **184** | **37121** |
+| **All mapped files** | **184** | **37136** |
 
 Ported does not mean retired: the TypeScript and Kotlin versions stay in production until the apps call the Rust engine (M7 desktop, M8 Android) and the compatibility gates pass (PRD section 16).
 
@@ -209,7 +209,7 @@ Ported does not mean retired: the TypeScript and Kotlin versions stay in product
 | `apps/android/app/src/main/java/com/duochat/app/ui/AppViewModel.kt` | 385 | `AppViewModel` | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ui/BackupSection.kt` | 82 | `BackupSection` | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ui/ChannelsDialog.kt` | 90 | `ChannelsDialog` | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/ui/ChatScreen.kt` | 1209 | `ChatScreen`, `Banner`, `MessageList`, `DaySeparator`, `MessageBubble`, `FileContent` +13 | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
+| `apps/android/app/src/main/java/com/duochat/app/ui/ChatScreen.kt` | 1224 | `ChatScreen`, `Banner`, `MessageList`, `DaySeparator`, `MessageBubble`, `FileContent` +13 | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ui/GroupScreens.kt` | 413 | `NewGroupScreen`, `FriendCheckRow`, `GroupDetailsScreen`, `FriendDetailsDialog` | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ui/HomeScreen.kt` | 282 | `HomeScreen`, `EmptyHome`, `ChatRow`, `formatListItemTime`, `HomeAction` | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ui/KillSwitchDialogs.kt` | 240 | `statusColor`, `StepList`, `NukeDialog` | Compose screens | UI | UI | Stays (UI) | Stays | n/a |

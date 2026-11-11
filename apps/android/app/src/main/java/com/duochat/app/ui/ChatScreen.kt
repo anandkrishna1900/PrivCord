@@ -628,13 +628,19 @@ private fun MessageBubble(
                     val chips = com.duochat.app.data.summarizeReactions(message.reactions, selfUid)
                     if (chips.isNotEmpty() && !message.deleted) {
                         Spacer(Modifier.height(4.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             chips.forEach { c ->
                                 Surface(
-                                    shape = RoundedCornerShape(12.dp),
+                                    shape = RoundedCornerShape(16.dp),
                                     color = bodyColor.copy(alpha = if (c.mine) 0.30f else 0.14f),
                                     modifier = Modifier.clickable { onReact(message.messageId, c.emoji) },
-                                ) { Text(if (c.count > 1) "${c.emoji} ${c.count}" else c.emoji, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)) }
+                                ) {
+                                    Text(
+                                        if (c.count > 1) "${c.emoji} ${c.count}" else c.emoji,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                    )
+                                }
                             }
                         }
                     }
@@ -654,6 +660,14 @@ private fun MessageBubble(
                             Spacer(Modifier.width(4.dp))
                             DeliveryIndicator(message.deliveryState) { onRetry(message.messageId) }
                         }
+                    }
+                    if (own && message.deliveryState == DeliveryState.FAILED) {
+                        // A full-size target: the small status icon alone is too small to tap reliably.
+                        TextButton(
+                            onClick = { onRetry(message.messageId) },
+                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onPrimary),
+                            modifier = Modifier.align(Alignment.End),
+                        ) { Text("Not delivered · Retry", style = MaterialTheme.typography.labelLarge) }
                     }
                 }
             }
@@ -686,7 +700,8 @@ private fun MessageBubble(
                     onClick = {
                         clipboard.setText(AnnotatedString(message.text))
                         menuOpen = false
-                        Toast.makeText(context, "Message copied", Toast.LENGTH_SHORT).show()
+                        // Android 13 and later confirm copies themselves; a second message would only repeat it.
+                        if (android.os.Build.VERSION.SDK_INT < 33) Toast.makeText(context, "Message copied", Toast.LENGTH_SHORT).show()
                     },
                 )
             }

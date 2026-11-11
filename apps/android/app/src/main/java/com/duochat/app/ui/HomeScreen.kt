@@ -131,7 +131,7 @@ fun HomeScreen(
             } else {
                 androidx.compose.material3.TextField(
                     value = query, onValueChange = { query = it }, singleLine = true,
-                    placeholder = { Text("Search messages on this phone") },
+                    placeholder = { Text("Search messages", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                     trailingIcon = {
                         if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, contentDescription = "Clear search") }
