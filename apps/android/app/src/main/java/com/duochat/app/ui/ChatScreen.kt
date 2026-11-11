@@ -45,7 +45,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -53,7 +57,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -66,6 +69,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Schedule
@@ -95,10 +99,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -246,7 +253,7 @@ fun ChatScreen(
                 Composer(
                     connected = friend?.link == LinkStatus.CONNECTED || (group?.connectedCount ?: 0) > 0 || channel?.connected == true,
                     isChannel = channel != null,
-                    modifier = Modifier.navigationBarsPadding().imePadding(),
+                    modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)),
                     replyingTo = replyingTo,
                     replyName = replyingTo?.let { r -> if (r.senderId == state.uid) "yourself" else (group?.members?.firstOrNull { it.uid == r.senderId }?.name ?: friend?.name ?: "them") },
                     onCancelReply = { replyingTo = null },
@@ -373,18 +380,22 @@ private fun MessageList(
     onMute: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    val listState = rememberLazyListState()
+    // The list is laid out from the bottom (newest message = item 0). Anchored at the bottom like this, it stays put when the
+    // keyboard opens or the composer grows, and when photos below finish loading; a top-anchored list kept its top instead and
+    // slid the newest messages under the composer, which looked like the chat jumping up.
+    val listState = androidx.compose.runtime.saveable.rememberSaveable(convId, saver = androidx.compose.foundation.lazy.LazyListState.Saver) {
+        androidx.compose.foundation.lazy.LazyListState()
+    }
     val scope = rememberCoroutineScope()
+    val newest = remember(messages) { messages.asReversed() }
     val lastId = messages.lastOrNull()?.messageId
-    // True while the view follows the newest message. Dragging up turns it off; reaching the bottom turns it on.
+    // True while the view follows the newest message. Dragging away turns it off; coming back to the bottom turns it on.
     var pinned by remember(convId) { mutableStateOf(true) }
     var unseen by remember(convId) { mutableStateOf(0) }
     var lastSeenId by remember(convId) { mutableStateOf<String?>(null) }
-    val atBottom by remember {
+    val atBottom by remember(listState) {
         androidx.compose.runtime.derivedStateOf {
-            val info = listState.layoutInfo
-            val last = info.visibleItemsInfo.lastOrNull()
-            last == null || (last.index >= info.totalItemsCount - 1 && last.offset + last.size <= info.viewportEndOffset + 48)
+            listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < 48
         }
     }
     LaunchedEffect(listState) {
@@ -393,25 +404,19 @@ private fun MessageList(
             if (bottom) unseen = 0
         }
     }
-    // New messages: open at the newest one, follow while pinned or when we sent it, otherwise count them.
+    // A new message at the bottom: follow it while pinned or when we sent it, otherwise count it on the "new messages" button.
     LaunchedEffect(convId, lastId) {
         if (messages.isEmpty() || lastId == lastSeenId) return@LaunchedEffect
         val first = lastSeenId == null
         lastSeenId = lastId
+        if (first) return@LaunchedEffect // a reversed list opens at the newest message by itself
         val mine = messages.last().senderId == selfUid
-        if (first) {
-            listState.scrollToItem(messages.lastIndex)
-        } else if (pinned || mine) {
+        if (pinned || mine) {
             pinned = true
-            listState.animateScrollToItem(messages.lastIndex)
+            listState.animateScrollToItem(0)
         } else {
             unseen += 1
         }
-    }
-    // Photos and videos change height after they appear: keep following the bottom while pinned.
-    val lastItemSize = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.size
-    LaunchedEffect(lastItemSize) {
-        if (pinned && messages.isNotEmpty()) listState.scrollToItem(messages.lastIndex)
     }
 
     if (messages.isEmpty()) {
@@ -438,56 +443,79 @@ private fun MessageList(
     }
 
     Box(modifier = modifier.fillMaxWidth()) {
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(3.dp),
-    ) {
-        itemsIndexed(messages, key = { _, message -> message.messageId }) { index, message ->
-            val day = formatDay(message.clientCreatedAt)
-            val previous = messages.getOrNull(index - 1)
-            val showDay = previous == null || formatDay(previous.clientCreatedAt) != day
-            val grouped = previous != null && !showDay && previous.senderId == message.senderId &&
-                message.clientCreatedAt - previous.clientCreatedAt < 4 * 60_000
-            Column {
-                if (showDay) DaySeparator(day)
-                val own = message.senderId == selfUid
-                MessageBubble(
-                    message = message,
-                    own = own,
-                    senderName = if (own) "You" else (message.senderName ?: nameOf(message.senderId)),
-                    canReply = canReply,
-                    onMute = onMute,
-                    showName = isGroup && !own && !grouped,
-                    showAvatar = !grouped,
-                    grouped = grouped,
-                    onRetry = onRetry,
-                    onReply = onReply,
-                    onDelete = onDelete,
-                    onReact = onReact,
-                    selfUid = selfUid,
-                    loadFile = loadFile,
-                    progress = transfers[message.messageId],
-                    quotedName = message.replyTo?.let { r -> if (r.author == selfUid) "You" else nameOf(r.author) },
-                    onJumpTo = { id ->
-                        val at = messages.indexOfFirst { it.messageId == id }
-                        if (at >= 0) scope.launch { listState.animateScrollToItem(at) }
-                    },
-                )
+        LazyColumn(
+            state = listState,
+            reverseLayout = true,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.Bottom),
+        ) {
+            itemsIndexed(newest, key = { _, message -> message.messageId }) { index, message ->
+                // `newest` runs newest first, so the message before this one in time is the next item.
+                val day = formatDay(message.clientCreatedAt)
+                val previous = newest.getOrNull(index + 1)
+                val showDay = previous == null || formatDay(previous.clientCreatedAt) != day
+                val grouped = previous != null && !showDay && previous.senderId == message.senderId &&
+                    message.clientCreatedAt - previous.clientCreatedAt < 4 * 60_000
+                val next = newest.getOrNull(index - 1)
+                val lastOfRun = next == null || next.senderId != message.senderId ||
+                    formatDay(next.clientCreatedAt) != day || next.clientCreatedAt - message.clientCreatedAt >= 4 * 60_000
+                Column(Modifier.padding(top = if (grouped || showDay) 0.dp else 6.dp)) {
+                    if (showDay) DaySeparator(day)
+                    val own = message.senderId == selfUid
+                    MessageBubble(
+                        message = message,
+                        own = own,
+                        senderName = if (own) "You" else (message.senderName ?: nameOf(message.senderId)),
+                        canReply = canReply,
+                        onMute = onMute,
+                        showName = isGroup && !own && !grouped,
+                        showAvatar = lastOfRun,
+                        grouped = grouped,
+                        lastOfRun = lastOfRun,
+                        isGroup = isGroup,
+                        onRetry = onRetry,
+                        onReply = onReply,
+                        onDelete = onDelete,
+                        onReact = onReact,
+                        selfUid = selfUid,
+                        loadFile = loadFile,
+                        progress = transfers[message.messageId],
+                        quotedName = message.replyTo?.let { r -> if (r.author == selfUid) "You" else nameOf(r.author) },
+                        onJumpTo = { id ->
+                            val at = newest.indexOfFirst { it.messageId == id }
+                            if (at >= 0) {
+                                pinned = false
+                                scope.launch { listState.animateScrollToItem(at) }
+                            }
+                        },
+                    )
+                }
             }
         }
-    }
-    if (unseen > 0) {
-        androidx.compose.material3.FilledTonalButton(
-            onClick = {
-                pinned = true
-                unseen = 0
-                scope.launch { listState.animateScrollToItem(messages.lastIndex) }
-            },
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp),
-        ) { Text("↓ $unseen new ${if (unseen == 1) "message" else "messages"}") }
-    }
+        androidx.compose.animation.AnimatedVisibility(
+            visible = !atBottom,
+            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(initialScale = 0.8f),
+            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(targetScale = 0.8f),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 14.dp, bottom = 14.dp),
+        ) {
+            // Back to the newest message; shows how many arrived while reading further up.
+            androidx.compose.material3.SmallFloatingActionButton(
+                onClick = {
+                    pinned = true
+                    unseen = 0
+                    scope.launch { listState.animateScrollToItem(0) }
+                },
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            ) {
+                androidx.compose.material3.BadgedBox(
+                    badge = { if (unseen > 0) androidx.compose.material3.Badge { Text(if (unseen > 99) "99+" else "$unseen") } },
+                ) {
+                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = if (unseen > 0) "$unseen new messages" else "Go to the newest message")
+                }
+            }
+        }
     }
 }
 
@@ -512,6 +540,8 @@ private fun MessageBubble(
     showName: Boolean,
     showAvatar: Boolean,
     grouped: Boolean,
+    lastOfRun: Boolean,
+    isGroup: Boolean,
     onRetry: (String) -> Unit,
     onReply: (ChatMessage) -> Unit,
     onDelete: (String, Boolean) -> Unit,
@@ -528,26 +558,40 @@ private fun MessageBubble(
     val context = LocalContext.current
     var menuOpen by remember { mutableStateOf(false) }
 
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    // Corners: round on the outside; tighter where a bubble touches another one from the same person; a small tail on the
+    // last bubble of a run, on the sender's side.
+    val big = 18.dp
+    val joined = 6.dp
+    val tail = 4.dp
+    val shape = if (own) {
+        RoundedCornerShape(topStart = big, bottomStart = big, topEnd = if (grouped) joined else big, bottomEnd = if (lastOfRun) tail else joined)
+    } else {
+        RoundedCornerShape(topEnd = big, bottomEnd = big, topStart = if (grouped) joined else big, bottomStart = if (lastOfRun) tail else joined)
+    }
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (own) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.Bottom,
     ) {
-        if (!own && showName) {
-            // Group chats: a small avatar next to the first message of a run.
-            Box(Modifier.width(30.dp)) { if (showAvatar) InitialsAvatar(senderName, 26) }
-        } else if (!own) {
-            Spacer(Modifier.width(30.dp))
+        if (!own && isGroup) {
+            // Group chats: the sender's avatar next to the last bubble of their run, a gap of the same width elsewhere.
+            Box(Modifier.width(32.dp)) { if (showAvatar) InitialsAvatar(senderName, 26) }
         }
-        Box {
+        // At most about four fifths of the row, on any screen width; the rest stays open on the other side.
+        Box(Modifier.weight(1f, fill = false).padding(start = if (own) 48.dp else 0.dp, end = if (own) 0.dp else 48.dp)) {
+            // Incoming bubbles must stand out from the background: on a light theme the background is grey, so they are white.
+            val incoming = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) MaterialTheme.colorScheme.surface
+            else MaterialTheme.colorScheme.surfaceVariant
             Surface(
-                color = if (own) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(
-                    topStart = 18.dp, topEnd = 18.dp,
-                    bottomStart = if (own || grouped) 18.dp else 4.dp,
-                    bottomEnd = if (!own || grouped) 18.dp else 4.dp,
-                ),
-                modifier = Modifier.widthIn(max = 310.dp).combinedClickable(onClick = {}, onLongClick = { menuOpen = true }),
+                color = if (own) MaterialTheme.colorScheme.primary else incoming,
+                shape = shape,
+                shadowElevation = if (!own && MaterialTheme.colorScheme.background.luminance() > 0.5f) 1.dp else 0.dp,
+                modifier = Modifier.combinedClickable(onClick = {}, onLongClick = {
+                    haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                    menuOpen = true
+                }),
             ) {
                 Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                     if (showName) {
@@ -556,7 +600,11 @@ private fun MessageBubble(
                             color = Color.hsl(avatarHue(senderName).toFloat(), 0.6f, 0.62f),
                         )
                     }
-                    val bodyColor = if (own) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                    val bodyColor = when {
+                        own -> MaterialTheme.colorScheme.onPrimary
+                        MaterialTheme.colorScheme.background.luminance() > 0.5f -> MaterialTheme.colorScheme.onSurface
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
                     message.replyTo?.let { reply ->
                         Row(
                             modifier = Modifier.padding(bottom = 6.dp).height(IntrinsicSize.Min)
@@ -938,22 +986,36 @@ private fun Composer(
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 6.dp))
             }
             if (recorder != null) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Filled.Mic, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Recording… tap send to share it", modifier = Modifier.weight(1f))
+                // Recording: a red dot, how long it has run, cancel, and send.
+                var elapsed by remember { mutableStateOf(0L) }
+                LaunchedEffect(recordStart) {
+                    while (true) {
+                        elapsed = (System.currentTimeMillis() - recordStart) / 1000
+                        kotlinx.coroutines.delay(250)
+                    }
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                ) {
+                    Box(Modifier.padding(start = 12.dp).size(10.dp).clip(CircleShape).background(MaterialTheme.colorScheme.error))
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        "%d:%02d".format(elapsed / 60, elapsed % 60),
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f),
+                    )
                     TextButton(onClick = { stopRecording(false) }) { Text("Cancel") }
-                    IconButton(onClick = { stopRecording(true) }) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send voice note") }
+                    Spacer(Modifier.width(4.dp))
+                    RoundAction(onClick = { stopRecording(true) }, enabled = true, description = "Send voice note") {
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null)
+                    }
                 }
             } else Row(verticalAlignment = Alignment.Bottom) {
-                if (!isChannel) IconButton(onClick = {
-                    if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) startRecording()
-                    else micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
-                }, modifier = Modifier.size(48.dp)) { Icon(Icons.Filled.Mic, contentDescription = "Record a voice note") }
                 if (!isChannel) IconButton(onClick = { picker.launch("*/*") }, modifier = Modifier.size(48.dp)) {
-                    Icon(Icons.Filled.AttachFile, contentDescription = "Send a file (up to 8 MB)")
+                    Icon(Icons.Filled.AttachFile, contentDescription = "Send a file (up to 8 MB)", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                OutlinedTextField(
+                androidx.compose.material3.TextField(
                     value = text,
                     onValueChange = {
                         if (countCodePoints(it) <= MAX_TEXT_LENGTH + 200) {
@@ -961,28 +1023,39 @@ private fun Composer(
                             if (error != null) error = null
                         }
                     },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text(if (connected) "Message" else "Message (sent when you connect)") },
-                    maxLines = 5,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                    placeholder = { Text(if (connected) "Message" else "Message (sent when you connect)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    maxLines = 6,
+                    keyboardOptions = KeyboardOptions(
+                        imeAction = ImeAction.Send,
+                        capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences,
+                    ),
                     keyboardActions = KeyboardActions(onSend = { send() }),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = androidx.compose.material3.TextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent,
+                    ),
                 )
                 Spacer(Modifier.width(8.dp))
-                IconButton(
-                    onClick = { send() },
-                    enabled = canSend,
-                    modifier = Modifier.size(48.dp).clip(CircleShape).background(
-                        if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                    ),
-                ) {
-                    if (sending) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    } else {
-                        Icon(
-                            Icons.AutoMirrored.Filled.Send, contentDescription = "Send message",
-                            tint = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                val showMic = text.isBlank() && !isChannel && !sending
+                if (showMic) {
+                    RoundAction(
+                        onClick = {
+                            if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) startRecording()
+                            else micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+                        },
+                        enabled = true,
+                        description = "Record a voice note",
+                    ) { Icon(Icons.Filled.Mic, contentDescription = null) }
+                } else {
+                    RoundAction(onClick = { send() }, enabled = canSend, description = "Send message") {
+                        if (sending) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                        else Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null)
                     }
                 }
             }
@@ -998,6 +1071,23 @@ private fun Composer(
     }
 }
 
+/** The round primary button at the end of the composer (send, record). */
+@Composable
+private fun RoundAction(onClick: () -> Unit, enabled: Boolean, description: String, content: @Composable () -> Unit) {
+    val container = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+    val tint = if (enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = CircleShape,
+        color = container,
+        contentColor = tint,
+        modifier = Modifier.size(48.dp).semantics { contentDescription = description },
+    ) {
+        Box(contentAlignment = Alignment.Center) { content() }
+    }
+}
+
 @Composable
 fun InitialsAvatar(name: String, size: Int, online: Boolean = false) {
     val hue = avatarHue(name.ifBlank { "duochat" })
@@ -1009,15 +1099,18 @@ fun InitialsAvatar(name: String, size: Int, online: Boolean = false) {
             Text(initials(name), color = Color.White, fontSize = (size * 0.34f).sp, fontWeight = FontWeight.SemiBold)
         }
         if (online) {
+            // A green dot with a ring in the background colour, so it reads as a badge on any avatar colour.
             Box(
-                Modifier.size((size * 0.28f).dp).clip(CircleShape).background(Color(0xFF22C55E))
-                    .padding(1.dp),
+                Modifier.size((size * 0.32f).dp).clip(CircleShape).background(MaterialTheme.colorScheme.surface)
+                    .padding(2.dp).clip(CircleShape).background(Color(0xFF22C55E)),
             )
         }
     }
 }
 
-fun formatTime(timestamp: Long): String = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(timestamp))
+/** The time of day in the phone's own style (12- or 24-hour, by locale). */
+fun formatTime(timestamp: Long): String =
+    java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT, Locale.getDefault()).format(Date(timestamp))
 
 fun formatDay(timestamp: Long): String {
     val zone = ZoneId.systemDefault()

@@ -1,5 +1,10 @@
 package com.duochat.app.ui
 
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.material.icons.filled.Tag
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -56,7 +61,7 @@ import java.util.Date
 import java.util.Locale
 
 /** One list of chats (friends and groups) and two clear actions: Add friend and New group. */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun HomeScreen(
     state: ChatState,
@@ -110,7 +115,8 @@ fun HomeScreen(
             }
         },
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
+        // The keyboard (searching) shrinks the list instead of covering its end.
+        Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
             state.notice?.let { notice ->
                 Surface(color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.fillMaxWidth()) {
                     Row(Modifier.padding(start = 16.dp, top = 4.dp, bottom = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -123,11 +129,21 @@ fun HomeScreen(
                 EmptyHome(onAddFriend)
                 TextButton(onClick = onChannels, modifier = Modifier.fillMaxWidth()) { Text("Or join a public channel") }
             } else {
-                androidx.compose.material3.OutlinedTextField(
+                androidx.compose.material3.TextField(
                     value = query, onValueChange = { query = it }, singleLine = true,
                     placeholder = { Text("Search messages on this phone") },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                    trailingIcon = {
+                        if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, contentDescription = "Clear search") }
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                    colors = androidx.compose.material3.TextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                        unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                    ),
                 )
                 if (query.trim().length >= 2) {
                     LazyColumn(Modifier.fillMaxSize()) {
@@ -198,9 +214,10 @@ private fun ChatRow(chat: ChatSummary, onClick: () -> Unit) {
                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
                 )
                 if (chat.lastAt > 0 && chat.lastText != null) {
+                    Spacer(Modifier.width(8.dp))
                     Text(
                         formatListItemTime(chat.lastAt), style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (chat.unread > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -213,11 +230,13 @@ private fun ChatRow(chat: ChatSummary, onClick: () -> Unit) {
                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
                 )
                 if (chat.unread > 0) {
-                    Box(
-                        modifier = Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.primary).padding(horizontal = 7.dp, vertical = 2.dp),
-                        contentAlignment = Alignment.Center,
+                    Spacer(Modifier.width(8.dp))
+                    androidx.compose.material3.Badge(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.defaultMinSize(minWidth = 22.dp, minHeight = 22.dp),
                     ) {
-                        Text("${chat.unread}", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        Text(if (chat.unread > 99) "99+" else "${chat.unread}", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -225,15 +244,19 @@ private fun ChatRow(chat: ChatSummary, onClick: () -> Unit) {
     }
 }
 
+/** Chat-list time: the time today, "Yesterday", the weekday within a week, otherwise the date (all in the phone's style). */
 fun formatListItemTime(epochMs: Long): String {
-    val date = Date(epochMs)
-    val now = Date()
-    val fmt = if (date.year == now.year && date.month == now.month && date.date == now.date) {
-        SimpleDateFormat("h:mm a", Locale.getDefault())
-    } else {
-        SimpleDateFormat("MMM d", Locale.getDefault())
+    val zone = java.time.ZoneId.systemDefault()
+    val then = java.time.Instant.ofEpochMilli(epochMs).atZone(zone)
+    val today = java.time.LocalDate.now(zone)
+    val day = then.toLocalDate()
+    return when {
+        day == today -> java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT, Locale.getDefault()).format(Date(epochMs))
+        day == today.minusDays(1) -> "Yesterday"
+        day.isAfter(today.minusDays(7)) -> then.format(java.time.format.DateTimeFormatter.ofPattern("EEE", Locale.getDefault()))
+        day.year == today.year -> then.format(java.time.format.DateTimeFormatter.ofPattern("MMM d", Locale.getDefault()))
+        else -> then.format(java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.getDefault()))
     }
-    return fmt.format(date)
 }
 
 
@@ -250,8 +273,7 @@ private fun HomeAction(
     val padding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 8.dp)
     val content: @androidx.compose.runtime.Composable () -> Unit = {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            if (icon != null) Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
-            else Text("#", fontSize = 18.sp, maxLines = 1, softWrap = false)
+            Icon(icon ?: Icons.Filled.Tag, contentDescription = null, modifier = Modifier.size(20.dp))
             Text(label, fontSize = 12.sp, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
         }
     }

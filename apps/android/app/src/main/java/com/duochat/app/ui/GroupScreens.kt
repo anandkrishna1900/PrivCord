@@ -1,5 +1,10 @@
 package com.duochat.app.ui
 
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -77,7 +82,8 @@ fun NewGroupScreen(
             )
         },
         bottomBar = {
-            Column(Modifier.fillMaxWidth().padding(12.dp)) {
+            // Above the gesture bar, and above the keyboard while the name is being typed.
+            Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)).padding(12.dp)) {
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 6.dp)) }
                 Button(
                     onClick = {
