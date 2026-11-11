@@ -5,6 +5,7 @@ import { secretDelete } from '../secureStore';
 import { loadSettings } from '../settings';
 import type { DeviceIdentity } from '../identity';
 import { tauriEngineBridge } from '../engineBridge';
+import { config } from '../../config';
 import { HostedChatEngine } from './hostedEngine';
 import { seedEngineIdentity } from './legacyIdentity';
 
@@ -21,5 +22,7 @@ export async function startHostedEngine(identity: DeviceIdentity): Promise<Hoste
     persistStoreForward: () => saveNetworkConfig({ ...loadNetworkConfig(), storeForward: true }),
     deleteSecret: secretDelete,
     expectedUid: identity.uid,
+    identity,
+    context: config.conversationId,
   });
 }

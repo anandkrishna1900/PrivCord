@@ -16,8 +16,9 @@ import { DEFAULT_NETWORK_CONFIG, deriveIdentityFromPhrase, uidFromDh, type Seale
 import { legacySecretsHex } from './legacyIdentity';
 import type { EngineBridge } from '../engineBridge';
 import type { PeerTransportHandlers } from '../p2p';
-import { HostedChatEngine } from './hostedEngine';
-import type { LinkTransport, RelayHub } from './runtime';
+import { HostedChatEngine, type HostedDeps } from './hostedEngine';
+import type { BleLike, LinkTransport, RelayHub } from './runtime';
+import type { BleHandlers } from '../ble';
 
 const BIN = path.resolve(__dirname, '../../../../../target/debug/examples/host_stdio');
 const present = existsSync(BIN);
@@ -65,7 +66,8 @@ class Bus {
 }
 class BusHub implements RelayHub {
   private mailboxes = new Map<string, (blob: SealedBlob) => void>();
-  constructor(private readonly bus: Bus) {
+  /** `false`: sockets that never come online (no relay reachable), so friends only connect by hand or by Bluetooth. */
+  constructor(private readonly bus: Bus, private readonly online = true) {
     bus.hubs.add(this);
   }
   start(mailbox: string, onBlob: (blob: SealedBlob) => void) {
@@ -75,7 +77,7 @@ class BusHub implements RelayHub {
     for (const hub of this.bus.hubs) if (hub !== this) setTimeout(() => hub.mailboxes.get(mailbox)?.(blob), 5);
   }
   status() {
-    return 'online' as const;
+    return this.online ? ('online' as const) : ('error' as const);
   }
   stop() {
     this.mailboxes.clear();
@@ -95,13 +97,14 @@ class FakeLink implements LinkTransport {
   private remote: FakeLink | null = null;
   private id = '';
   constructor(private readonly wire: Wire, readonly handlers: PeerTransportHandlers) {}
+  // The page validates session descriptions in manual codes, so these look like real ones and carry the link's id.
   async createOffer() {
     this.id = `sdp-${this.wire.seq++}`;
     this.wire.offers.set(this.id, this);
-    return this.id;
+    return `v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=fake-offer:${this.id}\r\n`;
   }
   async acceptOffer(sdp: string) {
-    const offerer = this.wire.offers.get(sdp);
+    const offerer = this.wire.offers.get(/a=fake-offer:(\S+)/.exec(sdp)?.[1] ?? '');
     if (!offerer) throw new Error('unknown offer');
     this.remote = offerer;
     offerer.remote = this;
@@ -111,7 +114,7 @@ class FakeLink implements LinkTransport {
       this.handlers.onOpen();
       offerer.handlers.onOpen();
     }, 5);
-    return `answer-${sdp}`;
+    return `v=0\r\no=- 3 4 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=fake-answer\r\n`;
   }
   async applyAnswer() {
     // The link opens when the answerer accepted.
@@ -133,6 +136,42 @@ class FakeLink implements LinkTransport {
   }
 }
 
+/** A Bluetooth radio between two computers: a search from each side that names the same secret finds the other. */
+class Air {
+  readonly waiting = new Map<string, FakeBle>();
+}
+class FakeBle implements BleLike {
+  isOpen = false;
+  private remote: FakeBle | null = null;
+  constructor(private readonly air: Air, readonly handlers: BleHandlers) {}
+  async connect(secret: Uint8Array) {
+    const key = [...secret].join(',');
+    const other = this.air.waiting.get(key);
+    if (!other) {
+      this.air.waiting.set(key, this);
+      return;
+    }
+    this.air.waiting.delete(key);
+    this.remote = other;
+    other.remote = this;
+    setTimeout(() => {
+      this.isOpen = true;
+      other.isOpen = true;
+      this.handlers.onOpen();
+      other.handlers.onOpen();
+    }, 5);
+  }
+  sendText(text: string) {
+    if (!this.isOpen || !this.remote) return false;
+    const to = this.remote;
+    setTimeout(() => to.handlers.onFrame(text), 1);
+    return true;
+  }
+  close() {
+    this.isOpen = false;
+  }
+}
+
 async function until<T>(what: string, check: () => T | undefined | false, ms = 25_000): Promise<T> {
   const end = Date.now() + ms;
   for (;;) {
@@ -143,40 +182,79 @@ async function until<T>(what: string, check: () => T | undefined | false, ms = 2
   }
 }
 
+const PHRASES = [
+  'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
+  'legal winner thank year wave sausage worth useful legal winner thank yellow',
+];
+
+interface Options {
+  /** Are the relay sockets up? Without them friends can only meet by hand or by Bluetooth. */
+  relay: boolean;
+  /** Give each side a real identity (from a recovery phrase), so manual connection codes can be made. */
+  withIdentity?: boolean;
+}
+
+async function makeSides(opts: Options) {
+  const bus = new Bus();
+  const wire = new Wire();
+  const air = new Air();
+  const sides: { name: string; bridge: EngineBridge; engine: HostedChatEngine; kill: () => void }[] = [];
+  for (const [index, name] of ['Ann', 'Bob'].entries()) {
+    const { bridge, kill } = stdioBridge();
+    let identity: HostedDeps['identity'];
+    let phrase: string | null = null;
+    if (opts.withIdentity) {
+      phrase = PHRASES[index]!;
+      const d = await deriveIdentityFromPhrase(phrase, '');
+      identity = {
+        uid: await uidFromDh(d.identity.dhKey.pubJwk as never),
+        deviceId: `device-${name}`,
+        publicJwk: d.identity.signKey.pubJwk as JsonWebKey,
+        dhPublicJwk: d.identity.dhKey.pubJwk as JsonWebKey,
+        identityProof: d.identity.identityProof,
+      };
+    }
+    const engine = new HostedChatEngine({
+      bridge,
+      network: () => DEFAULT_NETWORK_CONFIG,
+      rtcConfig: () => ({}),
+      ownName: () => name,
+      onNotify: () => undefined,
+      persistStoreForward: () => undefined,
+      deleteSecret: async () => undefined,
+      identity,
+      context: 'duo',
+      runtimeOverrides: {
+        createHub: () => new BusHub(bus, opts.relay),
+        createTransport: (_rtc, handlers) => new FakeLink(wire, handlers),
+        createBle: async (handlers) => new FakeBle(air, handlers),
+      },
+    });
+    await bridge.start();
+    if (phrase) await bridge.invoke('recover_identity', { phrase, passphrase: '' });
+    else await bridge.invoke('create_identity');
+    await engine.start();
+    sides.push({ name, bridge, engine, kill });
+  }
+  return { sides, stop: () => sides.forEach((s) => { s.engine.stop(); s.kill(); }) };
+}
+
+const befriend = async (a: HostedChatEngine, b: HostedChatEngine) => {
+  const bobUid = await a.addContact(b.myInvite());
+  const annUid = await b.addContact(a.myInvite());
+  return { annUid, bobUid };
+};
+
 describe.skipIf(!present)('hosted engine end to end (real Rust engine, in-memory links)', () => {
   it('two people add each other, connect, and chat, send a file, and make a group, through the screens\' API', async () => {
-    const bus = new Bus();
-    const wire = new Wire();
-    const sides = ['Ann', 'Bob'].map((name) => {
-      const { bridge, kill } = stdioBridge();
-      const engine = new HostedChatEngine({
-        bridge,
-        network: () => DEFAULT_NETWORK_CONFIG,
-        rtcConfig: () => ({}),
-        ownName: () => name,
-        onNotify: () => undefined,
-        persistStoreForward: () => undefined,
-        deleteSecret: async () => undefined,
-        runtimeOverrides: {
-          createHub: () => new BusHub(bus),
-          createTransport: (_rtc, handlers) => new FakeLink(wire, handlers),
-        },
-      });
-      return { name, bridge, engine, kill };
-    });
+    const { sides, stop } = await makeSides({ relay: true });
     const [ann, bob] = sides as [(typeof sides)[number], (typeof sides)[number]];
     try {
-      for (const s of sides) {
-        await s.bridge.start();
-        await s.bridge.invoke('create_identity');
-        await s.engine.start();
-      }
       expect(ann.engine.getState().phase).toBe('ready');
       expect(ann.engine.myInvite()).toMatch(/^DUOID1:/);
 
       // Add each other by invite text.
-      const bobUid = await ann.engine.addContact(bob.engine.myInvite());
-      const annUid = await bob.engine.addContact(ann.engine.myInvite());
+      const { annUid, bobUid } = await befriend(ann.engine, bob.engine);
       expect(bobUid).not.toBe(annUid);
 
       // They find each other (relay signals), open a link, and the engine says connected.
@@ -201,7 +279,7 @@ describe.skipIf(!present)('hosted engine end to end (real Rust engine, in-memory
       // Search sees text.
       expect(bob.engine.search('hello').length).toBe(1);
 
-      // Reactions and delete work through the API.
+      // Reactions work through the API.
       const target = bob.engine.getState().messages[annUid]!.find((m) => m.text === 'hello bob')!;
       bob.engine.react(target.messageId, '👍');
       await until('ann sees the reaction', () => ann.engine.getState().messages[bobUid]?.[0]?.reactionChips.length === 1);
@@ -212,12 +290,53 @@ describe.skipIf(!present)('hosted engine end to end (real Rust engine, in-memory
       expect((await ann.engine.send(groupId, 'group hello')).ok).toBe(true);
       await until('bob has the group message', () => bob.engine.getState().messages[groupId]?.some((m) => m.text === 'group hello'));
     } finally {
-      for (const s of sides) {
-        s.engine.stop();
-        s.kill();
-      }
+      stop();
     }
   }, 90_000);
+
+  it('connects by hand with manual codes when no relay is reachable', async () => {
+    const { sides, stop } = await makeSides({ relay: false, withIdentity: true });
+    const [ann, bob] = sides as [(typeof sides)[number], (typeof sides)[number]];
+    try {
+      const { annUid, bobUid } = await befriend(ann.engine, bob.engine);
+      expect(ann.engine.getState().signaling).not.toBe('online'); // nothing can find anything: only the codes will do
+
+      const offer = await ann.engine.createManualOffer(bobUid);
+      expect(offer).toMatch(/^DUO1:/); // the format the old engine and the classic Android app use
+      // A code is only for the friend it is for, and an offer is not an answer.
+      await expect(ann.engine.applyManualAnswer(offer)).rejects.toThrow();
+      const answer = await bob.engine.acceptManualOffer(offer);
+      await ann.engine.applyManualAnswer(answer);
+
+      await until('both sides connected', () =>
+        ann.engine.getState().contacts[0]?.conn === 'connected' && bob.engine.getState().contacts[0]?.conn === 'connected');
+      expect((await ann.engine.send(bobUid, 'by hand')).ok).toBe(true);
+      await until('bob has it', () => bob.engine.getState().messages[annUid]?.some((m) => m.text === 'by hand'));
+    } finally {
+      stop();
+    }
+  }, 60_000);
+
+  it('connects over Bluetooth with the engine\'s own encrypted handshake when there is no internet', async () => {
+    const { sides, stop } = await makeSides({ relay: false });
+    const [ann, bob] = sides as [(typeof sides)[number], (typeof sides)[number]];
+    try {
+      expect(await ann.engine.bluetoothAvailable()).toBe(true);
+      const { annUid, bobUid } = await befriend(ann.engine, bob.engine);
+      // Each side searches; the radio finds the other; the engine runs the layered handshake over it.
+      await Promise.all([ann.engine.connectBluetooth(bobUid), bob.engine.connectBluetooth(annUid)]);
+      await until('both sides connected over Bluetooth', () => {
+        const a = ann.engine.getState().contacts[0];
+        const b = bob.engine.getState().contacts[0];
+        return a?.conn === 'connected' && b?.conn === 'connected' && a.path?.kind === 'bluetooth';
+      });
+      expect((await ann.engine.send(bobUid, 'over the air')).ok).toBe(true);
+      await until('bob has it', () => bob.engine.getState().messages[annUid]?.some((m) => m.text === 'over the air'));
+      await until('ann sees it delivered', () => ['DELIVERED', 'READ'].includes(ann.engine.getState().messages[bobUid]?.[0]?.tick ?? ''));
+    } finally {
+      stop();
+    }
+  }, 60_000);
 });
 
 describe.skipIf(!present)('moving the existing identity to the engine', () => {

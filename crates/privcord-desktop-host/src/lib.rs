@@ -298,6 +298,13 @@ impl DesktopHost {
                 &e.search(text(args, "query")?, number(args, "limit").unwrap_or(50))
                     .map_err(failed)?,
             ),
+            // Bluetooth: the secret shared with a friend (hex), from which the page works out the tags to scan for
+            "ble_secret" => Ok(json!(e
+                .ble_secret(text(args, "peer")?)
+                .map_err(failed)?
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>())),
             // link bookkeeping
             "set_link_path" => {
                 unit(e.set_link_path(text(args, "peer")?, path_kind(&text(args, "path")?)?))

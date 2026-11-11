@@ -5,7 +5,7 @@
  * paired phone's rotating tag, connects, and exchanges the same JSON frames as the WebRTC transport.
  * The native side (src-tauri/src/ble.rs) moves raw chunks; framing is done here.
  */
-import { BleFramingError, Reassembler, bleAcceptTags, encodeJsonFrame } from './bleFraming';
+import { BleFramingError, Reassembler, bleAcceptTags, chunkMessage, encodeJsonFrame } from './bleFraming';
 
 /** Common shape of every transport (docs/CONNECTIVITY.md section 8). */
 export interface MessageTransport {
@@ -101,13 +101,28 @@ export class BleTransport implements MessageTransport {
 
   /** Frames are chunked and written strictly in order; returns false if the link is not open or the frame is invalid. */
   sendJson(value: unknown): boolean {
-    if (!this.open) return false;
     let chunks: Uint8Array[];
     try {
       chunks = encodeJsonFrame(value, this.maxChunk);
     } catch {
       return false;
     }
+    return this.writeChunks(chunks);
+  }
+
+  /** The same, for a frame that is already text (the hosted engine hands over finished frames). */
+  sendText(text: string): boolean {
+    let chunks: Uint8Array[];
+    try {
+      chunks = chunkMessage(new TextEncoder().encode(text), this.maxChunk);
+    } catch {
+      return false;
+    }
+    return this.writeChunks(chunks);
+  }
+
+  private writeChunks(chunks: Uint8Array[]): boolean {
+    if (!this.open) return false;
     for (const chunk of chunks) {
       this.writes = this.writes
         .then(() => (this.open ? this.bridge.write(hex(chunk)) : undefined))

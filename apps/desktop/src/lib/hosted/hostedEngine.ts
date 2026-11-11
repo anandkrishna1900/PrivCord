@@ -5,10 +5,19 @@
  *
  * Same job as `RustChatEngine` on Android.
  */
-import { MAX_FILE_BYTES, validateFileSize, type NetworkConfig } from '@duochat/protocol';
+import {
+  MAX_FILE_BYTES,
+  createManualSignal,
+  decodeManualSignal,
+  encodeManualSignal,
+  randomNonce,
+  validateFileSize,
+  type NetworkConfig,
+} from '@duochat/protocol';
 import type { ChatState, SearchHit } from '../engine';
 import type { ChatEngineApi, SendResult } from '../engineApi';
 import { HostedEngine, type EngineBridge } from '../engineBridge';
+import { uidMatchesKeys, type DeviceIdentity } from '../identity';
 import type { FileMeta, LocalStore, StoredMessage } from '../localDb';
 import { HostedRuntime, type RuntimeOptions } from './runtime';
 import { shapeState, type SnapshotJson } from './shape';
@@ -25,10 +34,13 @@ export interface HostedDeps {
   persistStoreForward: () => void;
   /** Delete a secret from the OS credential store (the engine's identity, on a full wipe). */
   deleteSecret: (key: string) => Promise<void>;
+  /** The identity the app holds (its public parts go into manual connection codes) and the conversation id both apps share. */
+  identity?: Pick<DeviceIdentity, 'uid' | 'deviceId' | 'publicJwk' | 'dhPublicJwk' | 'identityProof'>;
+  context?: string;
   /** The identity the app holds. If the engine reports a different one, starting stops with a clear message. */
   expectedUid?: string;
   /** Tests replace the WebRTC links and relay sockets. */
-  runtimeOverrides?: Partial<Pick<RuntimeOptions, 'createTransport' | 'createHub' | 'now'>>;
+  runtimeOverrides?: Partial<Pick<RuntimeOptions, 'createTransport' | 'createHub' | 'createBle' | 'now'>>;
 }
 
 /** The credential-store key the shell keeps the engine's identity under (see `engine_host.rs`). */
@@ -91,6 +103,7 @@ export class HostedChatEngine implements ChatEngineApi {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private refreshing = false;
   private again = false;
+  private current: Promise<void> = Promise.resolve();
   private lookup: { resolve: (p: { uid: string; name: string; safetyNumber: string; already: boolean }) => void; reject: (e: Error) => void } | null = null;
   private off: (() => void) | null = null;
 
@@ -150,28 +163,36 @@ export class HostedChatEngine implements ChatEngineApi {
     }, REFRESH_DELAY_MS);
   }
 
-  private async refresh(): Promise<void> {
-    if (this.stopped) return;
+  /**
+   * Read the engine's snapshot and show it. A call made while a read is running is not lost and not answered early: the read
+   * runs once more, and every caller gets its promise, so "await refresh()" means the screen state is up to date.
+   */
+  private refresh(): Promise<void> {
+    if (this.stopped) return Promise.resolve();
     if (this.refreshing) {
       this.again = true;
-      return;
+      return this.current;
     }
     this.refreshing = true;
-    try {
-      const next = await this.engine.snapshot<SnapshotJson>();
-      // Never go back to an older picture than the one on screen.
-      if (!this.snapshot || next.seq >= this.snapshot.seq) this.snapshot = next;
-      this.runtime?.setOwnUid(next.own_uid ?? '');
-    } catch {
-      // Keep the picture we have.
-    } finally {
-      this.refreshing = false;
-    }
-    this.emit();
-    if (this.again) {
-      this.again = false;
-      this.scheduleRefresh();
-    }
+    this.current = (async () => {
+      try {
+        do {
+          this.again = false;
+          try {
+            const next = await this.engine.snapshot<SnapshotJson>();
+            // Never go back to an older picture than the one on screen.
+            if (!this.snapshot || next.seq >= this.snapshot.seq) this.snapshot = next;
+            this.runtime?.setOwnUid(next.own_uid ?? '');
+          } catch {
+            // Keep the picture we have.
+          }
+          this.emit();
+        } while (this.again && !this.stopped);
+      } finally {
+        this.refreshing = false;
+      }
+    })();
+    return this.current;
   }
 
   clearNotice(): void {
@@ -337,8 +358,9 @@ export class HostedChatEngine implements ChatEngineApi {
     const preview = await this.previewInvite(text);
     try {
       const uid = await this.engine.call<string>('accept_invite', { text });
+      // The screens show the new friend as soon as this returns, so the state must already have them.
+      await this.refresh();
       this.say(preview.already ? `${preview.name} is already in your friends.` : `${preview.name} added. Connecting…`);
-      this.scheduleRefresh();
       return uid;
     } catch (e) {
       throw new Error(friendly(e));
@@ -555,30 +577,75 @@ export class HostedChatEngine implements ChatEngineApi {
     this.say('Store-and-forward is on. Messages now also travel (encrypted) through the relays, so they arrive even when a direct link is not possible.');
   }
 
-  /* ------------------------------------------------------------------ not on the engine yet */
+  /* ------------------------------------------------------------------ Bluetooth and manual connection codes */
 
   async bluetoothAvailable(): Promise<boolean> {
-    return false;
+    return (await this.runtime?.bluetoothAvailable()) ?? false;
   }
 
-  async connectBluetooth(): Promise<void> {
-    throw new Error('Bluetooth is not available with the Rust engine yet.');
+  async connectBluetooth(uid: string): Promise<void> {
+    if (!this.runtime) throw new Error('The engine is not ready yet.');
+    if (!this.state.contacts.some((c) => c.uid === uid)) throw new Error('Add your friend first.');
+    await this.runtime.connectBluetooth(uid);
   }
 
-  async createManualOffer(): Promise<string> {
-    throw new Error('Manual connection codes are not available with the Rust engine yet.');
+  private encodeManual(kind: 'offer' | 'answer', sdp: string): string {
+    const id = this.deps.identity;
+    if (!id || !this.deps.context) throw new Error('Manual connection codes are not available right now.');
+    return encodeManualSignal(
+      createManualSignal({
+        kind,
+        conversationId: this.deps.context,
+        fromUid: id.uid,
+        fromDeviceId: id.deviceId,
+        publicKeyJwk: id.publicJwk,
+        dhJwk: id.dhPublicJwk,
+        identityProof: id.identityProof,
+        sdp,
+        nonce: randomNonce(),
+      }),
+    );
   }
 
-  async applyManualAnswer(): Promise<void> {
-    throw new Error('Manual connection codes are not available with the Rust engine yet.');
+  /** A code from the other device: must be for us, a friend, and honest about whose keys it carries. */
+  private async decodeManual(code: string, want: 'offer' | 'answer'): Promise<{ from: string; sdp: string }> {
+    const context = this.deps.context;
+    if (!context || !this.deps.identity) throw new Error('Manual connection codes are not available right now.');
+    const decoded = decodeManualSignal(code, context);
+    if (!decoded.ok) throw new Error(decoded.error);
+    const signal = decoded.value;
+    if (signal.kind !== want) {
+      throw new Error(want === 'offer' ? 'That is a reply. Paste the offer from your friend instead.' : "That is an offer. Paste it on your friend's device and send back the reply.");
+    }
+    if (signal.fromUid === this.deps.identity.uid) throw new Error('That code was made on this device.');
+    if (!(await uidMatchesKeys(signal.fromUid, signal.dhJwk, signal.publicKeyJwk, signal.identityProof))) {
+      throw new Error('That code is damaged: its identity does not match its key.');
+    }
+    if (!this.state.contacts.some((c) => c.uid === signal.fromUid)) {
+      throw new Error('That code is from someone who is not in your friends yet. Add them with their invite first.');
+    }
+    return { from: signal.fromUid, sdp: signal.sdp };
   }
 
-  async acceptManualOffer(): Promise<string> {
-    throw new Error('Manual connection codes are not available with the Rust engine yet.');
+  async createManualOffer(uid: string): Promise<string> {
+    if (!this.runtime) throw new Error('The engine is not ready yet.');
+    if (!this.state.contacts.some((c) => c.uid === uid)) throw new Error('Add this friend first.');
+    return this.encodeManual('offer', await this.runtime.manualOffer(uid));
+  }
+
+  async applyManualAnswer(code: string): Promise<void> {
+    const { from, sdp } = await this.decodeManual(code, 'answer');
+    await this.runtime?.manualApply(from, sdp);
+  }
+
+  async acceptManualOffer(code: string): Promise<string> {
+    const { from, sdp } = await this.decodeManual(code, 'offer');
+    if (!this.runtime) throw new Error('The engine is not ready yet.');
+    return this.encodeManual('answer', await this.runtime.manualAccept(from, sdp));
   }
 
   cancelManual(): void {
-    // Nothing is open.
+    this.runtime?.cancelManual();
   }
 
   /* ------------------------------------------------------------------ emergency wipe */

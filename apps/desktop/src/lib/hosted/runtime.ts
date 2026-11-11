@@ -18,6 +18,8 @@ import {
   type NetworkConfig,
 } from '@duochat/protocol';
 import { HostedEngine, type PathName } from '../engineBridge';
+import { BleTransport, type BleHandlers } from '../ble';
+import { getBleBridge } from '../bleLink';
 import { PeerTransport, type PeerTransportHandlers } from '../p2p';
 import { SignalingHub, transportsFor } from '../signaling/hub';
 import type { SignalingStatus } from '../signaling/types';
@@ -37,6 +39,14 @@ export interface LinkTransport {
   close(): void;
 }
 
+/** What the runtime needs from a Bluetooth link (`BleTransport` is one; tests use a fake). */
+export interface BleLike {
+  readonly isOpen: boolean;
+  connect(secret: Uint8Array, timeoutSecs?: number): Promise<void>;
+  sendText(text: string): boolean;
+  close(): void;
+}
+
 /** What the runtime needs from the relay sockets of one mailbox (`SignalingHub` is one). */
 export interface RelayHub {
   start(mailbox: string, onBlob: (blob: ReturnType<typeof decodeBlob> & object) => void): void;
@@ -53,6 +63,8 @@ export interface RuntimeOptions {
   changed: () => void;
   createTransport?: (rtc: RTCConfiguration, handlers: PeerTransportHandlers) => LinkTransport;
   createHub?: (network: NetworkConfig) => RelayHub;
+  /** A Bluetooth link, or null when this computer has no Bluetooth the app can use. */
+  createBle?: (handlers: BleHandlers) => Promise<BleLike | null>;
   now?: () => number;
 }
 
@@ -68,6 +80,8 @@ interface Link {
   outbound: string[];
   writing: boolean;
   closing: boolean;
+  /** Made by hand (manual connection codes): automatic dialing leaves it alone while it waits for the other side. */
+  manual: boolean;
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -85,6 +99,9 @@ export class HostedRuntime {
   private readonly hubs = new Map<string, RelayHub>();
   private readonly attempts = new Map<string, number>();
   private readonly heard = new Set<string>();
+  private readonly ble = new Map<string, BleLike>();
+  private bleBusy = false;
+  private readonly bleNext = new Map<string, { at: number; attempt: number }>();
   private readonly unsubscribe: (() => void)[] = [];
   private ownUid = '';
   private stopped = false;
@@ -127,7 +144,10 @@ export class HostedRuntime {
     };
     await on('event', (e: unknown) => this.onEngineEvent(e));
     await on('frame', (p: { peer: string; frame: string }) => this.onFrame(p.peer, p.frame));
-    await on('close', (p: { peer: string }) => this.closeLink(p.peer, true));
+    await on('close', (p: { peer: string }) => {
+      this.closeLink(p.peer, true);
+      this.ble.get(p.peer)?.close();
+    });
     await on('signal-subscribe', (p: { mailbox: string }) => this.subscribe(p.mailbox));
     await on('signal-unsubscribe', (p: { mailbox: string }) => this.unsubscribeMailbox(p.mailbox));
     await on('signal-put', (p: { mailbox: string; blob: string; kind: string; ttlSec: number }) => void this.put(p));
@@ -141,6 +161,8 @@ export class HostedRuntime {
     for (const off of this.unsubscribe.splice(0)) off();
     for (const link of this.links.values()) link.transport.close();
     this.links.clear();
+    for (const b of this.ble.values()) b.close();
+    this.ble.clear();
     for (const hub of this.hubs.values()) hub.stop();
     this.hubs.clear();
   }
@@ -173,6 +195,98 @@ export class HostedRuntime {
 
   isOpen(uid: string): boolean {
     return this.links.get(uid)?.transport.isOpen === true;
+  }
+
+  /* ------------------------------------------------------------------ Bluetooth */
+
+  async bluetoothAvailable(): Promise<boolean> {
+    if (this.o.createBle) return (await this.o.createBle({ onOpen() {}, onClose() {}, onFrame() {}, onError() {} })) !== null;
+    return (await getBleBridge()) !== null;
+  }
+
+  /** Search for one friend over Bluetooth (no internet needed, within radio range). The engine runs the encrypted handshake. */
+  async connectBluetooth(peer: string): Promise<void> {
+    if (this.isOpen(peer) || this.ble.get(peer)?.isOpen) return;
+    if (this.bleBusy) throw new Error('Already searching over Bluetooth.');
+    let link: BleLike | null = null;
+    const handlers: BleHandlers = {
+      onOpen: () => {
+        if (!link) return;
+        this.ble.set(peer, link);
+        // Bluetooth is not encrypted: the engine does the secure-channel handshake itself ("layered").
+        void this.o.engine.linkUp(peer, 'bluetooth', 'layered').catch(() => undefined);
+        this.o.changed();
+      },
+      onClose: () => {
+        if (this.ble.get(peer) !== link) return;
+        this.ble.delete(peer);
+        if (!this.stopped) void this.o.engine.linkDown(peer).catch(() => undefined);
+        this.o.changed();
+      },
+      onFrame: (data) => void this.o.engine.frameReceived(peer, data).catch(() => undefined),
+      onError: () => undefined,
+    };
+    link = this.o.createBle
+      ? await this.o.createBle(handlers)
+      : await getBleBridge().then((bridge) => (bridge ? new BleTransport(bridge, handlers) : null));
+    if (!link) throw new Error('Bluetooth is not available in this build or on this computer.');
+    this.bleBusy = true;
+    try {
+      const secretHex = await this.o.engine.call<string>('ble_secret', { peer });
+      await link.connect(Uint8Array.from(secretHex.match(/../g) ?? [], (h) => Number.parseInt(h, 16)));
+    } catch (error) {
+      link.close();
+      throw error;
+    } finally {
+      this.bleBusy = false;
+    }
+  }
+
+  /** The engine asked for a dial: try Bluetooth too (one search at a time, backing off), as the old engine did. */
+  private maybeBluetooth(peer: string): void {
+    if (!this.o.network().bluetooth || this.bleBusy || this.ble.get(peer)?.isOpen || this.isOpen(peer)) return;
+    const now = this.now();
+    const next = this.bleNext.get(peer) ?? { at: 0, attempt: 0 };
+    if (now < next.at) return;
+    this.bleNext.set(peer, { at: now + Math.min(120_000, 15_000 * 2 ** Math.min(next.attempt, 3)), attempt: next.attempt + 1 });
+    void this.connectBluetooth(peer).catch(() => undefined); // not in range / not available: the next try backs off further
+  }
+
+  /* ------------------------------------------------------------------ manual connection codes */
+
+  /** Start a link by hand: the offer to send to the friend. */
+  async manualOffer(peer: string): Promise<string> {
+    const link = this.newLink(peer);
+    link.manual = true;
+    try {
+      return await link.transport.createOffer();
+    } catch (error) {
+      this.closeLink(peer, false);
+      throw error;
+    }
+  }
+
+  /** The friend's offer, answered by hand: the answer to send back. */
+  async manualAccept(peer: string, sdp: string): Promise<string> {
+    const link = this.newLink(peer);
+    link.manual = true;
+    try {
+      return await link.transport.acceptOffer(sdp);
+    } catch (error) {
+      this.closeLink(peer, false);
+      throw error;
+    }
+  }
+
+  /** The friend's answer to our offer. */
+  async manualApply(peer: string, sdp: string): Promise<void> {
+    const link = this.links.get(peer);
+    if (!link) throw new Error('There is no offer waiting for that friend. Start again from "Make an offer".');
+    await link.transport.applyAnswer(sdp);
+  }
+
+  cancelManual(): void {
+    for (const [peer, link] of [...this.links]) if (link.manual && !link.transport.isOpen) this.closeLink(peer, false);
   }
 
   /* ------------------------------------------------------------------ engine events */
@@ -228,6 +342,9 @@ export class HostedRuntime {
 
   private async dial(peer: string, initiator: boolean): Promise<void> {
     if (this.stopped) return;
+    this.maybeBluetooth(peer);
+    const waiting = this.links.get(peer);
+    if (waiting?.manual && !waiting.transport.isOpen) return; // a code is out: leave it alone
     if (!this.hubsOnline()) {
       // The relays are not up yet, so this try could not have worked. Do not let it count against the retry delay: the
       // engine asks again at its next tick, and `checkOnline` dials the moment the relays are up.
@@ -257,7 +374,7 @@ export class HostedRuntime {
     };
     const rtc = this.o.rtcConfig();
     const transport = this.o.createTransport ? this.o.createTransport(rtc, handlers) : new PeerTransport(rtc, handlers);
-    const link: Link = { transport, startedAt: this.now(), outbound: [], writing: false, closing: false };
+    const link: Link = { transport, startedAt: this.now(), outbound: [], writing: false, closing: false, manual: false };
     this.links.set(peer, link);
     return link;
   }
@@ -274,6 +391,8 @@ export class HostedRuntime {
 
   private async onSignal(peer: string, kind: string, sdp: string | null): Promise<void> {
     this.heard.add(peer);
+    const manual = this.links.get(peer);
+    if (manual?.manual && !manual.transport.isOpen && kind !== 'Answer') return;
     if (kind === 'Ready') {
       // They are online right now: forget the retry delay for this friend and offer without waiting.
       void this.o.engine.call('reset_dial_backoff', { peer }).catch(() => undefined);
@@ -296,6 +415,7 @@ export class HostedRuntime {
     const link = this.links.get(peer);
     if (!link) return;
     this.attempts.delete(peer);
+    link.manual = false;
     // Open the link in the engine at once; how it is routed (direct, relayed) is found out in the background.
     await this.o.engine.linkUp(peer, 'unknown', 'encrypted').catch(() => undefined);
     this.o.changed();
@@ -336,6 +456,12 @@ export class HostedRuntime {
   /** A frame the engine wants sent: queued per friend and written in order, waiting while the channel's buffer is full. */
   private onFrame(peer: string, frame: string): void {
     const link = this.links.get(peer);
+    const ble = this.ble.get(peer);
+    if (ble?.isOpen && !link?.transport.isOpen) {
+      // Bluetooth is the link that is up: the frame goes out in radio-sized chunks, in order.
+      if (!ble.sendText(frame)) ble.close();
+      return;
+    }
     if (!link) return;
     link.outbound.push(frame);
     this.queuedTotal.set(peer, (this.queuedTotal.get(peer) ?? 0) + 1);

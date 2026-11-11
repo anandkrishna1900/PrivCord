@@ -524,7 +524,7 @@ export function SettingsDialog({
 }
 
 
-/** The opt-in switch for the Rust engine (preview): the app restarts on the other engine. */
+/** Which engine runs the chats: the Rust engine (the default) or the older TypeScript one. The app restarts on the other engine. */
 function EngineSwitch() {
   const [on, setOn] = useState(hostedEngineEnabled());
   return (
@@ -539,12 +539,12 @@ function EngineSwitch() {
             window.location.reload();
           }}
         />{' '}
-        Run on the Rust engine (preview)
+        Run on the Rust engine
       </label>
       <p className="muted small">
-        Runs the same chats on the shared Rust engine. It keeps its own copy of your messages, so what you wrote in the other mode is not
-        shown here, and the other way round. Bluetooth and manual connection codes are not available in this mode yet. The app restarts
-        when you change this.
+        The shared Rust engine runs your chats. Turn this off to use the older engine instead. Each keeps its own copy of your
+        messages, so chats written in one are not shown in the other. Your identity and friends carry over. The app restarts when you
+        change this.
       </p>
     </div>
   );

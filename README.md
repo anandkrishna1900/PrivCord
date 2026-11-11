@@ -77,7 +77,7 @@ shells around it. The rules exist in three places today:
 
 | Implementation | Where | Used by |
 |---|---|---|
-| **Rust engine** (the target) | `crates/` | Android "rust" build. Desktop does not call it yet |
+| **Rust engine** (the target) | `crates/` | Android "rust" build and the Windows app (the TypeScript engine stays as a fallback there) |
 | TypeScript protocol | `packages/protocol`, `apps/desktop/src/lib` | Desktop app |
 | Kotlin protocol | `apps/android/.../{data,security,engine,groups,p2p}` | Android "classic" build |
 
