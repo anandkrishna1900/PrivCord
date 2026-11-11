@@ -28,12 +28,16 @@ use std::collections::HashSet;
 
 const RELAY_TTL_SEC: u32 = 7 * 24 * 3600;
 const LIVE_TTL_SEC: u32 = 120;
+/// How often a group message for a member we have no link to is handed again to the members we do have links to.
+const MESH_RETRY_MS: i64 = 15_000;
 
 #[derive(Default)]
 pub(super) struct SealedState {
     subscribed: bool,
     /// (message, recipient) pairs already handed to a signaling service.
     relayed: HashSet<(MessageId, UserId)>,
+    /// (message, member) pairs handed to other members to pass on, and when.
+    meshed: std::collections::HashMap<(MessageId, UserId), i64>,
     seen: SeenSet,
 }
 
@@ -99,7 +103,11 @@ impl Core {
                 .transport
                 .signal_put(&mailbox, &blob.encode(), kind, ttl_sec)
                 .is_ok();
-        if sent || (kind == PutKind::Sig && self.forward_via(peer, &blob)) {
+        // Connection setup and receipts can also go through mutual contacts; messages do that only on purpose
+        // (`tick_group_mesh`), never as a side effect of the service being down.
+        let small =
+            matches!(kind, PutKind::Sig) || payload.get("t").and_then(Value::as_str) == Some("ack");
+        if sent || (small && self.forward_via(peer, &blob)) {
             Ok(())
         } else {
             Err(ErrorCode::NoRoute)
@@ -144,13 +152,18 @@ impl Core {
                 let mut raw = [0u8; 8];
                 self.ports.entropy.fill(&mut raw)?;
                 let id: String = raw.iter().map(|b| format!("{b:02x}")).collect();
-                self.peers.entry(peer.clone()).or_insert_with(super::Peer::offline).offer_out = Some(id.clone());
+                self.peers
+                    .entry(peer.clone())
+                    .or_insert_with(super::Peer::offline)
+                    .offer_out = Some(id.clone());
                 json!({ "t": "offer", "sdp": sdp, "o": id, "at": now })
             }
-            SignalMessage::Answer(sdp) => match self.peers.get(peer).and_then(|p| p.offer_in.clone()) {
-                Some(id) => json!({ "t": "answer", "sdp": sdp, "o": id }),
-                None => json!({ "t": "answer", "sdp": sdp }),
-            },
+            SignalMessage::Answer(sdp) => {
+                match self.peers.get(peer).and_then(|p| p.offer_in.clone()) {
+                    Some(id) => json!({ "t": "answer", "sdp": sdp, "o": id }),
+                    None => json!({ "t": "answer", "sdp": sdp }),
+                }
+            }
         };
         self.put_sealed(peer, &payload, PutKind::Sig, LIVE_TTL_SEC)
     }
@@ -220,7 +233,10 @@ impl Core {
                 // Their own clock, compared only with their own earlier offers: a relay replaying the last minutes after
                 // a reconnect must not make us answer an offer they have already given up on.
                 let at = payload.get("at").and_then(Value::as_i64);
-                let peer = self.peers.entry(from.clone()).or_insert_with(super::Peer::offline);
+                let peer = self
+                    .peers
+                    .entry(from.clone())
+                    .or_insert_with(super::Peer::offline);
                 if let Some(at) = at {
                     if at < peer.offer_in_at {
                         return;
@@ -248,9 +264,10 @@ impl Core {
             }
             Some("answer") => {
                 // An answer naming another offer than the one we are waiting on belongs to an attempt we replaced.
-                if let (Some(said), Some(Some(waiting))) =
-                    (text("o"), self.peers.get(&from).map(|p| p.offer_out.as_deref()))
-                {
+                if let (Some(said), Some(Some(waiting))) = (
+                    text("o"),
+                    self.peers.get(&from).map(|p| p.offer_out.as_deref()),
+                ) {
                     if said != waiting {
                         return;
                     }
@@ -294,6 +311,59 @@ impl Core {
             }
             _ => {}
         }
+    }
+
+    /// Group members who are not linked to each other (they never verified each other, or one cannot reach the other)
+    /// still get each other's messages: a group message still waiting for a member we have no link to is sealed to that
+    /// member and handed to up to two members we are linked to, who pass it on (`relay_blob`). Only the addressee can
+    /// open it; their receipt comes back the same way (or through the service), and the message then counts as
+    /// delivered to them like any other.
+    pub(super) fn tick_group_mesh(&mut self) {
+        let Some(uid) = self.uid.clone() else { return };
+        let now = self.now();
+        if !self.peers.values().any(super::Peer::ready) {
+            return;
+        }
+        let due: Vec<_> = self
+            .outbox
+            .iter()
+            .filter(|o| {
+                !self.peers.get(&o.recipient).is_some_and(super::Peer::ready)
+                    && self
+                        .sealed
+                        .meshed
+                        .get(&(o.message_id.clone(), o.recipient.clone()))
+                        .is_none_or(|at| now - at >= MESH_RETRY_MS)
+            })
+            .cloned()
+            .collect();
+        for entry in due {
+            let Some(row) = self.messages.get(&entry.message_id) else {
+                continue;
+            };
+            let ConversationId::Group(g) = &row.conversation else {
+                continue;
+            };
+            if row.message.kind != MessageKind::Text || row.message.sender_id != uid {
+                continue;
+            }
+            let payload = json!({ "t": "msg", "id": row.message.message_id, "text": row.message.text,
+                "at": row.message.client_created_at, "g": g.as_str() });
+            let Ok(blob) = self.seal_to(&entry.recipient, &payload) else {
+                continue;
+            };
+            if self.forward_via(&entry.recipient, &blob) {
+                self.sealed
+                    .meshed
+                    .insert((entry.message_id.clone(), entry.recipient.clone()), now);
+            }
+        }
+        let outbox = &self.outbox;
+        self.sealed.meshed.retain(|(m, r), _| {
+            outbox
+                .iter()
+                .any(|o| &o.message_id == m && &o.recipient == r)
+        });
     }
 
     /// Listen on our own mailbox once signaling is up, and (only with store-and-forward on) put messages for friends who

@@ -1453,6 +1453,7 @@ impl Core {
         self.request_dials(now);
         self.tick_invites();
         self.tick_sealed();
+        self.tick_group_mesh();
         self.tick_channels();
     }
 

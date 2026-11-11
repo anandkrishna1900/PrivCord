@@ -246,3 +246,87 @@ fn outsiders_and_removed_members_cannot_post_and_groups_survive_a_restart() {
     let again = start("alice-2", storage, secure, clock, false);
     assert_eq!(again.core.snapshot().groups, before);
 }
+
+#[test]
+fn members_without_a_link_to_each_other_still_get_each_others_messages_through_the_group() {
+    let clock = FakeClock::at(1_700_000_000_000);
+    let (mut a, mut b, mut c, mut d) = (
+        node("alice", &clock),
+        node("bob", &clock),
+        node("carol", &clock),
+        node("dave", &clock),
+    );
+    // Alice knows everyone; Carol and Dave verified each other; Bob verified only Alice.
+    befriend(&mut a, &mut b);
+    befriend(&mut a, &mut c);
+    befriend(&mut a, &mut d);
+    befriend(&mut c, &mut d);
+    let gid = a
+        .core
+        .create_group("Four", &[b.uid.clone(), c.uid.clone(), d.uid.clone()])
+        .unwrap();
+    let mut all = [&mut a, &mut b, &mut c, &mut d];
+    link(&mut all, 0, 1);
+    link(&mut all, 0, 2);
+    link(&mut all, 0, 3);
+    link(&mut all, 2, 3);
+    let [a, b, c, d] = all;
+
+    // Carol writes; Bob has no link to her. Alice passes it on.
+    let id = c.core.send_group_message(&gid, "carol here", None).unwrap();
+    let mut all = [&mut *a, &mut *b, &mut *c, &mut *d];
+    pump(&mut all);
+    assert_eq!(group_texts(a, &gid), ["carol here"]);
+    assert_eq!(group_texts(d, &gid), ["carol here"]);
+    assert!(
+        group_texts(b, &gid).is_empty(),
+        "not yet: no link from Carol to Bob"
+    );
+    for _ in 0..8 {
+        clock.advance(4_000);
+        for n in [&mut *a, &mut *b, &mut *c, &mut *d] {
+            n.core.tick();
+        }
+        let mut all = [&mut *a, &mut *b, &mut *c, &mut *d];
+        pump(&mut all);
+    }
+    assert_eq!(
+        group_texts(b, &gid),
+        ["carol here"],
+        "Bob got it through Alice"
+    );
+    // Bob's receipt came back the same way: Carol sees it delivered to everyone, nothing left queued.
+    let sent = c
+        .core
+        .snapshot()
+        .messages
+        .into_iter()
+        .flat_map(|(_, v)| v)
+        .find(|m| m.message_id == id)
+        .unwrap();
+    assert_eq!(sent.delivery_state, DeliveryState::Delivered);
+    assert_eq!(c.core.snapshot().queued, 0);
+
+    // And the other way: Bob writes, Carol and Dave get it, once each.
+    b.core.send_group_message(&gid, "bob too", None).unwrap();
+    for _ in 0..8 {
+        let mut all = [&mut *a, &mut *b, &mut *c, &mut *d];
+        pump(&mut all);
+        clock.advance(4_000);
+        for n in [&mut *a, &mut *b, &mut *c, &mut *d] {
+            n.core.tick();
+        }
+    }
+    let mut all = [&mut *a, &mut *b, &mut *c, &mut *d];
+    pump(&mut all);
+    for n in [&*a, &*c, &*d] {
+        assert_eq!(
+            group_texts(n, &gid)
+                .iter()
+                .filter(|t| *t == "bob too")
+                .count(),
+            1
+        );
+    }
+    assert_eq!(b.core.snapshot().queued, 0);
+}

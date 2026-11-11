@@ -9,7 +9,9 @@
 )]
 
 use privcord_crypto::rng::SeededEntropy;
-use privcord_domain::{message::DeliveryState, privacy::ContactTrust, state::ConnectionPath, UserId};
+use privcord_domain::{
+    message::DeliveryState, privacy::ContactTrust, state::ConnectionPath, UserId,
+};
 use privcord_engine::{Core, Ports};
 use privcord_ports::testing::{
     FakeClock, MemorySecureStore, MemoryStorage, RecordingNotifier, RecordingTransport,
@@ -36,7 +38,11 @@ fn node(seed: &str, clock: &Arc<FakeClock>) -> Node {
     .unwrap();
     core.create_identity().unwrap();
     let uid = core.own_uid().unwrap().clone();
-    Node { core, transport, uid }
+    Node {
+        core,
+        transport,
+        uid,
+    }
 }
 
 /// A small deterministic generator, so a failure replays exactly.
@@ -73,8 +79,14 @@ impl Net {
         self.nodes[j].transport.set_connected(&ui, on);
         if on {
             self.up.insert(k);
-            self.nodes[i].core.link_up(&uj, ConnectionPath::DirectLan).unwrap();
-            self.nodes[j].core.link_up(&ui, ConnectionPath::DirectLan).unwrap();
+            self.nodes[i]
+                .core
+                .link_up(&uj, ConnectionPath::DirectLan)
+                .unwrap();
+            self.nodes[j]
+                .core
+                .link_up(&ui, ConnectionPath::DirectLan)
+                .unwrap();
         } else {
             self.up.remove(&k);
             self.nodes[i].core.link_down(&uj);
@@ -91,7 +103,9 @@ impl Net {
             for i in 0..self.nodes.len() {
                 for (to, frame) in self.nodes[i].transport.drain() {
                     moved = true;
-                    let Some(j) = uids.iter().position(|u| *u == to) else { continue };
+                    let Some(j) = uids.iter().position(|u| *u == to) else {
+                        continue;
+                    };
                     if self.up.contains(&Self::key(i, j)) {
                         let from = uids[i].clone();
                         self.nodes[j].core.frame_received(&from, &frame);
@@ -128,14 +142,26 @@ fn run(seed: u64) {
     let mut nodes: Vec<Node> = names.iter().map(|s| node(s, &clock)).collect();
     for i in 0..4 {
         for j in (i + 1)..4 {
-            let (ci, cj) = (nodes[i].core.own_card(None).unwrap(), nodes[j].core.own_card(None).unwrap());
-            nodes[i].core.add_contact(&cj, ContactTrust::Verified).unwrap();
-            nodes[j].core.add_contact(&ci, ContactTrust::Verified).unwrap();
+            let (ci, cj) = (
+                nodes[i].core.own_card(None).unwrap(),
+                nodes[j].core.own_card(None).unwrap(),
+            );
+            nodes[i]
+                .core
+                .add_contact(&cj, ContactTrust::Verified)
+                .unwrap();
+            nodes[j]
+                .core
+                .add_contact(&ci, ContactTrust::Verified)
+                .unwrap();
         }
     }
     let others: Vec<UserId> = nodes[1..].iter().map(|n| n.uid.clone()).collect();
     let gid = nodes[0].core.create_group("Four", &others).unwrap();
-    let mut net = Net { nodes, up: HashSet::new() };
+    let mut net = Net {
+        nodes,
+        up: HashSet::new(),
+    };
     for i in 0..4 {
         for j in (i + 1)..4 {
             net.set(i, j, true);
@@ -143,7 +169,11 @@ fn run(seed: u64) {
     }
     net.pump(1000);
     for n in &net.nodes {
-        assert_eq!(n.core.snapshot().groups.len(), 1, "everyone is in the group before the churn");
+        assert_eq!(
+            n.core.snapshot().groups.len(),
+            1,
+            "everyone is in the group before the churn"
+        );
     }
 
     let mut rng = Rng(seed);
@@ -162,11 +192,17 @@ fn run(seed: u64) {
             let to = (from + 1 + rng.below(3) as usize) % 4;
             let text = format!("dm {round} {from}->{to}");
             let peer = net.nodes[to].uid.clone();
-            net.nodes[from].core.send_message(&peer, &text, None).unwrap();
+            net.nodes[from]
+                .core
+                .send_message(&peer, &text, None)
+                .unwrap();
             sent.push((from, text, vec![to]));
         } else {
             let text = format!("group {round} from {from}");
-            net.nodes[from].core.send_group_message(&gid, &text, None).unwrap();
+            net.nodes[from]
+                .core
+                .send_group_message(&gid, &text, None)
+                .unwrap();
             sent.push((from, text, (0..4).filter(|k| *k != from).collect()));
         }
         // Partial delivery, then time passes (pings, retries, liveness).
@@ -193,18 +229,33 @@ fn run(seed: u64) {
     for (from, text, to) in &sent {
         for k in to {
             let copies = held[*k].get(text).copied().unwrap_or(0);
-            assert_eq!(copies, 1, "seed {seed}: {} holds {copies} copies of {text:?}", names[*k]);
+            assert_eq!(
+                copies, 1,
+                "seed {seed}: {} holds {copies} copies of {text:?}",
+                names[*k]
+            );
         }
-        assert_eq!(held[*from].get(text).copied(), Some(1), "seed {seed}: sender keeps one copy of {text:?}");
+        assert_eq!(
+            held[*from].get(text).copied(),
+            Some(1),
+            "seed {seed}: sender keeps one copy of {text:?}"
+        );
     }
     for (k, n) in net.nodes.iter().enumerate() {
         let snap = n.core.snapshot();
-        assert_eq!(snap.queued, 0, "seed {seed}: {} still has messages queued", names[k]);
+        assert_eq!(
+            snap.queued, 0,
+            "seed {seed}: {} still has messages queued",
+            names[k]
+        );
         let own = n.uid.as_str();
         for m in snap.messages.into_iter().flat_map(|(_, v)| v) {
             if m.sender_id.as_str() == own {
                 assert!(
-                    matches!(m.delivery_state, DeliveryState::Delivered | DeliveryState::Read),
+                    matches!(
+                        m.delivery_state,
+                        DeliveryState::Delivered | DeliveryState::Read
+                    ),
                     "seed {seed}: {}'s {:?} is {:?}",
                     names[k],
                     m.text,
