@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { unlock } from '../lib/appLock';
-import { LockIcon } from './Icons';
+import { BrandMark } from './Avatar';
 
 /** Covers the whole app until the user passes Windows Hello (or the device passkey prompt). */
 export function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
@@ -30,9 +30,7 @@ export function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
   return (
     <div className="lock-screen" role="dialog" aria-modal="true" aria-label="DuoCord is locked">
       <div className="splash">
-        <div className="brand-lock large">
-          <LockIcon size={26} />
-        </div>
+        <BrandMark size={72} />
         <h1>DuoCord is locked</h1>
         <p className="muted">Use Windows Hello (face, fingerprint or PIN) to open your chats.</p>
         <button type="button" className="button primary" onClick={() => void ask()} disabled={busy}>

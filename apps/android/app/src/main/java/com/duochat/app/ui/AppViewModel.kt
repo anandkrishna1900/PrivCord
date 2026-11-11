@@ -79,13 +79,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val result = runCatching {
                 kotlinx.coroutines.withContext(Dispatchers.Default) {
-                    if (com.duochat.app.BuildConfig.RUST_ENGINE) {
-                        val rust = engine as? com.duochat.app.rustcore.RustChatEngine
-                            ?: throw IllegalStateException("The engine is not ready yet.")
-                        rust.recoverIdentity(phrase, passphrase).getOrThrow()
-                    } else {
-                        identityManager.createFromPhrase(phrase, passphrase)
-                    }
+                    val rust = engine as? com.duochat.app.rustcore.RustChatEngine
+                        ?: throw IllegalStateException("The engine is not ready yet.")
+                    rust.recoverIdentity(phrase, passphrase).getOrThrow()
                 }
                 Unit
             }
@@ -99,32 +95,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         stopEngine()
         val application = getApplication<Application>()
         val scope = com.duochat.app.engine.EngineHost.newScope()
-        val crypto = LocalCrypto(application, LOCAL_ID)
-        val store = MessageStore(database.dao(), crypto, java.io.File(application.filesDir, "privcord-files"))
-        val created: com.duochat.app.engine.ChatEngineApi = if (com.duochat.app.BuildConfig.RUST_ENGINE) {
-            com.duochat.app.rustcore.RustChatEngine(
-                app = application,
-                scope = scope,
-                conversationId = AppConfig.conversationId,
-                networkConfig = { settingsRepository.settings.value.network },
-                ownName = { settingsRepository.settings.value.displayName },
-                isMuted = { id -> id in settingsRepository.settings.value.mutedChats },
-                onNotify = { notice -> DuoNotifications.showNotice(application, notice, settingsRepository.settings.value) },
-                initialGroupOnly = settingsRepository.settings.value.groupOnly,
-            )
-        } else ChatEngine(
+        // The Rust engine is the only engine (the Kotlin one is no longer built into the app).
+        val created: com.duochat.app.engine.ChatEngineApi = com.duochat.app.rustcore.RustChatEngine(
+            app = application,
             scope = scope,
-            handshakeId = AppConfig.conversationId,
-            store = store,
-            identityManager = identityManager,
+            conversationId = AppConfig.conversationId,
             networkConfig = { settingsRepository.settings.value.network },
             ownName = { settingsRepository.settings.value.displayName },
-            legacyNickname = { settingsRepository.settings.value.peerNickname },
             isMuted = { id -> id in settingsRepository.settings.value.mutedChats },
-            ble = com.duochat.app.ble.AndroidBleEnvironment(application),
             onNotify = { notice -> DuoNotifications.showNotice(application, notice, settingsRepository.settings.value) },
             initialGroupOnly = settingsRepository.settings.value.groupOnly,
-            meshRadioFactory = { com.duochat.app.ble.AndroidMeshRadio(application) },
         )
         engine = created
         if (visible) created.setVisible(true)
@@ -340,7 +320,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val application = getApplication<Application>()
         viewModelScope.launch {
             // The Rust build keeps its data in the engine's own database and Keystore slot: erase those first.
-            if (com.duochat.app.BuildConfig.RUST_ENGINE) runCatching { engine?.clearLocalData() }
+            runCatching { engine?.clearLocalData() }
             // Stop all networking before anything is erased.
             engine?.stop()
             try {

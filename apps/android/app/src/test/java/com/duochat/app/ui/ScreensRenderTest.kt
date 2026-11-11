@@ -17,7 +17,7 @@ import org.junit.Test
 
 /**
  * Renders the main screens (home, a chat in both themes, a group chat, an empty chat, Add friend) on the JVM with Paparazzi, so
- * a screen that crashes while drawing fails the build. To look at them: `./gradlew :app:recordPaparazziClassicDebug`, then
+ * a screen that crashes while drawing fails the build. To look at them: `./gradlew :app:recordPaparazziDebug`, then
  * open `app/src/test/snapshots/images` (not committed: the images change with every intended UI change).
  */
 open class ScreensRenderTest {

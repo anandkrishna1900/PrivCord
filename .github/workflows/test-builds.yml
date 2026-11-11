@@ -46,8 +46,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
       - name: Build
         working-directory: apps/android
-        run: ./gradlew :app:assembleClassicDebug --console=plain
+        run: ./gradlew :app:assembleDebug --console=plain
       - uses: actions/upload-artifact@v7
         with:
           name: duochat-android-debug
-          path: apps/android/app/build/outputs/apk/classic/debug/app-classic-debug.apk
+          path: apps/android/app/build/outputs/apk/debug/app-debug.apk
