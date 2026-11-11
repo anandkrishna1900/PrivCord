@@ -63,7 +63,7 @@ download the artifacts:
 | Artifact | What it is |
 |---|---|
 | `duochat-windows-unsigned` | Windows installer (unsigned, so SmartScreen warns you) |
-| `duochat-android` | Android app (`com.duochat.app`), running on the shared Rust engine (arm phones) |
+| `duochat-android` | Android app (`com.duochat.app`), running on the shared Rust engine: install `app-arm64-v8a-release.apk` (almost every phone; `armeabi-v7a` is for old 32-bit phones) |
 
 Android debug builds are signed with one fixed debug key (`apps/android/keystore/debug.keystore`, committed on
 purpose, protects nothing), so a newer build updates an older one in place. Building from source:
@@ -171,7 +171,7 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-features --locked   # real-relay tests need Node (npm ci) and `pip install nostr-relay`
 ```
 
-Android (`apps/android`): `./gradlew :app:testDebugUnitTest :app:assembleRelease -Pduochat.ciSign=true` (add `-Pduochat.emulator=true` for the x86_64 emulator).
+Android (`apps/android`): `./gradlew :app:testDebugUnitTest :app:assembleRelease -Pduochat.ciSign=true` (one APK per phone CPU type; add `-Pduochat.emulator=true` for the x86_64 emulator).
 The Rust build needs the native library first: `cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -t x86 -o app/src/main/jniLibs build -p privcord-ffi --release`
 (Android NDK and `cargo-ndk`). CI does this for you.
 

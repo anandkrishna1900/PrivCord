@@ -50,12 +50,8 @@ android {
         versionCode = 1
         versionName = "0.1.0"
 
-        // The Rust core (crates/privcord-ffi) is built per phone CPU type into src/main/jniLibs (see docs/rust/ANDROID.md).
-        // Phones only (arm); each extra CPU type adds about 15 MB. -Pduochat.emulator=true adds x86_64 for the emulator.
-        ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
-            if (project.findProperty("duochat.emulator") == "true") abiFilters += "x86_64"
-        }
+        // Only the languages the app speaks: drops the libraries' translations for every other language.
+        resourceConfigurations += listOf("en", "es", "fr")
 
         buildConfigString("CONVERSATION_ID", setting("duochat.conversationId", "duo"))
         buildConfigString("TURN_URL", setting("turn.url"))
@@ -123,6 +119,18 @@ android {
         buildConfig = true
     }
 
+    // One APK per phone CPU type, each carrying only its own native libraries (the Rust core, from
+    // crates/privcord-ffi built into src/main/jniLibs, and WebRTC; see docs/rust/ANDROID.md). Almost every phone
+    // takes the arm64-v8a APK; armeabi-v7a is for old 32-bit phones. -Pduochat.emulator=true adds x86_64.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            if (project.findProperty("duochat.emulator") == "true") include("x86_64")
+            isUniversalApk = false
+        }
+    }
     packaging {
         // Compressed native libraries: the APK download is about half the size; Android unpacks them once at install.
         jniLibs { useLegacyPackaging = true }
