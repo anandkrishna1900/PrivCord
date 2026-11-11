@@ -317,7 +317,9 @@ export function shapeState(s: SnapshotJson, ctx: ShapeContext): ChatState {
   for (const [id, f] of ctx.incoming) {
     const have = messages[f.conversation] ?? [];
     if (have.some((m) => m.messageId === id)) continue;
-    const sender = f.conversation.startsWith('chan:') ? f.sender : f.conversation;
+    // A direct chat's file is from that friend; a channel's names its sender; a group's event does not say who sent it.
+    const isGroup = s.groups.some((g) => g.id === f.conversation);
+    const sender = f.conversation.startsWith('chan:') ? f.sender : isGroup ? '' : f.conversation;
     (messages[f.conversation] ??= []).push({
       messageId: id,
       clientMessageId: id,
@@ -331,7 +333,7 @@ export function shapeState(s: SnapshotJson, ctx: ShapeContext): ChatState {
       conversationId: f.conversation,
       file: { name: f.name, mime: 'application/octet-stream', size: f.size, sha256: '' },
       own: false,
-      senderName: nameOf(sender),
+      senderName: sender ? nameOf(sender) : 'Incoming file',
       tick: 'DELIVERED',
       delivered: 0,
       total: 0,

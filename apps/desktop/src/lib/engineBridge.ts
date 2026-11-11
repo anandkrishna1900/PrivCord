@@ -12,6 +12,10 @@
 export interface EngineBridge {
   start(): Promise<void>;
   stop(): Promise<void>;
+  /** Emergency wipe: stop the engine and delete its database and identity, whether or not it is running. */
+  erase?(): Promise<void>;
+  /** Tell the engine whether the page's relay sockets are online (it routes through contacts when they are not). */
+  signalStatus?(online: boolean): Promise<void>;
   invoke(command: string, args?: Record<string, unknown>): Promise<unknown>;
   /** Subscribe to an engine-to-page event (`event`, `frame`, `close`, `signal-subscribe`, `signal-put`, `notify`, ...). */
   on(event: string, handler: (payload: unknown) => void): Promise<() => void>;
@@ -39,6 +43,10 @@ export class HostedEngine {
 
   stop(): Promise<void> {
     return this.bridge.stop();
+  }
+
+  signalStatus(online: boolean): Promise<void> {
+    return this.bridge.signalStatus?.(online) ?? Promise.resolve();
   }
 
   call<T = unknown>(command: string, args: Record<string, unknown> = {}): Promise<T> {
@@ -100,6 +108,8 @@ export async function tauriEngineBridge(): Promise<EngineBridge> {
   return {
     start: () => invoke('engine_start'),
     stop: () => invoke('engine_stop'),
+    erase: () => invoke('engine_erase'),
+    signalStatus: (online) => invoke('engine_signal_status', { online }),
     invoke: (command, args = {}) => invoke('engine_invoke', { command, args }),
     on: async (event, handler) => listen(`privcord://${event}`, (e) => handler(e.payload)),
   };

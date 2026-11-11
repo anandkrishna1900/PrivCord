@@ -79,8 +79,10 @@ impl TransportCallbacks for PageTransport {
         let _ = self.0.emit("privcord://close", json!({ "peer": peer }));
     }
 
+    /// What the page last reported about its relay sockets. When they are down the engine hands connection setup and
+    /// receipts to mutual contacts instead of a relay put that can only wait and fail.
     fn signal_available(&self) -> bool {
-        true
+        SIGNAL_ONLINE.load(Ordering::Relaxed)
     }
 
     fn signal_subscribe(&self, mailbox: String) -> bool {
@@ -139,8 +141,26 @@ fn running(state: &State<'_, EngineState>) -> Result<Arc<DesktopHost>, String> {
 }
 
 /// Start the engine (once; calling it again is harmless). Its database is `engine.db` in the app's data folder.
+/// Whether the page's relay sockets are online (`engine_signal_status`). False until the page says otherwise.
+static SIGNAL_ONLINE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The page reports whether its relay sockets are online.
+#[tauri::command]
+pub fn engine_signal_status(online: bool) {
+    SIGNAL_ONLINE.store(online, Ordering::Relaxed);
+}
+
+/// Starts run one at a time: two calls racing (a remount, a reload) must not both open engine.db and both run an engine.
+static START: std::sync::OnceLock<tauri::async_runtime::Mutex<()>> = std::sync::OnceLock::new();
+
 #[tauri::command]
 pub async fn engine_start(app: AppHandle, state: State<'_, EngineState>) -> Result<(), String> {
+    let _one_at_a_time = START
+        .get_or_init(|| tauri::async_runtime::Mutex::new(()))
+        .lock()
+        .await;
+    // A new page reports its sockets afresh; until then, nothing is known to be online.
+    SIGNAL_ONLINE.store(false, Ordering::Relaxed);
     if state
         .0
         .lock()
@@ -218,29 +238,57 @@ pub async fn engine_stop(state: State<'_, EngineState>) -> Result<(), String> {
     Ok(())
 }
 
-/// Carry the existing desktop identity over to the engine, once. `secrets_hex` is the signing scalar then the agreement
-/// scalar (32 bytes each) of the identity the page already holds, so nobody has to re-enter their recovery phrase. Does
-/// nothing (and says `false`) if the engine already has an identity, or if the engine is running.
+/// Delete the engine's database files. Missing files are fine; anything else is an error, so a wipe never claims success it
+/// did not have.
+fn erase_engine_files(dir: &std::path::Path) -> Result<(), String> {
+    for name in ["engine.db", "engine.db-wal", "engine.db-shm", "engine.db-journal"] {
+        match std::fs::remove_file(dir.join(name)) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("could not delete {name}: {e}")),
+        }
+    }
+    Ok(())
+}
+
+/// Emergency wipe of everything the engine keeps, whether or not it is running: stop it, delete its database and its
+/// identity in the credential store. (The wipe stops networking, and so the engine, before it erases data.)
+#[tauri::command]
+pub async fn engine_erase(app: AppHandle, state: State<'_, EngineState>) -> Result<(), String> {
+    engine_stop(state).await?;
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    erase_engine_files(&dir)?;
+    KeyringSecure.delete_identity();
+    if KeyringSecure.load_identity().is_some() {
+        return Err("the identity is still in the system credential store".to_owned());
+    }
+    Ok(())
+}
+
+/// Give the engine the identity the page holds. `secrets_hex` is the signing scalar then the agreement scalar (32 bytes
+/// each), so nobody has to re-enter their recovery phrase. Says `false` when the engine already has exactly this identity.
+/// A *different* identity (the person restored another phrase) replaces the old one, and the old identity's chats, friends
+/// and groups are erased with it: they belong to someone else and must not mix with the new identity.
 #[tauri::command]
 pub async fn engine_seed_identity(
+    app: AppHandle,
     state: State<'_, EngineState>,
     secrets_hex: String,
 ) -> Result<bool, String> {
-    if state
-        .0
-        .lock()
-        .map_err(|_| "engine state is poisoned".to_owned())?
-        .is_some()
-    {
-        return Ok(false);
-    }
     let bytes = unhex(&secrets_hex).ok_or_else(|| "the identity is not valid hex".to_owned())?;
     if bytes.len() != 64 {
         return Err("the identity must be 64 bytes".to_owned());
     }
     let secure = KeyringSecure;
-    if secure.load_identity().is_some() {
-        return Ok(false);
+    match secure.load_identity() {
+        Some(existing) if existing == bytes => return Ok(false),
+        Some(_) => {
+            engine_stop(state).await?;
+            let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+            erase_engine_files(&dir)?;
+            secure.delete_identity();
+        }
+        None => {}
     }
     if secure.save_identity(bytes) {
         Ok(true)

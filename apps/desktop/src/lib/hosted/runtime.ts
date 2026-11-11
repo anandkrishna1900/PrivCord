@@ -85,6 +85,7 @@ interface Link {
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const STALLED_INCOMING_MS = 90_000;
 
 const PATH_NAMES: Record<string, PathName> = {
   'direct-lan': 'direct_lan',
@@ -110,7 +111,7 @@ export class HostedRuntime {
 
   /** 0..1 for files being sent or received, by message id (read by the state shaper). */
   readonly progress = new Map<string, number>();
-  readonly incoming = new Map<string, { conversation: string; sender: string; name: string; size: number; since: number }>();
+  readonly incoming = new Map<string, { conversation: string; sender: string; name: string; size: number; since: number; moved: number }>();
   /** Per outgoing file transfer: how many frames it is, and the queued-frame count at which it is complete. */
   private readonly sending = new Map<string, { peer: string; frames: number; end: number }>();
   private readonly written = new Map<string, number>();
@@ -148,7 +149,11 @@ export class HostedRuntime {
       this.closeLink(p.peer, true);
       this.ble.get(p.peer)?.close();
     });
-    await on('signal-subscribe', (p: { mailbox: string }) => this.subscribe(p.mailbox));
+    // Idempotent: the engine subscribes again whenever signaling comes back, and reopening a socket that is already open
+    // would take it offline and start that over.
+    await on('signal-subscribe', (p: { mailbox: string }) => {
+      if (!this.hubs.has(p.mailbox)) this.subscribe(p.mailbox);
+    });
     await on('signal-unsubscribe', (p: { mailbox: string }) => this.unsubscribeMailbox(p.mailbox));
     await on('signal-put', (p: { mailbox: string; blob: string; kind: string; ttlSec: number }) => void this.put(p));
     // Dial everyone the moment the relays come online instead of waiting out the engine's retry delay.
@@ -303,7 +308,12 @@ export class HostedRuntime {
         if (percent >= 100) {
           this.progress.delete(id);
           this.incoming.delete(id);
-        } else this.progress.set(id, percent / 100);
+        } else {
+          this.progress.set(id, percent / 100);
+          // Still moving: a placeholder is only dropped when it has stalled (see checkOnline).
+          const f = this.incoming.get(id);
+          if (f) f.moved = this.now();
+        }
       } else if (e.FileIncoming) {
         const id = String(e.FileIncoming.message_id);
         const conversation = String(e.FileIncoming.conversation);
@@ -313,6 +323,7 @@ export class HostedRuntime {
           name: String(e.FileIncoming.name),
           size: Number(e.FileIncoming.size),
           since: this.now(),
+          moved: this.now(),
         });
         if (!this.progress.has(id)) this.progress.set(id, 0);
       } else if (e.FileQueued) {
@@ -441,6 +452,8 @@ export class HostedRuntime {
     this.links.delete(peer);
     link.transport.close();
     // A transfer cut by the link going down is not coming back as it was: its half-file bubble goes.
+    // Frames still queued for this friend are gone with the link: count them as done so later progress bars can reach 100%.
+    this.queuedTotal.set(peer, this.written.get(peer) ?? 0);
     for (const [id, f] of this.incoming) if (f.conversation === peer) {
       this.incoming.delete(id);
       this.progress.delete(id);
@@ -542,12 +555,26 @@ export class HostedRuntime {
   }
 
   private checkOnline(): void {
+    // A file that stopped arriving (its sender's link dropped; for a group file the event does not say who that was) leaves
+    // no half-finished bubble behind: a placeholder with no progress for this long goes.
+    let dropped = false;
+    for (const [id, f] of this.incoming) {
+      if (this.now() - f.moved > STALLED_INCOMING_MS) {
+        this.incoming.delete(id);
+        this.progress.delete(id);
+        dropped = true;
+      }
+    }
+    if (dropped) this.o.changed();
     const online = this.hubsOnline();
     if (online && !this.wasOnline) {
       void this.o.engine.call('reset_dial_backoff', {}).catch(() => undefined);
       this.o.changed();
     }
-    if (online !== this.wasOnline) this.o.changed();
+    if (online !== this.wasOnline) {
+      void this.o.engine.signalStatus(online).catch(() => undefined);
+      this.o.changed();
+    }
     this.wasOnline = online;
   }
 }

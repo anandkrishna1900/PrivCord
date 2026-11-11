@@ -404,6 +404,9 @@ fn sending_to_a_member_without_a_link_dials_them_first_and_passes_it_on_only_lat
     );
     befriend(&mut a, &mut b);
     befriend(&mut a, &mut c);
+    // Carol listens from the start: she dials Bob as soon as she learns of him through the group (and a send soon after
+    // does not dial him again; see connect_now).
+    let mut events = c.core.subscribe();
     let gid = a
         .core
         .create_group("Three", &[b.uid.clone(), c.uid.clone()])
@@ -412,7 +415,6 @@ fn sending_to_a_member_without_a_link_dials_them_first_and_passes_it_on_only_lat
     link(&mut all, 0, 1);
     link(&mut all, 0, 2);
     let [a, b, c] = all;
-    let mut events = c.core.subscribe();
 
     c.core.send_group_message(&gid, "hi bob", None).unwrap();
     let dialed: Vec<UserId> = std::iter::from_fn(|| events.try_recv().ok())

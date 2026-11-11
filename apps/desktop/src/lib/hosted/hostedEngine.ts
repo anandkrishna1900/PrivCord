@@ -239,7 +239,7 @@ export class HostedChatEngine implements ChatEngineApi {
       if (this.deps.expectedUid && own !== this.deps.expectedUid) {
         throw new Error(
           own
-            ? 'The Rust engine holds a different identity than this app. Turn the Rust engine off in Settings, or wipe the engine data.'
+            ? 'The engine holds a different identity than this app. Restart the app; if this stays, use Settings > Security > Erase everything.'
             : 'The Rust engine has no identity yet.',
         );
       }
@@ -330,28 +330,35 @@ export class HostedChatEngine implements ChatEngineApi {
   }
 
   async previewInvite(text: string): Promise<{ uid: string; name: string; safetyNumber: string; already: boolean }> {
+    let mine: NonNullable<typeof this.lookup> | null = null;
     const found = new Promise<{ uid: string; name: string; safetyNumber: string; already: boolean }>((resolve, reject) => {
-      this.lookup = { resolve, reject };
+      mine = { resolve, reject };
+      this.lookup = mine;
     });
+    // Only ever clear our own lookup: a later lookup must not be cancelled by this one's timer.
+    const release = () => {
+      if (this.lookup === mine) this.lookup = null;
+    };
     let preview: { uid: string; name: string; safety_number: string; already: boolean } | null;
     try {
       preview = await this.engine.call('preview_invite', { text });
     } catch (e) {
-      this.lookup = null;
+      release();
       throw new Error(friendly(e));
     }
     if (preview) {
-      this.lookup = null;
+      release();
       return { uid: preview.uid, name: preview.name, safetyNumber: preview.safety_number, already: preview.already };
     }
     // Six words: the search is running.
-    const timeout = new Promise<never>((_, reject) =>
-      setTimeout(() => {
-        this.lookup = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        release();
         reject(new Error('Could not find that invite. Check the words, make sure your friend still has the invite screen open, then try again.'));
-      }, LOOKUP_WAIT_MS),
-    );
-    return Promise.race([found, timeout]);
+      }, LOOKUP_WAIT_MS);
+    });
+    return Promise.race([found, timeout]).finally(() => clearTimeout(timer));
   }
 
   async addContact(text: string): Promise<string> {
@@ -655,8 +662,11 @@ export class HostedChatEngine implements ChatEngineApi {
    * for it: clearing it wipes the engine (and its identity secret), and there is no separate schema to destroy.
    */
   get localStore(): LocalStore {
+    // The wipe stops networking (and so the engine) before it erases data, so this cannot rely on the engine running: the
+    // shell deletes the database and the identity itself, and a failure fails the step instead of reading "erased".
     const wipe = async () => {
       await this.engine.call('wipe_everything').catch(() => undefined);
+      if (this.deps.bridge.erase) await this.deps.bridge.erase();
       await this.deps.deleteSecret(ENGINE_IDENTITY_KEY).catch(() => undefined);
     };
     return { clearAll: wipe, destroySchema: async () => undefined } as unknown as LocalStore;

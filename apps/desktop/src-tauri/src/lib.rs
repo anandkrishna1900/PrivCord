@@ -133,7 +133,9 @@ pub fn run() {
         engine_host::engine_start,
         engine_host::engine_invoke,
         engine_host::engine_stop,
-        engine_host::engine_seed_identity
+        engine_host::engine_seed_identity,
+        engine_host::engine_erase,
+        engine_host::engine_signal_status
     ]);
     #[cfg(not(desktop))]
     let builder = builder.invoke_handler(tauri::generate_handler![

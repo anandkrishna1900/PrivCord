@@ -78,6 +78,8 @@ const BUSY_RETRY_MS: i64 = 8_000;
 const EARLY_HELLO_MS: i64 = 10_000;
 /// A dial request counts as in progress for this long unless the link comes up or fails sooner.
 const DIAL_GRACE_MS: i64 = 8_000;
+/// Sending to someone we are not linked to dials them at once, unless we tried within this long.
+const RECONNECT_ON_SEND_AFTER_MS: i64 = 30_000;
 const KV_DEVICE_ID: &str = "device_id";
 const KV_GROUP_ONLY: &str = "settings.group_only";
 const KV_GROUPS: &str = "groups.v1";
@@ -1816,15 +1818,23 @@ impl Core {
     /// two members who are both online talk directly. Passing it through other members (`tick_group_mesh`) is only the
     /// fallback for when that does not work out within a few seconds.
     fn connect_now(&mut self, people: &[UserId]) {
+        // Not on every send: a dial tried in the last half minute is still under way or just failed, and sending several
+        // messages to someone offline must not turn the backoff into a dial per message.
+        let now = self.now();
         let mut any = false;
         for uid in people {
-            if self.contacts.contains_key(uid) && !self.peers.get(uid).is_some_and(Peer::ready) {
+            let recent = self.peers.get(uid).is_some_and(|p| {
+                p.attempts > 0 && now - p.last_attempt_at < RECONNECT_ON_SEND_AFTER_MS
+            });
+            if self.contacts.contains_key(uid)
+                && !self.peers.get(uid).is_some_and(Peer::ready)
+                && !recent
+            {
                 self.reset_dial_backoff(Some(uid));
                 any = true;
             }
         }
         if any {
-            let now = self.now();
             self.request_dials(now);
         }
     }
