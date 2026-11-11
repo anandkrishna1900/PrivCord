@@ -227,17 +227,24 @@ fun AddFriendScreen(
                         if (words != null) {
                             Text("Or read out these six words", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.height(12.dp))
-                            words.split(' ').chunked(3).forEachIndexed { row, three ->
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
-                                    three.forEachIndexed { col, w ->
-                                        Row(
-                                            Modifier.weight(1f).background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(12.dp))
-                                                .padding(horizontal = 10.dp, vertical = 10.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        ) {
-                                            Text("${row * 3 + col + 1}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                            Spacer(Modifier.width(6.dp))
-                                            Text(w, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            // Three per row on a normal phone; two when the text is large or the screen narrow, so a word
+                            // is never cut off (people read these out loud).
+                            androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+                                val perRow = if (maxWidth / androidx.compose.ui.platform.LocalDensity.current.fontScale < 300.dp) 2 else 3
+                                Column {
+                                    words.split(' ').chunked(perRow).forEachIndexed { row, group ->
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
+                                            group.forEachIndexed { col, w ->
+                                                Row(
+                                                    Modifier.weight(1f).background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(12.dp))
+                                                        .padding(horizontal = 10.dp, vertical = 10.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                ) {
+                                                    Text("${row * perRow + col + 1}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                    Spacer(Modifier.width(6.dp))
+                                                    Text(w, style = MaterialTheme.typography.titleSmall)
+                                                }
+                                            }
                                         }
                                     }
                                 }

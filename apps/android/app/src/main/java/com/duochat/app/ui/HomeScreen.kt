@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
@@ -98,12 +100,15 @@ fun HomeScreen(
     val hits = remember(query, state.messages) { if (searching) onSearch(query) else emptyList() }
     val listState = rememberLazyListState()
     val atTop by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
-    val chats = when (filter) {
+    val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val showFilters = state.chats.any { it.isGroup } && state.chats.any { !it.isGroup }
+    // With the chips hidden (only people, or only groups), a filter picked earlier must not hide chats with no way back.
+    val active = if (showFilters) filter else Filter.ALL
+    val chats = when (active) {
         Filter.ALL -> state.chats
         Filter.PEOPLE -> state.chats.filter { !it.isGroup }
         Filter.GROUPS -> state.chats.filter { it.isGroup }
     }
-    val showFilters = state.chats.any { it.isGroup } && state.chats.any { !it.isGroup }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -132,7 +137,7 @@ fun HomeScreen(
             }
             SearchField(query, onChange = { query = it })
             if (searching) {
-                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = navBottom + 24.dp)) {
                     if (hits.isEmpty()) item {
                         Text(
                             "Nothing matches “${query.trim()}”.",
@@ -163,7 +168,7 @@ fun HomeScreen(
                 ) {
                     Filter.entries.forEach { f ->
                         FilterChip(
-                            selected = filter == f,
+                            selected = active == f,
                             onClick = { filter = f },
                             label = { Text(f.label) },
                             shape = CircleShape,
@@ -181,8 +186,8 @@ fun HomeScreen(
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
-                // Room under the last chat so the floating button never covers it.
-                contentPadding = PaddingValues(top = 6.dp, bottom = 104.dp),
+                // Room under the last chat so the floating button (and the navigation bar under it) never covers it.
+                contentPadding = PaddingValues(top = 6.dp, bottom = navBottom + 96.dp),
             ) {
                 items(chats, key = { it.id }) { chat -> ChatRow(chat) { onOpenChat(chat) } }
             }

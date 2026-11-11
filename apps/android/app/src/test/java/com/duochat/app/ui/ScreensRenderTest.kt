@@ -20,9 +20,9 @@ import org.junit.Test
  * a screen that crashes while drawing fails the build. To look at them: `./gradlew :app:recordPaparazziClassicDebug`, then
  * open `app/src/test/snapshots/images` (not committed: the images change with every intended UI change).
  */
-class ScreensRenderTest {
+open class ScreensRenderTest {
     @get:Rule
-    val paparazzi = Paparazzi(deviceConfig = DeviceConfig.PIXEL_5, maxPercentDifference = 100.0)
+    open val paparazzi = Paparazzi(deviceConfig = DeviceConfig.PIXEL_5, maxPercentDifference = 100.0)
 
     private val me = "me-uid"
     private val ann = "ann-uid"

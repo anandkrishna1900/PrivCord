@@ -1232,6 +1232,9 @@ private fun decodeUpright(bytes: ByteArray, maxSide: Int): androidx.compose.ui.g
     return android.graphics.Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true).asImageBitmap()
 }
 
+/** The voice note playing right now, if any (weak: a released player is simply gone). */
+private var nowPlaying: java.lang.ref.WeakReference<androidx.media3.exoplayer.ExoPlayer>? = null
+
 /**
  * A voice note or audio file: play/pause, a progress bar and the time. Media3 ExoPlayer, because the platform
  * MediaPlayer rejects the WebM/Opus recordings desktop browsers make (no duration, no seek index). The decrypted
@@ -1280,7 +1283,12 @@ private fun VoiceNote(messageId: String, arrived: Boolean, size: Int, color: Col
             p.prepare()
             player = p
         }
-        if (p.isPlaying) p.pause() else p.play()
+        if (p.isPlaying) p.pause() else {
+            // One voice note at a time: starting this one pauses whichever was playing.
+            nowPlaying?.get()?.takeIf { it !== p }?.pause()
+            nowPlaying = java.lang.ref.WeakReference(p)
+            p.play()
+        }
     }
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.widthIn(min = 200.dp)) {
         Surface(

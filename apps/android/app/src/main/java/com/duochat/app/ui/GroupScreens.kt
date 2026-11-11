@@ -226,7 +226,7 @@ fun GroupDetailsScreen(
                 }
             }
             items(group.members, key = { it.uid }) { member ->
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.Top) {
                     InitialsAvatar(member.name, 42, online = member.link == LinkStatus.CONNECTED)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
@@ -259,12 +259,22 @@ fun GroupDetailsScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                    }
-                    if (!member.isMe && member.canMessage) {
-                        TextButton(onClick = { onMessage(member.uid) }) { Text("Message") }
-                    }
-                    if (group.iAmAdmin && group.iAmMember && !member.isMe) {
-                        TextButton(onClick = { removing = member }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+                        // Actions under the name, so the name keeps the full width on narrow phones and with large text.
+                        val canMessage = !member.isMe && member.canMessage
+                        val canRemove = group.iAmAdmin && group.iAmMember && !member.isMe
+                        if (canMessage || canRemove) Row(Modifier.padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (canMessage) androidx.compose.material3.FilledTonalButton(
+                                onClick = { onMessage(member.uid) },
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                                colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    contentColor = MaterialTheme.colorScheme.onSurface,
+                                ),
+                            ) { Text("Message") }
+                            if (canRemove) TextButton(onClick = { removing = member }) {
+                                Text("Remove", color = MaterialTheme.colorScheme.error)
+                            }
+                        }
                     }
                 }
             }
