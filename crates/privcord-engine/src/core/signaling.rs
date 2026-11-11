@@ -304,6 +304,38 @@ impl Core {
                 }
                 self.relay_inbound = false;
             }
+            Some("frame") => {
+                // A group file passed on by other members: handled exactly as if it came over a link from the sender.
+                // Only group file frames are accepted this way.
+                let Some(f) = payload.get("f") else { return };
+                match f.get("kind").and_then(Value::as_str) {
+                    Some("file_offer") if f.get("groupId").is_some_and(|g| !g.is_null()) => {
+                        self.peers
+                            .entry(from.clone())
+                            .or_insert_with(super::Peer::offline);
+                        self.relay_inbound = true;
+                        self.on_file_offer(&from, f);
+                        self.relay_inbound = false;
+                    }
+                    Some("file_chunk") => {
+                        let Some(chunk) = privcord_domain::files::FileChunk::from_frame(f) else {
+                            return;
+                        };
+                        // The second helper's copy of a chunk we already have: skip it rather than spoil the transfer.
+                        let next = self
+                            .peers
+                            .get(&from)
+                            .and_then(|p| p.files.next_index(&chunk.message_id));
+                        if next.is_none_or(|n| chunk.index < n) {
+                            return;
+                        }
+                        self.relay_inbound = true;
+                        self.on_file_chunk(&from, f);
+                        self.relay_inbound = false;
+                    }
+                    _ => {}
+                }
+            }
             Some("ack") => {
                 if let Some(id) = text("id") {
                     self.on_ack(&from, &json!({ "messageId": id, "state": "DELIVERED" }));
@@ -344,18 +376,47 @@ impl Core {
             let ConversationId::Group(g) = &row.conversation else {
                 continue;
             };
-            if row.message.kind != MessageKind::Text || row.message.sender_id != uid {
+            if row.message.sender_id != uid {
                 continue;
             }
-            let payload = json!({ "t": "msg", "id": row.message.message_id, "text": row.message.text,
-                "at": row.message.client_created_at, "g": g.as_str() });
-            let Ok(blob) = self.seal_to(&entry.recipient, &payload) else {
-                continue;
-            };
-            if self.forward_via(&entry.recipient, &blob) {
-                self.sealed
+            let key = (entry.message_id.clone(), entry.recipient.clone());
+            let sent = if row.message.kind == MessageKind::Text {
+                let payload = json!({ "t": "msg", "id": row.message.message_id, "text": row.message.text,
+                    "at": row.message.client_created_at, "g": g.as_str() });
+                let Ok(blob) = self.seal_to(&entry.recipient, &payload) else {
+                    continue;
+                };
+                self.forward_via(&entry.recipient, &blob)
+            } else {
+                // A file (voice note, photo, anything): its offer and every chunk, each sealed to the member, in order.
+                // Both helpers get the same sealed copies; the member keeps the first of each and skips repeats.
+                if self
+                    .sealed
                     .meshed
-                    .insert((entry.message_id.clone(), entry.recipient.clone()), now);
+                    .get(&key)
+                    .is_some_and(|at| now - at < super::FILE_RETRY_AFTER_MS)
+                {
+                    continue;
+                }
+                let Some(frames) = self.outbox_frames(&entry.message_id) else {
+                    continue;
+                };
+                let mut ok = true;
+                for f in frames {
+                    let Ok(blob) = self.seal_to(&entry.recipient, &json!({ "t": "frame", "f": f }))
+                    else {
+                        ok = false;
+                        break;
+                    };
+                    if !self.forward_via(&entry.recipient, &blob) {
+                        ok = false;
+                        break;
+                    }
+                }
+                ok
+            };
+            if sent {
+                self.sealed.meshed.insert(key, now);
             }
         }
         let outbox = &self.outbox;

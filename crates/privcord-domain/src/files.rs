@@ -408,6 +408,11 @@ impl FileAssembler {
         }
     }
 
+    /// The chunk this transfer needs next, or `None` if there is no such transfer.
+    pub fn next_index(&self, id: &MessageId) -> Option<usize> {
+        self.active.get(id.as_str()).map(|t| t.next)
+    }
+
     /// 0.0 to 1.0, or `None` if there is no such transfer.
     pub fn progress(&self, id: &MessageId) -> Option<f64> {
         let t = self.active.get(id.as_str())?;

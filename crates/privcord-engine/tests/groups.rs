@@ -330,3 +330,66 @@ fn members_without_a_link_to_each_other_still_get_each_others_messages_through_t
     }
     assert_eq!(b.core.snapshot().queued, 0);
 }
+
+#[test]
+fn a_voice_note_reaches_a_member_without_a_link_and_a_new_group_dials_everyone_at_once() {
+    let clock = FakeClock::at(1_700_000_000_000);
+    let (mut a, mut b, mut c) = (
+        node("alice", &clock),
+        node("bob", &clock),
+        node("carol", &clock),
+    );
+    befriend(&mut a, &mut b);
+    befriend(&mut a, &mut c);
+    let mut events = b.core.subscribe();
+    let gid = a
+        .core
+        .create_group("Three", &[b.uid.clone(), c.uid.clone()])
+        .unwrap();
+    let mut all = [&mut a, &mut b, &mut c];
+    link(&mut all, 0, 1);
+    link(&mut all, 0, 2);
+    let [a, b, c] = all;
+
+    // Bob met Carol through the group: he asks for a link to her right away, not after a retry delay.
+    let mut dialed = Vec::new();
+    while let Ok((_, e)) = events.try_recv() {
+        if let privcord_engine::EngineEvent::DialRequested { peer, .. } = e {
+            dialed.push(peer);
+        }
+    }
+    assert!(
+        dialed.contains(&c.uid),
+        "Bob dials Carol as soon as he learns of her"
+    );
+
+    // No link between Carol and Bob: her voice note still reaches him through Alice, whole, and counts as delivered.
+    let voice: Vec<u8> = (0..40_000u32).map(|i| (i * 7 % 251) as u8).collect();
+    let id = c
+        .core
+        .send_group_file(&gid, "voice-note.m4a", "audio/mp4", voice.clone(), None)
+        .unwrap();
+    for _ in 0..8 {
+        let mut all = [&mut *a, &mut *b, &mut *c];
+        pump(&mut all);
+        clock.advance(4_000);
+        for n in [&mut *a, &mut *b, &mut *c] {
+            n.core.tick();
+        }
+    }
+    let mut all = [&mut *a, &mut *b, &mut *c];
+    pump(&mut all);
+    let got = b.core.file(&id).unwrap().expect("Bob has the voice note");
+    assert_eq!(got.bytes, voice);
+    assert_eq!(a.core.file(&id).unwrap().unwrap().bytes, voice);
+    let sent = c
+        .core
+        .snapshot()
+        .messages
+        .into_iter()
+        .flat_map(|(_, v)| v)
+        .find(|m| m.message_id == id)
+        .unwrap();
+    assert_eq!(sent.delivery_state, DeliveryState::Delivered);
+    assert_eq!(c.core.snapshot().queued, 0);
+}

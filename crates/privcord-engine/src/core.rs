@@ -1254,6 +1254,48 @@ impl Core {
     }
 
     /// Send what is due for one person, if their link is up and authenticated.
+    /// The frames that carry one stored message: a text frame, or a file offer and its chunks.
+    pub(super) fn outbox_frames(&self, message_id: &MessageId) -> Option<Vec<Value>> {
+        let row = self.messages.get(message_id)?;
+        let entry_id = message_id;
+        let frames: Vec<Value> = if row.message.kind == MessageKind::File {
+            let Ok(Some(file)) = self.ports.storage.file(entry_id) else {
+                return None;
+            };
+            let group = match &row.conversation {
+                ConversationId::Group(g) => Some(g.as_str().to_owned()),
+                _ => None,
+            };
+            let Ok(offer) = FileOffer::make(
+                entry_id.clone(),
+                group,
+                &file.name,
+                &file.mime,
+                &file.bytes,
+                row.message.client_created_at,
+                row.message.reply_to.clone(),
+            ) else {
+                return None;
+            };
+            std::iter::once(offer.to_frame())
+                .chain(file_chunks(entry_id, &file.bytes).map(|c| c.to_frame()))
+                .collect()
+        } else {
+            vec![match &row.conversation {
+                ConversationId::Group(g) => GroupFrame::Message(GroupMessage {
+                    group_id: g.as_str().to_owned(),
+                    message_id: row.message.message_id.clone(),
+                    text: row.message.text.clone(),
+                    client_created_at: row.message.client_created_at,
+                    reply_to: row.message.reply_to.clone(),
+                })
+                .to_value(),
+                _ => row.message.to_peer_frame(),
+            }]
+        };
+        Some(frames)
+    }
+
     fn flush(&mut self, peer: &UserId) {
         if !self.peers.get(peer).is_some_and(Peer::ready) {
             return;
@@ -1266,43 +1308,11 @@ impl Core {
             .cloned()
             .collect();
         for entry in due {
-            let Some(row) = self.messages.get(&entry.message_id) else {
+            let Some(frames) = self.outbox_frames(&entry.message_id) else {
                 continue;
             };
-            let frames: Vec<Value> = if row.message.kind == MessageKind::File {
-                let Ok(Some(file)) = self.ports.storage.file(&entry.message_id) else {
-                    continue;
-                };
-                let group = match &row.conversation {
-                    ConversationId::Group(g) => Some(g.as_str().to_owned()),
-                    _ => None,
-                };
-                let Ok(offer) = FileOffer::make(
-                    entry.message_id.clone(),
-                    group,
-                    &file.name,
-                    &file.mime,
-                    &file.bytes,
-                    row.message.client_created_at,
-                    row.message.reply_to.clone(),
-                ) else {
-                    continue;
-                };
-                std::iter::once(offer.to_frame())
-                    .chain(file_chunks(&entry.message_id, &file.bytes).map(|c| c.to_frame()))
-                    .collect()
-            } else {
-                vec![match &row.conversation {
-                    ConversationId::Group(g) => GroupFrame::Message(GroupMessage {
-                        group_id: g.as_str().to_owned(),
-                        message_id: row.message.message_id.clone(),
-                        text: row.message.text.clone(),
-                        client_created_at: row.message.client_created_at,
-                        reply_to: row.message.reply_to.clone(),
-                    })
-                    .to_value(),
-                    _ => row.message.to_peer_frame(),
-                }]
+            let Some(row) = self.messages.get(&entry.message_id) else {
+                continue;
             };
             let was_queued = row.message.delivery_state == DeliveryState::Queued;
             let file_frames = (row.message.kind == MessageKind::File)
@@ -1580,8 +1590,37 @@ impl Core {
                 group_id: group_id.clone(),
             });
         }
+        // Someone joined (or we did, or we just met members): connect to every member we are not linked to now, instead
+        // of waiting out a retry delay earned before. Members we never verified are linked too: the link carries group
+        // traffic only, direct chats stay behind the usual trust rules.
+        if changed || !result.new_contacts.is_empty() {
+            self.connect_group_members(result.changed.iter().chain(result.joined.iter()));
+        }
         self.release_pending_group();
         saved
+    }
+
+    /// Forget the retry delay for every member of these groups we have no link to, and ask for the dials at once.
+    fn connect_group_members<'a>(&mut self, groups: impl Iterator<Item = &'a String>) {
+        let own = self.uid.as_ref().map(|u| u.as_str().to_owned());
+        let members: Vec<UserId> = groups
+            .flat_map(|g| {
+                self.groups
+                    .as_ref()
+                    .map(|c| c.recipients(g))
+                    .unwrap_or_default()
+            })
+            .filter(|u| Some(u) != own.as_ref())
+            .filter_map(|u| UserId::new(u.as_str()).ok())
+            .filter(|u| self.contacts.contains_key(u))
+            .collect();
+        for uid in &members {
+            self.reset_dial_backoff(Some(uid));
+        }
+        if !members.is_empty() {
+            let now = self.now();
+            self.request_dials(now);
+        }
     }
 
     /// Messages that waited for their group: handle them now that it is known (expired ones are dropped).
@@ -2075,7 +2114,7 @@ impl Core {
         // Already have it (a retry): acknowledge again and store nothing.
         if self.messages.contains_key(&id) {
             let at = self.now();
-            self.send_secure(peer, &json!({ "v": PROTOCOL_VERSION, "kind": "ack", "messageId": id, "state": "DELIVERED", "at": at }));
+            self.send_ack(peer, &id, at);
             return;
         }
         let outcome = self
@@ -2168,7 +2207,7 @@ impl Core {
             text: offer.name.clone(),
             client_created_at: offer.client_created_at,
             kind: MessageKind::File,
-            transport: TransportKind::P2p,
+            transport: self.inbound_transport(),
             delivery_state: DeliveryState::Delivered,
             reply_to: offer.reply_to.clone(),
             read_at: None,
@@ -2202,7 +2241,7 @@ impl Core {
             preview: privcord_domain::files::file_preview_text(&offer.name),
         });
         let at = self.now();
-        self.send_secure(peer, &json!({ "v": PROTOCOL_VERSION, "kind": "ack", "messageId": message.message_id, "state": "DELIVERED", "at": at }));
+        self.send_ack(peer, &message.message_id, at);
     }
 
     /* ---------------------------------------------------------------- channels and the mesh */
