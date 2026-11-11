@@ -393,3 +393,53 @@ fn a_voice_note_reaches_a_member_without_a_link_and_a_new_group_dials_everyone_a
     assert_eq!(sent.delivery_state, DeliveryState::Delivered);
     assert_eq!(c.core.snapshot().queued, 0);
 }
+
+#[test]
+fn sending_to_a_member_without_a_link_dials_them_first_and_passes_it_on_only_later() {
+    let clock = FakeClock::at(1_700_000_000_000);
+    let (mut a, mut b, mut c) = (
+        node("alice", &clock),
+        node("bob", &clock),
+        node("carol", &clock),
+    );
+    befriend(&mut a, &mut b);
+    befriend(&mut a, &mut c);
+    let gid = a
+        .core
+        .create_group("Three", &[b.uid.clone(), c.uid.clone()])
+        .unwrap();
+    let mut all = [&mut a, &mut b, &mut c];
+    link(&mut all, 0, 1);
+    link(&mut all, 0, 2);
+    let [a, b, c] = all;
+    let mut events = c.core.subscribe();
+
+    c.core.send_group_message(&gid, "hi bob", None).unwrap();
+    let dialed: Vec<UserId> = std::iter::from_fn(|| events.try_recv().ok())
+        .filter_map(|(_, e)| match e {
+            privcord_engine::EngineEvent::DialRequested { peer, .. } => Some(peer),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        dialed.contains(&b.uid),
+        "Carol dials Bob the moment she writes to him"
+    );
+
+    // For the first few seconds nothing is handed to Alice for Bob: the direct link gets its chance.
+    clock.advance(3_000);
+    for n in [&mut *a, &mut *b, &mut *c] {
+        n.core.tick();
+    }
+    let mut all = [&mut *a, &mut *b, &mut *c];
+    pump(&mut all);
+    assert!(group_texts(b, &gid).is_empty());
+
+    // The link comes up: the message goes straight to Bob, once.
+    let mut all = [&mut *a, &mut *b, &mut *c];
+    link(&mut all, 1, 2);
+    let [a, b, c] = all;
+    let _ = a;
+    assert_eq!(group_texts(b, &gid), ["hi bob"]);
+    assert_eq!(c.core.snapshot().queued, 0);
+}

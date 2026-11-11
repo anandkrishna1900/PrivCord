@@ -1808,7 +1808,25 @@ impl Core {
         for r in &recipients {
             self.flush(r);
         }
+        self.connect_now(&recipients);
         Ok(id)
+    }
+
+    /// We have something for these people and no link to some of them: dial those now (forgetting any retry delay), so
+    /// two members who are both online talk directly. Passing it through other members (`tick_group_mesh`) is only the
+    /// fallback for when that does not work out within a few seconds.
+    fn connect_now(&mut self, people: &[UserId]) {
+        let mut any = false;
+        for uid in people {
+            if self.contacts.contains_key(uid) && !self.peers.get(uid).is_some_and(Peer::ready) {
+                self.reset_dial_backoff(Some(uid));
+                any = true;
+            }
+        }
+        if any {
+            let now = self.now();
+            self.request_dials(now);
+        }
     }
 
     /// Send one of our own messages again from the start: after a friend refused it (a file that arrived while they were busy,
@@ -2015,6 +2033,7 @@ impl Core {
         for r in &recipients {
             self.flush(r);
         }
+        self.connect_now(&recipients);
         Ok(id)
     }
 

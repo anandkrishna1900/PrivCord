@@ -42,6 +42,10 @@ android {
     defaultConfig {
         applicationId = "com.duochat.app"
         minSdk = 26
+        // The TURN relay built into this release (empty: none). Set in CI from repository secrets; see docs/turn-server/README.md.
+        buildConfigString("PRIVCORD_TURN_URLS", System.getenv("PRIVCORD_TURN_URLS") ?: "")
+        buildConfigString("PRIVCORD_TURN_USERNAME", System.getenv("PRIVCORD_TURN_USERNAME") ?: "")
+        buildConfigString("PRIVCORD_TURN_CREDENTIAL", System.getenv("PRIVCORD_TURN_CREDENTIAL") ?: "")
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"

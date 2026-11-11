@@ -468,6 +468,11 @@ SectionTitle("Appearance")
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                if (com.duochat.app.p2p.hasBuiltinTurn) ToggleRow(
+                    "PrivCord relay when a direct link fails",
+                    "Some networks block direct connections. The relay then passes the encrypted traffic on; it cannot read it.",
+                    settings.network.builtinTurn,
+                ) { onUpdateSettings { copy(network = network.copy(builtinTurn = it)) } }
                 ToggleRow(
                     "Always use the relay",
                     "Only use TURN. Hides your IP address from your friend; needs a TURN server.",

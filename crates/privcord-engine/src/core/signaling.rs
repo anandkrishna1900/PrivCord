@@ -30,6 +30,9 @@ const RELAY_TTL_SEC: u32 = 7 * 24 * 3600;
 const LIVE_TTL_SEC: u32 = 120;
 /// How often a group message for a member we have no link to is handed again to the members we do have links to.
 const MESH_RETRY_MS: i64 = 15_000;
+/// A direct link gets this long to come up (the dial starts the moment the message is sent) before the message is also
+/// handed to other members to pass on.
+const MESH_AFTER_MS: i64 = 10_000;
 
 #[derive(Default)]
 pub(super) struct SealedState {
@@ -376,7 +379,7 @@ impl Core {
             let ConversationId::Group(g) = &row.conversation else {
                 continue;
             };
-            if row.message.sender_id != uid {
+            if row.message.sender_id != uid || now - row.message.client_created_at < MESH_AFTER_MS {
                 continue;
             }
             let key = (entry.message_id.clone(), entry.recipient.clone());
