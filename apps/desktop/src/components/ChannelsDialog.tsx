@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { ChannelView, ChatEngine } from '../lib/engine';
+import type { ChannelView } from '../lib/engine';
+import type { ChatEngineApi } from '../lib/engineApi';
 import { Modal } from './Modal';
 
 const SUGGESTIONS = ['general', 'random', 'help', 'news', 'music', 'tech'];
@@ -14,7 +15,7 @@ export function ChannelsDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  engine: ChatEngine | null;
+  engine: ChatEngineApi | null;
   channels: ChannelView[];
   onJoined: (id: string) => void;
 }) {

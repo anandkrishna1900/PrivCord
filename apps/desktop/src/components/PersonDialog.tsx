@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { ChatEngine, ContactView } from '../lib/engine';
+import type { ContactView } from '../lib/engine';
+import type { ChatEngineApi } from '../lib/engineApi';
 import { Modal } from './Modal';
 import { Avatar } from './Avatar';
 import { CheckIcon, ShieldIcon } from './Icons';
@@ -15,7 +16,7 @@ export function PersonDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  engine: ChatEngine | null;
+  engine: ChatEngineApi | null;
   person: ContactView | null;
   onManual: (uid: string) => void;
   onRemoved: () => void;

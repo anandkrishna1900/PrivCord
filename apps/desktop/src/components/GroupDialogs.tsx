@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { ChatEngine, ChatState, ContactView, GroupView } from '../lib/engine';
+import type { ChatState, ContactView, GroupView } from '../lib/engine';
+import type { ChatEngineApi } from '../lib/engineApi';
 import { Modal } from './Modal';
 import { Avatar } from './Avatar';
 import { MAX_GROUP_MEMBERS } from '@duochat/protocol';
@@ -62,7 +63,7 @@ export function NewGroupDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  engine: ChatEngine | null;
+  engine: ChatEngineApi | null;
   state: ChatState;
   onCreated: (groupId: string) => void;
 }) {
@@ -142,7 +143,7 @@ export function GroupDetailsDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  engine: ChatEngine | null;
+  engine: ChatEngineApi | null;
   state: ChatState;
   group: GroupView | null;
   onVerify: (uid: string) => void;

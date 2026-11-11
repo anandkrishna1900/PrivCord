@@ -15,7 +15,7 @@ import {
   type KillSwitchReport,
   type StepStatus,
 } from '@duochat/protocol';
-import type { ChatEngine } from '../lib/engine';
+import type { ChatEngineApi } from '../lib/engineApi';
 import {
   runConversationKillSwitch,
   runAppKillSwitch,
@@ -148,7 +148,7 @@ export function NukeDialog({
   autoRun?: boolean;
   open: boolean;
   onClose: () => void;
-  engine: ChatEngine | null;
+  engine: ChatEngineApi | null;
   uid: string;
   peerUid: string;
   onFinished: () => void | Promise<void>;
@@ -361,7 +361,7 @@ export function ClearChatDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  engine: ChatEngine | null;
+  engine: ChatEngineApi | null;
   uid: string;
   peerUid: string;
 }) {

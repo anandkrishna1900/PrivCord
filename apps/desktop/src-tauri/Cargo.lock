@@ -3690,6 +3690,7 @@ dependencies = [
 name = "privcord-desktop-host"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "privcord-ffi",
  "serde",
  "serde_json",

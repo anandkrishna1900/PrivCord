@@ -8,7 +8,8 @@ import {
   type NetworkConfig,
   type TransportMode,
 } from '@duochat/protocol';
-import type { ChatEngine, ChatState } from '../lib/engine';
+import type { ChatState } from '../lib/engine';
+import type { ChatEngineApi } from '../lib/engineApi';
 import { loadNetworkConfig, saveNetworkConfig } from '../lib/network';
 import { CheckIcon, InfoIcon } from './Icons';
 
@@ -33,7 +34,7 @@ function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange
 }
 
 /** STUN, TURN, signaling, relays, and transport mode selector. */
-export function NetworkSettings({ engine, state }: { engine: ChatEngine | null; state: ChatState | null }) {
+export function NetworkSettings({ engine, state }: { engine: ChatEngineApi | null; state: ChatState | null }) {
   const [initial] = useState(loadNetworkConfig);
   const [stun, setStun] = useState(initial.stun.join('\n'));
   const [turnUrls, setTurnUrls] = useState(initial.turn.map((t) => t.urls.join(',')).join('\n'));

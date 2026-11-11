@@ -4,7 +4,7 @@
  * platform-agnostic and unit-testable.
  */
 
-import type { ChatEngine } from './engine';
+import type { ChatEngineApi } from './engineApi';
 import { purgePeerKeyCaches } from './identity';
 import {
   KILL_SWITCH_REPORT_KEY,
@@ -26,7 +26,7 @@ function parsePersistedReport(raw: string): KillSwitchReport | null {
 }
 
 export function buildKillSwitchDeps(
-  engine: ChatEngine | null,
+  engine: ChatEngineApi | null,
   uid: string,
   peerUid: string,
 ): DesktopKillSwitchDeps | null {

@@ -106,8 +106,8 @@ fn snapshot_text(s: &Side) -> String {
     s.host.invoke("snapshot", &json!({})).unwrap().to_string()
 }
 
-#[test]
-fn two_hosted_engines_pair_connect_and_exchange_a_message_through_json() {
+/// Two engines, paired as verified friends, with their link up (the handshake already carried across).
+fn paired() -> (Side, Side, String, String) {
     let (a, b) = (side(), side());
     assert!(a
         .host
@@ -156,6 +156,12 @@ fn two_hosted_engines_pair_connect_and_exchange_a_message_through_json() {
         "both sides should consider the link up"
     );
 
+    (a, b, a_uid, b_uid)
+}
+
+#[test]
+fn two_hosted_engines_pair_connect_and_exchange_a_message_through_json() {
+    let (a, b, a_uid, b_uid) = paired();
     let id = a
         .host
         .invoke(
@@ -166,6 +172,17 @@ fn two_hosted_engines_pair_connect_and_exchange_a_message_through_json() {
     assert!(id.is_string());
     pump(&a, &a_uid, &b, &b_uid);
     assert!(snapshot_text(&b).contains("hello from the hosted engine"));
+
+    // `WRITE_FIXTURE=1 cargo test -p privcord-desktop-host` refreshes the real snapshot the page's TypeScript tests read.
+    if std::env::var_os("WRITE_FIXTURE").is_some() {
+        let snapshot = b.host.invoke("snapshot", &json!({})).unwrap();
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../apps/desktop/src/lib/hosted/fixtures/snapshot.json"
+        );
+        std::fs::create_dir_all(std::path::Path::new(path).parent().unwrap()).unwrap();
+        std::fs::write(path, serde_json::to_string_pretty(&snapshot).unwrap()).unwrap();
+    }
 
     // Bob's side told the page about it.
     let mut saw_message = false;
@@ -195,4 +212,61 @@ fn unknown_commands_and_bad_arguments_are_errors_not_silence() {
         .is_err());
     let _: Value = a.host.invoke("snapshot", &json!({})).unwrap();
     a.host.shutdown();
+}
+
+#[test]
+fn files_search_and_group_commands_work_through_json() {
+    use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+    let (a, b, a_uid, b_uid) = paired();
+
+    // A file goes across as base64 and comes back byte for byte.
+    let bytes: Vec<u8> = (0..30_000u32).map(|i| (i % 251) as u8).collect();
+    let id = a
+        .host
+        .invoke(
+            "send_file",
+            &json!({ "peer": b_uid, "name": "data.bin", "mime": "application/octet-stream", "data": B64.encode(&bytes) }),
+        )
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_owned();
+    pump(&a, &a_uid, &b, &b_uid);
+    // B sees the file message and can read it.
+    let snapshot = b.host.invoke("snapshot", &json!({})).unwrap();
+    let file_id = snapshot["conversations"][0]["messages"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(file_id, id);
+    let loaded = b
+        .host
+        .invoke("load_file", &json!({ "message_id": file_id }))
+        .unwrap();
+    assert_eq!(B64.decode(loaded["data"].as_str().unwrap()).unwrap(), bytes);
+
+    // Search finds a text message.
+    a.host
+        .invoke(
+            "send_message",
+            &json!({ "peer": b_uid, "text": "pineapple pizza" }),
+        )
+        .unwrap();
+    pump(&a, &a_uid, &b, &b_uid);
+    let hits = b
+        .host
+        .invoke("search", &json!({ "query": "pineapple" }))
+        .unwrap();
+    assert_eq!(hits.as_array().unwrap().len(), 1);
+
+    // A group can be made with the friend; the page asks only through commands.
+    let group = a
+        .host
+        .invoke(
+            "create_group",
+            &json!({ "name": "Trip", "members": [b_uid] }),
+        )
+        .unwrap();
+    assert!(group.is_string());
+    assert!(a.host.invoke("snapshot", &json!({})).unwrap()["groups"][0]["name"] == "Trip");
 }

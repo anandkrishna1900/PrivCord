@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ChatState } from '../lib/engine';
-import type { ChatEngine } from '../lib/engine';
+import type { ChatEngineApi } from '../lib/engineApi';
 import { copyText } from '../lib/clipboard';
 import { Modal } from './Modal';
 import {
@@ -24,7 +24,7 @@ export function ManualConnectDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  engine: ChatEngine | null;
+  engine: ChatEngineApi | null;
   state: ChatState | null;
   /** The friend to connect to. */
   uid: string;

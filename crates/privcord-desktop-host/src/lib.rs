@@ -11,6 +11,7 @@
 //! It reuses `privcord-ffi`'s `PrivcordEngine`, so the desktop and Android apps run exactly the same engine surface.
 //! Commands are added here as the page moves onto the engine; an unknown command is an error, never a silent no-op.
 
+use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use privcord_ffi::{
     LinkKind, NotifierCallbacks, PathKind, PrivcordEngine, SecureStoreCallbacks, SignalKindDto,
     TransportCallbacks,
@@ -40,6 +41,31 @@ fn text(args: &Value, key: &str) -> Result<String, HostError> {
 
 fn maybe_text(args: &Value, key: &str) -> Option<String> {
     args.get(key).and_then(Value::as_str).map(str::to_owned)
+}
+
+fn number(args: &Value, key: &str) -> Result<u32, HostError> {
+    args.get(key)
+        .and_then(Value::as_u64)
+        .and_then(|n| u32::try_from(n).ok())
+        .ok_or_else(|| format!("missing number argument `{key}`"))
+}
+
+fn texts(args: &Value, key: &str) -> Result<Vec<String>, HostError> {
+    args.get(key)
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect()
+        })
+        .ok_or_else(|| format!("missing list argument `{key}`"))
+}
+
+/// File bytes cross the page boundary as base64 text.
+fn bytes(args: &Value, key: &str) -> Result<Vec<u8>, HostError> {
+    B64.decode(text(args, key)?)
+        .map_err(|_| format!("`{key}` is not valid base64"))
 }
 
 fn flag(args: &Value, key: &str) -> Result<bool, HostError> {
@@ -81,6 +107,10 @@ fn signal_kind(name: &str) -> Result<SignalKindDto, HostError> {
 
 fn json_of<T: serde::Serialize>(value: &T) -> Result<Value, HostError> {
     serde_json::to_value(value).map_err(|e| e.to_string())
+}
+
+fn unit<E: std::fmt::Debug>(result: Result<(), E>) -> Result<Value, HostError> {
+    result.map(|()| Value::Null).map_err(failed)
 }
 
 fn failed<E: std::fmt::Debug>(e: E) -> HostError {
@@ -189,6 +219,105 @@ impl DesktopHost {
                 .map_err(failed)?;
                 Ok(Value::Null)
             }
+            // groups
+            "create_group" => Ok(json!(e
+                .create_group(text(args, "name")?, texts(args, "members")?)
+                .map_err(failed)?)),
+            "add_group_member" => {
+                unit(e.add_group_member(text(args, "group")?, text(args, "uid")?))
+            }
+            "remove_group_member" => {
+                unit(e.remove_group_member(text(args, "group")?, text(args, "uid")?))
+            }
+            "leave_group" => unit(e.leave_group(text(args, "group")?)),
+            "rename_group" => unit(e.rename_group(text(args, "group")?, text(args, "name")?)),
+            "send_group_message" => Ok(json!(e
+                .send_group_message(
+                    text(args, "group")?,
+                    text(args, "text")?,
+                    maybe_text(args, "reply_to")
+                )
+                .map_err(failed)?)),
+            // files (bytes are base64)
+            "send_file" => Ok(json!(e
+                .send_file(
+                    text(args, "peer")?,
+                    text(args, "name")?,
+                    text(args, "mime")?,
+                    bytes(args, "data")?,
+                    maybe_text(args, "reply_to")
+                )
+                .map_err(failed)?)),
+            "send_group_file" => Ok(json!(e
+                .send_group_file(
+                    text(args, "group")?,
+                    text(args, "name")?,
+                    text(args, "mime")?,
+                    bytes(args, "data")?,
+                    maybe_text(args, "reply_to")
+                )
+                .map_err(failed)?)),
+            "load_file" => Ok(
+                match e.load_file(text(args, "message_id")?).map_err(failed)? {
+                    Some(f) => {
+                        json!({ "name": f.name, "mime": f.mime, "data": B64.encode(f.data) })
+                    }
+                    None => Value::Null,
+                },
+            ),
+            // public channels
+            "join_channel" => Ok(json!(e
+                .join_channel(text(args, "name")?)
+                .map_err(failed)?)),
+            "leave_channel" => unit(e.leave_channel(text(args, "name")?)),
+            "send_channel_message" => Ok(json!(e
+                .send_channel_message(text(args, "name")?, text(args, "text")?)
+                .map_err(failed)?)),
+            // contacts and people
+            "set_checked" => unit(e.set_checked(text(args, "uid")?, flag(args, "checked")?)),
+            "rename_contact" => unit(e.rename_contact(text(args, "uid")?, text(args, "name")?)),
+            "remove_contact" => unit(e.remove_contact(text(args, "uid")?)),
+            "set_muted" => unit(e.set_muted(text(args, "uid")?, flag(args, "muted")?)),
+            "set_group_only" => unit(e.set_group_only(flag(args, "value")?)),
+            "set_store_forward" => unit(e.set_store_forward(flag(args, "value")?)),
+            "accept_request" => Ok(json!(e
+                .accept_request(text(args, "uid")?)
+                .map_err(failed)?)),
+            "dismiss_request" => unit(e.dismiss_request(text(args, "uid")?)),
+            "stop_invite" => unit(e.stop_invite()),
+            "retry_answer" => unit(e.retry_answer()),
+            "clear_answer" => unit(e.clear_answer()),
+            // message actions
+            "delete_message" => {
+                unit(e.delete_message(text(args, "message_id")?, flag(args, "everyone")?))
+            }
+            "react" => unit(e.react(text(args, "message_id")?, text(args, "emoji")?)),
+            "retry_message" => unit(e.retry_message(text(args, "message_id")?)),
+            "mark_conversation_read" => unit(e.mark_conversation_read(text(args, "conversation")?)),
+            "search" => json_of(
+                &e.search(text(args, "query")?, number(args, "limit").unwrap_or(50))
+                    .map_err(failed)?,
+            ),
+            // link bookkeeping
+            "set_link_path" => {
+                unit(e.set_link_path(text(args, "peer")?, path_kind(&text(args, "path")?)?))
+            }
+            // backup and wiping
+            "export_backup" => Ok(json!(e
+                .export_backup(text(args, "passphrase")?)
+                .map_err(failed)?)),
+            "import_backup" => json_of(
+                &e.import_backup(text(args, "text")?, text(args, "passphrase")?)
+                    .map_err(failed)?,
+            ),
+            "wipe_conversation" => json_of(
+                &e.wipe_conversation(
+                    text(args, "conversation")?,
+                    flag(args, "erase_session").unwrap_or(false),
+                )
+                .map_err(failed)?,
+            ),
+            "wipe_everything" => json_of(&e.wipe_everything().map_err(failed)?),
             // everything the screens show
             "snapshot" => json_of(&e.snapshot().map_err(failed)?),
             other => Err(format!("unknown command `{other}`")),

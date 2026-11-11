@@ -212,3 +212,34 @@ pub async fn engine_stop(state: State<'_, EngineState>) -> Result<(), String> {
     }
     Ok(())
 }
+
+/// Carry the existing desktop identity over to the engine, once. `secrets_hex` is the signing scalar then the agreement
+/// scalar (32 bytes each) of the identity the page already holds, so nobody has to re-enter their recovery phrase. Does
+/// nothing (and says `false`) if the engine already has an identity, or if the engine is running.
+#[tauri::command]
+pub async fn engine_seed_identity(
+    state: State<'_, EngineState>,
+    secrets_hex: String,
+) -> Result<bool, String> {
+    if state
+        .0
+        .lock()
+        .map_err(|_| "engine state is poisoned".to_owned())?
+        .is_some()
+    {
+        return Ok(false);
+    }
+    let bytes = unhex(&secrets_hex).ok_or_else(|| "the identity is not valid hex".to_owned())?;
+    if bytes.len() != 64 {
+        return Err("the identity must be 64 bytes".to_owned());
+    }
+    let secure = KeyringSecure;
+    if secure.load_identity().is_some() {
+        return Ok(false);
+    }
+    if secure.save_identity(bytes) {
+        Ok(true)
+    } else {
+        Err("could not save the identity to the system credential store".to_owned())
+    }
+}

@@ -133,7 +133,8 @@ pub fn run() {
         ble_commands::ble_disconnect,
         engine_host::engine_start,
         engine_host::engine_invoke,
-        engine_host::engine_stop
+        engine_host::engine_stop,
+        engine_host::engine_seed_identity
     ]);
     #[cfg(not(desktop))]
     let builder = builder.invoke_handler(tauri::generate_handler![

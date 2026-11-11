@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ChatEngine, ChatState, UiMessage } from '../lib/engine';
+import type { ChatState, UiMessage } from '../lib/engine';
+import type { ChatEngineApi } from '../lib/engineApi';
 import type { AppSettings } from '../lib/settings';
 import { LOCAL_ID } from '../lib/identity';
 import { formatTime } from '../lib/format';
@@ -56,7 +57,7 @@ export function ChatLayout({
   fatal,
 }: {
   state: ChatState | null;
-  engine: ChatEngine | null;
+  engine: ChatEngineApi | null;
   settings: AppSettings;
   updateSettings: (patch: Partial<AppSettings>) => void;
   fatal: string | null;

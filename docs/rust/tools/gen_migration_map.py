@@ -82,6 +82,11 @@ rule(r"src-tauri/src/(lib|main)\.rs", "Tauri shell: commands, keyring, notificat
 rule(r"src-tauri/src/ble\.rs", "Native BLE central", "BLE adapter", "Adapter", ADAPTER, "Stays")
 rule(r"src-tauri/src/engine_host\.rs", "Hosts the Rust engine in the shell: keyring secret store, events to the page", "Desktop adapter + engine host", "Adapter", ADAPTER, "Stays; M7 seam (page not rewired yet)")
 rule(r"desktop/src/lib/engineBridge(\.test)?\.ts", "Page side of the hosted engine: ordered inbound calls, Busy retry, Tauri events", "Desktop adapter + engine host", "Adapter", ADAPTER, "Stays; M7 seam (page not rewired yet)")
+rule(r"desktop/src/lib/engineApi\.ts", "The interface the screens use to talk to a chat engine (TypeScript or Rust)", "Platform seam (stays)", "Adapter", ADAPTER, "Stays")
+rule(r"desktop/src/lib/hosted/(shape)(\.test)?\.ts", "Shapes the Rust engine's snapshot into the screens' state", "Desktop adapter + engine host", "Adapter", ADAPTER, "Stays; tested on a real engine snapshot")
+rule(r"desktop/src/lib/hosted/(runtime)(\.test)?\.ts", "WebRTC and relay adapters for the hosted engine", "Desktop adapter + engine host", "Adapter", ADAPTER, "Stays")
+rule(r"desktop/src/lib/hosted/(hostedEngine|start|enable|legacyIdentity)\.ts", "The desktop chat engine on the Rust engine: commands, state, identity migration, the on/off switch", "Desktop adapter + engine host", "Adapter", ADAPTER, "Stays; opt-in until M9")
+rule(r"desktop/src/lib/hosted/e2e\.test\.ts", "End to end: two hosted engines on real Rust engine processes", "Desktop adapter + engine host", "Adapter", ADAPTER, "Stays")
 # ---- android
 rule(r"android/.*/ui/.*", "Compose screens", "UI", "UI", UI, "Stays")
 rule(r"android/.*/rustcore/.*\.kt", "Android adapters for the Rust engine (Keystore secret store, on-device probe)", "Platform adapter for engine ports", "Adapter", ADAPTER, "Stays")

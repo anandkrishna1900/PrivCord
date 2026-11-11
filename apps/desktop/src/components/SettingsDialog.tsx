@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { disableLock, enableLock, isLockEnabled, lockSupported, unlock } from '../lib/appLock';
-import type { ChatEngine, ChatState } from '../lib/engine';
+import type { ChatState } from '../lib/engine';
+import type { ChatEngineApi } from '../lib/engineApi';
 import type { AppSettings, ThemeMode } from '../lib/settings';
 import { ACCENTS } from '../lib/settings';
 import { THEMES, themeVars } from '../lib/themes';
 import { ensureNotificationPermission } from '../lib/notifications';
 import { config } from '../config';
+import { hostedEngineAvailable, hostedEngineEnabled, setHostedEngineEnabled } from '../lib/hosted/enable';
 import { Modal } from './Modal';
 import { NetworkSettings } from './NetworkSettings';
 import { AlertIcon, CheckIcon, KeyIcon, TrashIcon } from './Icons';
@@ -54,7 +56,7 @@ function Toggle({
   );
 }
 
-function BackupControl({ engine }: { engine: ChatEngine | null }) {
+function BackupControl({ engine }: { engine: ChatEngineApi | null }) {
   const [pass, setPass] = useState('');
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -215,7 +217,7 @@ export function SettingsDialog({
   open: boolean;
   onClose: () => void;
   initialSection: SettingsSection;
-  engine: ChatEngine | null;
+  engine: ChatEngineApi | null;
   state: ChatState;
   settings: AppSettings;
   updateSettings: (patch: Partial<AppSettings>) => void;
@@ -405,6 +407,7 @@ export function SettingsDialog({
             <details className="advanced">
               <summary>Advanced</summary>
               <NetworkSettings engine={engine} state={state} />
+              {hostedEngineAvailable() ? <EngineSwitch /> : null}
             </details>
           </section>
         ) : null}
@@ -517,5 +520,32 @@ export function SettingsDialog({
         ) : null}
       </div>
     </Modal>
+  );
+}
+
+
+/** The opt-in switch for the Rust engine (preview): the app restarts on the other engine. */
+function EngineSwitch() {
+  const [on, setOn] = useState(hostedEngineEnabled());
+  return (
+    <div className="settings-row">
+      <label>
+        <input
+          type="checkbox"
+          checked={on}
+          onChange={(event) => {
+            setHostedEngineEnabled(event.target.checked);
+            setOn(event.target.checked);
+            window.location.reload();
+          }}
+        />{' '}
+        Run on the Rust engine (preview)
+      </label>
+      <p className="muted small">
+        Runs the same chats on the shared Rust engine. It keeps its own copy of your messages, so what you wrote in the other mode is not
+        shown here, and the other way round. Bluetooth and manual connection codes are not available in this mode yet. The app restarts
+        when you change this.
+      </p>
+    </div>
   );
 }

@@ -5,22 +5,39 @@ preview; the **Windows app still runs on its own TypeScript engine** (`apps/desk
 "partly ported" in [MIGRATION_MAP.md](MIGRATION_MAP.md)). This file says what moving the desktop onto the engine involves,
 and what has to be true before any old engine is deleted. It is a plan, not a record of work done.
 
-## Done so far (the seam, not the switch)
+## Done so far (rewired behind an opt-in switch; the TypeScript engine is still the default)
 
-* `crates/privcord-desktop-host`: the engine behind a JSON command/event interface (`invoke`, `next_event`), no Tauri code. Tested by
-  two hosted engines that pair, connect over an in-memory link and exchange a message using only that interface.
-* `privcord-ffi` has an optional `serde` feature so snapshots and events can be turned into JSON.
-* `apps/desktop/src-tauri/src/engine_host.rs`: Tauri commands `engine_start`, `engine_invoke`, `engine_stop`; the identity's
-  secrets in Windows Credential Manager; events to the page (`privcord://frame`, `privcord://signal-put`, ...). Compiles on
-  Linux and Windows CI. **Nothing in the app calls it yet.**
-* `apps/desktop/src/lib/engineBridge.ts`: the page side, with strictly ordered inbound calls and a retry while the engine is busy.
-* The shell and the engine now share one SQLite build: `rusqlite` was moved from 0.41 to 0.31 so it links the same
-  `libsqlite3-sys` as `tauri-plugin-sql`. (Two copies of the native library cannot be linked.) When `tauri-plugin-sql` is
-  removed (the engine owns the database) this can move forward again.
+* `crates/privcord-desktop-host`: the engine behind a JSON command/event interface (`invoke`, `next_event`), no Tauri code: identity,
+  contacts, six-word invites, messages, files, groups, channels, reactions, delete, search, backup, wipe, links, signaling.
+  `examples/host_stdio.rs` runs it as a separate process, standing in for the shell in tests.
+* `apps/desktop/src-tauri/src/engine_host.rs`: Tauri commands `engine_start`, `engine_invoke`, `engine_stop`,
+  `engine_seed_identity`; the identity's secrets in Windows Credential Manager; engine-to-page events. Compiles on Linux and in
+  Windows CI.
+* **Page adapters** (`apps/desktop/src/lib/hosted/runtime.ts`): WebRTC links (offer/answer through the engine's signals, ordered
+  outbound frames that wait while the channel is full, ordered inbound calls with a retry while the engine is busy) and the relay
+  sockets (one per mailbox, puts wait for an online socket, the page opens its own mailbox itself because the engine subscribes
+  before the page is listening). Same lessons as the Android adapter.
+* **`HostedChatEngine`** (`hosted/hostedEngine.ts`): the same `ChatEngineApi` the TypeScript `ChatEngine` implements
+  (`lib/engineApi.ts`; the screens now depend on the interface), shaping the engine's snapshot into the screens' state
+  (`hosted/shape.ts`, tested on a real recorded snapshot).
+* **The switch**: Settings > Connection > Advanced > "Run on the Rust engine (preview)" (packaged app only). Off by default; the app
+  restarts on the other engine. The existing identity is carried over to the engine on first use (verified: it derives to the same
+  user id), so nobody re-enters their phrase.
+* **Tests**: unit tests for the shaping and the adapters; an end-to-end test (`hosted/e2e.test.ts`, run in CI) with two real Rust
+  engine processes driven through the same class the screens use: add each other, connect, message and delivery state, a file byte
+  for byte, search, reaction, group and group message.
+* The shell and the engine share one SQLite build: `rusqlite` moved from 0.41 to 0.31 so it links the same `libsqlite3-sys` as
+  `tauri-plugin-sql`. It can move forward once that plugin is removed.
 
-**Not done:** the page still runs on `engine.ts`; only a handful of commands are exposed (identity, contacts, invites, messages,
-links, signaling, snapshot); files, groups, channels, search, backup, wipe and the rest need adding as the page moves over;
-the WebRTC and relay adapters in the page are not written; nothing has run on Windows.
+**Not done**
+* Nothing has run on Windows: the packaged app, a real WebRTC link, Windows Credential Manager, the emergency wipe through the
+  engine, the lock screen with this mode on.
+* **Old chats do not appear in this mode.** The engine keeps its own database; `privcord-import` has not been wired to read the old
+  desktop database into it. (The recovery-phrase identity does carry over.)
+* Bluetooth and manual connection codes are not available in this mode.
+* The wipe dialogs call the engine's wipe through a stand-in store; the full report is not shown.
+* Search in the screens scans what is on screen rather than asking the engine.
+* The old engine and its local store are still shipped and still the default; nothing was deleted.
 
 ## Why this is not a quick job
 

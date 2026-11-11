@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import type { ChatEngine, InviteRequest } from '../lib/engine';
+import type { InviteRequest } from '../lib/engine';
+import type { ChatEngineApi } from '../lib/engineApi';
 import { Modal } from './Modal';
 import { CheckIcon, ShieldIcon } from './Icons';
 
@@ -10,7 +11,7 @@ export function RequestDialog({
   onAdded,
 }: {
   requests: InviteRequest[];
-  engine: ChatEngine | null;
+  engine: ChatEngineApi | null;
   onAdded: (uid: string) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
