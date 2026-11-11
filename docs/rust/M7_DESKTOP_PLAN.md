@@ -33,8 +33,11 @@ and what has to be true before any old engine is deleted. It is a plan, not a re
 * **Tests**: unit tests for the shaping and the adapters; an end-to-end test (`hosted/e2e.test.ts`, run in CI) with two real Rust
   engine processes driven through the same class the screens use: add each other, connect, message and delivery state, a file byte
   for byte, search, reaction, group and group message.
-* The shell and the engine share one SQLite build: `rusqlite` moved from 0.41 to 0.31 so it links the same `libsqlite3-sys` as
-  `tauri-plugin-sql`. It can move forward once that plugin is removed.
+* The shell and the engine share one SQLite build. The engine accepts `rusqlite` 0.31 to 0.41: on its own (Android, the
+  engine's tests) it resolves 0.41, whose bundled SQLite has the fix for RUSTSEC-2026-0459; the desktop shell resolves 0.31
+  because `tauri-plugin-sql` (sqlx) only links an older `libsqlite3-sys` and a binary can link one SQLite. **The Windows app
+  therefore still bundles the SQLite that advisory is about** until the plugin (used only by the TypeScript fallback engine)
+  is removed or ships a newer sqlx.
 
 **Not done**
 * Nothing has run on Windows: the packaged app, a real WebRTC link, Windows Credential Manager, the emergency wipe through the

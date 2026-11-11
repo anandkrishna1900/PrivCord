@@ -47,7 +47,9 @@ bip39 = "3"
 getrandom = "0.2"
 unicode-normalization = "0.1"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "time", "macros"] }
-rusqlite = { version = "0.31", features = ["bundled"] }
+# 0.41 (patched SQLite) for the engine and Android; the desktop shell resolves 0.31 because tauri-plugin-sql (sqlx)
+# needs an older libsqlite3-sys and only one SQLite may be linked into a binary. See docs/rust/M7_DESKTOP_PLAN.md.
+rusqlite = { version = ">=0.31, <0.42", features = ["bundled"] }
 proptest = "1"
 privcord-domain = { path = "crates/privcord-domain" }
 privcord-crypto = { path = "crates/privcord-crypto" }
