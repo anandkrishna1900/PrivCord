@@ -141,6 +141,20 @@ class ScreensRenderTest {
     }
 
     @Test
+    fun homeLight() = paparazzi.snapshot {
+        DuoChatTheme(AppSettings(theme = "light")) {
+            HomeScreen(state = state, onOpenChat = {}, onAddFriend = {}, onNewGroup = {}, onChannels = {}, onOpenSettings = {}, onClearNotice = {})
+        }
+    }
+
+    @Test
+    fun homeEmpty() = paparazzi.snapshot {
+        DuoChatTheme(AppSettings(theme = "light")) {
+            HomeScreen(state = state.copy(chats = emptyList()), onOpenChat = {}, onAddFriend = {}, onNewGroup = {}, onChannels = {}, onOpenSettings = {}, onClearNotice = {})
+        }
+    }
+
+    @Test
     fun chatDark() = paparazzi.snapshot { chat(AppSettings(theme = "dark")) }
 
     @Test

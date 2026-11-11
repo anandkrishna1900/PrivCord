@@ -37,7 +37,7 @@ data class AppSettings(
 )
 
 val ACCENTS: List<Pair<String, String>> = listOf(
-    "Indigo" to "#6366F1",
+    "Iris" to "#5B5BD6",
     "Teal" to "#0D9488",
     "Rose" to "#E11D48",
     "Amber" to "#D97706",

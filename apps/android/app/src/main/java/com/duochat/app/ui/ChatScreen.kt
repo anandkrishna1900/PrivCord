@@ -184,7 +184,7 @@ fun ChatScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                 },
@@ -193,17 +193,25 @@ fun ChatScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.clickable(onClick = onOpenDetails),
                     ) {
-                        InitialsAvatar(title, 38, online = friend?.link == LinkStatus.CONNECTED || (group?.connectedCount ?: 0) > 0)
-                        Spacer(Modifier.width(10.dp))
+                        val live = friend?.link == LinkStatus.CONNECTED || (group?.connectedCount ?: 0) > 0 || channel?.connected == true
+                        InitialsAvatar(title.removePrefix("# "), 40, group = group != null || channel != null)
+                        Spacer(Modifier.width(12.dp))
                         Column {
                             Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(
-                                status,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    Modifier.size(7.dp).clip(CircleShape)
+                                        .background(if (live) Online else MaterialTheme.colorScheme.outline),
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    status,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                         }
                     }
                 },
@@ -236,7 +244,7 @@ fun ChatScreen(
         },
         bottomBar = {
             if (canWrite && directBlocked) {
-                Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
+                Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
                     Text(
                         if (state.groupOnly) {
                             "You stay group-only with people you meet in groups. To message ${friend?.name} directly, swap invites (Add friend)."
@@ -261,7 +269,7 @@ fun ChatScreen(
                     onSendFile = { name, mime, bytes, done -> onSendFile(name, mime, bytes, replyingTo?.messageId) { r -> if (r.isSuccess) replyingTo = null; done(r) } },
                 )
             } else if (group != null) {
-                Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
+                Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
                     Text(
                         (group.exitNote ?: "You cannot write here") + ". You can still read this chat.",
                         style = MaterialTheme.typography.bodyMedium,
@@ -286,8 +294,11 @@ fun ChatScreen(
                 )
             }
             friend?.diagnosis?.let { d ->
-                Surface(color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                Surface(
+                    color = MaterialTheme.colorScheme.tertiaryContainer, shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                ) {
+                    Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp)) {
                         Text(d.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
                         Row {
                             if (com.duochat.app.data.DiagnosisAction.ENABLE_STORE_FORWARD in d.actions) {
@@ -348,15 +359,21 @@ private fun Banner(
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
 ) {
-    Surface(color = container, modifier = Modifier.fillMaxWidth()) {
-        Row(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(17.dp))
-            Spacer(Modifier.width(9.dp))
+    Surface(
+        color = container, shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+    ) {
+        Row(
+            modifier = Modifier.heightIn(min = 48.dp).padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(10.dp))
             Text(text, style = MaterialTheme.typography.bodySmall, color = content, modifier = Modifier.weight(1f))
             if (actionLabel != null && onAction != null) TextButton(onClick = onAction) { Text(actionLabel, color = content) }
             if (onDismiss != null) {
-                IconButton(onClick = onDismiss, modifier = Modifier.size(30.dp)) {
-                    Icon(Icons.Filled.Close, contentDescription = "Dismiss", tint = content)
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Filled.Close, contentDescription = "Dismiss", tint = content, modifier = Modifier.size(18.dp))
                 }
             }
         }
@@ -425,15 +442,16 @@ private fun MessageList(
                 Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
                     Icon(
                         Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(18.dp).size(28.dp),
+                        modifier = Modifier.padding(20.dp).size(28.dp),
                     )
                 }
-                Spacer(Modifier.height(14.dp))
-                Text("No messages yet", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(18.dp))
+                Text("Say hello", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(8.dp))
                 Text(
                     "Messages here are end-to-end encrypted and kept only on your phones.",
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.widthIn(max = 300.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                 )
@@ -521,14 +539,13 @@ private fun MessageList(
 
 @Composable
 private fun DaySeparator(label: String) {
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.Center) {
-        Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(20.dp)) {
-            Text(
-                label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-            )
-        }
-    }
+    Text(
+        label,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 10.dp),
+    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -561,9 +578,9 @@ private fun MessageBubble(
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     // Corners: round on the outside; tighter where a bubble touches another one from the same person; a small tail on the
     // last bubble of a run, on the sender's side.
-    val big = 18.dp
+    val big = 20.dp
     val joined = 6.dp
-    val tail = 4.dp
+    val tail = 6.dp
     val shape = if (own) {
         RoundedCornerShape(topStart = big, bottomStart = big, topEnd = if (grouped) joined else big, bottomEnd = if (lastOfRun) tail else joined)
     } else {
@@ -582,29 +599,25 @@ private fun MessageBubble(
         // At most about four fifths of the row, on any screen width; the rest stays open on the other side.
         Box(Modifier.weight(1f, fill = false).padding(start = if (own) 48.dp else 0.dp, end = if (own) 0.dp else 48.dp)) {
             // Incoming bubbles must stand out from the background: on a light theme the background is grey, so they are white.
-            val incoming = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) MaterialTheme.colorScheme.surface
-            else MaterialTheme.colorScheme.surfaceVariant
+            val incoming = MaterialTheme.colorScheme.surfaceContainerHigh
             Surface(
                 color = if (own) MaterialTheme.colorScheme.primary else incoming,
                 shape = shape,
-                shadowElevation = if (!own && MaterialTheme.colorScheme.background.luminance() > 0.5f) 1.dp else 0.dp,
                 modifier = Modifier.combinedClickable(onClick = {}, onLongClick = {
                     haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                     menuOpen = true
                 }),
             ) {
-                Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 9.dp, bottom = 7.dp)) {
                     if (showName) {
                         Text(
-                            senderName, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold,
-                            color = Color.hsl(avatarHue(senderName).toFloat(), 0.6f, 0.62f),
+                            senderName, style = MaterialTheme.typography.labelMedium,
+                            color = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color.hsl(avatarHue(senderName).toFloat(), 0.70f, 0.74f)
+                            else Color.hsl(avatarHue(senderName).toFloat(), 0.60f, 0.36f),
+                            modifier = Modifier.padding(bottom = 2.dp),
                         )
                     }
-                    val bodyColor = when {
-                        own -> MaterialTheme.colorScheme.onPrimary
-                        MaterialTheme.colorScheme.background.luminance() > 0.5f -> MaterialTheme.colorScheme.onSurface
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    }
+                    val bodyColor = if (own) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
                     message.replyTo?.let { reply ->
                         Row(
                             modifier = Modifier.padding(bottom = 6.dp).height(IntrinsicSize.Min)
@@ -978,16 +991,16 @@ private fun Composer(
         if (granted) startRecording() else error = "Allow the microphone to record voice notes."
     }
 
-    Surface(modifier = modifier, color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp) {
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+    Surface(modifier = modifier, color = MaterialTheme.colorScheme.background) {
+        Column(modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 10.dp)) {
             if (replyingTo != null) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp).clip(RoundedCornerShape(10.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant).padding(start = 10.dp),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp).clip(MaterialTheme.shapes.medium)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(start = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
-                        Text("Replying to ${replyName ?: "them"}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                        Text("Replying to ${replyName ?: "them"}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                         Text(
                             if (replyingTo.type == MessageType.FILE) "\uD83D\uDCCE ${replyingTo.text}" else replyingTo.text,
                             style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -1027,6 +1040,12 @@ private fun Composer(
                     }
                 }
             } else Row(verticalAlignment = Alignment.Bottom) {
+                // One rounded field holding the attach button and the text; the round send/record button sits beside it.
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .padding(start = if (isChannel) 6.dp else 0.dp),
+                ) {
                 if (!isChannel) IconButton(onClick = { picker.launch("*/*") }, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Filled.AttachFile, contentDescription = "Send a file (up to 8 MB)", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -1046,16 +1065,17 @@ private fun Composer(
                         capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences,
                     ),
                     keyboardActions = KeyboardActions(onSend = { send() }),
-                    shape = RoundedCornerShape(24.dp),
+                    textStyle = MaterialTheme.typography.bodyLarge,
                     colors = androidx.compose.material3.TextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        disabledContainerColor = Color.Transparent,
                         focusedIndicatorColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
                         disabledIndicatorColor = Color.Transparent,
                     ),
                 )
+                }
                 Spacer(Modifier.width(8.dp))
                 val showMic = text.isBlank() && !isChannel && !sending
                 if (showMic) {
@@ -1103,21 +1123,29 @@ private fun RoundAction(onClick: () -> Unit, enabled: Boolean, description: Stri
     }
 }
 
+/** A soft tonal circle (a rounded square for groups) with the initials in a deeper shade of the same hue. */
 @Composable
-fun InitialsAvatar(name: String, size: Int, online: Boolean = false) {
-    val hue = avatarHue(name.ifBlank { "duochat" })
+fun InitialsAvatar(name: String, size: Int, online: Boolean = false, group: Boolean = false) {
+    val hue = avatarHue(name.ifBlank { "duochat" }).toFloat()
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val fill = if (dark) Color.hsl(hue, 0.32f, 0.26f) else Color.hsl(hue, 0.62f, 0.89f)
+    val ink = if (dark) Color.hsl(hue, 0.70f, 0.82f) else Color.hsl(hue, 0.55f, 0.32f)
+    val shape = if (group) RoundedCornerShape((size * 0.32f).dp) else CircleShape
     Box(contentAlignment = Alignment.BottomEnd) {
         Box(
-            modifier = Modifier.size(size.dp).clip(CircleShape).background(Color.hsl(hue.toFloat(), 0.55f, 0.45f)),
+            modifier = Modifier.size(size.dp).clip(shape).background(fill),
             contentAlignment = Alignment.Center,
         ) {
-            Text(initials(name), color = Color.White, fontSize = (size * 0.34f).sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                initials(name), color = ink, fontSize = (size * 0.36f).sp, fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium,
+            )
         }
         if (online) {
             // A green dot with a ring in the background colour, so it reads as a badge on any avatar colour.
             Box(
-                Modifier.size((size * 0.32f).dp).clip(CircleShape).background(MaterialTheme.colorScheme.surface)
-                    .padding(2.dp).clip(CircleShape).background(Color(0xFF22C55E)),
+                Modifier.size((size * 0.30f).coerceAtLeast(10f).dp).clip(CircleShape).background(MaterialTheme.colorScheme.background)
+                    .padding((size * 0.05f).coerceAtLeast(2f).dp).clip(CircleShape).background(Online),
             )
         }
     }
