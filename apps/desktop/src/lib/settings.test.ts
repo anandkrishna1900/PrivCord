@@ -25,10 +25,10 @@ describe('parseSettings', () => {
   it('falls back to defaults for missing or malformed storage', () => {
     expect(parseSettings(JSON.stringify({ theme: 'light' })).displayName).toBe('');
     expect(parseSettings('{not json').theme).toBe('system');
-    expect(parseSettings(null).accent).toBe('#6366f1');
+    expect(parseSettings(null).accent).toBe('#7a3e73');
   });
 
   it('rejects an invalid accent color', () => {
-    expect(parseSettings(JSON.stringify({ accent: 'red' })).accent).toBe('#6366f1');
+    expect(parseSettings(JSON.stringify({ accent: 'red' })).accent).toBe('#7a3e73');
   });
 });

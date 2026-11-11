@@ -683,7 +683,7 @@ await scenario(15, 'app lock: passkey (virtual Windows Hello) gates the app; fai
     options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true },
   });
   const setUv = (v) => cdp.send('WebAuthn.setUserVerified', { authenticatorId, isUserVerified: v });
-  const lockSwitch = () => page.locator('button[role="switch"][aria-label^="Lock PrivCord"]');
+  const lockSwitch = () => page.locator('button[role="switch"][aria-label^="Lock DuoCord"]');
   const openSecurity = async () => {
     await page.click('button[aria-label="Settings"]');
     await page.click('.tab:has-text("Security")');
@@ -691,7 +691,7 @@ await scenario(15, 'app lock: passkey (virtual Windows Hello) gates the app; fai
   check((await page.locator('.lock-screen').count()) === 0, 'not locked by default');
   await openSecurity();
   await lockSwitch().click();
-  await page.waitForFunction(() => document.querySelector('button[role="switch"][aria-label^="Lock PrivCord"]')?.getAttribute('aria-checked') === 'true');
+  await page.waitForFunction(() => document.querySelector('button[role="switch"][aria-label^="Lock DuoCord"]')?.getAttribute('aria-checked') === 'true');
   await page.keyboard.press('Escape');
   ctx.note('passkey created, lock turned on');
   // Reload: the lock screen asks Windows Hello (the virtual authenticator verifies) and opens.
@@ -728,7 +728,7 @@ await scenario(15, 'app lock: passkey (virtual Windows Hello) gates the app; fai
   check((await lockSwitch().getAttribute('aria-checked')) === 'true', 'cannot turn the lock off without the passkey');
   await setUv(true);
   await lockSwitch().click();
-  await page.waitForFunction(() => document.querySelector('button[role="switch"][aria-label^="Lock PrivCord"]')?.getAttribute('aria-checked') === 'false', null, { timeout: 20000 });
+  await page.waitForFunction(() => document.querySelector('button[role="switch"][aria-label^="Lock DuoCord"]')?.getAttribute('aria-checked') === 'false', null, { timeout: 20000 });
   await page.keyboard.press('Escape');
   await page.reload();
   await page.waitForSelector('.sidebar', { timeout: 20000 });

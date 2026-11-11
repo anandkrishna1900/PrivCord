@@ -1,4 +1,4 @@
-import { DEFAULT_PALETTE, THEMES, themeById, themeVars } from './themes';
+import { DEFAULT_PALETTE, THEMES, classicTheme, themeById, themeVars } from './themes';
 
 export type ThemeMode = 'system' | 'dark' | 'light';
 
@@ -21,11 +21,11 @@ export interface AppSettings {
 }
 
 export const ACCENTS = [
-  { name: 'Indigo', value: '#6366f1' },
-  { name: 'Teal', value: '#0d9488' },
-  { name: 'Rose', value: '#e11d48' },
-  { name: 'Amber', value: '#d97706' },
-  { name: 'Sky', value: '#0284c7' },
+  { name: 'Plum', value: '#7a3e73' },
+  { name: 'Pine', value: '#2f6b4f' },
+  { name: 'Clay', value: '#b4532a' },
+  { name: 'Rose', value: '#b83a5e' },
+  { name: 'Slate', value: '#3e4c5e' },
 ] as const;
 
 const SETTINGS_KEY = 'duochat.settings.v1';
@@ -105,13 +105,10 @@ export function applySettings(settings: AppSettings): void {
     return;
   }
   root.dataset.theme = resolvedTheme(settings.theme);
-  root.style.setProperty('--accent', settings.accent);
-  root.style.setProperty('--accent-soft', hexToRgba(settings.accent, 0.16));
-  root.style.setProperty('--accent-strong', shade(settings.accent, -14));
-  const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) {
-    meta.setAttribute('content', root.dataset.theme === 'light' ? '#f5f5f7' : '#0e1116');
-  }
+  // The default look goes through the same recipe as the built-in themes, with the accent from the picker.
+  const classic = classicTheme(root.dataset.theme === 'dark', settings.accent);
+  for (const [name, value] of Object.entries(themeVars(classic))) root.style.setProperty(name, value);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', classic.bg);
 }
 
 export function hexToRgba(hex: string, alpha: number): string {
@@ -122,14 +119,3 @@ export function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-function shade(hex: string, percent: number): string {
-  const value = hex.replace('#', '');
-  const amount = Math.round(2.55 * percent);
-  const channels = [0, 2, 4].map((offset) => {
-    const parsed = Number.parseInt(value.slice(offset, offset + 2), 16);
-    return Math.max(0, Math.min(255, parsed + amount))
-      .toString(16)
-      .padStart(2, '0');
-  });
-  return `#${channels.join('')}`;
-}

@@ -57,7 +57,7 @@ class DuoBackgroundService : Service() {
                 "Background Connection",
                 NotificationManager.IMPORTANCE_LOW,
             ).apply {
-                description = "Keeps DuoChat connected in the background so messages and mesh relays keep arriving."
+                description = "Keeps DuoCord connected in the background so messages and mesh relays keep arriving."
                 setShowBadge(false)
             }
             manager.createNotificationChannel(channel)
@@ -77,7 +77,7 @@ class DuoBackgroundService : Service() {
 
         return NotificationCompat.Builder(this, SERVICE_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("DuoChat is active")
+            .setContentTitle("DuoCord is active")
             .setContentText("Staying connected so your messages arrive")
             .setContentIntent(pendingIntent)
             .setOngoing(true)

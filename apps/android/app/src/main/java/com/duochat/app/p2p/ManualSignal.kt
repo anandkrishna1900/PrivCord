@@ -60,7 +60,7 @@ object ManualSignalCodec {
     fun decode(encoded: String, expectedConversationId: String): ManualSignal {
         val trimmed = encoded.trim()
         if (!trimmed.startsWith(MANUAL_SIGNAL_PREFIX)) {
-            throw IllegalArgumentException("This is not a DuoChat connection code.")
+            throw IllegalArgumentException("This is not a DuoCord connection code.")
         }
         val base64 = trimmed.removePrefix(MANUAL_SIGNAL_PREFIX)
         if (base64.length > MAX_MANUAL_SIGNAL_BYTES) {

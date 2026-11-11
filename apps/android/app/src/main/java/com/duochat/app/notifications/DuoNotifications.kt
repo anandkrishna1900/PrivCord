@@ -18,7 +18,7 @@ import com.duochat.app.data.AppSettings
 object DuoNotifications {
     const val CHANNEL_ID = "messages"
     private const val CHANNEL_NAME = "Messages"
-    private const val CHANNEL_DESCRIPTION = "New private messages from your DuoChat contact."
+    private const val CHANNEL_DESCRIPTION = "New private messages from your DuoCord contacts."
 
     fun ensureChannel(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
@@ -34,7 +34,7 @@ object DuoNotifications {
 
     fun showNotice(context: Context, notice: com.duochat.app.engine.IncomingNotice, settings: AppSettings) {
         // With the app lock on, a message must not be readable from the lock screen either.
-        val body = if (notice.isMessage && (!settings.notificationPreviews || settings.appLock)) "Open DuoChat to read it." else preview(notice.body)
+        val body = if (notice.isMessage && (!settings.notificationPreviews || settings.appLock)) "Open DuoCord to read it." else preview(notice.body)
         show(
             context = context,
             notificationId = notice.id.hashCode(),

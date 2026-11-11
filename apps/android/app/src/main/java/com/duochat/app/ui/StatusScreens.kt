@@ -72,7 +72,7 @@ fun FatalScreen(message: String, onRetry: () -> Unit) {
                 modifier = Modifier.size(36.dp),
             )
             Spacer(Modifier.height(12.dp))
-            Text("PrivCord could not start", style = MaterialTheme.typography.headlineSmall)
+            Text("DuoCord could not start", style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(8.dp))
             Text(
                 message,

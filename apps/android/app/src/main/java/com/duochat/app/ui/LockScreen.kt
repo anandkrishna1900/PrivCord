@@ -43,7 +43,7 @@ fun LockScreen(onUnlocked: () -> Unit) {
     fun ask() {
         val a = activity ?: return
         error = null
-        AppLock.prompt(a, "Unlock PrivCord") { ok, why -> if (ok) onUnlocked() else error = why }
+        AppLock.prompt(a, "Unlock DuoCord") { ok, why -> if (ok) onUnlocked() else error = why }
     }
 
     LaunchedEffect(Unit) {

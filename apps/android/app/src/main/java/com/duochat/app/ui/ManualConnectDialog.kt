@@ -74,7 +74,7 @@ fun ManualConnectDialog(
     var error by remember { mutableStateOf<String?>(null) }
     val clipboard = LocalClipboardManager.current
 
-    val scan = rememberQrScanner("Scan a DuoChat code") { contents ->
+    val scan = rememberQrScanner("Scan a DuoCord code") { contents ->
         if (mode == ManualMode.HOST) {
             answerInput = contents
             status = "Scanned an answer. Apply it to finish the handshake."

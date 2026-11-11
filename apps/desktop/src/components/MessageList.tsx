@@ -367,7 +367,7 @@ export function MessageList({
                     )
                   ) : null}
                   {message.deleted ? (
-                    <p className="bubble-text deleted">🚫 This message was deleted</p>
+                    <p className="bubble-text deleted">This message was deleted</p>
                   ) : null}
                   {!message.deleted && message.replyTo ? (
                     <button type="button" className="quote" onClick={() => jumpTo(message.replyTo!.id)} title="Go to the original message">

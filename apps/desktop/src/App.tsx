@@ -38,7 +38,7 @@ export default function App() {
           <div className="brand-lock large">
             <ShieldIcon size={26} />
           </div>
-          <h1>PrivCord</h1>
+          <h1>DuoCord</h1>
           <p className="muted">Create your private identity to begin.</p>
         </div>
         <RecoveryDialog open required mode="backup" onClose={() => undefined} onIdentityReady={reload} />

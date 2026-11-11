@@ -662,7 +662,7 @@ class RustChatEngine(
                 if (t != null && !t.isOpen) {
                     bleLinks.remove(uid)
                     t.close()
-                    if (manual) say("No friend found nearby over Bluetooth. Check that they have DuoChat open with Bluetooth on.")
+                    if (manual) say("No friend found nearby over Bluetooth. Check that they have DuoCord open with Bluetooth on.")
                     requestRefresh()
                 }
             }

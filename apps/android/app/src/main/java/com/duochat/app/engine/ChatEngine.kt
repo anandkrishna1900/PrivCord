@@ -2281,7 +2281,7 @@ class ChatEngine(
             if (link != null && link.session.isBluetooth && !link.session.isAuthenticated) {
                 closeLink(link)
                 bleUid = null
-                say(if (bleManualAttempt) "No friend found nearby over Bluetooth. Check that they have DuoChat open with Bluetooth on." else notice.orEmpty())
+                say(if (bleManualAttempt) "No friend found nearby over Bluetooth. Check that they have DuoCord open with Bluetooth on." else notice.orEmpty())
                 emit()
                 refreshBluetooth()
             }

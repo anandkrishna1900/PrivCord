@@ -36,6 +36,16 @@ export const THEMES: ThemeDef[] = [
 
 export const DEFAULT_PALETTE = 'classic';
 
+/** The default look ("plum & apricot"): warm paper by day, warm near-black by night; the accent comes from the picker. */
+export function classicTheme(dark: boolean, accent: string): ThemeDef {
+  return dark
+    ? { name: 'Plum & paper', id: 'classic', dark: true, bg: '#131112', surface: '#1c191b', text: '#f1ecea', accent }
+    : { name: 'Plum & paper', id: 'classic', dark: false, bg: '#f7f3ee', surface: '#ffffff', text: '#221c1f', accent };
+}
+
+/** "New": unread counts and your reactions. Dark text on it. */
+export const APRICOT = '#f2a65a';
+
 export function themeById(id: string): ThemeDef | undefined {
   return THEMES.find((t) => t.id === id);
 }
@@ -88,6 +98,8 @@ export function accentFill(accent: string): string {
 export function themeVars(t: ThemeDef): Record<string, string> {
   const fill = accentFill(t.accent);
   const elevated = mix(t.bg, t.surface, 0.5);
+  // Surfaces step by tone, not shadow: "tonal" is the incoming bubble, fields and chips; "ink" is neutral controls.
+  const tonal = mix(t.bg, t.text, t.dark ? 0.1 : 0.055);
   return {
     '--bg': t.bg,
     '--bg-elevated': elevated,
@@ -105,12 +117,20 @@ export function themeVars(t: ThemeDef): Record<string, string> {
     '--accent-strong': mix(t.accent, '#000000', 0.14),
     '--accent-fill': fill,
     '--accent-fill-strong': mix(fill, '#000000', 0.2),
-    '--bubble-own': `linear-gradient(150deg, ${fill}, ${mix(fill, '#000000', 0.2)})`,
-    '--bubble-theirs': t.dark ? mix(t.surface, t.text, 0.04) : t.surface,
+    '--bubble-own': fill,
+    '--bubble-theirs': tonal,
+    '--tonal': tonal,
+    '--tonal-strong': mix(t.bg, t.text, t.dark ? 0.15 : 0.09),
+    '--ink': t.text,
+    '--on-ink': t.bg,
+    '--apricot': APRICOT,
+    '--on-apricot': '#2b1608',
+    '--accent-container': mix(t.bg, t.accent, t.dark ? 0.22 : 0.14),
+    '--on-accent-container': t.dark ? mix(t.accent, '#ffffff', 0.55) : mix(t.accent, '#000000', 0.45),
     '--danger': t.dark ? '#f87171' : '#dc2626',
     '--danger-soft': t.dark ? 'rgba(248, 113, 113, 0.14)' : 'rgba(220, 38, 38, 0.09)',
     '--warning': t.dark ? '#fbbf24' : '#b45309',
     '--success': t.dark ? '#34d399' : '#059669',
-    '--shadow': t.dark ? '0 20px 60px rgba(0, 0, 0, 0.45)' : '0 24px 70px rgba(15, 23, 42, 0.16)',
+    '--shadow': t.dark ? '0 24px 64px rgba(0, 0, 0, 0.5)' : '0 24px 64px rgba(34, 28, 31, 0.14)',
   };
 }

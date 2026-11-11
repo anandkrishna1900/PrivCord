@@ -90,7 +90,7 @@ fun OnboardingScreen(onCreate: (phrase: String, passphrase: String, onResult: (R
             Row(verticalAlignment = Alignment.CenterVertically) {
                 BrandMark(40)
                 Spacer(Modifier.width(12.dp))
-                Text("PrivCord", style = MaterialTheme.typography.titleLarge)
+                Text("DuoCord", style = MaterialTheme.typography.titleLarge)
             }
             Spacer(Modifier.height(if (step == Step.INTRO) 56.dp else 28.dp))
             when (step) {

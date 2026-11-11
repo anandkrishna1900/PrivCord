@@ -151,7 +151,7 @@ export async function onboard(page) {
     await page.fill(`#verify-word-${n}`, words[Number(/#(\d+)/.exec(label)[1]) - 1]);
   }
   await page.click('text=Verify & Confirm');
-  await page.click('text=Start PrivCord');
+  await page.click('text=Start DuoCord');
   await page.waitForSelector('.app-shell', { timeout: 15000 });
   return words.join(' ');
 }

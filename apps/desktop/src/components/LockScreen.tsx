@@ -28,12 +28,12 @@ export function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
   }, [ask]);
 
   return (
-    <div className="lock-screen" role="dialog" aria-modal="true" aria-label="PrivCord is locked">
+    <div className="lock-screen" role="dialog" aria-modal="true" aria-label="DuoCord is locked">
       <div className="splash">
         <div className="brand-lock large">
           <LockIcon size={26} />
         </div>
-        <h1>PrivCord is locked</h1>
+        <h1>DuoCord is locked</h1>
         <p className="muted">Use Windows Hello (face, fingerprint or PIN) to open your chats.</p>
         <button type="button" className="button primary" onClick={() => void ask()} disabled={busy}>
           Unlock

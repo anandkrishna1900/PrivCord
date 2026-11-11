@@ -171,11 +171,11 @@ function AppLockControl() {
   return (
     <>
       <Toggle
-        label="Lock PrivCord with Windows Hello"
+        label="Lock DuoCord with Windows Hello"
         description={
           supported === false
             ? 'Not available: this device has no passkey sign-in (Windows Hello, fingerprint, face or PIN) set up.'
-            : 'Ask for your face, fingerprint or PIN to open PrivCord, and again after it has been out of sight for 5 minutes. It keeps other people at your computer out; it does not replace the encryption of the files on disk.'
+            : 'Ask for your face, fingerprint or PIN to open DuoCord, and again after it has been out of sight for 5 minutes. It keeps other people at your computer out; it does not replace the encryption of the files on disk.'
         }
         checked={on}
         onChange={(value) => void change(value)}
@@ -437,7 +437,7 @@ export function SettingsDialog({
                 <strong>Recovery phrase</strong>
               </div>
               <p className="muted small">
-                Your 12 words recreate this identity on a new device or after a wipe. PrivCord never stores
+                Your 12 words recreate this identity on a new device or after a wipe. DuoCord never stores
                 them, so they cannot be shown again.
               </p>
               <button
@@ -494,7 +494,7 @@ export function SettingsDialog({
         {section === 'about' ? (
           <section className="settings-section">
             <p>
-              <strong>PrivCord</strong> · version {config.appVersion}
+              <strong>DuoCord</strong> · version {config.appVersion}
             </p>
             <p className="muted small">
               Private chats and groups with no accounts and no cloud. Messages are end-to-end encrypted and go
