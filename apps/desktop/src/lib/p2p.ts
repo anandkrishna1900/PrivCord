@@ -98,6 +98,18 @@ export class PeerTransport {
     });
   }
 
+  /** Send a frame the caller already made (the hosted engine hands over finished text). */
+  sendText(text: string): boolean {
+    if (!this.channel || this.channel.readyState !== 'open') return false;
+    try {
+      this.channel.send(text);
+      return true;
+    } catch (error) {
+      this.handlers.onError(`Direct send failed: ${String(error)}`);
+      return false;
+    }
+  }
+
   sendJson(value: unknown): boolean {
     if (!this.channel || this.channel.readyState !== 'open') return false;
     try {

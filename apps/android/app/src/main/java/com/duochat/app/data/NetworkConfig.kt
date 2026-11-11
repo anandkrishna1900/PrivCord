@@ -24,6 +24,8 @@ data class NetworkConfig(
     val forceRelay: Boolean = false,
     val bluetooth: Boolean = true,
     val transportMode: TransportMode = TransportMode.AUTOMATIC,
+    /** Use the TURN relay built into this release (if it has one) when a direct connection is not possible. */
+    val builtinTurn: Boolean = true,
 ) {
     fun toJson(): String {
         val json = JSONObject()
@@ -53,6 +55,8 @@ data class NetworkConfig(
             .put("storeForward", storeForward)
             .put("forceRelay", forceRelay)
             .put("bluetooth", bluetooth)
+        // Written only when switched off, so saved settings and the shared vectors stay as they were.
+        if (!builtinTurn) json.put("builtinTurn", false)
 
         if (transportMode != TransportMode.AUTOMATIC) {
             json.put("transportMode", transportMode.name)
@@ -144,6 +148,7 @@ data class NetworkConfig(
                     forceRelay = json.opt("forceRelay") == true,
                     bluetooth = json.opt("bluetooth") != false,
                     transportMode = mode,
+                    builtinTurn = json.opt("builtinTurn") != false,
                 )
             } catch (_: Exception) {
                 fallback

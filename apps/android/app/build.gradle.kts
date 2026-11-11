@@ -6,6 +6,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
+    id("app.cash.paparazzi")
 }
 
 val localProperties = Properties().apply {
@@ -41,6 +42,10 @@ android {
     defaultConfig {
         applicationId = "com.duochat.app"
         minSdk = 26
+        // The TURN relay built into this release (empty: none). Set in CI from repository secrets; see docs/turn-server/README.md.
+        buildConfigString("PRIVCORD_TURN_URLS", System.getenv("PRIVCORD_TURN_URLS") ?: "")
+        buildConfigString("PRIVCORD_TURN_USERNAME", System.getenv("PRIVCORD_TURN_USERNAME") ?: "")
+        buildConfigString("PRIVCORD_TURN_CREDENTIAL", System.getenv("PRIVCORD_TURN_CREDENTIAL") ?: "")
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
@@ -165,6 +170,8 @@ dependencies {
     ksp("androidx.room:room-compiler:2.6.1")
 
     implementation("io.github.webrtc-sdk:android:125.6422.07")
+    // Voice notes and audio files: plays the WebM/Opus that desktop browsers record (MediaPlayer often refuses it).
+    implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("com.google.zxing:core:3.5.3")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 

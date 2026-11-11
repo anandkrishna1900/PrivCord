@@ -1,8 +1,9 @@
 # Android: the Rust core inside the app
 
-**Status: stage 1 of 2. The APK contains the Rust core and checks it at launch. The chat screens still run on the Kotlin
-engine (`ChatEngine.kt`); they have not been moved onto the Rust engine yet.** Nothing here has been run on a phone or an
-emulator by the author; CI builds it.
+**Status: the Rust build flavor ("DuoChat Rust") runs the chat screens on the Rust engine, as a preview next to the classic app.
+CI builds and unit-tests both flavors. The Rust flavor has been run on real phones only recently (and fixes from that are in);
+Bluetooth, the mesh, groups and long background use are not yet proven on hardware.** The classic flavor keeps the Kotlin
+engine (`ChatEngine.kt`) until the exit criteria in [M7_DESKTOP_PLAN.md](M7_DESKTOP_PLAN.md#retirement-m9) are met.
 
 What stage 1 does:
 
@@ -30,12 +31,10 @@ mailbox), Bluetooth links (layered mode) and the Bluetooth mesh, manual connecti
 work between two Rust builds), friend renaming, read marks for groups, "why isn't it connecting" hints (from the same
 pure function as the classic app) and store-and-forward through mutual friends (inside the engine).
 
-Known limits: not run on a phone by the author (CI compiles it; the self-test and engine probe have run on a real
-phone). Old chats from the classic app come over by backup export and restore, because the two apps keep separate data.
-File progress is shown for receiving only. Manual codes need both people to confirm within a few seconds.
+Known limits: only lightly run on real phones so far (CI compiles and unit-tests it). Old chats from the classic app come over by backup export and restore, because the two apps keep separate data.
+File progress is shown while sending and while receiving. Manual codes need both people to confirm within a few seconds.
 
-Stage 2, the rest (not done): move identity, contacts, direct messages, groups and files in `ChatEngine.kt` onto `PrivcordEngine`,
-with WebRTC, Bluetooth and the relay sockets staying as thin Kotlin adapters (for Bluetooth use `LinkKind::Layered`).
+Stage 2 is done for the Rust flavor. What is left is proof and retirement, not porting: see the M7 and M9 plan.
 
 ## Phones on different networks (Wi-Fi to mobile data)
 

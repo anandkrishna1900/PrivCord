@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
 import { ChatEngine, type ChatState } from '../lib/engine';
+import type { ChatEngineApi } from '../lib/engineApi';
+import { hostedEngineEnabled } from '../lib/hosted/enable';
+import { startHostedEngine } from '../lib/hosted/start';
 import { LOCAL_ID, loadIdentity } from '../lib/identity';
 import { LocalStore } from '../lib/localDb';
 import { createTextCipher } from '../lib/encryption';
@@ -8,7 +11,7 @@ import { config } from '../config';
 
 export interface UseChatEngine {
   state: ChatState | null;
-  engine: ChatEngine | null;
+  engine: ChatEngineApi | null;
   fatal: string | null;
   /** First run: no identity yet, so the 12-word phrase flow must run first. */
   needsIdentity: boolean;
@@ -18,23 +21,36 @@ export interface UseChatEngine {
 
 export function useChatEngine(): UseChatEngine {
   const [state, setState] = useState<ChatState | null>(null);
-  const [engine, setEngine] = useState<ChatEngine | null>(null);
+  const [engine, setEngine] = useState<ChatEngineApi | null>(null);
   const [fatal, setFatal] = useState<string | null>(null);
   const [needsIdentity, setNeedsIdentity] = useState(false);
   const [version, setVersion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    let created: ChatEngine | undefined;
+    let created: ChatEngineApi | undefined;
     let unsubscribe: (() => void) | undefined;
 
     void (async () => {
-      const store = new LocalStore();
-      store.setCipher(await createTextCipher(LOCAL_ID));
       const identity = await loadIdentity();
       if (cancelled) return;
       setNeedsIdentity(identity === null);
       if (!identity) return;
+      if (hostedEngineEnabled()) {
+        // The Rust engine, hosted in the shell. The old local store is not opened: the engine has its own database.
+        const hosted = await startHostedEngine(identity);
+        created = hosted;
+        if (cancelled) {
+          hosted.stop();
+          return;
+        }
+        setEngine(hosted);
+        unsubscribe = hosted.subscribe(setState);
+        await hosted.start();
+        return;
+      }
+      const store = new LocalStore();
+      store.setCipher(await createTextCipher(LOCAL_ID));
       const chatEngine = new ChatEngine({
         identity,
         context: config.conversationId,

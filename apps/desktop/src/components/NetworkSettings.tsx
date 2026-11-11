@@ -8,8 +8,9 @@ import {
   type NetworkConfig,
   type TransportMode,
 } from '@duochat/protocol';
-import type { ChatEngine, ChatState } from '../lib/engine';
-import { loadNetworkConfig, saveNetworkConfig } from '../lib/network';
+import type { ChatState } from '../lib/engine';
+import type { ChatEngineApi } from '../lib/engineApi';
+import { BUILTIN_TURN, loadNetworkConfig, saveNetworkConfig } from '../lib/network';
 import { CheckIcon, InfoIcon } from './Icons';
 
 const lines = (text: string) =>
@@ -33,7 +34,7 @@ function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange
 }
 
 /** STUN, TURN, signaling, relays, and transport mode selector. */
-export function NetworkSettings({ engine, state }: { engine: ChatEngine | null; state: ChatState | null }) {
+export function NetworkSettings({ engine, state }: { engine: ChatEngineApi | null; state: ChatState | null }) {
   const [initial] = useState(loadNetworkConfig);
   const [stun, setStun] = useState(initial.stun.join('\n'));
   const [turnUrls, setTurnUrls] = useState(initial.turn.map((t) => t.urls.join(',')).join('\n'));
@@ -45,12 +46,13 @@ export function NetworkSettings({ engine, state }: { engine: ChatEngine | null; 
   );
   const [storeForward, setStoreForward] = useState(initial.storeForward);
   const [forceRelay, setForceRelay] = useState(initial.forceRelay);
+  const [builtinTurn, setBuiltinTurn] = useState(initial.builtinTurn !== false);
   const [bluetooth, setBluetooth] = useState(initial.bluetooth);
   const [transportMode, setTransportMode] = useState<TransportMode>(initial.transportMode ?? 'AUTOMATIC');
   const [problems, setProblems] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => setSaved(false), [stun, turnUrls, turnUser, turnPass, nostr, relays, storeForward, forceRelay, bluetooth, transportMode]);
+  useEffect(() => setSaved(false), [stun, turnUrls, turnUser, turnPass, nostr, relays, storeForward, forceRelay, bluetooth, transportMode, builtinTurn]);
 
   function validate(): { config: NetworkConfig; errors: string[] } {
     const errors: string[] = [];
@@ -80,10 +82,10 @@ export function NetworkSettings({ engine, state }: { engine: ChatEngine | null; 
 
     const relayList = lines(relays);
     const badRelays = relayList.filter((u) => !isWsUrl(u));
-    if (badRelays.length > 0) errors.push(`Invalid PrivCord relay URL: ${badRelays[0]}`);
+    if (badRelays.length > 0) errors.push(`Invalid DuoCord relay URL: ${badRelays[0]}`);
     for (const u of relayList) signaling.push({ kind: 'relay', url: u });
 
-    if (forceRelay && turnList.length === 0) {
+    if (forceRelay && turnList.length === 0 && !(BUILTIN_TURN && builtinTurn)) {
       errors.push('To force TURN relay you must configure at least one working TURN server.');
     }
 
@@ -96,6 +98,7 @@ export function NetworkSettings({ engine, state }: { engine: ChatEngine | null; 
         forceRelay,
         bluetooth,
         transportMode,
+        builtinTurn,
       },
       errors,
     };
@@ -122,6 +125,7 @@ export function NetworkSettings({ engine, state }: { engine: ChatEngine | null; 
     setForceRelay(d.forceRelay);
     setBluetooth(d.bluetooth);
     setTransportMode(d.transportMode ?? 'AUTOMATIC');
+    setBuiltinTurn(true);
     setProblems([]);
     saveNetworkConfig(d);
     engine?.reloadNetwork();
@@ -134,7 +138,7 @@ export function NetworkSettings({ engine, state }: { engine: ChatEngine | null; 
       <header>
         <h3>Network & Communication Mode</h3>
         <p className="muted">
-          PrivCord operates peer-to-peer without central accounts. Select your preferred transport mode below.
+          DuoCord operates peer-to-peer without central accounts. Select your preferred transport mode below.
         </p>
       </header>
 
@@ -175,7 +179,7 @@ export function NetworkSettings({ engine, state }: { engine: ChatEngine | null; 
         <textarea rows={3} value={nostr} onChange={(e) => setNostr(e.target.value)} placeholder="wss://relay.example" />
       </label>
       <label className="field">
-        <span>Signaling: your own PrivCord relay (optional, one per line)</span>
+        <span>Signaling: your own DuoCord relay (optional, one per line)</span>
         <textarea rows={2} value={relays} onChange={(e) => setRelays(e.target.value)} placeholder="wss://my-relay.example.org" />
       </label>
       <p className="muted small">
@@ -224,6 +228,14 @@ export function NetworkSettings({ engine, state }: { engine: ChatEngine | null; 
         checked={bluetooth}
         onChange={setBluetooth}
       />
+      {BUILTIN_TURN ? (
+        <Toggle
+          label="DuoCord relay when a direct link fails"
+          hint="Some networks block direct connections. The relay then passes the encrypted traffic on; it cannot read it."
+          checked={builtinTurn}
+          onChange={setBuiltinTurn}
+        />
+      ) : null}
       <Toggle
         label="Always relay through TURN"
         hint="Hides your IP address from your friend. Slower, and needs a TURN server."

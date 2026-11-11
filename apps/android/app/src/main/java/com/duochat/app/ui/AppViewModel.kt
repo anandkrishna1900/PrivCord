@@ -332,7 +332,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         withEngine(onResult) { Result.success(it.acceptManualOffer(code)) }
 
     /**
-     * App-wide emergency kill switch ("NUKE DUOCHAT"). Erases all local DuoChat
+     * App-wide emergency kill switch ("NUKE DUOCHAT"). Erases all local DuoCord
      * data, then restarts with a brand-new identity. The honest report is
      * exposed through [killSwitchReport] until acknowledged.
      */

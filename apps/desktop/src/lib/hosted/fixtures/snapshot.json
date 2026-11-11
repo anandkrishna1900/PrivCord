@@ -1,0 +1,59 @@
+{
+  "seq": 6,
+  "own_uid": "f700633b511731bd91d9b72b8ce1f894384928e4f875656a44d314e69d0febb3",
+  "contacts": [
+    {
+      "uid": "3116a533d84b0b0ef79d9f9b955f64522deba4ddff7e574867361a1980fe616a",
+      "name": "Ann",
+      "display_name": "Ann",
+      "introduced_by": null,
+      "verified": true,
+      "checked": false,
+      "safety_number": "54710 71318 24366 23723 02971 69062",
+      "link": {
+        "Connected": {
+          "path": "DirectLan"
+        }
+      },
+      "can_message": true
+    }
+  ],
+  "conversations": [
+    {
+      "id": "3116a533d84b0b0ef79d9f9b955f64522deba4ddff7e574867361a1980fe616a",
+      "messages": [
+        {
+          "id": "dd3afd56-fd7a-43d7-83b3-2d6aedbe646b",
+          "sender": "3116a533d84b0b0ef79d9f9b955f64522deba4ddff7e574867361a1980fe616a",
+          "text": "hello from the hosted engine",
+          "created_at": 1794368921180,
+          "delivery": "Delivered",
+          "reply_to": null,
+          "is_file": false,
+          "file_mime": "",
+          "file_size": 0,
+          "deleted": false,
+          "reactions": [],
+          "pending": 0,
+          "total": 0
+        }
+      ],
+      "last": {
+        "text": "hello from the hosted engine",
+        "at": 1794368921180,
+        "own": false,
+        "sender": "3116a533d84b0b0ef79d9f9b955f64522deba4ddff7e574867361a1980fe616a"
+      },
+      "unread": 1
+    }
+  ],
+  "groups": [],
+  "channels": [],
+  "muted": [],
+  "invite": null,
+  "requests": [],
+  "answer": null,
+  "lookup_pending": false,
+  "queued": 0,
+  "channel_people": []
+}

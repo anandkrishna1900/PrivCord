@@ -1,5 +1,10 @@
 package com.duochat.app.ui
 
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -71,13 +76,14 @@ fun NewGroupScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
                 title = { Text("New group") },
             )
         },
         bottomBar = {
-            Column(Modifier.fillMaxWidth().padding(12.dp)) {
+            // Above the gesture bar, and above the keyboard while the name is being typed.
+            Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)).padding(12.dp)) {
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 6.dp)) }
                 Button(
                     onClick = {
@@ -97,7 +103,7 @@ fun NewGroupScreen(
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            OutlinedTextField(
+            DuoTextField(
                 value = name,
                 onValueChange = { name = it.take(60) },
                 label = { Text("Group name") },
@@ -178,7 +184,7 @@ fun GroupDetailsScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
                 title = { Text(group?.name ?: "Group", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 actions = {
@@ -220,7 +226,7 @@ fun GroupDetailsScreen(
                 }
             }
             items(group.members, key = { it.uid }) { member ->
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.Top) {
                     InitialsAvatar(member.name, 42, online = member.link == LinkStatus.CONNECTED)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
@@ -253,12 +259,22 @@ fun GroupDetailsScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                    }
-                    if (!member.isMe && member.canMessage) {
-                        TextButton(onClick = { onMessage(member.uid) }) { Text("Message") }
-                    }
-                    if (group.iAmAdmin && group.iAmMember && !member.isMe) {
-                        TextButton(onClick = { removing = member }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+                        // Actions under the name, so the name keeps the full width on narrow phones and with large text.
+                        val canMessage = !member.isMe && member.canMessage
+                        val canRemove = group.iAmAdmin && group.iAmMember && !member.isMe
+                        if (canMessage || canRemove) Row(Modifier.padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (canMessage) androidx.compose.material3.FilledTonalButton(
+                                onClick = { onMessage(member.uid) },
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                                colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    contentColor = MaterialTheme.colorScheme.onSurface,
+                                ),
+                            ) { Text("Message") }
+                            if (canRemove) TextButton(onClick = { removing = member }) {
+                                Text("Remove", color = MaterialTheme.colorScheme.error)
+                            }
+                        }
                     }
                 }
             }
@@ -340,7 +356,7 @@ fun GroupDetailsScreen(
             AlertDialog(
                 onDismissRequest = { renaming = false },
                 title = { Text("Rename group") },
-                text = { OutlinedTextField(value = newName, onValueChange = { newName = it.take(60) }, singleLine = true) },
+                text = { DuoTextField(value = newName, onValueChange = { newName = it.take(60) }, singleLine = true) },
                 confirmButton = {
                     TextButton(enabled = newName.isNotBlank(), onClick = {
                         renaming = false
@@ -377,7 +393,7 @@ fun FriendDetailsDialog(
                     )
                     Spacer(Modifier.height(8.dp))
                 }
-                OutlinedTextField(value = name, onValueChange = { name = it.take(40) }, label = { Text("Name") }, singleLine = true)
+                DuoTextField(value = name, onValueChange = { name = it.take(40) }, label = { Text("Name") }, singleLine = true)
                 Spacer(Modifier.height(12.dp))
                 Text(
                     if (friend.checked) "You checked these numbers." else "Check it's really them: their numbers must match yours.",

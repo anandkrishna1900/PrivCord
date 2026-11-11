@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "PrivCord",
+        "title": "DuoCord",
         "width": 1180,
         "height": 780,
         "minWidth": 880,
@@ -21,7 +21,8 @@
         "resizable": true,
         "center": true,
         "decorations": true,
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,WebRtcHideLocalIpsWithMdns"
       }
     ],
     "security": {
@@ -44,7 +45,8 @@
     "windows": {
       "nsis": {
         "installMode": "currentUser",
-        "displayLanguageSelector": false
+        "displayLanguageSelector": false,
+        "installerHooks": "./windows/hooks.nsh"
       }
     }
   }

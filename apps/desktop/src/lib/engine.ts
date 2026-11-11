@@ -83,6 +83,7 @@ import { PeerLink, type LinkContact } from './peerLink';
 import { SecureBleLink, getBleBridge } from './bleLink';
 import type { BleBridge } from './ble';
 import { loadSettings } from './settings';
+import type { ChatEngineApi } from './engineApi';
 
 
 /* ============================== public shapes (what the UI reads) ============================== */
@@ -255,7 +256,7 @@ function aggregate(recipients: Record<string, DeliveryState> | undefined): Deliv
   return values.reduce((weakest, s) => (WEAKNESS(s) < WEAKNESS(weakest) ? s : weakest));
 }
 
-export class ChatEngine {
+export class ChatEngine implements ChatEngineApi {
   private state: ChatState;
   private listeners = new Set<(state: ChatState) => void>();
   private identity: DeviceIdentity;

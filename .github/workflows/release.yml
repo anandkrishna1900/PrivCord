@@ -25,6 +25,9 @@ jobs:
         run: npm run tauri:build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          VITE_PRIVCORD_TURN_URLS: ${{ secrets.PRIVCORD_TURN_URLS }}
+          VITE_PRIVCORD_TURN_USERNAME: ${{ secrets.PRIVCORD_TURN_USERNAME }}
+          VITE_PRIVCORD_TURN_CREDENTIAL: ${{ secrets.PRIVCORD_TURN_CREDENTIAL }}
       - uses: actions/upload-artifact@v7
         with:
           name: duochat-windows
@@ -48,6 +51,9 @@ jobs:
           DUOCHAT_KEYSTORE_B64: ${{ secrets.DUOCHAT_KEYSTORE_B64 }}
           DUOCHAT_KEYSTORE_PASSWORD: ${{ secrets.DUOCHAT_KEYSTORE_PASSWORD }}
           DUOCHAT_KEY_ALIAS: ${{ secrets.DUOCHAT_KEY_ALIAS }}
+          PRIVCORD_TURN_URLS: ${{ secrets.PRIVCORD_TURN_URLS }}
+          PRIVCORD_TURN_USERNAME: ${{ secrets.PRIVCORD_TURN_USERNAME }}
+          PRIVCORD_TURN_CREDENTIAL: ${{ secrets.PRIVCORD_TURN_CREDENTIAL }}
           DUOCHAT_KEY_PASSWORD: ${{ secrets.DUOCHAT_KEY_PASSWORD }}
       - uses: actions/upload-artifact@v7
         with:

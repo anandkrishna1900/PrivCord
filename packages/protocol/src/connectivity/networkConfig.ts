@@ -24,6 +24,8 @@ export interface NetworkConfig {
   bluetooth: boolean;
   /** User-selected transport mode: AUTOMATIC (default), BLUETOOTH_ONLY, INTERNET_ONLY */
   transportMode?: TransportMode;
+  /** Use the TURN relay built into this release (if it has one) when a direct connection is not possible. */
+  builtinTurn?: boolean;
 }
 
 export const DEFAULT_NOSTR_RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.primal.net'];
@@ -101,12 +103,18 @@ export function parseNetworkConfig(raw: string | null | undefined): NetworkConfi
     forceRelay: p.forceRelay === true,
     bluetooth: p.bluetooth !== false,
     transportMode: mode,
+    // Present only when switched off (absent means on), so saved settings and the shared vectors stay as they were.
+    ...(p.builtinTurn === false ? { builtinTurn: false } : {}),
   };
 }
 
-export function iceServersFor(config: NetworkConfig): { urls: string[]; username?: string; credential?: string }[] {
+export function iceServersFor(
+  config: NetworkConfig,
+  builtin: TurnServer | null = null,
+): { urls: string[]; username?: string; credential?: string }[] {
   const servers: { urls: string[]; username?: string; credential?: string }[] = [];
   if (config.stun.length > 0) servers.push({ urls: config.stun });
+  if (builtin && config.builtinTurn !== false) servers.push({ urls: builtin.urls, username: builtin.username, credential: builtin.credential });
   for (const t of config.turn) servers.push({ urls: t.urls, username: t.username, credential: t.credential });
   return servers;
 }

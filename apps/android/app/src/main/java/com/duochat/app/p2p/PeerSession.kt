@@ -87,6 +87,9 @@ class PeerSession(
     private var authJob: Job? = null
     private var livenessJob: Job? = null
     private val liveness = LivenessMonitor()
+
+    /** How long the open link has been silent (no frame of any kind). */
+    fun quietForMs(): Long = liveness.quietForMs()
     private val frameQueue = ArrayDeque<String>()
     private var processingFrames = false
     private var manualExpectedKey: PublicJwk? = null

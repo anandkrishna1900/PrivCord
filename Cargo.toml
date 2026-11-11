@@ -8,6 +8,7 @@ members = [
     "crates/privcord-storage",
     "crates/privcord-import",
     "crates/privcord-ffi",
+    "crates/privcord-desktop-host",
 ]
 # The existing Tauri shell keeps its own lockfile until milestone M7 moves it onto this workspace.
 exclude = ["apps/desktop/src-tauri"]

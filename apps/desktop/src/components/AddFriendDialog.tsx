@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { ChatEngine, InviteAnswer } from '../lib/engine';
+import type { InviteAnswer } from '../lib/engine';
+import type { ChatEngineApi } from '../lib/engineApi';
 import { parseInviteWords } from '@duochat/protocol';
 import { copyText } from '../lib/clipboard';
 import { Modal } from './Modal';
@@ -18,7 +19,7 @@ export function AddFriendDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  engine: ChatEngine | null;
+  engine: ChatEngineApi | null;
   /** Whether our own invite reached the friend whose words we typed. */
   answer: InviteAnswer | null;
   onAdded: (uid: string) => void;

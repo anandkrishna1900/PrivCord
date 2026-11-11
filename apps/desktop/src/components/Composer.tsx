@@ -130,7 +130,7 @@ export function Composer({
       // Five minutes is plenty for a voice note and keeps the file well under the size limit.
       recordStop.current = window.setTimeout(() => recorder.current?.stop(), 5 * 60_000);
     } catch {
-      setError('Could not use the microphone. Allow microphone access for PrivCord and try again.');
+      setError('Could not use the microphone. Allow microphone access for DuoCord and try again.');
     }
   }
 

@@ -172,6 +172,11 @@ class ChatEngine(
         var path: ConnectionPath? = null
         var lastOfferAt = 0L
         var attempt = 0
+        /** Connection setup: our offer waiting for its answer, the id of their last offer (echoed in our answer), and their
+         *  own time on the newest offer seen from them (older ones a relay replays are dropped). */
+        var offerOut: String? = null
+        var offerIn: String? = null
+        var offerInAt = 0L
         /** Something came back from the friend during this attempt (a ready, offer or answer). */
         var heardAt = 0L
         var offerTimeout: Job? = null
@@ -1982,17 +1987,35 @@ class ChatEngine(
                 "offer" -> {
                     link.heardAt = System.currentTimeMillis()
                     val sdp = payload.optString("sdp")
-                    if (isInitiator(selfUid, friend.uid) || link.session.isReady || sdp.isEmpty()) return
+                    if (isInitiator(selfUid, friend.uid) || sdp.isEmpty()) return
+                    // Their clock, compared only with their own earlier offers: a relay replaying the last minutes after a
+                    // reconnect must not make us answer an offer they already gave up on.
+                    val at = (payload.opt("at") as? Number)?.toLong()
+                    if (at != null) {
+                        if (at < link.offerInAt) return
+                        link.offerInAt = at
+                    }
+                    if (link.session.isReady) {
+                        // Still talking: the offer is stale. Silent: they lost the link before we noticed; take the new one.
+                        if (link.session.quietForMs() < OFFER_REPLACES_QUIET_LINK_MS) return
+                        closeLink(link)
+                    }
                     if (!LinkScheduler.acceptIncoming(links.values.count { it.session.isReady })) return
                     link.session.setExpectedPeerKey(null)
+                    link.offerIn = payload.optString("o").ifEmpty { null }
                     val answer = link.session.acceptOffer(sdp)
-                    putToFriend(friend.uid, JSONObject().put("t", "answer").put("sdp", answer), "sig", SIGNAL_TTL_SEC)
+                    val reply = JSONObject().put("t", "answer").put("sdp", answer)
+                    link.offerIn?.let { reply.put("o", it) }
+                    putToFriend(friend.uid, reply, "sig", SIGNAL_TTL_SEC)
                     armOfferTimeout(friend.uid)
                 }
                 "answer" -> {
                     link.heardAt = System.currentTimeMillis()
                     val sdp = payload.optString("sdp")
                     if (!isInitiator(selfUid, friend.uid) || !link.session.hasPendingConnection || link.session.isReady || sdp.isEmpty()) return
+                    // An answer naming another offer belongs to an attempt we already replaced.
+                    val answers = payload.optString("o")
+                    if (answers.isNotEmpty() && link.offerOut != null && answers != link.offerOut) return
                     link.session.applyAnswer(sdp)
                 }
                 "msg" -> {
@@ -2097,7 +2120,13 @@ class ChatEngine(
                 }
                 link.session.setExpectedPeerKey(null)
                 val sdp = link.session.createOffer()
-                putToFriend(uid, JSONObject().put("t", "offer").put("sdp", sdp), "sig", SIGNAL_TTL_SEC)
+                // An id the answer echoes, so an answer to an older offer is never applied to this one.
+                val offerId = java.util.UUID.randomUUID().toString().replace("-", "").take(16)
+                link.offerOut = offerId
+                putToFriend(
+                    uid, JSONObject().put("t", "offer").put("sdp", sdp).put("o", offerId).put("at", System.currentTimeMillis()),
+                    "sig", SIGNAL_TTL_SEC,
+                )
                 armOfferTimeout(uid)
             } catch (error: Exception) {
                 closeLink(link)
@@ -2252,7 +2281,7 @@ class ChatEngine(
             if (link != null && link.session.isBluetooth && !link.session.isAuthenticated) {
                 closeLink(link)
                 bleUid = null
-                say(if (bleManualAttempt) "No friend found nearby over Bluetooth. Check that they have DuoChat open with Bluetooth on." else notice.orEmpty())
+                say(if (bleManualAttempt) "No friend found nearby over Bluetooth. Check that they have DuoCord open with Bluetooth on." else notice.orEmpty())
                 emit()
                 refreshBluetooth()
             }
@@ -2452,6 +2481,8 @@ class ChatEngine(
         const val STALL_MS = 30_000L
         const val TICK_MS = 4_000L
         const val SIGNAL_TTL_SEC = 120
+        /** A fresh offer replaces a link we think is up once it has been silent this long (more than one missed ping). */
+        const val OFFER_REPLACES_QUIET_LINK_MS = 6_000L
         const val MSG_TTL_SEC = 7 * 24 * 3600
         const val OFFER_TIMEOUT_MS = 40_000L
         const val MAX_RELAYS_PER_MINUTE = 40

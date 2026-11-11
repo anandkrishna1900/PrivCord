@@ -65,7 +65,7 @@ fun BackupSection(
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
+        DuoTextField(
             value = pass, onValueChange = { pass = it }, label = { Text("Backup passphrase") },
             visualTransformation = PasswordVisualTransformation(), singleLine = true, modifier = Modifier.fillMaxWidth(),
         )

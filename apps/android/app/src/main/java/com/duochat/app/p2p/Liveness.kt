@@ -42,5 +42,8 @@ class LivenessMonitor(private val clock: () -> Long = System::currentTimeMillis)
 
     fun reset() = onInbound()
 
+    /** How long nothing has arrived. */
+    fun quietForMs(): Long = clock() - lastInboundAt
+
     fun tick(): Tick = if (clock() - lastInboundAt > Liveness.DEAD_LINK_MS) Tick.LOST else Tick.PING
 }

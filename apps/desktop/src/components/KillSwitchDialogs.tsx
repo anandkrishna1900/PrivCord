@@ -15,7 +15,7 @@ import {
   type KillSwitchReport,
   type StepStatus,
 } from '@duochat/protocol';
-import type { ChatEngine } from '../lib/engine';
+import type { ChatEngineApi } from '../lib/engineApi';
 import {
   runConversationKillSwitch,
   runAppKillSwitch,
@@ -93,7 +93,7 @@ function ReportView({
         <div className="callout subtle" role="status">
           <CheckIcon size={17} />
           <p>
-            <strong>Erase finished.</strong> Everything PrivCord could remove on
+            <strong>Erase finished.</strong> Everything DuoCord could remove on
             this device was removed.
           </p>
         </div>
@@ -148,7 +148,7 @@ export function NukeDialog({
   autoRun?: boolean;
   open: boolean;
   onClose: () => void;
-  engine: ChatEngine | null;
+  engine: ChatEngineApi | null;
   uid: string;
   peerUid: string;
   onFinished: () => void | Promise<void>;
@@ -223,14 +223,14 @@ export function NukeDialog({
       open={open}
       onClose={close}
       eyebrow="Settings · Security · Emergency Actions"
-      title="NUKE DUOCHAT"
+      title="Erase everything on this device"
     >
       {phase === 'setup' ? (
         <div>
           <div className="callout warning" role="alert">
             <AlertIcon size={17} />
             <p>
-              <strong>This action permanently deletes the local PrivCord
+              <strong>This action permanently deletes the local DuoCord
               identity, conversations, contacts, files, cryptographic state,
               and application data. You will need your separately backed-up
               12-word recovery phrase to restore your identity.</strong>
@@ -338,7 +338,7 @@ export function NukeDialog({
             </button>
           </div>
           <p className="muted small">
-            Nothing stored outside PrivCord (browser caches managed by the
+            Nothing stored outside DuoCord (browser caches managed by the
             operating system, OS-level backups, screenshots) is deleted or
             overwritable — see the deletion documentation.
           </p>
@@ -361,7 +361,7 @@ export function ClearChatDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  engine: ChatEngine | null;
+  engine: ChatEngineApi | null;
   uid: string;
   peerUid: string;
 }) {

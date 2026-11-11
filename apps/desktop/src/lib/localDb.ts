@@ -1,6 +1,4 @@
-import Database from '@tauri-apps/plugin-sql';
 import type { ChatMessage, DeliveryState, ReplyRef } from '@duochat/protocol';
-import { isTauri } from '../config';
 import type { TextCipher } from './encryption';
 
 export interface OutboxRow {
@@ -108,9 +106,9 @@ function rowToMessage(row: MessageRow): Omit<StoredMessage, 'text'> & {
 }
 
 export class LocalStore {
-  backend: 'sqlite' | 'browser' = 'browser';
+  /** Browser storage only: the packaged app runs the Rust engine, which keeps its own encrypted database. */
+  backend: 'browser' = 'browser';
   initError: string | null = null;
-  private sql: Database | null = null;
   private cipher: TextCipher | null = null;
 
   setCipher(cipher: TextCipher): void {
@@ -128,57 +126,6 @@ export class LocalStore {
   }
 
   async init(): Promise<void> {
-    if (isTauri()) {
-      try {
-        this.sql = await Database.load('sqlite:duochat.db');
-        await this.sql.execute(`
-          CREATE TABLE IF NOT EXISTS messages (
-            message_id TEXT PRIMARY KEY,
-            client_message_id TEXT NOT NULL,
-            sender_id TEXT NOT NULL,
-            text_cipher TEXT NOT NULL,
-            client_created_at INTEGER NOT NULL,
-            message_type TEXT NOT NULL,
-            transport TEXT NOT NULL,
-            delivery_state TEXT NOT NULL,
-            read_at INTEGER,
-            conversation_id TEXT NOT NULL DEFAULT '',
-            recips TEXT,
-            extra_cipher TEXT
-          )
-        `);
-        // Databases created by older versions lack these columns: add them (errors mean "already there").
-        for (const column of ["conversation_id TEXT NOT NULL DEFAULT ''", 'recips TEXT', 'extra_cipher TEXT']) {
-          try {
-            await this.sql.execute(`ALTER TABLE messages ADD COLUMN ${column}`);
-          } catch {
-            // already present
-          }
-        }
-        await this.sql.execute(`
-          CREATE TABLE IF NOT EXISTS outbox (
-            message_id TEXT PRIMARY KEY,
-            recipient_id TEXT NOT NULL,
-            payload_cipher TEXT NOT NULL,
-            created_at INTEGER NOT NULL,
-            attempt_count INTEGER NOT NULL DEFAULT 0,
-            last_attempt_at INTEGER,
-            delivery_state TEXT NOT NULL,
-            last_error TEXT
-          )
-        `);
-        await this.sql.execute(`
-          CREATE TABLE IF NOT EXISTS meta (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-          )
-        `);
-        this.backend = 'sqlite';
-        return;
-      } catch (error) {
-        this.initError = String(error);
-      }
-    }
     this.backend = 'browser';
     if (!localStorage.getItem(BROWSER_KEY)) {
       this.writeBrowser(emptyBrowserState());
@@ -206,24 +153,17 @@ export class LocalStore {
 
   async loadMessages(limit = MAX_MESSAGES): Promise<StoredMessage[]> {
     let rows: MessageRow[] = [];
-    if (this.sql) {
-      rows = await this.sql.select<MessageRow[]>(
-        `SELECT * FROM messages ORDER BY client_created_at DESC, message_id DESC LIMIT $1`,
-        [limit],
-      );
-      rows.reverse();
-    } else {
-      rows = this.readBrowser().messages
-        .slice()
-        .sort((a, b) =>
-          a.client_created_at === b.client_created_at
-            ? a.message_id < b.message_id
-              ? -1
-              : 1
-            : a.client_created_at - b.client_created_at,
-        )
-        .slice(-limit);
-    }
+    rows = this.readBrowser().messages
+      .slice()
+      .sort((a, b) =>
+        a.client_created_at === b.client_created_at
+          ? a.message_id < b.message_id
+            ? -1
+            : 1
+          : a.client_created_at - b.client_created_at,
+      )
+      .slice(-limit);
+  
     const messages: StoredMessage[] = [];
     for (const row of rows) {
       const base = rowToMessage(row);
@@ -273,37 +213,6 @@ export class LocalStore {
 
   async putMessage(message: StoredMessage): Promise<void> {
     const row = await this.toRow(message);
-    if (this.sql) {
-      await this.sql.execute(
-        `INSERT INTO messages (
-          message_id, client_message_id, sender_id, text_cipher, client_created_at,
-          message_type, transport, delivery_state, read_at, conversation_id, recips, extra_cipher
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-        ON CONFLICT(message_id) DO UPDATE SET
-          text_cipher = excluded.text_cipher,
-          transport = excluded.transport,
-          delivery_state = excluded.delivery_state,
-          read_at = excluded.read_at,
-          conversation_id = excluded.conversation_id,
-          recips = excluded.recips,
-          extra_cipher = excluded.extra_cipher`,
-        [
-          row.message_id,
-          row.client_message_id,
-          row.sender_id,
-          row.text_cipher,
-          row.client_created_at,
-          row.message_type,
-          row.transport,
-          row.delivery_state,
-          row.read_at,
-          row.conversation_id ?? '',
-          row.recips ?? null,
-          row.extra_cipher ?? null,
-        ],
-      );
-      return;
-    }
     const state = this.readBrowser();
     const index = state.messages.findIndex((m) => m.message_id === row.message_id);
     if (index >= 0) state.messages[index] = row;
@@ -326,27 +235,6 @@ export class LocalStore {
       recipients?: Record<string, DeliveryState>;
     },
   ): Promise<void> {
-    if (this.sql) {
-      const assignments: string[] = [];
-      const values: unknown[] = [];
-      const add = (column: string, value: unknown) => {
-        values.push(value);
-        assignments.push(`${column} = $${values.length}`);
-      };
-      if (patch.deliveryState !== undefined)
-        add('delivery_state', patch.deliveryState);
-      if (patch.transport !== undefined) add('transport', patch.transport);
-      if (patch.readAt !== undefined) add('read_at', patch.readAt);
-      if (patch.conversationId !== undefined) add('conversation_id', patch.conversationId);
-      if (patch.recipients !== undefined) add('recips', JSON.stringify(patch.recipients));
-      if (assignments.length === 0) return;
-      values.push(messageId);
-      await this.sql.execute(
-        `UPDATE messages SET ${assignments.join(', ')} WHERE message_id = $${values.length}`,
-        values,
-      );
-      return;
-    }
     const state = this.readBrowser();
     const row = state.messages.find((m) => m.message_id === messageId);
     if (!row) return;
@@ -375,13 +263,8 @@ export class LocalStore {
 
   async loadOutbox(): Promise<OutboxRow[]> {
     let rows: OutboxDbRow[] = [];
-    if (this.sql) {
-      rows = await this.sql.select<OutboxDbRow[]>(
-        `SELECT * FROM outbox ORDER BY created_at ASC`,
-      );
-    } else {
-      rows = this.readBrowser().outbox.slice();
-    }
+    rows = this.readBrowser().outbox.slice();
+  
     const out: OutboxRow[] = [];
     for (const row of rows) {
       let payload = '';
@@ -406,29 +289,6 @@ export class LocalStore {
 
   async enqueueOutbox(row: OutboxRow): Promise<void> {
     const payloadCipher = await this.encrypt(row.payload);
-    if (this.sql) {
-      await this.sql.execute(
-        `INSERT INTO outbox (
-          message_id, recipient_id, payload_cipher, created_at, attempt_count,
-          last_attempt_at, delivery_state, last_error
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-        ON CONFLICT(message_id) DO UPDATE SET
-          payload_cipher = excluded.payload_cipher,
-          delivery_state = excluded.delivery_state,
-          last_error = excluded.last_error`,
-        [
-          row.messageId,
-          row.recipientId,
-          payloadCipher,
-          row.createdAt,
-          row.attemptCount,
-          row.lastAttemptAt,
-          row.deliveryState,
-          row.lastError,
-        ],
-      );
-      return;
-    }
     const state = this.readBrowser();
     const dbRow: OutboxDbRow = {
       message_id: row.messageId,
@@ -450,27 +310,6 @@ export class LocalStore {
     messageId: string,
     patch: Partial<Pick<OutboxRow, 'attemptCount' | 'lastAttemptAt' | 'deliveryState' | 'lastError'>>,
   ): Promise<void> {
-    if (this.sql) {
-      const assignments: string[] = [];
-      const values: unknown[] = [];
-      const add = (column: string, value: unknown) => {
-        values.push(value);
-        assignments.push(`${column} = $${values.length}`);
-      };
-      if (patch.attemptCount !== undefined) add('attempt_count', patch.attemptCount);
-      if (patch.lastAttemptAt !== undefined)
-        add('last_attempt_at', patch.lastAttemptAt);
-      if (patch.deliveryState !== undefined)
-        add('delivery_state', patch.deliveryState);
-      if (patch.lastError !== undefined) add('last_error', patch.lastError);
-      if (assignments.length === 0) return;
-      values.push(messageId);
-      await this.sql.execute(
-        `UPDATE outbox SET ${assignments.join(', ')} WHERE message_id = $${values.length}`,
-        values,
-      );
-      return;
-    }
     const state = this.readBrowser();
     const row = state.outbox.find((r) => r.message_id === messageId);
     if (!row) return;
@@ -482,48 +321,22 @@ export class LocalStore {
   }
 
   async removeOutbox(messageId: string): Promise<void> {
-    if (this.sql) {
-      await this.sql.execute(`DELETE FROM outbox WHERE message_id = $1`, [messageId]);
-      return;
-    }
     const state = this.readBrowser();
     state.outbox = state.outbox.filter((r) => r.message_id !== messageId);
     this.writeBrowser(state);
   }
 
   async getMeta(key: string): Promise<string | null> {
-    if (this.sql) {
-      const rows = await this.sql.select<{ value: string }[]>(
-        `SELECT value FROM meta WHERE key = $1`,
-        [key],
-      );
-      return rows[0]?.value ?? null;
-    }
     return this.readBrowser().meta[key] ?? null;
   }
 
   async setMeta(key: string, value: string): Promise<void> {
-    if (this.sql) {
-      await this.sql.execute(
-        `INSERT INTO meta (key, value) VALUES ($1, $2)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-        [key, value],
-      );
-      return;
-    }
     const state = this.readBrowser();
     state.meta[key] = value;
     this.writeBrowser(state);
   }
 
   async clearAll(): Promise<void> {
-    if (this.sql) {
-      await this.sql.execute(`DELETE FROM messages`);
-      await this.sql.execute(`DELETE FROM outbox`);
-      await this.sql.execute(`DELETE FROM meta`);
-      await this.clearFiles();
-      return;
-    }
     this.writeBrowser(emptyBrowserState());
     await this.clearFiles();
   }
@@ -534,23 +347,14 @@ export class LocalStore {
    * a new conversation continues to function.
    */
   async deleteMessage(messageId: string): Promise<void> {
-    if (this.sql) {
-      await this.sql.execute(`DELETE FROM messages WHERE message_id = $1`, [messageId]);
-    } else {
-      const state = this.readBrowser();
-      state.messages = state.messages.filter((m) => m.message_id !== messageId);
-      this.writeBrowser(state);
-    }
+    const state = this.readBrowser();
+    state.messages = state.messages.filter((m) => m.message_id !== messageId);
+    this.writeBrowser(state);
+  
     await this.deleteFile(messageId).catch(() => undefined);
   }
 
   async clearMessages(): Promise<void> {
-    if (this.sql) {
-      await this.sql.execute(`DELETE FROM messages`);
-      await this.sql.execute(`DELETE FROM outbox`);
-      await this.clearFiles();
-      return;
-    }
     const state = this.readBrowser();
     state.messages = [];
     state.outbox = [];
@@ -564,13 +368,6 @@ export class LocalStore {
    * schema. In browser development mode the whole store is replaced.
    */
   async destroySchema(): Promise<void> {
-    if (this.sql) {
-      await this.sql.execute(`DROP TABLE IF EXISTS messages`);
-      await this.sql.execute(`DROP TABLE IF EXISTS outbox`);
-      await this.sql.execute(`DROP TABLE IF EXISTS meta`);
-      await this.clearFiles();
-      return;
-    }
     this.writeBrowser(emptyBrowserState());
     await this.clearFiles();
   }

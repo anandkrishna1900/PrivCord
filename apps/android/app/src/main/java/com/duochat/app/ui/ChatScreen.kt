@@ -45,7 +45,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -53,7 +57,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -66,6 +69,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Schedule
@@ -95,10 +99,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -177,7 +184,7 @@ fun ChatScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                 },
@@ -186,17 +193,25 @@ fun ChatScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.clickable(onClick = onOpenDetails),
                     ) {
-                        InitialsAvatar(title, 38, online = friend?.link == LinkStatus.CONNECTED || (group?.connectedCount ?: 0) > 0)
-                        Spacer(Modifier.width(10.dp))
+                        val live = friend?.link == LinkStatus.CONNECTED || (group?.connectedCount ?: 0) > 0 || channel?.connected == true
+                        InitialsAvatar(title.removePrefix("# "), 40, group = group != null || channel != null)
+                        Spacer(Modifier.width(12.dp))
                         Column {
                             Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(
-                                status,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    Modifier.size(7.dp).clip(CircleShape)
+                                        .background(if (live) Online else MaterialTheme.colorScheme.outline),
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    status,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                         }
                     }
                 },
@@ -229,7 +244,7 @@ fun ChatScreen(
         },
         bottomBar = {
             if (canWrite && directBlocked) {
-                Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
+                Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
                     Text(
                         if (state.groupOnly) {
                             "You stay group-only with people you meet in groups. To message ${friend?.name} directly, swap invites (Add friend)."
@@ -246,7 +261,7 @@ fun ChatScreen(
                 Composer(
                     connected = friend?.link == LinkStatus.CONNECTED || (group?.connectedCount ?: 0) > 0 || channel?.connected == true,
                     isChannel = channel != null,
-                    modifier = Modifier.navigationBarsPadding().imePadding(),
+                    modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)),
                     replyingTo = replyingTo,
                     replyName = replyingTo?.let { r -> if (r.senderId == state.uid) "yourself" else (group?.members?.firstOrNull { it.uid == r.senderId }?.name ?: friend?.name ?: "them") },
                     onCancelReply = { replyingTo = null },
@@ -254,7 +269,7 @@ fun ChatScreen(
                     onSendFile = { name, mime, bytes, done -> onSendFile(name, mime, bytes, replyingTo?.messageId) { r -> if (r.isSuccess) replyingTo = null; done(r) } },
                 )
             } else if (group != null) {
-                Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
+                Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
                     Text(
                         (group.exitNote ?: "You cannot write here") + ". You can still read this chat.",
                         style = MaterialTheme.typography.bodyMedium,
@@ -279,8 +294,11 @@ fun ChatScreen(
                 )
             }
             friend?.diagnosis?.let { d ->
-                Surface(color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                Surface(
+                    color = MaterialTheme.colorScheme.tertiaryContainer, shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                ) {
+                    Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp)) {
                         Text(d.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
                         Row {
                             if (com.duochat.app.data.DiagnosisAction.ENABLE_STORE_FORWARD in d.actions) {
@@ -341,15 +359,21 @@ private fun Banner(
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
 ) {
-    Surface(color = container, modifier = Modifier.fillMaxWidth()) {
-        Row(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(17.dp))
-            Spacer(Modifier.width(9.dp))
+    Surface(
+        color = container, shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+    ) {
+        Row(
+            modifier = Modifier.heightIn(min = 48.dp).padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(10.dp))
             Text(text, style = MaterialTheme.typography.bodySmall, color = content, modifier = Modifier.weight(1f))
             if (actionLabel != null && onAction != null) TextButton(onClick = onAction) { Text(actionLabel, color = content) }
             if (onDismiss != null) {
-                IconButton(onClick = onDismiss, modifier = Modifier.size(30.dp)) {
-                    Icon(Icons.Filled.Close, contentDescription = "Dismiss", tint = content)
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Filled.Close, contentDescription = "Dismiss", tint = content, modifier = Modifier.size(18.dp))
                 }
             }
         }
@@ -373,18 +397,22 @@ private fun MessageList(
     onMute: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    val listState = rememberLazyListState()
+    // The list is laid out from the bottom (newest message = item 0). Anchored at the bottom like this, it stays put when the
+    // keyboard opens or the composer grows, and when photos below finish loading; a top-anchored list kept its top instead and
+    // slid the newest messages under the composer, which looked like the chat jumping up.
+    val listState = androidx.compose.runtime.saveable.rememberSaveable(convId, saver = androidx.compose.foundation.lazy.LazyListState.Saver) {
+        androidx.compose.foundation.lazy.LazyListState()
+    }
     val scope = rememberCoroutineScope()
+    val newest = remember(messages) { messages.asReversed() }
     val lastId = messages.lastOrNull()?.messageId
-    // True while the view follows the newest message. Dragging up turns it off; reaching the bottom turns it on.
+    // True while the view follows the newest message. Dragging away turns it off; coming back to the bottom turns it on.
     var pinned by remember(convId) { mutableStateOf(true) }
     var unseen by remember(convId) { mutableStateOf(0) }
     var lastSeenId by remember(convId) { mutableStateOf<String?>(null) }
-    val atBottom by remember {
+    val atBottom by remember(listState) {
         androidx.compose.runtime.derivedStateOf {
-            val info = listState.layoutInfo
-            val last = info.visibleItemsInfo.lastOrNull()
-            last == null || (last.index >= info.totalItemsCount - 1 && last.offset + last.size <= info.viewportEndOffset + 48)
+            listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < 48
         }
     }
     LaunchedEffect(listState) {
@@ -393,42 +421,37 @@ private fun MessageList(
             if (bottom) unseen = 0
         }
     }
-    // New messages: open at the newest one, follow while pinned or when we sent it, otherwise count them.
+    // A new message at the bottom: follow it while pinned or when we sent it, otherwise count it on the "new messages" button.
     LaunchedEffect(convId, lastId) {
         if (messages.isEmpty() || lastId == lastSeenId) return@LaunchedEffect
         val first = lastSeenId == null
         lastSeenId = lastId
+        if (first) return@LaunchedEffect // a reversed list opens at the newest message by itself
         val mine = messages.last().senderId == selfUid
-        if (first) {
-            listState.scrollToItem(messages.lastIndex)
-        } else if (pinned || mine) {
+        if (pinned || mine) {
             pinned = true
-            listState.animateScrollToItem(messages.lastIndex)
+            listState.animateScrollToItem(0)
         } else {
             unseen += 1
         }
-    }
-    // Photos and videos change height after they appear: keep following the bottom while pinned.
-    val lastItemSize = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.size
-    LaunchedEffect(lastItemSize) {
-        if (pinned && messages.isNotEmpty()) listState.scrollToItem(messages.lastIndex)
     }
 
     if (messages.isEmpty()) {
         Box(modifier = modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                     Icon(
-                        Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(18.dp).size(28.dp),
+                        Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(20.dp).size(28.dp),
                     )
                 }
-                Spacer(Modifier.height(14.dp))
-                Text("No messages yet", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(18.dp))
+                Text("Say hello", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(8.dp))
                 Text(
                     "Messages here are end-to-end encrypted and kept only on your phones.",
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.widthIn(max = 300.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                 )
@@ -438,69 +461,91 @@ private fun MessageList(
     }
 
     Box(modifier = modifier.fillMaxWidth()) {
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(3.dp),
-    ) {
-        itemsIndexed(messages, key = { _, message -> message.messageId }) { index, message ->
-            val day = formatDay(message.clientCreatedAt)
-            val previous = messages.getOrNull(index - 1)
-            val showDay = previous == null || formatDay(previous.clientCreatedAt) != day
-            val grouped = previous != null && !showDay && previous.senderId == message.senderId &&
-                message.clientCreatedAt - previous.clientCreatedAt < 4 * 60_000
-            Column {
-                if (showDay) DaySeparator(day)
-                val own = message.senderId == selfUid
-                MessageBubble(
-                    message = message,
-                    own = own,
-                    senderName = if (own) "You" else (message.senderName ?: nameOf(message.senderId)),
-                    canReply = canReply,
-                    onMute = onMute,
-                    showName = isGroup && !own && !grouped,
-                    showAvatar = !grouped,
-                    grouped = grouped,
-                    onRetry = onRetry,
-                    onReply = onReply,
-                    onDelete = onDelete,
-                    onReact = onReact,
-                    selfUid = selfUid,
-                    loadFile = loadFile,
-                    progress = transfers[message.messageId],
-                    quotedName = message.replyTo?.let { r -> if (r.author == selfUid) "You" else nameOf(r.author) },
-                    onJumpTo = { id ->
-                        val at = messages.indexOfFirst { it.messageId == id }
-                        if (at >= 0) scope.launch { listState.animateScrollToItem(at) }
-                    },
-                )
+        LazyColumn(
+            state = listState,
+            reverseLayout = true,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.Bottom),
+        ) {
+            itemsIndexed(newest, key = { _, message -> message.messageId }) { index, message ->
+                // `newest` runs newest first, so the message before this one in time is the next item.
+                val day = formatDay(message.clientCreatedAt)
+                val previous = newest.getOrNull(index + 1)
+                val showDay = previous == null || formatDay(previous.clientCreatedAt) != day
+                val grouped = previous != null && !showDay && previous.senderId == message.senderId &&
+                    message.clientCreatedAt - previous.clientCreatedAt < 4 * 60_000
+                val next = newest.getOrNull(index - 1)
+                val lastOfRun = next == null || next.senderId != message.senderId ||
+                    formatDay(next.clientCreatedAt) != day || next.clientCreatedAt - message.clientCreatedAt >= 4 * 60_000
+                Column(Modifier.padding(top = if (grouped || showDay) 0.dp else 6.dp)) {
+                    if (showDay) DaySeparator(day)
+                    val own = message.senderId == selfUid
+                    MessageBubble(
+                        message = message,
+                        own = own,
+                        senderName = if (own) "You" else (message.senderName ?: nameOf(message.senderId)),
+                        canReply = canReply,
+                        onMute = onMute,
+                        showName = isGroup && !own && !grouped,
+                        showAvatar = lastOfRun,
+                        grouped = grouped,
+                        lastOfRun = lastOfRun,
+                        isGroup = isGroup,
+                        onRetry = onRetry,
+                        onReply = onReply,
+                        onDelete = onDelete,
+                        onReact = onReact,
+                        selfUid = selfUid,
+                        loadFile = loadFile,
+                        progress = transfers[message.messageId],
+                        quotedName = message.replyTo?.let { r -> if (r.author == selfUid) "You" else nameOf(r.author) },
+                        onJumpTo = { id ->
+                            val at = newest.indexOfFirst { it.messageId == id }
+                            if (at >= 0) {
+                                pinned = false
+                                scope.launch { listState.animateScrollToItem(at) }
+                            }
+                        },
+                    )
+                }
             }
         }
-    }
-    if (unseen > 0) {
-        androidx.compose.material3.FilledTonalButton(
-            onClick = {
-                pinned = true
-                unseen = 0
-                scope.launch { listState.animateScrollToItem(messages.lastIndex) }
-            },
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp),
-        ) { Text("↓ $unseen new ${if (unseen == 1) "message" else "messages"}") }
-    }
+        androidx.compose.animation.AnimatedVisibility(
+            visible = !atBottom,
+            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(initialScale = 0.8f),
+            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(targetScale = 0.8f),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 14.dp, bottom = 14.dp),
+        ) {
+            // Back to the newest message; shows how many arrived while reading further up.
+            androidx.compose.material3.SmallFloatingActionButton(
+                onClick = {
+                    pinned = true
+                    unseen = 0
+                    scope.launch { listState.animateScrollToItem(0) }
+                },
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            ) {
+                androidx.compose.material3.BadgedBox(
+                    badge = { if (unseen > 0) androidx.compose.material3.Badge { Text(if (unseen > 99) "99+" else "$unseen") } },
+                ) {
+                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = if (unseen > 0) "$unseen new messages" else "Go to the newest message")
+                }
+            }
+        }
     }
 }
 
 @Composable
 private fun DaySeparator(label: String) {
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.Center) {
-        Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(20.dp)) {
-            Text(
-                label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-            )
-        }
-    }
+    Text(
+        label,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 10.dp),
+    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -512,6 +557,8 @@ private fun MessageBubble(
     showName: Boolean,
     showAvatar: Boolean,
     grouped: Boolean,
+    lastOfRun: Boolean,
+    isGroup: Boolean,
     onRetry: (String) -> Unit,
     onReply: (ChatMessage) -> Unit,
     onDelete: (String, Boolean) -> Unit,
@@ -528,35 +575,59 @@ private fun MessageBubble(
     val context = LocalContext.current
     var menuOpen by remember { mutableStateOf(false) }
 
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    // Corners: round on the outside; tighter where a bubble touches another one from the same person; a small tail on the
+    // last bubble of a run, on the sender's side.
+    val big = 20.dp
+    val joined = 6.dp
+    val tail = 6.dp
+    val shape = if (own) {
+        RoundedCornerShape(topStart = big, bottomStart = big, topEnd = if (grouped) joined else big, bottomEnd = if (lastOfRun) tail else joined)
+    } else {
+        RoundedCornerShape(topEnd = big, bottomEnd = big, topStart = if (grouped) joined else big, bottomStart = if (lastOfRun) tail else joined)
+    }
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (own) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.Bottom,
     ) {
-        if (!own && showName) {
-            // Group chats: a small avatar next to the first message of a run.
-            Box(Modifier.width(30.dp)) { if (showAvatar) InitialsAvatar(senderName, 26) }
-        } else if (!own) {
-            Spacer(Modifier.width(30.dp))
+        if (!own && isGroup) {
+            // Group chats: the sender's avatar next to the last bubble of their run, a gap of the same width elsewhere.
+            Box(Modifier.width(32.dp)) { if (showAvatar) InitialsAvatar(senderName, 26) }
         }
-        Box {
+        // At most about four fifths of the row, on any screen width; the rest stays open on the other side.
+        Box(Modifier.weight(1f, fill = false).padding(start = if (own) 48.dp else 0.dp, end = if (own) 0.dp else 48.dp)) {
+            // Incoming bubbles must stand out from the background: on a light theme the background is grey, so they are white.
+            val incoming = MaterialTheme.colorScheme.surfaceContainerHigh
+            val failed = message.deliveryState == DeliveryState.FAILED
             Surface(
-                color = if (own) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(
-                    topStart = 18.dp, topEnd = 18.dp,
-                    bottomStart = if (own || grouped) 18.dp else 4.dp,
-                    bottomEnd = if (!own || grouped) 18.dp else 4.dp,
-                ),
-                modifier = Modifier.widthIn(max = 310.dp).combinedClickable(onClick = {}, onLongClick = { menuOpen = true }),
+                // A message that failed is not "yours yet": it drops the plum for the error tone, with words saying so.
+                color = when {
+                    own && failed -> MaterialTheme.colorScheme.errorContainer
+                    own -> LocalOwnFill.current
+                    else -> incoming
+                },
+                shape = shape,
+                modifier = Modifier.combinedClickable(onClick = {}, onLongClick = {
+                    haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                    menuOpen = true
+                }),
             ) {
-                Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 9.dp, bottom = 7.dp)) {
                     if (showName) {
                         Text(
-                            senderName, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold,
-                            color = Color.hsl(avatarHue(senderName).toFloat(), 0.6f, 0.62f),
+                            senderName, style = MaterialTheme.typography.labelMedium,
+                            color = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color.hsl(avatarHue(senderName).toFloat(), 0.70f, 0.74f)
+                            else Color.hsl(avatarHue(senderName).toFloat(), 0.60f, 0.36f),
+                            modifier = Modifier.padding(bottom = 2.dp),
                         )
                     }
-                    val bodyColor = if (own) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                    val bodyColor = when {
+                        own && failed -> MaterialTheme.colorScheme.onErrorContainer
+                        own -> Color.White
+                        else -> MaterialTheme.colorScheme.onSurface
+                    }
                     message.replyTo?.let { reply ->
                         Row(
                             modifier = Modifier.padding(bottom = 6.dp).height(IntrinsicSize.Min)
@@ -580,19 +651,26 @@ private fun MessageBubble(
                     val chips = com.duochat.app.data.summarizeReactions(message.reactions, selfUid)
                     if (chips.isNotEmpty() && !message.deleted) {
                         Spacer(Modifier.height(4.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             chips.forEach { c ->
                                 Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = bodyColor.copy(alpha = if (c.mine) 0.30f else 0.14f),
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = if (c.mine) MaterialTheme.colorScheme.tertiary else bodyColor.copy(alpha = 0.14f),
+                                    contentColor = if (c.mine) MaterialTheme.colorScheme.onTertiary else bodyColor,
                                     modifier = Modifier.clickable { onReact(message.messageId, c.emoji) },
-                                ) { Text(if (c.count > 1) "${c.emoji} ${c.count}" else c.emoji, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)) }
+                                ) {
+                                    Text(
+                                        if (c.count > 1) "${c.emoji} ${c.count}" else c.emoji,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                    )
+                                }
                             }
                         }
                     }
                     Spacer(Modifier.height(3.dp))
                     Row(modifier = Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically) {
-                        val subtle = if (own) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f)
+                        val subtle = if (own) bodyColor.copy(alpha = 0.75f)
                         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                         if (own && message.totalRecipients > 0 && message.deliveredTo < message.totalRecipients) {
                             Text(
@@ -604,8 +682,16 @@ private fun MessageBubble(
                         Text(formatTime(message.clientCreatedAt), style = MaterialTheme.typography.labelSmall, color = subtle)
                         if (own) {
                             Spacer(Modifier.width(4.dp))
-                            DeliveryIndicator(message.deliveryState) { onRetry(message.messageId) }
+                            DeliveryIndicator(message.deliveryState, bodyColor) { onRetry(message.messageId) }
                         }
+                    }
+                    if (own && message.deliveryState == DeliveryState.FAILED) {
+                        // A full-size target: the small status icon alone is too small to tap reliably.
+                        TextButton(
+                            onClick = { onRetry(message.messageId) },
+                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = bodyColor),
+                            modifier = Modifier.align(Alignment.End),
+                        ) { Text("Not delivered · Retry", style = MaterialTheme.typography.labelLarge) }
                     }
                 }
             }
@@ -638,7 +724,8 @@ private fun MessageBubble(
                     onClick = {
                         clipboard.setText(AnnotatedString(message.text))
                         menuOpen = false
-                        Toast.makeText(context, "Message copied", Toast.LENGTH_SHORT).show()
+                        // Android 13 and later confirm copies themselves; a second message would only repeat it.
+                        if (android.os.Build.VERSION.SDK_INT < 33) Toast.makeText(context, "Message copied", Toast.LENGTH_SHORT).show()
                     },
                 )
             }
@@ -666,7 +753,9 @@ private fun FileContent(message: ChatMessage, color: Color, loadFile: suspend (S
         }
     }
     var viewing by remember { mutableStateOf(false) }
-    val image by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, message.messageId) {
+    // An incoming file shows while it is still arriving; load it again once it has all arrived.
+    val arrived = progress == null
+    val image by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, message.messageId, arrived) {
         if (!isInlineImage(meta.mime)) return@produceState
         value = withContext(Dispatchers.IO) { loadFile(message.messageId)?.second?.let { decodeUpright(it, 1200) } }
     }
@@ -677,7 +766,7 @@ private fun FileContent(message: ChatMessage, color: Color, loadFile: suspend (S
     }
     // Video: decrypted to a short-lived cache file (the player needs a path), shown with a poster frame and
     // played in place when tapped. The file is deleted when the bubble leaves the screen.
-    val videoFile by produceState<java.io.File?>(null, message.messageId) {
+    val videoFile by produceState<java.io.File?>(null, message.messageId, arrived) {
         if (!isInlineVideo(meta.mime)) return@produceState
         value = withContext(Dispatchers.IO) {
             val bytes = loadFile(message.messageId)?.second ?: return@withContext null
@@ -758,39 +847,7 @@ private fun FileContent(message: ChatMessage, color: Color, loadFile: suspend (S
             Spacer(Modifier.height(6.dp))
         }
         if (com.duochat.app.data.isInlineAudio(meta.mime)) {
-            val audioFile by produceState<java.io.File?>(null, message.messageId) {
-                value = withContext(Dispatchers.IO) {
-                    val bytes = loadFile(message.messageId)?.second ?: return@withContext null
-                    java.io.File(context.cacheDir, "audio-${message.messageId}").also { it.writeBytes(bytes) }
-                }
-            }
-            androidx.compose.runtime.DisposableEffect(audioFile) { onDispose { audioFile?.delete() } }
-            var player by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
-            var isPlaying by remember { mutableStateOf(false) }
-            androidx.compose.runtime.DisposableEffect(Unit) { onDispose { player?.release() } }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(enabled = audioFile != null, onClick = {
-                    val f = audioFile ?: return@IconButton
-                    if (isPlaying) { player?.pause(); isPlaying = false }
-                    else {
-                        // A damaged or unsupported recording must not take the app down with it.
-                        val p = player ?: runCatching {
-                            android.media.MediaPlayer().also { mp ->
-                                try {
-                                    mp.setDataSource(f.path); mp.prepare()
-                                } catch (t: Throwable) { mp.release(); throw t }
-                                mp.setOnCompletionListener { isPlaying = false }
-                                mp.setOnErrorListener { _, _, _ -> isPlaying = false; true }
-                                player = mp
-                            }
-                        }.getOrNull()
-                        if (p == null) {
-                            Toast.makeText(context, "This voice note can't be played", Toast.LENGTH_SHORT).show()
-                        } else runCatching { p.start(); isPlaying = true }
-                    }
-                }) { Icon(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, contentDescription = if (isPlaying) "Pause" else "Play voice note", tint = color) }
-                Text("Voice note · ${formatBytes(meta.size)}", style = MaterialTheme.typography.bodyMedium, color = color)
-            }
+            VoiceNote(message.messageId, arrived, meta.size, color, loadFile)
             Spacer(Modifier.height(4.dp))
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -815,17 +872,17 @@ private fun FileContent(message: ChatMessage, color: Color, loadFile: suspend (S
 }
 
 @Composable
-private fun DeliveryIndicator(state: DeliveryState, onRetry: () -> Unit) {
-    val color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+private fun DeliveryIndicator(state: DeliveryState, ink: Color, onRetry: () -> Unit) {
+    val color = ink.copy(alpha = 0.8f)
     when (state) {
         DeliveryState.FAILED -> Icon(
             Icons.Filled.ErrorOutline, contentDescription = "Not delivered. Tap to retry.",
-            tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(15.dp).clickable(onClick = onRetry),
+            tint = ink, modifier = Modifier.size(15.dp).clickable(onClick = onRetry),
         )
         DeliveryState.QUEUED -> Icon(Icons.Filled.Schedule, contentDescription = "Waiting to send", tint = color, modifier = Modifier.size(14.dp))
         DeliveryState.SENT -> Icon(Icons.Filled.Check, contentDescription = "Sent", tint = color, modifier = Modifier.size(14.dp))
         DeliveryState.DELIVERED -> Icon(Icons.Filled.DoneAll, contentDescription = "Delivered", tint = color, modifier = Modifier.size(15.dp))
-        DeliveryState.READ -> Icon(Icons.Filled.DoneAll, contentDescription = "Read", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(15.dp))
+        DeliveryState.READ -> Icon(Icons.Filled.DoneAll, contentDescription = "Read", tint = ink, modifier = Modifier.size(15.dp))
     }
 }
 
@@ -915,16 +972,16 @@ private fun Composer(
         if (granted) startRecording() else error = "Allow the microphone to record voice notes."
     }
 
-    Surface(modifier = modifier, color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp) {
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+    Surface(modifier = modifier, color = MaterialTheme.colorScheme.background) {
+        Column(modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 10.dp)) {
             if (replyingTo != null) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp).clip(RoundedCornerShape(10.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant).padding(start = 10.dp),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp).clip(MaterialTheme.shapes.medium)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(start = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
-                        Text("Replying to ${replyName ?: "them"}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                        Text("Replying to ${replyName ?: "them"}", style = MaterialTheme.typography.labelMedium)
                         Text(
                             if (replyingTo.type == MessageType.FILE) "\uD83D\uDCCE ${replyingTo.text}" else replyingTo.text,
                             style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -938,22 +995,42 @@ private fun Composer(
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 6.dp))
             }
             if (recorder != null) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Filled.Mic, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Recording… tap send to share it", modifier = Modifier.weight(1f))
+                // Recording: a red dot, how long it has run, cancel, and send.
+                var elapsed by remember { mutableStateOf(0L) }
+                LaunchedEffect(recordStart) {
+                    while (true) {
+                        elapsed = (System.currentTimeMillis() - recordStart) / 1000
+                        kotlinx.coroutines.delay(250)
+                    }
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                ) {
+                    Box(Modifier.padding(start = 12.dp).size(10.dp).clip(CircleShape).background(MaterialTheme.colorScheme.error))
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        "%d:%02d".format(elapsed / 60, elapsed % 60),
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f),
+                    )
                     TextButton(onClick = { stopRecording(false) }) { Text("Cancel") }
-                    IconButton(onClick = { stopRecording(true) }) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send voice note") }
+                    Spacer(Modifier.width(4.dp))
+                    RoundAction(onClick = { stopRecording(true) }, enabled = true, description = "Send voice note") {
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null)
+                    }
                 }
             } else Row(verticalAlignment = Alignment.Bottom) {
-                if (!isChannel) IconButton(onClick = {
-                    if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) startRecording()
-                    else micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
-                }, modifier = Modifier.size(48.dp)) { Icon(Icons.Filled.Mic, contentDescription = "Record a voice note") }
+                // One rounded field holding the attach button and the text; the round send/record button sits beside it.
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .padding(start = if (isChannel) 6.dp else 0.dp),
+                ) {
                 if (!isChannel) IconButton(onClick = { picker.launch("*/*") }, modifier = Modifier.size(48.dp)) {
-                    Icon(Icons.Filled.AttachFile, contentDescription = "Send a file (up to 8 MB)")
+                    Icon(Icons.Filled.AttachFile, contentDescription = "Send a file (up to 8 MB)", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                OutlinedTextField(
+                androidx.compose.material3.TextField(
                     value = text,
                     onValueChange = {
                         if (countCodePoints(it) <= MAX_TEXT_LENGTH + 200) {
@@ -961,28 +1038,40 @@ private fun Composer(
                             if (error != null) error = null
                         }
                     },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text(if (connected) "Message" else "Message (sent when you connect)") },
-                    maxLines = 5,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                    keyboardActions = KeyboardActions(onSend = { send() }),
-                    shape = RoundedCornerShape(20.dp),
-                )
-                Spacer(Modifier.width(8.dp))
-                IconButton(
-                    onClick = { send() },
-                    enabled = canSend,
-                    modifier = Modifier.size(48.dp).clip(CircleShape).background(
-                        if (canSend) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                    placeholder = { Text(if (connected) "Message" else "Message (sent when you connect)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    maxLines = 6,
+                    keyboardOptions = KeyboardOptions(
+                        imeAction = ImeAction.Send,
+                        capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences,
                     ),
-                ) {
-                    if (sending) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    } else {
-                        Icon(
-                            Icons.AutoMirrored.Filled.Send, contentDescription = "Send message",
-                            tint = if (canSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    keyboardActions = KeyboardActions(onSend = { send() }),
+                    textStyle = MaterialTheme.typography.bodyLarge,
+                    colors = androidx.compose.material3.TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        disabledContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent,
+                    ),
+                )
+                }
+                Spacer(Modifier.width(8.dp))
+                val showMic = text.isBlank() && !isChannel && !sending
+                if (showMic) {
+                    RoundAction(
+                        onClick = {
+                            if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) startRecording()
+                            else micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+                        },
+                        enabled = true,
+                        description = "Record a voice note",
+                    ) { Icon(Icons.Filled.Mic, contentDescription = null) }
+                } else {
+                    RoundAction(onClick = { send() }, enabled = canSend, description = "Send message") {
+                        if (sending) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                        else Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null)
                     }
                 }
             }
@@ -998,26 +1087,54 @@ private fun Composer(
     }
 }
 
+/** The round primary button at the end of the composer (send, record). */
 @Composable
-fun InitialsAvatar(name: String, size: Int, online: Boolean = false) {
-    val hue = avatarHue(name.ifBlank { "duochat" })
+private fun RoundAction(onClick: () -> Unit, enabled: Boolean, description: String, content: @Composable () -> Unit) {
+    val container = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+    val tint = if (enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = CircleShape,
+        color = container,
+        contentColor = tint,
+        modifier = Modifier.size(48.dp).semantics { contentDescription = description },
+    ) {
+        Box(contentAlignment = Alignment.Center) { content() }
+    }
+}
+
+/** A soft tonal circle (a rounded square for groups) with the initials in a deeper shade of the same hue. */
+@Composable
+fun InitialsAvatar(name: String, size: Int, online: Boolean = false, group: Boolean = false) {
+    val hue = avatarHue(name.ifBlank { "duochat" }).toFloat()
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val fill = if (dark) Color.hsl(hue, 0.32f, 0.26f) else Color.hsl(hue, 0.62f, 0.89f)
+    val ink = if (dark) Color.hsl(hue, 0.70f, 0.82f) else Color.hsl(hue, 0.60f, 0.26f)
+    val shape = if (group) RoundedCornerShape((size * 0.32f).dp) else CircleShape
     Box(contentAlignment = Alignment.BottomEnd) {
         Box(
-            modifier = Modifier.size(size.dp).clip(CircleShape).background(Color.hsl(hue.toFloat(), 0.55f, 0.45f)),
+            modifier = Modifier.size(size.dp).clip(shape).background(fill),
             contentAlignment = Alignment.Center,
         ) {
-            Text(initials(name), color = Color.White, fontSize = (size * 0.34f).sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                initials(name), color = ink, fontSize = (size * 0.36f).sp, fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium,
+            )
         }
         if (online) {
+            // A green dot with a ring in the background colour, so it reads as a badge on any avatar colour.
             Box(
-                Modifier.size((size * 0.28f).dp).clip(CircleShape).background(Color(0xFF22C55E))
-                    .padding(1.dp),
+                Modifier.size((size * 0.30f).coerceAtLeast(10f).dp).clip(CircleShape).background(MaterialTheme.colorScheme.background)
+                    .padding((size * 0.05f).coerceAtLeast(2f).dp).clip(CircleShape).background(Online),
             )
         }
     }
 }
 
-fun formatTime(timestamp: Long): String = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(timestamp))
+/** The time of day in the phone's own style (12- or 24-hour, by locale). */
+fun formatTime(timestamp: Long): String =
+    java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT, Locale.getDefault()).format(Date(timestamp))
 
 fun formatDay(timestamp: Long): String {
     val zone = ZoneId.systemDefault()
@@ -1113,4 +1230,92 @@ private fun decodeUpright(bytes: ByteArray, maxSide: Int): androidx.compose.ui.g
         postRotate(degrees.toFloat())
     }
     return android.graphics.Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true).asImageBitmap()
+}
+
+/** The voice note playing right now, if any (weak: a released player is simply gone). */
+private var nowPlaying: java.lang.ref.WeakReference<androidx.media3.exoplayer.ExoPlayer>? = null
+
+/**
+ * A voice note or audio file: play/pause, a progress bar and the time. Media3 ExoPlayer, because the platform
+ * MediaPlayer rejects the WebM/Opus recordings desktop browsers make (no duration, no seek index). The decrypted
+ * bytes live in a cache file only while the bubble is on screen.
+ */
+@Composable
+private fun VoiceNote(messageId: String, arrived: Boolean, size: Int, color: Color, loadFile: suspend (String) -> Pair<FileMeta, ByteArray>?) {
+    val context = LocalContext.current
+    val file by produceState<java.io.File?>(null, messageId, arrived) {
+        value = withContext(Dispatchers.IO) {
+            val bytes = loadFile(messageId)?.second ?: return@withContext null
+            java.io.File(context.cacheDir, "audio-$messageId").also { it.writeBytes(bytes) }
+        }
+    }
+    var player by remember { mutableStateOf<androidx.media3.exoplayer.ExoPlayer?>(null) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var position by remember { mutableStateOf(0L) }
+    var duration by remember { mutableStateOf(0L) }
+    androidx.compose.runtime.DisposableEffect(file) {
+        onDispose {
+            player?.release(); player = null; isPlaying = false
+            file?.delete()
+        }
+    }
+    LaunchedEffect(isPlaying) {
+        while (isPlaying) {
+            player?.let { p -> position = p.currentPosition; if (p.duration > 0) duration = p.duration }
+            kotlinx.coroutines.delay(100)
+        }
+    }
+    fun toggle() {
+        val f = file ?: return
+        val p = player ?: androidx.media3.exoplayer.ExoPlayer.Builder(context).build().also { p ->
+            p.addListener(object : androidx.media3.common.Player.Listener {
+                override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
+                override fun onPlaybackStateChanged(state: Int) {
+                    if (state == androidx.media3.common.Player.STATE_READY && p.duration > 0) duration = p.duration
+                    if (state == androidx.media3.common.Player.STATE_ENDED) { p.pause(); p.seekTo(0); position = 0 }
+                }
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    isPlaying = false
+                    Toast.makeText(context, "This voice note can't be played", Toast.LENGTH_SHORT).show()
+                }
+            })
+            p.setMediaItem(androidx.media3.common.MediaItem.fromUri(android.net.Uri.fromFile(f)))
+            p.prepare()
+            player = p
+        }
+        if (p.isPlaying) p.pause() else {
+            // One voice note at a time: starting this one pauses whichever was playing.
+            nowPlaying?.get()?.takeIf { it !== p }?.pause()
+            nowPlaying = java.lang.ref.WeakReference(p)
+            p.play()
+        }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.widthIn(min = 200.dp)) {
+        Surface(
+            onClick = { toggle() }, enabled = file != null, shape = CircleShape,
+            color = color.copy(alpha = 0.16f), contentColor = color, modifier = Modifier.size(44.dp),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                if (file == null) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = color)
+                else Icon(
+                    if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    contentDescription = if (isPlaying) "Pause voice note" else "Play voice note",
+                )
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            LinearProgressIndicator(
+                progress = { if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f },
+                modifier = Modifier.fillMaxWidth().height(4.dp).clip(CircleShape),
+                color = color, trackColor = color.copy(alpha = 0.22f), drawStopIndicator = {},
+            )
+            Spacer(Modifier.height(6.dp))
+            val shown = if (isPlaying || position > 0) position else duration
+            Text(
+                if (shown > 0) "%d:%02d".format(shown / 60_000, (shown / 1000) % 60) else "Voice note \u00B7 ${formatBytes(size)}",
+                style = MaterialTheme.typography.labelSmall, color = color.copy(alpha = 0.8f),
+            )
+        }
+    }
 }

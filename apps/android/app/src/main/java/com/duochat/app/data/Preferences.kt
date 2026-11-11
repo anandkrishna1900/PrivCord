@@ -37,11 +37,11 @@ data class AppSettings(
 )
 
 val ACCENTS: List<Pair<String, String>> = listOf(
-    "Indigo" to "#6366F1",
-    "Teal" to "#0D9488",
-    "Rose" to "#E11D48",
-    "Amber" to "#D97706",
-    "Sky" to "#0284C7",
+    "Plum" to "#7A3E73",
+    "Pine" to "#2F6B4F",
+    "Clay" to "#B4532A",
+    "Rose" to "#B83A5E",
+    "Slate" to "#3E4C5E",
 )
 
 class SettingsRepository(context: Context) {

@@ -158,7 +158,7 @@ fun NukeDialog(
                 }
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    "This action permanently deletes the local DuoChat identity, " +
+                    "This action permanently deletes the local DuoCord identity, " +
                         "conversations, contacts, files, cryptographic state, and " +
                         "application data. You will need your separately backed-up " +
                         "12-word recovery phrase to restore your identity.",
@@ -214,7 +214,7 @@ fun NukeDialog(
                         val summary = summarizeReport(report!!)
                         if (summary.complete) {
                             Text(
-                                "Erase finished. Everything DuoChat could remove on this " +
+                                "Erase finished. Everything DuoCord could remove on this " +
                                     "device was removed.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.primary,

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ChatEngine, ChatState, UiMessage } from '../lib/engine';
+import type { ChatState, UiMessage } from '../lib/engine';
+import type { ChatEngineApi } from '../lib/engineApi';
 import type { AppSettings } from '../lib/settings';
 import { LOCAL_ID } from '../lib/identity';
 import { formatTime } from '../lib/format';
 import { MAX_FILE_BYTES, formatBytes } from '@duochat/protocol';
-import { Avatar } from './Avatar';
+import { Avatar, BrandMark } from './Avatar';
 import { Composer } from './Composer';
 import { MessageList } from './MessageList';
 import { SettingsDialog, type SettingsSection } from './SettingsDialog';
@@ -56,7 +57,7 @@ export function ChatLayout({
   fatal,
 }: {
   state: ChatState | null;
-  engine: ChatEngine | null;
+  engine: ChatEngineApi | null;
   settings: AppSettings;
   updateSettings: (patch: Partial<AppSettings>) => void;
   fatal: string | null;
@@ -164,12 +165,12 @@ export function ChatLayout({
   const hits = useMemo(() => (engine && query.trim().length >= 2 ? engine.search(query) : []), [engine, query, state?.messages]);
 
   useEffect(() => {
-    document.title = 'PrivCord';
+    document.title = 'DuoCord';
   }, []);
 
-  if (fatal) return <Splash danger title="PrivCord could not start" text={fatal} />;
-  if (!state || state.phase === 'starting') return <Splash title="PrivCord" text="Opening your chats…" />;
-  if (state.phase === 'error') return <Splash danger title="PrivCord could not start" text={state.error ?? 'Unknown error.'} />;
+  if (fatal) return <Splash danger title="DuoCord could not start" text={fatal} />;
+  if (!state || state.phase === 'starting') return <Splash title="DuoCord" text="Opening your chats…" />;
+  if (state.phase === 'error') return <Splash danger title="DuoCord could not start" text={state.error ?? 'Unknown error.'} />;
 
   const person = state.contacts.find((c) => c.uid === selected) ?? null;
   const group = state.groups.find((g) => g.groupId === selected) ?? null;
@@ -199,16 +200,14 @@ export function ChatLayout({
     <div className={`app-shell ${current ? 'has-chat' : ''}`}>
       <aside className="sidebar">
         <header className="sidebar-head">
-          <span className="brand-mark">
-            <ShieldIcon size={18} />
-          </span>
-          <h1>PrivCord</h1>
+          <BrandMark size={30} />
+          <h1>DuoCord</h1>
           <button type="button" className="icon-button" aria-label="Settings" title="Settings" onClick={() => setDialog('settings')}>
             <SettingsIcon size={18} />
           </button>
         </header>
         <div className="sidebar-actions">
-          <button type="button" className="button primary" aria-label="Add friend" onClick={() => setDialog('add')}>
+          <button type="button" className="button ink" aria-label="Add friend" onClick={() => setDialog('add')}>
             <UserIcon size={16} />
             Add friend
           </button>
@@ -266,7 +265,7 @@ export function ChatLayout({
                 className={`chat-row ${row.id === selected ? 'active' : ''}`}
                 onClick={() => open(row.id)}
               >
-                <Avatar name={row.name} size={42} online={row.online} />
+                <Avatar name={row.name} size={46} online={row.online} group={row.isGroup} />
                 <span className="chat-row-main">
                   <span className="chat-row-top">
                     <strong>{row.name}</strong>
@@ -295,10 +294,16 @@ export function ChatLayout({
                 <ArrowLeftIcon size={18} />
               </button>
               <div className="chat-header-identity">
-                <Avatar name={current.name} size={40} online={person ? person.conn === 'connected' : (group?.connected ?? 0) > 0} />
+                <Avatar name={current.name} size={40} group={!person} />
                 <div>
                   <h2>{current.name}</h2>
-                  <p className="muted small">{headerStatus}</p>
+                  <p className="muted small">
+                    <span
+                      className={`status-dot ${(person ? person.conn === 'connected' : (group?.connected ?? 0) > 0) ? 'live' : ''}`}
+                      aria-hidden="true"
+                    />
+                    {headerStatus}
+                  </p>
                 </div>
               </div>
               <div className="menu-wrap" ref={menuRef}>
@@ -441,7 +446,7 @@ export function ChatLayout({
             <div className="empty-emblem">
               <ShieldIcon size={30} />
             </div>
-            <h2>{hasChats ? 'Pick a chat' : 'Welcome to PrivCord'}</h2>
+            <h2>{hasChats ? 'Pick a chat' : 'Welcome to DuoCord'}</h2>
             {hasChats ? (
               <p className="muted">Choose someone from the list, or add a friend.</p>
             ) : (

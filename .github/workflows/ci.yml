@@ -130,14 +130,24 @@ jobs:
       - run: npm ci
       - run: cd relay && npm ci
       - name: Playwright (global, as the suite expects)
+        # --with-deps also apt-installs optional fonts; when Ubuntu's mirror is unreachable that fails the whole step
+        # (twice in a row on 11 Nov 2026). The runner image already has what Chromium needs to run, so fall back to the
+        # browser alone; the suite below still runs every test and fails on its own if something is really missing.
         run: |
           npm install -g playwright
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chromium || {
+            echo "::warning::system packages could not be installed; installing the browser alone"
+            npx playwright install chromium
+          }
       - run: npm run e2e --workspace @duochat/desktop
       # The built desktop app against the Rust engine as a separate process, over the simulated Bluetooth radio.
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo build -p privcord-engine --example peer --locked
       - run: node apps/desktop/e2e/rust-peer.mjs
+      # The desktop page's hosted-engine code against two real Rust engine processes (the stand-in for the Tauri shell).
+      - run: cargo build -p privcord-desktop-host --example host_stdio --locked
+      - run: npx vitest run src/lib/hosted/e2e.test.ts
+        working-directory: apps/desktop
 
   android:
     name: Android unit tests and debug build
@@ -175,6 +185,11 @@ jobs:
       - name: Test and assemble
         working-directory: apps/android
         run: ./gradlew :app:testClassicDebugUnitTest :app:assembleClassicDebug :app:assembleRustDebug --console=plain
+        # The built-in TURN relay (empty when the secrets are not set, e.g. on forks): see docs/turn-server/README.md.
+        env:
+          PRIVCORD_TURN_URLS: ${{ secrets.PRIVCORD_TURN_URLS }}
+          PRIVCORD_TURN_USERNAME: ${{ secrets.PRIVCORD_TURN_USERNAME }}
+          PRIVCORD_TURN_CREDENTIAL: ${{ secrets.PRIVCORD_TURN_CREDENTIAL }}
       - name: The APK contains the Rust core for every CPU type
         run: |
           unzip -l apps/android/app/build/outputs/apk/classic/debug/app-classic-debug.apk | grep libprivcord_ffi.so | tee /tmp/libs.txt
@@ -214,6 +229,10 @@ jobs:
             Start-Sleep -Seconds 60
           }
           exit 1
+        env:
+          VITE_PRIVCORD_TURN_URLS: ${{ secrets.PRIVCORD_TURN_URLS }}
+          VITE_PRIVCORD_TURN_USERNAME: ${{ secrets.PRIVCORD_TURN_USERNAME }}
+          VITE_PRIVCORD_TURN_CREDENTIAL: ${{ secrets.PRIVCORD_TURN_CREDENTIAL }}
       - uses: actions/upload-artifact@v7
         with:
           name: duochat-windows-unsigned
