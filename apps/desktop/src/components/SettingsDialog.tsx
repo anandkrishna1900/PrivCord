@@ -7,7 +7,6 @@ import { ACCENTS } from '../lib/settings';
 import { THEMES, themeVars } from '../lib/themes';
 import { ensureNotificationPermission } from '../lib/notifications';
 import { config } from '../config';
-import { hostedEngineAvailable, hostedEngineEnabled, setHostedEngineEnabled } from '../lib/hosted/enable';
 import { Modal } from './Modal';
 import { NetworkSettings } from './NetworkSettings';
 import { AlertIcon, CheckIcon, KeyIcon, TrashIcon } from './Icons';
@@ -407,7 +406,6 @@ export function SettingsDialog({
             <details className="advanced">
               <summary>Advanced</summary>
               <NetworkSettings engine={engine} state={state} />
-              {hostedEngineAvailable() ? <EngineSwitch /> : null}
             </details>
           </section>
         ) : null}
@@ -524,28 +522,3 @@ export function SettingsDialog({
 }
 
 
-/** Which engine runs the chats: the Rust engine (the default) or the older TypeScript one. The app restarts on the other engine. */
-function EngineSwitch() {
-  const [on, setOn] = useState(hostedEngineEnabled());
-  return (
-    <div className="settings-row">
-      <label>
-        <input
-          type="checkbox"
-          checked={on}
-          onChange={(event) => {
-            setHostedEngineEnabled(event.target.checked);
-            setOn(event.target.checked);
-            window.location.reload();
-          }}
-        />{' '}
-        Run on the Rust engine
-      </label>
-      <p className="muted small">
-        The shared Rust engine runs your chats. Turn this off to use the older engine instead. Each keeps its own copy of your
-        messages, so chats written in one are not shown in the other. Your identity and friends carry over. The app restarts when you
-        change this.
-      </p>
-    </div>
-  );
-}

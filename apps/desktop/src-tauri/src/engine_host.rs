@@ -151,6 +151,11 @@ pub async fn engine_start(app: AppHandle, state: State<'_, EngineState>) -> Resu
     }
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    // The old TypeScript engine's database (removed with that engine): its chats are not carried over, so do not leave
+    // them on disk.
+    for old in ["duochat.db", "duochat.db-wal", "duochat.db-shm"] {
+        let _ = std::fs::remove_file(dir.join(old));
+    }
     let db = dir.join("engine.db");
     let (a, b) = (app.clone(), app.clone());
     let host = tauri::async_runtime::spawn_blocking(move || {
