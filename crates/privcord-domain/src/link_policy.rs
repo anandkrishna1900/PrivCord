@@ -9,6 +9,9 @@ pub const PING_INTERVAL_MS: i64 = 4_000;
 pub const DEAD_LINK_MS: i64 = 14_000;
 pub const MAX_LINKS: usize = 30;
 pub const MAX_CONNECTING: usize = 3;
+/// A fresh offer replaces a link we still think is up once that link has been silent this long (more than one missed
+/// ping): the other side has clearly lost it, and waiting for `DEAD_LINK_MS` here only slows the reconnect.
+pub const OFFER_REPLACES_QUIET_LINK_MS: i64 = 6_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LivenessTick {
@@ -31,6 +34,10 @@ impl LivenessMonitor {
     /// Call for every inbound frame, whatever it is.
     pub fn on_inbound(&mut self, now: i64) {
         self.last_inbound_at = now;
+    }
+    /// How long nothing has arrived.
+    pub fn quiet_for(&self, now: i64) -> i64 {
+        now - self.last_inbound_at
     }
     pub fn tick(&self, now: i64) -> LivenessTick {
         if now - self.last_inbound_at > DEAD_LINK_MS {

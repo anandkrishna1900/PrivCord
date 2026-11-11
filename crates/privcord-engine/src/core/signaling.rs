@@ -135,10 +135,22 @@ impl Core {
     /// session description; the engine seals it and finds a way to deliver it.
     pub fn send_signal(&mut self, peer: &UserId, message: &SignalMessage) -> Result<(), ErrorCode> {
         self.require_live()?;
+        let now = self.now();
         let payload = match message {
             SignalMessage::Ready => json!({ "t": "ready" }),
-            SignalMessage::Offer(sdp) => json!({ "t": "offer", "sdp": sdp }),
-            SignalMessage::Answer(sdp) => json!({ "t": "answer", "sdp": sdp }),
+            SignalMessage::Offer(sdp) => {
+                // Each offer gets an id; the answer echoes it, so an answer to an older offer (replayed by a relay, or
+                // crossing a newer one) is never applied to the connection we are opening now.
+                let mut raw = [0u8; 8];
+                self.ports.entropy.fill(&mut raw)?;
+                let id: String = raw.iter().map(|b| format!("{b:02x}")).collect();
+                self.peers.entry(peer.clone()).or_insert_with(super::Peer::offline).offer_out = Some(id.clone());
+                json!({ "t": "offer", "sdp": sdp, "o": id, "at": now })
+            }
+            SignalMessage::Answer(sdp) => match self.peers.get(peer).and_then(|p| p.offer_in.clone()) {
+                Some(id) => json!({ "t": "answer", "sdp": sdp, "o": id }),
+                None => json!({ "t": "answer", "sdp": sdp }),
+            },
         };
         self.put_sealed(peer, &payload, PutKind::Sig, LIVE_TTL_SEC)
     }
@@ -200,16 +212,49 @@ impl Core {
                 });
             }
             Some("offer") => {
-                let initiator = is_initiator(own.as_str(), from.as_str());
-                let ready = self.peers.get(&from).is_some_and(super::Peer::ready);
-                if let (false, false, Some(sdp)) = (initiator, ready, text("sdp")) {
-                    self.hub.publish(EngineEvent::SignalReceived {
-                        peer: from,
-                        message: SignalMessage::Offer(sdp.to_owned()),
-                    });
+                let Some(sdp) = text("sdp") else { return };
+                if is_initiator(own.as_str(), from.as_str()) {
+                    return;
                 }
+                let now = self.now();
+                // Their own clock, compared only with their own earlier offers: a relay replaying the last minutes after
+                // a reconnect must not make us answer an offer they have already given up on.
+                let at = payload.get("at").and_then(Value::as_i64);
+                let peer = self.peers.entry(from.clone()).or_insert_with(super::Peer::offline);
+                if let Some(at) = at {
+                    if at < peer.offer_in_at {
+                        return;
+                    }
+                    peer.offer_in_at = at;
+                }
+                if peer.ready() {
+                    // We think the link is up. If it is still talking, this offer is stale; if it went quiet, they lost
+                    // it before we noticed: drop it now and take the new one instead of waiting for our own timeout.
+                    if peer.liveness.quiet_for(now)
+                        < privcord_domain::link_policy::OFFER_REPLACES_QUIET_LINK_MS
+                    {
+                        return;
+                    }
+                    self.ports.transport.close(&from);
+                    self.link_down(&from);
+                }
+                if let Some(p) = self.peers.get_mut(&from) {
+                    p.offer_in = text("o").map(str::to_owned);
+                }
+                self.hub.publish(EngineEvent::SignalReceived {
+                    peer: from,
+                    message: SignalMessage::Offer(sdp.to_owned()),
+                });
             }
             Some("answer") => {
+                // An answer naming another offer than the one we are waiting on belongs to an attempt we replaced.
+                if let (Some(said), Some(Some(waiting))) =
+                    (text("o"), self.peers.get(&from).map(|p| p.offer_out.as_deref()))
+                {
+                    if said != waiting {
+                        return;
+                    }
+                }
                 if let (true, Some(sdp)) = (is_initiator(own.as_str(), from.as_str()), text("sdp"))
                 {
                     self.hub.publish(EngineEvent::SignalReceived {

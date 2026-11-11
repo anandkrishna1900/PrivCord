@@ -753,7 +753,9 @@ private fun FileContent(message: ChatMessage, color: Color, loadFile: suspend (S
         }
     }
     var viewing by remember { mutableStateOf(false) }
-    val image by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, message.messageId) {
+    // An incoming file shows while it is still arriving; load it again once it has all arrived.
+    val arrived = progress == null
+    val image by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, message.messageId, arrived) {
         if (!isInlineImage(meta.mime)) return@produceState
         value = withContext(Dispatchers.IO) { loadFile(message.messageId)?.second?.let { decodeUpright(it, 1200) } }
     }
@@ -764,7 +766,7 @@ private fun FileContent(message: ChatMessage, color: Color, loadFile: suspend (S
     }
     // Video: decrypted to a short-lived cache file (the player needs a path), shown with a poster frame and
     // played in place when tapped. The file is deleted when the bubble leaves the screen.
-    val videoFile by produceState<java.io.File?>(null, message.messageId) {
+    val videoFile by produceState<java.io.File?>(null, message.messageId, arrived) {
         if (!isInlineVideo(meta.mime)) return@produceState
         value = withContext(Dispatchers.IO) {
             val bytes = loadFile(message.messageId)?.second ?: return@withContext null
@@ -845,39 +847,7 @@ private fun FileContent(message: ChatMessage, color: Color, loadFile: suspend (S
             Spacer(Modifier.height(6.dp))
         }
         if (com.duochat.app.data.isInlineAudio(meta.mime)) {
-            val audioFile by produceState<java.io.File?>(null, message.messageId) {
-                value = withContext(Dispatchers.IO) {
-                    val bytes = loadFile(message.messageId)?.second ?: return@withContext null
-                    java.io.File(context.cacheDir, "audio-${message.messageId}").also { it.writeBytes(bytes) }
-                }
-            }
-            androidx.compose.runtime.DisposableEffect(audioFile) { onDispose { audioFile?.delete() } }
-            var player by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
-            var isPlaying by remember { mutableStateOf(false) }
-            androidx.compose.runtime.DisposableEffect(Unit) { onDispose { player?.release() } }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(enabled = audioFile != null, onClick = {
-                    val f = audioFile ?: return@IconButton
-                    if (isPlaying) { player?.pause(); isPlaying = false }
-                    else {
-                        // A damaged or unsupported recording must not take the app down with it.
-                        val p = player ?: runCatching {
-                            android.media.MediaPlayer().also { mp ->
-                                try {
-                                    mp.setDataSource(f.path); mp.prepare()
-                                } catch (t: Throwable) { mp.release(); throw t }
-                                mp.setOnCompletionListener { isPlaying = false }
-                                mp.setOnErrorListener { _, _, _ -> isPlaying = false; true }
-                                player = mp
-                            }
-                        }.getOrNull()
-                        if (p == null) {
-                            Toast.makeText(context, "This voice note can't be played", Toast.LENGTH_SHORT).show()
-                        } else runCatching { p.start(); isPlaying = true }
-                    }
-                }) { Icon(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, contentDescription = if (isPlaying) "Pause" else "Play voice note", tint = color) }
-                Text("Voice note · ${formatBytes(meta.size)}", style = MaterialTheme.typography.bodyMedium, color = color)
-            }
+            VoiceNote(message.messageId, arrived, meta.size, color, loadFile)
             Spacer(Modifier.height(4.dp))
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1260,4 +1230,84 @@ private fun decodeUpright(bytes: ByteArray, maxSide: Int): androidx.compose.ui.g
         postRotate(degrees.toFloat())
     }
     return android.graphics.Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true).asImageBitmap()
+}
+
+/**
+ * A voice note or audio file: play/pause, a progress bar and the time. Media3 ExoPlayer, because the platform
+ * MediaPlayer rejects the WebM/Opus recordings desktop browsers make (no duration, no seek index). The decrypted
+ * bytes live in a cache file only while the bubble is on screen.
+ */
+@Composable
+private fun VoiceNote(messageId: String, arrived: Boolean, size: Int, color: Color, loadFile: suspend (String) -> Pair<FileMeta, ByteArray>?) {
+    val context = LocalContext.current
+    val file by produceState<java.io.File?>(null, messageId, arrived) {
+        value = withContext(Dispatchers.IO) {
+            val bytes = loadFile(messageId)?.second ?: return@withContext null
+            java.io.File(context.cacheDir, "audio-$messageId").also { it.writeBytes(bytes) }
+        }
+    }
+    var player by remember { mutableStateOf<androidx.media3.exoplayer.ExoPlayer?>(null) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var position by remember { mutableStateOf(0L) }
+    var duration by remember { mutableStateOf(0L) }
+    androidx.compose.runtime.DisposableEffect(file) {
+        onDispose {
+            player?.release(); player = null; isPlaying = false
+            file?.delete()
+        }
+    }
+    LaunchedEffect(isPlaying) {
+        while (isPlaying) {
+            player?.let { p -> position = p.currentPosition; if (p.duration > 0) duration = p.duration }
+            kotlinx.coroutines.delay(100)
+        }
+    }
+    fun toggle() {
+        val f = file ?: return
+        val p = player ?: androidx.media3.exoplayer.ExoPlayer.Builder(context).build().also { p ->
+            p.addListener(object : androidx.media3.common.Player.Listener {
+                override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
+                override fun onPlaybackStateChanged(state: Int) {
+                    if (state == androidx.media3.common.Player.STATE_READY && p.duration > 0) duration = p.duration
+                    if (state == androidx.media3.common.Player.STATE_ENDED) { p.pause(); p.seekTo(0); position = 0 }
+                }
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    isPlaying = false
+                    Toast.makeText(context, "This voice note can't be played", Toast.LENGTH_SHORT).show()
+                }
+            })
+            p.setMediaItem(androidx.media3.common.MediaItem.fromUri(android.net.Uri.fromFile(f)))
+            p.prepare()
+            player = p
+        }
+        if (p.isPlaying) p.pause() else p.play()
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.widthIn(min = 200.dp)) {
+        Surface(
+            onClick = { toggle() }, enabled = file != null, shape = CircleShape,
+            color = color.copy(alpha = 0.16f), contentColor = color, modifier = Modifier.size(44.dp),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                if (file == null) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = color)
+                else Icon(
+                    if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    contentDescription = if (isPlaying) "Pause voice note" else "Play voice note",
+                )
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            LinearProgressIndicator(
+                progress = { if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f },
+                modifier = Modifier.fillMaxWidth().height(4.dp).clip(CircleShape),
+                color = color, trackColor = color.copy(alpha = 0.22f), drawStopIndicator = {},
+            )
+            Spacer(Modifier.height(6.dp))
+            val shown = if (isPlaying || position > 0) position else duration
+            Text(
+                if (shown > 0) "%d:%02d".format(shown / 60_000, (shown / 1000) % 60) else "Voice note \u00B7 ${formatBytes(size)}",
+                style = MaterialTheme.typography.labelSmall, color = color.copy(alpha = 0.8f),
+            )
+        }
+    }
 }

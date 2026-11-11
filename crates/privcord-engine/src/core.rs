@@ -145,6 +145,12 @@ struct Peer {
     last_attempt_at: i64,
     /// Frames in a row that failed to decrypt: a link that only produces those is out of step and is restarted.
     bad_frames: u32,
+    /// Connection setup: the id of the offer we are waiting to have answered, the id of the last offer they sent us (echoed
+    /// in our answer), and the sender's own time on the newest offer seen from them (older ones replayed by a relay are
+    /// dropped).
+    offer_out: Option<String>,
+    offer_in: Option<String>,
+    offer_in_at: i64,
 }
 
 impl Peer {
@@ -161,6 +167,9 @@ impl Peer {
             attempts: 0,
             last_attempt_at: 0,
             bad_frames: 0,
+            offer_out: None,
+            offer_in: None,
+            offer_in_at: 0,
         }
     }
     fn ready(&self) -> bool {

@@ -768,3 +768,68 @@ fn resetting_the_dial_backoff_dials_again_at_the_next_tick_instead_of_waiting() 
     me.core.tick();
     assert_eq!(dials(&mut me), 1);
 }
+
+#[test]
+fn replayed_offers_and_answers_to_replaced_offers_are_ignored_and_a_quiet_link_gives_way() {
+    use privcord_engine::SignalMessage;
+    let clock = FakeClock::at(1_700_000_000_000);
+    let (mut a, mut b) = (node("alice", &clock), node("bob", &clock));
+    befriend(&mut a, &mut b);
+    a.transport.set_signaling(true);
+    b.transport.set_signaling(true);
+    let (offerer, answerer) = if a.uid.as_str() < b.uid.as_str() { (&mut a, &mut b) } else { (&mut b, &mut a) };
+    let offers = |n: &mut Node| -> Vec<String> {
+        drain_events(n)
+            .into_iter()
+            .filter_map(|e| match e {
+                EngineEvent::SignalReceived { message: SignalMessage::Offer(s), .. } => Some(s),
+                _ => None,
+            })
+            .collect()
+    };
+    let answers = |n: &mut Node| -> Vec<String> {
+        drain_events(n)
+            .into_iter()
+            .filter_map(|e| match e {
+                EngineEvent::SignalReceived { message: SignalMessage::Answer(s), .. } => Some(s),
+                _ => None,
+            })
+            .collect()
+    };
+    drain_events(answerer);
+
+    // Two attempts; the relay hands them over newest first (as after a reconnect replay out of order).
+    offerer.core.send_signal(&answerer.uid, &SignalMessage::Offer("first".into())).unwrap();
+    let first = put_blobs(offerer).remove(0);
+    clock.advance(20_000);
+    offerer.core.send_signal(&answerer.uid, &SignalMessage::Offer("second".into())).unwrap();
+    let second = put_blobs(offerer).remove(0);
+    answerer.core.signal_blob(&second.0, &second.1);
+    answerer.core.signal_blob(&first.0, &first.1);
+    assert_eq!(offers(answerer), ["second"], "the older offer, arriving late, is dropped");
+
+    // The answer names the offer it answers, so the offerer applies it.
+    answerer.core.send_signal(&offerer.uid, &SignalMessage::Answer("for second".into())).unwrap();
+    let good = put_blobs(answerer).remove(0);
+    // An answer to the first offer (made before the second arrived) is ignored by the offerer.
+    offerer.core.send_signal(&answerer.uid, &SignalMessage::Offer("third".into())).unwrap();
+    put_blobs(offerer);
+    offerer.core.signal_blob(&good.0, &good.1);
+    assert!(answers(offerer).is_empty(), "an answer to a replaced offer is not applied");
+
+    // Linked and talking: a new offer is stale and ignored. Once the link is silent, the offer replaces it.
+    connect(offerer, answerer);
+    drain_events(answerer);
+    clock.advance(1_000);
+    offerer.core.send_signal(&answerer.uid, &SignalMessage::Offer("while up".into())).unwrap();
+    let up = put_blobs(offerer).remove(0);
+    answerer.core.signal_blob(&up.0, &up.1);
+    assert!(offers(answerer).is_empty(), "a live link is not torn down by an offer");
+    clock.advance(7_000);
+    offerer.core.send_signal(&answerer.uid, &SignalMessage::Offer("after silence".into())).unwrap();
+    let late = put_blobs(offerer).remove(0);
+    answerer.core.signal_blob(&late.0, &late.1);
+    assert_eq!(offers(answerer), ["after silence"]);
+    assert!(answerer.transport.drain_closed().contains(&offerer.uid), "the silent link was closed");
+    assert!(!matches!(state_of(answerer, &offerer.uid), ConnectionState::Connected { .. }));
+}
