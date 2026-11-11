@@ -24,6 +24,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
 
 @Composable
 fun LoadingScreen(message: String) {
@@ -34,9 +38,10 @@ fun LoadingScreen(message: String) {
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator()
+            BrandMark(64)
+            Spacer(Modifier.height(24.dp))
+            CircularProgressIndicator(strokeWidth = 3.dp, modifier = Modifier.size(28.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(18.dp))
-            Text("DuoChat", style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(6.dp))
             Text(
                 message,
@@ -67,7 +72,7 @@ fun FatalScreen(message: String, onRetry: () -> Unit) {
                 modifier = Modifier.size(36.dp),
             )
             Spacer(Modifier.height(12.dp))
-            Text("DuoChat could not start", style = MaterialTheme.typography.headlineSmall)
+            Text("PrivCord could not start", style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(8.dp))
             Text(
                 message,
@@ -76,7 +81,7 @@ fun FatalScreen(message: String, onRetry: () -> Unit) {
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(18.dp))
-            OutlinedButton(onClick = onRetry) {
+            androidx.compose.material3.Button(onClick = onRetry, modifier = Modifier.heightIn(min = 52.dp)) {
                 Text("Try again")
             }
         }

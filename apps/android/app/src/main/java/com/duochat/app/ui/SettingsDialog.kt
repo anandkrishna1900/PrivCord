@@ -34,6 +34,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -103,19 +107,21 @@ fun SettingsDialog(
     var clearStatus by remember { mutableStateOf<String?>(null) }
     var clearing by remember { mutableStateOf(false) }
 
-    Dialog(onDismissRequest = onDismiss) {
+    // A full page, not a floating box: settings are long, and a page reads calmer than a card over the chats.
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    ) {
         Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.92f),
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background,
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing)
                     .verticalScroll(rememberScrollState())
-                    .padding(20.dp),
+                    .padding(horizontal = 24.dp, vertical = 12.dp),
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -123,19 +129,30 @@ fun SettingsDialog(
                 ) {
                     Text(
                         "Settings",
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = MaterialTheme.typography.headlineLarge,
                         modifier = Modifier.weight(1f),
                     )
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Filled.Close, contentDescription = "Close settings")
                     }
                 }
-                Text(
-                    "Settings apply to this device.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 Spacer(Modifier.height(16.dp))
+                // Who you are, at the top: the name friends see, on a card with your avatar.
+                Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        InitialsAvatar(settings.displayName.ifBlank { "You" }, 56)
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(settings.displayName.ifBlank { "No name yet" }, style = MaterialTheme.typography.titleLarge)
+                            Text(
+                                "Settings apply to this device only",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
 
                 SectionTitle("Profile")
                 Text(
@@ -167,9 +184,7 @@ fun SettingsDialog(
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
 
-                Spacer(Modifier.height(18.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(20.dp))
 
 SectionTitle("Appearance")
                 Text(
@@ -183,7 +198,7 @@ SectionTitle("Appearance")
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    ThemeTile("Classic", listOf(Color(0xFF0B0E13), Color(0xFFF1F2F5)), settings.palette == com.duochat.app.data.CLASSIC_PALETTE) {
+                    ThemeTile("Plum & paper", listOf(Color(0xFFF7F3EE), Color(0xFF7A3E73), Color(0xFFF2A65A), Color(0xFF131112)), settings.palette == com.duochat.app.data.CLASSIC_PALETTE) {
                         onUpdateSettings { copy(palette = com.duochat.app.data.CLASSIC_PALETTE) }
                     }
                     for (t in com.duochat.app.data.THEMES) {
@@ -250,9 +265,7 @@ SectionTitle("Appearance")
                 }
                 }
 
-                Spacer(Modifier.height(18.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(20.dp))
 
                 SectionTitle("Notifications")
                 ToggleRow(
@@ -305,9 +318,7 @@ SectionTitle("Appearance")
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                Spacer(Modifier.height(18.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(20.dp))
 
                 SectionTitle("Connection")
                 Text(
@@ -543,9 +554,7 @@ SectionTitle("Appearance")
                 )
                 }
 
-                Spacer(Modifier.height(18.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(20.dp))
 
 SectionTitle("Security")
                 val appContext = LocalContext.current
@@ -659,9 +668,7 @@ SectionTitle("Security")
                     }
                 }
 
-                Spacer(Modifier.height(18.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(20.dp))
 
 ToggleRow(
                     "Panic wipe",
@@ -671,11 +678,9 @@ ToggleRow(
                 Spacer(Modifier.height(14.dp))
                 SectionTitle("Backup")
                 BackupSection(onExportBackup, onImportBackup)
-                Spacer(Modifier.height(18.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(20.dp))
 
-SectionTitle("About DuoChat")
+SectionTitle("About PrivCord")
                 Text(
                     "Private messaging for friends and groups, with no accounts and no server.",
                     style = MaterialTheme.typography.bodyMedium,
@@ -710,8 +715,8 @@ SectionTitle("About DuoChat")
 private fun SectionTitle(text: String) {
     Text(
         text,
-        style = MaterialTheme.typography.titleMedium,
-        modifier = Modifier.padding(bottom = 8.dp),
+        style = MaterialTheme.typography.titleLarge,
+        modifier = Modifier.padding(top = 12.dp, bottom = 10.dp),
     )
 }
 
@@ -745,11 +750,11 @@ private fun ToggleRow(
     onChange: (Boolean) -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyMedium)
+        Column(Modifier.weight(1f).padding(end = 16.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
             Text(
                 description,
                 style = MaterialTheme.typography.bodySmall,
@@ -769,9 +774,9 @@ private fun ChoiceChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
         shape = RoundedCornerShape(20.dp),
         color = if (selected) {
-            MaterialTheme.colorScheme.primaryContainer
+            MaterialTheme.colorScheme.onBackground
         } else {
-            MaterialTheme.colorScheme.surfaceVariant
+            MaterialTheme.colorScheme.surfaceContainerHigh
         },
         modifier = Modifier.clickable(onClick = onClick),
     ) {
@@ -779,11 +784,11 @@ private fun ChoiceChip(label: String, selected: Boolean, onClick: () -> Unit) {
             label,
             style = MaterialTheme.typography.bodyMedium,
             color = if (selected) {
-                MaterialTheme.colorScheme.primary
+                MaterialTheme.colorScheme.background
             } else {
                 MaterialTheme.colorScheme.onSurfaceVariant
             },
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
         )
     }
 }
@@ -791,7 +796,7 @@ private fun ChoiceChip(label: String, selected: Boolean, onClick: () -> Unit) {
 private fun parseColor(value: String): Color = try {
     Color(AndroidColor.parseColor(value))
 } catch (_: Exception) {
-    Color(0xFF6366F1)
+    Color(0xFF7A3E73)
 }
 
 /**
@@ -893,19 +898,19 @@ private fun BluetoothBlock(
 private fun ThemeTile(name: String, colors: List<Color>, selected: Boolean, onClick: () -> Unit) {
     Column(
         modifier = Modifier
-            .width(92.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .width(96.dp)
+            .clip(RoundedCornerShape(16.dp))
             .border(
                 width = if (selected) 2.dp else 1.dp,
-                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                shape = RoundedCornerShape(12.dp),
+                color = if (selected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.outlineVariant,
+                shape = RoundedCornerShape(16.dp),
             )
             .clickable(onClick = onClick)
-            .padding(6.dp),
+            .padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().height(38.dp).clip(RoundedCornerShape(8.dp)),
+            modifier = Modifier.fillMaxWidth().height(40.dp).clip(RoundedCornerShape(10.dp)),
         ) {
             colors.forEach { c -> Box(Modifier.weight(1f).fillMaxHeight().background(c)) }
         }

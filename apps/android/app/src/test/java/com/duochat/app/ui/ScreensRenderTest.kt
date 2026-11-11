@@ -155,6 +155,26 @@ class ScreensRenderTest {
     }
 
     @Test
+    fun onboarding() = paparazzi.snapshot {
+        DuoChatTheme(AppSettings(theme = "light")) { OnboardingScreen(onCreate = { _, _, _ -> }) }
+    }
+
+    @Test
+    fun onboardingDark() = paparazzi.snapshot {
+        DuoChatTheme(AppSettings(theme = "dark")) { OnboardingScreen(onCreate = { _, _, _ -> }) }
+    }
+
+    @Test
+    fun lock() = paparazzi.snapshot {
+        DuoChatTheme(AppSettings(theme = "dark")) { LockScreen(onUnlocked = {}) }
+    }
+
+    @Test
+    fun loading() = paparazzi.snapshot {
+        DuoChatTheme(AppSettings(theme = "light")) { LoadingScreen("Opening your chats") }
+    }
+
+    @Test
     fun chatDark() = paparazzi.snapshot { chat(AppSettings(theme = "dark")) }
 
     @Test

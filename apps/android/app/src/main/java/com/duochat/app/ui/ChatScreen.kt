@@ -439,9 +439,9 @@ private fun MessageList(
     if (messages.isEmpty()) {
         Box(modifier = modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                     Icon(
-                        Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary,
+                        Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(20.dp).size(28.dp),
                     )
                 }
@@ -600,8 +600,14 @@ private fun MessageBubble(
         Box(Modifier.weight(1f, fill = false).padding(start = if (own) 48.dp else 0.dp, end = if (own) 0.dp else 48.dp)) {
             // Incoming bubbles must stand out from the background: on a light theme the background is grey, so they are white.
             val incoming = MaterialTheme.colorScheme.surfaceContainerHigh
+            val failed = message.deliveryState == DeliveryState.FAILED
             Surface(
-                color = if (own) MaterialTheme.colorScheme.primary else incoming,
+                // A message that failed is not "yours yet": it drops the plum for the error tone, with words saying so.
+                color = when {
+                    own && failed -> MaterialTheme.colorScheme.errorContainer
+                    own -> MaterialTheme.colorScheme.primary
+                    else -> incoming
+                },
                 shape = shape,
                 modifier = Modifier.combinedClickable(onClick = {}, onLongClick = {
                     haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
@@ -617,7 +623,11 @@ private fun MessageBubble(
                             modifier = Modifier.padding(bottom = 2.dp),
                         )
                     }
-                    val bodyColor = if (own) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                    val bodyColor = when {
+                        own && failed -> MaterialTheme.colorScheme.onErrorContainer
+                        own -> MaterialTheme.colorScheme.onPrimary
+                        else -> MaterialTheme.colorScheme.onSurface
+                    }
                     message.replyTo?.let { reply ->
                         Row(
                             modifier = Modifier.padding(bottom = 6.dp).height(IntrinsicSize.Min)
@@ -645,7 +655,8 @@ private fun MessageBubble(
                             chips.forEach { c ->
                                 Surface(
                                     shape = RoundedCornerShape(16.dp),
-                                    color = bodyColor.copy(alpha = if (c.mine) 0.30f else 0.14f),
+                                    color = if (c.mine) MaterialTheme.colorScheme.tertiary else bodyColor.copy(alpha = 0.14f),
+                                    contentColor = if (c.mine) MaterialTheme.colorScheme.onTertiary else bodyColor,
                                     modifier = Modifier.clickable { onReact(message.messageId, c.emoji) },
                                 ) {
                                     Text(
@@ -659,7 +670,7 @@ private fun MessageBubble(
                     }
                     Spacer(Modifier.height(3.dp))
                     Row(modifier = Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically) {
-                        val subtle = if (own) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f)
+                        val subtle = if (own) bodyColor.copy(alpha = 0.75f)
                         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                         if (own && message.totalRecipients > 0 && message.deliveredTo < message.totalRecipients) {
                             Text(
@@ -671,14 +682,14 @@ private fun MessageBubble(
                         Text(formatTime(message.clientCreatedAt), style = MaterialTheme.typography.labelSmall, color = subtle)
                         if (own) {
                             Spacer(Modifier.width(4.dp))
-                            DeliveryIndicator(message.deliveryState) { onRetry(message.messageId) }
+                            DeliveryIndicator(message.deliveryState, bodyColor) { onRetry(message.messageId) }
                         }
                     }
                     if (own && message.deliveryState == DeliveryState.FAILED) {
                         // A full-size target: the small status icon alone is too small to tap reliably.
                         TextButton(
                             onClick = { onRetry(message.messageId) },
-                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onPrimary),
+                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = bodyColor),
                             modifier = Modifier.align(Alignment.End),
                         ) { Text("Not delivered · Retry", style = MaterialTheme.typography.labelLarge) }
                     }
@@ -891,17 +902,17 @@ private fun FileContent(message: ChatMessage, color: Color, loadFile: suspend (S
 }
 
 @Composable
-private fun DeliveryIndicator(state: DeliveryState, onRetry: () -> Unit) {
-    val color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+private fun DeliveryIndicator(state: DeliveryState, ink: Color, onRetry: () -> Unit) {
+    val color = ink.copy(alpha = 0.8f)
     when (state) {
         DeliveryState.FAILED -> Icon(
             Icons.Filled.ErrorOutline, contentDescription = "Not delivered. Tap to retry.",
-            tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(15.dp).clickable(onClick = onRetry),
+            tint = ink, modifier = Modifier.size(15.dp).clickable(onClick = onRetry),
         )
         DeliveryState.QUEUED -> Icon(Icons.Filled.Schedule, contentDescription = "Waiting to send", tint = color, modifier = Modifier.size(14.dp))
         DeliveryState.SENT -> Icon(Icons.Filled.Check, contentDescription = "Sent", tint = color, modifier = Modifier.size(14.dp))
         DeliveryState.DELIVERED -> Icon(Icons.Filled.DoneAll, contentDescription = "Delivered", tint = color, modifier = Modifier.size(15.dp))
-        DeliveryState.READ -> Icon(Icons.Filled.DoneAll, contentDescription = "Read", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(15.dp))
+        DeliveryState.READ -> Icon(Icons.Filled.DoneAll, contentDescription = "Read", tint = ink, modifier = Modifier.size(15.dp))
     }
 }
 
@@ -1000,7 +1011,7 @@ private fun Composer(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
-                        Text("Replying to ${replyName ?: "them"}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        Text("Replying to ${replyName ?: "them"}", style = MaterialTheme.typography.labelMedium)
                         Text(
                             if (replyingTo.type == MessageType.FILE) "\uD83D\uDCCE ${replyingTo.text}" else replyingTo.text,
                             style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,

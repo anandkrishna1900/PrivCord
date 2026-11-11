@@ -8,7 +8,10 @@ import android.view.WindowManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -81,35 +84,43 @@ fun OnboardingScreen(onCreate: (phrase: String, passphrase: String, onResult: (R
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
             // Clear of the status bar, the navigation bar and the keyboard (the phrase fields are typed into).
-            modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing).verticalScroll(rememberScrollState()).padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing).verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 20.dp),
         ) {
-            Icon(Icons.Filled.Shield, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp))
-            Spacer(Modifier.height(8.dp))
-            Text("PrivCord", style = MaterialTheme.typography.headlineMedium)
-            Spacer(Modifier.height(16.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                BrandMark(40)
+                Spacer(Modifier.width(12.dp))
+                Text("PrivCord", style = MaterialTheme.typography.titleLarge)
+            }
+            Spacer(Modifier.height(if (step == Step.INTRO) 56.dp else 28.dp))
             when (step) {
                 Step.INTRO -> {
-                    Text("Your identity is a 12-word phrase", style = MaterialTheme.typography.titleLarge)
-                    Spacer(Modifier.height(8.dp))
+                    Text("Talk to your people.\nNobody in between.", style = MaterialTheme.typography.displaySmall)
+                    Spacer(Modifier.height(16.dp))
                     Text(
-                        "No accounts, no servers. These 12 words are your identity — back them up offline and never share them.",
-                        style = MaterialTheme.typography.bodyMedium,
+                        "Messages travel from your phone to theirs, encrypted end to end. There is no account and no " +
+                            "server holding your chats.",
+                        style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(Modifier.height(20.dp))
+                    Spacer(Modifier.height(28.dp))
+                    Fact("1", "Your identity is 12 words", "We show them once. Write them down: they are how you get back in.")
+                    Fact("2", "Friends join by invite", "Swap six words or scan a code. Nobody can find you by number or name.")
+                    Fact("3", "Your chats stay on your phone", "No cloud copy. Clear a chat and it is gone from here.")
+                    Spacer(Modifier.height(32.dp))
                     Button(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
+                        shape = RoundedCornerShape(16.dp),
                         onClick = {
                             phrase = Bip39.generate()
                             step = Step.SHOW
                         },
-                    ) { Text("Create new identity") }
+                    ) { Text("Create my identity") }
                     Spacer(Modifier.height(8.dp))
-                    OutlinedButton(
-                        modifier = Modifier.fillMaxWidth(),
+                    TextButton(
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                         onClick = { step = Step.RESTORE },
-                    ) { Text("Restore from phrase") }
+                    ) { Text("I already have a phrase", color = MaterialTheme.colorScheme.onSurface) }
                 }
 
                 Step.SHOW -> ShowPhrase(phrase, onBack = { step = Step.INTRO }, onNext = { step = Step.CONFIRM })
@@ -122,11 +133,11 @@ fun OnboardingScreen(onCreate: (phrase: String, passphrase: String, onResult: (R
     }
 }
 
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 @Composable
 private fun ShowPhrase(phrase: String, onBack: () -> Unit, onNext: () -> Unit) {
     var saved by remember { mutableStateOf(false) }
-    Text("Write these 12 words down, in order", style = MaterialTheme.typography.titleLarge)
+    Text("Write these 12 words down, in order", style = MaterialTheme.typography.headlineMedium)
     Spacer(Modifier.height(8.dp))
     Text(
         "Keep them offline. Anyone with these words can access your identity — never share them.",
@@ -134,14 +145,25 @@ private fun ShowPhrase(phrase: String, onBack: () -> Unit, onNext: () -> Unit) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     Spacer(Modifier.height(14.dp))
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        phrase.split(' ').forEachIndexed { index, word ->
-            Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-                Text(
-                    "${index + 1}. $word",
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    fontFamily = FontFamily.Monospace,
-                )
+    // Twelve numbered tiles, two columns, on one card: reads like the paper you copy them onto.
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            phrase.split(' ').chunked(2).forEachIndexed { row, pair ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    pair.forEachIndexed { col, word ->
+                        Row(
+                            Modifier.weight(1f).background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(12.dp))
+                                .padding(horizontal = 12.dp, vertical = 11.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "${row * 2 + col + 1}", style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(22.dp),
+                            )
+                            Text(word, style = MaterialTheme.typography.titleMedium)
+                        }
+                    }
+                }
             }
         }
     }
@@ -151,10 +173,7 @@ private fun ShowPhrase(phrase: String, onBack: () -> Unit, onNext: () -> Unit) {
         Text("I wrote the 12 words down", style = MaterialTheme.typography.bodyMedium)
     }
     Spacer(Modifier.height(4.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = onBack) { Text("Back") }
-        Button(onClick = onNext, enabled = saved) { Text("Continue") }
-    }
+    StepButtons(onBack = onBack, enabled = saved, label = "Continue", onNext = onNext)
 }
 
 @Composable
@@ -164,7 +183,7 @@ private fun ConfirmPhrase(phrase: String, busy: Boolean, error: String?, onBack:
     var first by remember { mutableStateOf("") }
     var second by remember { mutableStateOf("") }
     var wrong by remember { mutableStateOf(false) }
-    Text("Confirm your phrase", style = MaterialTheme.typography.titleLarge)
+    Text("Confirm your phrase", style = MaterialTheme.typography.headlineMedium)
     Spacer(Modifier.height(8.dp))
     Text("Type two of the words you wrote down.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Spacer(Modifier.height(12.dp))
@@ -176,15 +195,14 @@ private fun ConfirmPhrase(phrase: String, busy: Boolean, error: String?, onBack:
         Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
     }
     Spacer(Modifier.height(12.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = onBack, enabled = !busy) { Text("Back") }
-        Button(
-            enabled = !busy && first.isNotBlank() && second.isNotBlank(),
-            onClick = {
-                if (first.trim().lowercase() == words[picks[0]] && second.trim().lowercase() == words[picks[1]]) onDone() else wrong = true
-            },
-        ) { Text(if (busy) "Creating…" else "Create identity") }
-    }
+    StepButtons(
+        onBack = onBack, backEnabled = !busy,
+        enabled = !busy && first.isNotBlank() && second.isNotBlank(),
+        label = if (busy) "Creating…" else "Create identity",
+        onNext = {
+            if (first.trim().lowercase() == words[picks[0]] && second.trim().lowercase() == words[picks[1]]) onDone() else wrong = true
+        },
+    )
 }
 
 @Composable
@@ -194,7 +212,7 @@ private fun RestorePhrase(busy: Boolean, error: String?, onBack: () -> Unit, onD
     var pass by remember { mutableStateOf("") }
     var problem by remember { mutableStateOf<String?>(null) }
 
-    Text("Restore your identity", style = MaterialTheme.typography.titleLarge)
+    Text("Restore your identity", style = MaterialTheme.typography.headlineMedium)
     Spacer(Modifier.height(6.dp))
     Text(
         "Enter your 12 recovery words in order. You can also paste the full phrase into word 1.",
@@ -260,15 +278,45 @@ private fun RestorePhrase(busy: Boolean, error: String?, onBack: () -> Unit, onD
         Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
     }
     Spacer(Modifier.height(14.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = onBack, enabled = !busy) { Text("Back") }
+    StepButtons(
+        onBack = onBack, backEnabled = !busy,
+        enabled = !busy && wordStates.any { it.value.isNotBlank() },
+        label = if (busy) "Restoring…" else "Restore",
+        onNext = {
+            val joined = wordStates.joinToString(" ") { it.value.trim().lowercase() }
+            val msg = Bip39.validate(joined)
+            if (msg != null) problem = msg else onDone(joined, pass)
+        },
+    )
+}
+
+/** A numbered line on the intro: an apricot-on-ink numeral, a title, one sentence. */
+@Composable
+private fun Fact(number: String, title: String, body: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+        Box(
+            Modifier.size(32.dp).background(MaterialTheme.colorScheme.tertiaryContainer, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) { Text(number, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onTertiaryContainer) }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(2.dp))
+            Text(body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** Back on the left as quiet text, the step's action filling the rest. */
+@Composable
+private fun StepButtons(onBack: () -> Unit, backEnabled: Boolean = true, enabled: Boolean, label: String, onNext: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        TextButton(onClick = onBack, enabled = backEnabled, modifier = Modifier.heightIn(min = 52.dp)) {
+            Text("Back", color = MaterialTheme.colorScheme.onSurface)
+        }
         Button(
-            enabled = !busy && wordStates.any { it.value.isNotBlank() },
-            onClick = {
-                val joined = wordStates.joinToString(" ") { it.value.trim().lowercase() }
-                val msg = Bip39.validate(joined)
-                if (msg != null) problem = msg else onDone(joined, pass)
-            },
-        ) { Text(if (busy) "Restoring…" else "Restore") }
+            onClick = onNext, enabled = enabled, shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.weight(1f).heightIn(min = 52.dp),
+        ) { Text(label) }
     }
 }

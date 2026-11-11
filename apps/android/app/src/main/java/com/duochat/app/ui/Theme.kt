@@ -1,7 +1,11 @@
 package com.duochat.app.ui
 
 import android.graphics.Color as AndroidColor
+import androidx.compose.foundation.background
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
@@ -27,9 +31,10 @@ import com.duochat.app.data.mixColors
 import com.duochat.app.data.themeById
 
 /*
- * The look: a quiet, warm-neutral ground (paper by day, soft charcoal by night), ink-dark text, one accent used only
- * for what you act on and what you sent, and Figtree, a friendly geometric sans, for every word. Surfaces step by
- * tone, not by shadow; corners are generous and consistent.
+ * The look ("plum & apricot"): a warm paper ground by day and a warm near-black by night, ink text, and colour with
+ * jobs. Plum is yours: your messages and the main action on a screen. Apricot is "new": unread counts and the reactions
+ * you gave. Everything else (chips, the New chat button, secondary buttons) is ink on paper, so
+ * the two colours keep their meaning. Figtree for every word; surfaces step by tone, not by shadow.
  */
 
 @OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
@@ -90,8 +95,10 @@ private fun scheme(dark: Boolean, bg: Color, card: Color, text: Color, accent: C
         onSecondary = Color.White,
         secondaryContainer = mix(bg, accent, if (dark) 0.16f else 0.10f),
         onSecondaryContainer = text,
-        tertiaryContainer = if (dark) Color(0xFF3A2F17) else Color(0xFFFBEFD3),
-        onTertiaryContainer = if (dark) Color(0xFFF5DFA8) else Color(0xFF4A3608),
+        tertiary = Apricot,
+        onTertiary = Color(0xFF2B1608),
+        tertiaryContainer = if (dark) Color(0xFF3A2516) else Color(0xFFFCE6D6),
+        onTertiaryContainer = if (dark) Color(0xFFFFD2B3) else Color(0xFF5A2A0C),
         background = bg,
         onBackground = text,
         surface = bg,
@@ -127,18 +134,47 @@ fun DuoChatTheme(settings: AppSettings, content: @Composable () -> Unit) {
     val colors = if (themed != null) {
         scheme(themed.dark, Color(themed.bg), Color(themed.surface), Color(themed.text), Color(themed.accent))
     } else if (dark) {
-        scheme(true, Color(0xFF111214), Color(0xFF1A1B1E), Color(0xFFEDECE9), parseColor(settings.accent))
+        scheme(true, Color(0xFF131112), Color(0xFF1C191B), Color(0xFFF1ECEA), parseColor(settings.accent))
     } else {
-        scheme(false, Color(0xFFF8F6F2), Color(0xFFFFFFFF), Color(0xFF1B1A18), parseColor(settings.accent))
+        scheme(false, Color(0xFFF7F3EE), Color(0xFFFFFFFF), Color(0xFF221C1F), parseColor(settings.accent))
     }
     MaterialTheme(colorScheme = colors, typography = typography, shapes = shapes, content = content)
 }
 
 /** Positive state (connected, online): one green that reads on both grounds. */
-val Online = Color(0xFF22A06B)
+val Online = Color(0xFF2E9E6B)
+
+/** "New": unread counts and your reactions. Ink text on it. */
+val Apricot = Color(0xFFF2A65A)
 
 private fun parseColor(value: String): Color = try {
     Color(AndroidColor.parseColor(value))
 } catch (_: Exception) {
-    Color(0xFF5B5BD6)
+    Color(0xFF7A3E73)
+}
+
+/**
+ * The mark: a plum tile (your private space) with an apricot seal in its corner. Drawn, so it follows the theme and
+ * needs no image asset.
+ */
+@Composable
+fun BrandMark(size: Int = 56) {
+    val plum = MaterialTheme.colorScheme.primary
+    androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.size(size.dp)) {
+        androidx.compose.foundation.layout.Box(
+            androidx.compose.ui.Modifier.size((size * 0.86f).dp)
+                .background(plum, RoundedCornerShape((size * 0.28f).dp)),
+        ) {
+            androidx.compose.material3.Icon(
+                androidx.compose.material.icons.Icons.Filled.Lock, contentDescription = null, tint = Color.White,
+                modifier = androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.Center).size((size * 0.36f).dp),
+            )
+        }
+        androidx.compose.foundation.layout.Box(
+            androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomEnd).size((size * 0.36f).dp)
+                .background(MaterialTheme.colorScheme.background, androidx.compose.foundation.shape.CircleShape)
+                .padding((size * 0.05f).dp)
+                .background(Apricot, androidx.compose.foundation.shape.CircleShape),
+        )
+    }
 }

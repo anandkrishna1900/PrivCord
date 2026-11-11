@@ -115,8 +115,8 @@ fun HomeScreen(
                     expanded = atTop,
                     icon = { Icon(Icons.Filled.Edit, contentDescription = null) },
                     text = { Text("New chat") },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    containerColor = MaterialTheme.colorScheme.onBackground,
+                    contentColor = MaterialTheme.colorScheme.background,
                     shape = RoundedCornerShape(20.dp),
                     modifier = Modifier.navigationBarsPadding(),
                 )
@@ -147,7 +147,7 @@ fun HomeScreen(
                         ) {
                             Text(
                                 "${h.conversationName} · ${h.senderName}", style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             )
                             Spacer(Modifier.height(2.dp))
                             Text(h.text, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
@@ -283,7 +283,7 @@ private fun EmptyHome(onAddFriend: () -> Unit, onChannels: () -> Unit) {
     ) {
         // Two overlapping avatars: you and the friend you're about to add.
         Box(Modifier.width(112.dp).height(72.dp)) {
-            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(72.dp)) {}
+            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(72.dp)) {}
             Surface(
                 shape = CircleShape, color = MaterialTheme.colorScheme.primary,
                 border = androidx.compose.foundation.BorderStroke(4.dp, MaterialTheme.colorScheme.background),
@@ -325,9 +325,9 @@ private fun SheetAction(icon: ImageVector, title: String, detail: String, enable
         Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(horizontal = 24.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = alpha), modifier = Modifier.size(48.dp)) {
+        Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = alpha), modifier = Modifier.size(48.dp)) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = alpha))
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha))
             }
         }
         Spacer(Modifier.width(16.dp))
@@ -363,7 +363,7 @@ private fun ChatRow(chat: ChatSummary, onClick: () -> Unit) {
                     Text(
                         formatListItemTime(chat.lastAt), style = MaterialTheme.typography.labelMedium,
                         fontWeight = if (unread) FontWeight.Bold else FontWeight.Medium,
-                        color = if (unread) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (unread) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -377,8 +377,8 @@ private fun ChatRow(chat: ChatSummary, onClick: () -> Unit) {
                 )
                 AnimatedVisibility(unread) {
                     Badge(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        containerColor = MaterialTheme.colorScheme.tertiary,
+                        contentColor = MaterialTheme.colorScheme.onTertiary,
                         modifier = Modifier.padding(start = 8.dp).defaultMinSize(minWidth = 22.dp, minHeight = 22.dp),
                     ) {
                         Text(if (chat.unread > 99) "99+" else "${chat.unread}", style = MaterialTheme.typography.labelMedium)

@@ -26,6 +26,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.fragment.app.FragmentActivity
 import com.duochat.app.security.AppLock
 
@@ -55,11 +59,9 @@ fun LockScreen(onUnlocked: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
-                Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(20.dp).size(32.dp))
-            }
-            Spacer(Modifier.height(20.dp))
-            Text("PrivCord is locked", style = MaterialTheme.typography.titleLarge)
+            BrandMark(72)
+            Spacer(Modifier.height(28.dp))
+            Text("Welcome back", style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.height(8.dp))
             Text(
                 "Use your fingerprint, face or screen lock to open your chats.",
@@ -68,7 +70,10 @@ fun LockScreen(onUnlocked: () -> Unit) {
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(24.dp))
-            Button(onClick = { ask() }) { Text("Unlock") }
+            Button(
+                onClick = { ask() }, shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth().widthIn(max = 360.dp).heightIn(min = 54.dp),
+            ) { Text("Unlock") }
             error?.let {
                 Spacer(Modifier.height(12.dp))
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
