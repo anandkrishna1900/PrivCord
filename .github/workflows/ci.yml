@@ -130,9 +130,15 @@ jobs:
       - run: npm ci
       - run: cd relay && npm ci
       - name: Playwright (global, as the suite expects)
+        # --with-deps also apt-installs optional fonts; when Ubuntu's mirror is unreachable that fails the whole step
+        # (twice in a row on 11 Nov 2026). The runner image already has what Chromium needs to run, so fall back to the
+        # browser alone; the suite below still runs every test and fails on its own if something is really missing.
         run: |
           npm install -g playwright
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chromium || {
+            echo "::warning::system packages could not be installed; installing the browser alone"
+            npx playwright install chromium
+          }
       - run: npm run e2e --workspace @duochat/desktop
       # The built desktop app against the Rust engine as a separate process, over the simulated Bluetooth radio.
       - uses: dtolnay/rust-toolchain@stable
