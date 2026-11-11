@@ -10,7 +10,7 @@ import com.duochat.app.data.ChatState
 import com.duochat.app.data.MessageStore
 import com.duochat.app.data.SettingsRepository
 import com.duochat.app.data.local.DuoDatabase
-import com.duochat.app.engine.ChatEngine
+import com.duochat.app.engine.SearchHit
 import com.duochat.app.notifications.DuoNotifications
 import com.duochat.app.security.AndroidIdentityManager
 import com.duochat.app.security.LOCAL_ID
@@ -268,7 +268,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { engine?.react(messageId, emoji) }
     }
 
-    fun search(query: String): List<ChatEngine.SearchHit> = engine?.search(query).orEmpty()
+    fun search(query: String): List<SearchHit> = engine?.search(query).orEmpty()
 
     fun exportBackup(passphrase: String, onResult: (Result<String>) -> Unit) {
         viewModelScope.launch { onResult(engine?.exportBackup(passphrase) ?: Result.failure(IllegalStateException("Not ready yet."))) }

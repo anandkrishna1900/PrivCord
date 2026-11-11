@@ -8,13 +8,13 @@ Status meanings: **Ported, tested** = the Rust implementation exists and is chec
 
 | Status | Files | Lines |
 |---|---:|---:|
-| Ported, tested | 75 | 10946 |
-| Partly ported | 2 | 4665 |
+| Ported, tested | 70 | 10015 |
+| Partly ported | 1 | 2162 |
 | Not yet ported | 0 | 0 |
 | Stays (UI) | 54 | 11576 |
-| Stays (platform adapter) | 49 | 10077 |
+| Stays (platform adapter) | 49 | 10083 |
 | Replaced by a library | 4 | 333 |
-| **All mapped files** | **184** | **37597** |
+| **All mapped files** | **178** | **34169** |
 
 Ported does not mean retired: the TypeScript and Kotlin versions stay in production until the apps call the Rust engine (M7 desktop, M8 Android) and the compatibility gates pass (PRD section 16).
 
@@ -167,19 +167,13 @@ Ported does not mean retired: the TypeScript and Kotlin versions stay in product
 | `apps/android/app/src/main/java/com/duochat/app/data/Social.kt` | 106 | `deleteFrame`, `reactFrame`, `parseDelete`, `ReactionEvent`, `parseReact`, `ReactionChip` +3 | Delete/react frames, backup | domain::social, crypto::backup | Domain/Crypto | Ported, tested | M8 | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/data/Themes.kt` | 68 | `ThemeDef`, `themeById`, `channel`, `mixColors`, `luminance`, `contrastRatio` +2 | Themes | UI | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/data/local/DuoDatabase.kt` | 358 | `MessageEntity`, `OutboxEntity`, `ContactEntity`, `KvEntity`, `GroupLogEntity`, `DuoDao` +1 | Room database | storage::SqliteStorage; privcord-import (Room importer, Keystore decryptor supplied by the app) | Storage | Ported, tested | M8: after the importer has run on every install | importer tests on generated Room v7 fixtures |
-| `apps/android/app/src/main/java/com/duochat/app/engine/ChatEngine.kt` | 2503 | `IncomingNotice`, `ChatEngine`, `sealedBlobFromJson` | The Android chat engine | engine (same coverage as the desktop engine). Left in Kotlin: driving WebRTC and Bluetooth, screen state, notifications, settings | Engine/Adapter | Partly ported | M8 then M9 | engine integration tests |
-| `apps/android/app/src/main/java/com/duochat/app/engine/ChatEngineApi.kt` | 62 | `ChatEngineApi` | The interface the screens use to talk to a chat engine (Kotlin or Rust) | Platform seam (stays) | Adapter | Stays (platform adapter) | Stays | n/a |
+| `apps/android/app/src/main/java/com/duochat/app/engine/ChatEngineApi.kt` | 68 | `ChatEngineApi`, `IncomingNotice`, `SearchHit` | The interface the screens use to talk to a chat engine (the Rust engine) | Platform seam (stays) | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/engine/EngineHost.kt` | 53 | `EngineHost` | Keeps the running engine in the process so it outlives the screen | Platform seam (stays) | Adapter | Stays (platform adapter) | Stays | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/engine/LinkPolicy.kt` | 102 | `LinkInfo`, `isInitiator`, `LinkScheduler`, `PendingGroupBuffer`, `SeenSet`, `groupDeliveryDetail` | Who connects out, backoff, scheduler, buffers | domain::link_policy; engine::core (dial requests) | Engine | Ported, tested | M8 | engine lifecycle tests, misc vectors |
-| `apps/android/app/src/main/java/com/duochat/app/groups/GroupCoordinator.kt` | 342 | `GroupFrame`, `parseGroupFrame`, `blobShapeOk`, `OutgoingFrame`, `NewContact`, `GroupResult` +3 | Group coordinator | crypto::group_coordinator; engine::core groups | Engine | Ported, tested | M8 | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/groups/GroupEvents.kt` | 165 | `GroupEvent`, `GroupEvents` | Group event log duplicated from TypeScript | crypto::group | Crypto | Ported, tested | M8 | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/groups/GroupLog.kt` | 182 | `GroupMemberInfo`, `GroupState`, `AddStatus`, `GroupLog` | Group event log duplicated from TypeScript | crypto::group | Crypto | Ported, tested | M8 | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/notifications/DuoBackgroundService.kt` | 107 | `DuoBackgroundService` | Notifications and background service | Notifier adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/notifications/DuoNotifications.kt` | 96 | `DuoNotifications` | Notifications and background service | Notifier adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/p2p/IceServers.kt` | 34 | `iceServers`, `builtinTurnServer` | ICE servers, WebRTC data channel | WebRTC adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/p2p/LinkTransport.kt` | 22 | `LinkTransport` | ICE servers, WebRTC data channel | WebRTC adapter | Adapter | Stays (platform adapter) | Stays | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/p2p/Liveness.kt` | 49 | `Liveness`, `LivenessMonitor` | Liveness probe, manual connection code | domain::link_policy, domain::signaling; engine::core (ping, dead-link timer) | Engine | Ported, tested | M8 | misc vectors; engine lifecycle tests |
-| `apps/android/app/src/main/java/com/duochat/app/p2p/ManualSignal.kt` | 140 | `ManualSignal`, `ManualSignalCodec` | Liveness probe, manual connection code | domain::link_policy, domain::signaling; engine::core (ping, dead-link timer) | Engine | Ported, tested | M8 | misc vectors; engine lifecycle tests |
+| `apps/android/app/src/main/java/com/duochat/app/p2p/Liveness.kt` | 49 | `Liveness`, `LivenessMonitor` | Liveness probe | domain::link_policy, domain::signaling; engine::core (ping, dead-link timer) | Engine | Ported, tested | M8 | misc vectors; engine lifecycle tests |
 | `apps/android/app/src/main/java/com/duochat/app/p2p/PeerSession.kt` | 572 | `PeerSession` | WebRTC peer session (handshake, receipts, liveness and framing rules are in the engine) | crypto::peer_auth + engine; the WebRTC session itself is platform code | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/p2p/WebRtcTransport.kt` | 408 | `WebRtcTransport`, `PeerConnectionFactoryHolder` | ICE servers, WebRTC data channel | WebRTC adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/rustcore/KeystoreSecureStore.kt` | 59 | `KeystoreSecureStore` | Android adapters for the Rust engine (Keystore secret store, on-device probe) | Platform adapter for engine ports | Adapter | Stays (platform adapter) | Stays | n/a |

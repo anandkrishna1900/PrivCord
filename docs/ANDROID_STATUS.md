@@ -2,6 +2,9 @@
 
 Read this before trusting the Android app.
 
+> **Historical.** This page describes the Kotlin engine, which has been deleted (along with `engine/LinkPolicy.kt`,
+> `groups/` and their tests). The app now runs only the Rust engine: see [rust/ANDROID.md](rust/ANDROID.md).
+
 * **Device-tested by the owner on real hardware: direct 1:1 messaging** (two phones, the single-friend version).
 * **NOT device-tested: everything added for contacts and groups** (the multi-contact engine, groups, automatic
   introductions, the new screens, the Room 4 to 5 migration). It compiles, the debug APK builds, and the JVM tests
@@ -9,7 +12,7 @@ Read this before trusting the Android app.
 
 ## What exists
 
-* **Many friends and groups** (`engine/ChatEngine.kt`, `groups/`). One authenticated link per friend (WebRTC, or
+* **Many friends and groups** (`rustcore/RustChatEngine.kt` over the Rust engine, `groups/`). One authenticated link per friend (WebRTC, or
   Bluetooth for one friend at a time), one signaling hub for the whole app that opens each sealed blob with the
   pinned key of `blob.from`, per-friend backoff (5 s doubling to 120 s, longest-waiting first), at most 3
   connection attempts at once, a soft cap of 30 open links (`engine/LinkPolicy.kt`), per-link ping/liveness, and

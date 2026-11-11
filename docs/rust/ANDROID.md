@@ -2,8 +2,7 @@
 
 **Status: the Android app (`com.duochat.app`) runs only the Rust engine; the separate "rust" flavor and the classic Kotlin
 engine build were removed. CI builds and unit-tests it. It has been run on real phones only lightly; Bluetooth, the mesh,
-groups and long background use are not yet proven on hardware.** The Kotlin engine (`ChatEngine.kt`) is still in the source
-tree, unused by the app, until the exit criteria in [M7_DESKTOP_PLAN.md](M7_DESKTOP_PLAN.md#retirement-m9) let it be deleted.
+groups and long background use are not yet proven on hardware.** The Kotlin engine (`ChatEngine.kt`) has been deleted.
 
 What stage 1 does:
 

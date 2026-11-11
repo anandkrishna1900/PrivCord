@@ -89,7 +89,7 @@ fun HomeScreen(
     onChannels: () -> Unit,
     onOpenSettings: () -> Unit,
     onClearNotice: () -> Unit,
-    onSearch: (String) -> List<com.duochat.app.engine.ChatEngine.SearchHit> = { emptyList() },
+    onSearch: (String) -> List<com.duochat.app.engine.SearchHit> = { emptyList() },
     onPanic: (() -> Unit)? = null,
     onOpenConversation: (String) -> Unit = {},
 ) {

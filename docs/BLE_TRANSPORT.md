@@ -228,7 +228,7 @@ installs on phones without BLE.
 | Authenticated encryption on top, one object per attempt | `ble/SecureBleLink.kt` (implements `LinkTransport`) |
 | Permissions and the pure backoff/status helpers | `ble/BlePermissions.kt`, `ble/BleEnvironment.kt` |
 | Link switching inside the session (WebRTC or Bluetooth, same handshake) | `p2p/PeerSession.kt` (`newBluetoothLink`) |
-| Engine: automatic attempts, manual attempt, status | `engine/ChatEngine.kt` (`connectBluetooth`, `maybeBluetooth`, `refreshBluetooth`) |
+| Engine: automatic attempts, manual attempt, status | `rustcore/RustChatEngine.kt` (`connectBluetooth`, `refreshBluetooth`) |
 | UI: status row, rationale, permission request, "Connect over Bluetooth" | `ui/SettingsDialog.kt` (`BluetoothBlock`) |
 
 Behaviour:
