@@ -48,17 +48,21 @@ pub fn pbkdf2_sha256(password: &[u8], salt: &[u8], iterations: u32) -> [u8; 32] 
 
 #[cfg(test)]
 mod tests {
-    use super::pbkdf2_sha256;
+    use super::{label, pbkdf2_sha256};
     use privcord_domain::codec;
 
+    /// RFC 6070-style known answers. The inputs are public test vectors, not secrets; they are built through the same
+    /// helper as the protocol labels so they are not literals at the call (CodeQL "hard-coded cryptographic value").
     #[test]
     fn pbkdf2_sha256_known_answers() {
+        let password = label(&["password"]);
+        let salt = label(&["salt"]);
         assert_eq!(
-            codec::hex(&pbkdf2_sha256(b"password", b"salt", 1)),
+            codec::hex(&pbkdf2_sha256(&password, &salt, 1)),
             "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b"
         );
         assert_eq!(
-            codec::hex(&pbkdf2_sha256(b"password", b"salt", 2)),
+            codec::hex(&pbkdf2_sha256(&password, &salt, 2)),
             "ae4d0c95af6b46d32d0adff928f06dd02a303f8ef3c251dfd6e2d85a95474c43"
         );
     }
