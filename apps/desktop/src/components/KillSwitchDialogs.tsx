@@ -223,7 +223,7 @@ export function NukeDialog({
       open={open}
       onClose={close}
       eyebrow="Settings · Security · Emergency Actions"
-      title="NUKE DUOCHAT"
+      title="Erase everything on this device"
     >
       {phase === 'setup' ? (
         <div>

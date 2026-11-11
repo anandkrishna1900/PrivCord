@@ -47,6 +47,36 @@ try {
   await a.page.click('button[aria-label="Settings"]');
   await sleep(600);
   await shot(a.page, '5-settings');
+  if (process.argv.includes('--dialogs')) {
+    const open = async (fn, name) => {
+      await a.page.keyboard.press('Escape');
+      await sleep(300);
+      await fn();
+      await sleep(700);
+      await shot(a.page, name);
+    };
+    await open(() => a.page.click('button[aria-label="New group"]'), '6-newgroup');
+    await open(() => a.page.click('button[aria-label="Channels"]'), '7-channels');
+    await open(async () => {
+      await openChat(a.page, 'Weekend trip');
+      await a.page.click('button[aria-label="More"]');
+      await a.page.click('[role="menuitem"]:has-text("Group details")');
+    }, '8-groupdetails');
+    await open(async () => {
+      await openChat(a.page, 'Ann Lee');
+      await a.page.click('button[aria-label="More"]');
+      await a.page.click('[role="menuitem"]:has-text("Friend details")');
+    }, '9-frienddetails');
+    await open(async () => {
+      await a.page.click('button[aria-label="More"]');
+      await a.page.click('[role="menuitem"]:has-text("Connect without internet")');
+    }, '10-manual');
+    await open(async () => {
+      await a.page.click('button[aria-label="Settings"]');
+      await a.page.click('.tab:has-text("Security")');
+      await a.page.click('button:has-text("Erase everything")');
+    }, '11-wipe');
+  }
 } finally {
   await browser.close();
   server.close();

@@ -162,7 +162,7 @@ fun SettingsDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
+                DuoTextField(
                     value = displayName,
                     onValueChange = { displayName = it.take(40) },
                     label = { Text("Your name") },
@@ -402,7 +402,7 @@ SectionTitle("Appearance")
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
+                DuoTextField(
                     value = nostrText,
                     onValueChange = { nostrText = it },
                     label = { Text("Signaling: Nostr relays (finds your friend; one per line)") },
@@ -410,7 +410,7 @@ SectionTitle("Appearance")
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
+                DuoTextField(
                     value = relayText,
                     onValueChange = { relayText = it },
                     label = { Text("Signaling: your own DuoCord relay (one per line)") },
@@ -425,7 +425,7 @@ SectionTitle("Appearance")
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
+                DuoTextField(
                     value = stunText,
                     onValueChange = { stunText = it },
                     label = { Text("STUN servers (one per line, stun:host:port)") },
@@ -433,7 +433,7 @@ SectionTitle("Appearance")
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
+                DuoTextField(
                     value = "",
                     onValueChange = { pasted ->
                         com.duochat.app.data.TurnShare.parse(pasted)?.let { t ->
@@ -445,7 +445,7 @@ SectionTitle("Appearance")
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
+                DuoTextField(
                     value = turnUrls,
                     onValueChange = { turnUrls = it },
                     label = { Text("TURN URLs (turn:host:port or turns:…)") },
@@ -453,7 +453,7 @@ SectionTitle("Appearance")
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
+                DuoTextField(
                     value = turnUser,
                     onValueChange = { turnUser = it },
                     label = { Text("TURN username") },
@@ -461,7 +461,7 @@ SectionTitle("Appearance")
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
+                DuoTextField(
                     value = turnSecret,
                     onValueChange = { turnSecret = it },
                     label = { Text("TURN credential") },

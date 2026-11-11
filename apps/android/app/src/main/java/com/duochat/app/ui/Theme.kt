@@ -83,12 +83,20 @@ private fun mix(a: Color, b: Color, t: Float) = Color(mixColors(a.toArgb(), b.to
 /** Every surface role from three colours (ground, card, text), so built-in palettes and the default share one recipe. */
 private fun scheme(dark: Boolean, bg: Color, card: Color, text: Color, accent: Color): ColorScheme {
     val fill = Color(accentFill(accent.toArgb()))
+    // In the dark, the accent as text (links, text buttons) must be lighter than the fill to read on the ground:
+    // lightened until it reaches 4.5:1. Filled things that carry white text (your bubbles) use LocalOwnFill.
+    var readable = accent
+    var i = 0
+    while (dark && i < 20 && com.duochat.app.data.contrastRatio(readable.toArgb(), bg.toArgb()) < 4.5) {
+        readable = mix(readable, Color.White, 0.1f)
+        i++
+    }
     val base = if (dark) darkColorScheme() else lightColorScheme()
     val muted = mix(text, bg, if (dark) 0.36f else 0.40f)
     val step = { t: Float -> mix(bg, text, t) }
     return base.copy(
-        primary = fill,
-        onPrimary = Color.White,
+        primary = if (dark) readable else fill,
+        onPrimary = if (dark) mix(accent, Color.Black, 0.7f) else Color.White,
         primaryContainer = mix(bg, accent, if (dark) 0.22f else 0.14f),
         onPrimaryContainer = if (dark) mix(accent, Color.White, 0.55f) else mix(accent, Color.Black, 0.45f),
         secondary = if (dark) mix(accent, Color.White, 0.35f) else fill,
@@ -138,8 +146,14 @@ fun DuoChatTheme(settings: AppSettings, content: @Composable () -> Unit) {
     } else {
         scheme(false, Color(0xFFF7F3EE), Color(0xFFFFFFFF), Color(0xFF221C1F), parseColor(settings.accent))
     }
-    MaterialTheme(colorScheme = colors, typography = typography, shapes = shapes, content = content)
+    val accent = themed?.let { Color(it.accent) } ?: parseColor(settings.accent)
+    androidx.compose.runtime.CompositionLocalProvider(LocalOwnFill provides Color(accentFill(accent.toArgb()))) {
+        MaterialTheme(colorScheme = colors, typography = typography, shapes = shapes, content = content)
+    }
 }
+
+/** The deep accent behind white text: your own message bubbles and the brand mark (same colour in light and dark). */
+val LocalOwnFill = androidx.compose.runtime.staticCompositionLocalOf { Color(0xFF7A3E73) }
 
 /** Positive state (connected, online): one green that reads on both grounds. */
 val Online = Color(0xFF2E9E6B)
@@ -159,7 +173,7 @@ private fun parseColor(value: String): Color = try {
  */
 @Composable
 fun BrandMark(size: Int = 56) {
-    val plum = MaterialTheme.colorScheme.primary
+    val plum = LocalOwnFill.current
     androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.size(size.dp)) {
         androidx.compose.foundation.layout.Box(
             androidx.compose.ui.Modifier.size((size * 0.86f).dp)
@@ -177,4 +191,43 @@ fun BrandMark(size: Int = 56) {
                 .background(Apricot, androidx.compose.foundation.shape.CircleShape),
         )
     }
+}
+
+/**
+ * The one text field style: a tonal fill, no outline, rounded; the label floats inside. The Android twin of the
+ * desktop's fields. Takes the parameters the screens use (positional value and onValueChange first, like the M3 one).
+ */
+@Composable
+fun DuoTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier,
+    label: (@Composable () -> Unit)? = null,
+    placeholder: (@Composable () -> Unit)? = null,
+    singleLine: Boolean = false,
+    minLines: Int = 1,
+    maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
+    readOnly: Boolean = false,
+    textStyle: TextStyle = MaterialTheme.typography.bodyLarge,
+    keyboardOptions: androidx.compose.foundation.text.KeyboardOptions = androidx.compose.foundation.text.KeyboardOptions.Default,
+    keyboardActions: androidx.compose.foundation.text.KeyboardActions = androidx.compose.foundation.text.KeyboardActions.Default,
+    visualTransformation: androidx.compose.ui.text.input.VisualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
+) {
+    val fill = MaterialTheme.colorScheme.surfaceContainerHigh
+    androidx.compose.material3.TextField(
+        value = value, onValueChange = onValueChange, modifier = modifier, label = label, placeholder = placeholder,
+        singleLine = singleLine, minLines = minLines, maxLines = maxLines, readOnly = readOnly, textStyle = textStyle,
+        keyboardOptions = keyboardOptions, keyboardActions = keyboardActions, visualTransformation = visualTransformation,
+        shape = RoundedCornerShape(16.dp),
+        colors = androidx.compose.material3.TextFieldDefaults.colors(
+            focusedContainerColor = fill,
+            unfocusedContainerColor = fill,
+            disabledContainerColor = fill,
+            focusedIndicatorColor = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent,
+            disabledIndicatorColor = Color.Transparent,
+            focusedLabelColor = MaterialTheme.colorScheme.onSurface,
+            cursorColor = MaterialTheme.colorScheme.onSurface,
+        ),
+    )
 }

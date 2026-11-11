@@ -175,6 +175,23 @@ class ScreensRenderTest {
     }
 
     @Test
+    fun newGroup() = paparazzi.snapshot {
+        DuoChatTheme(AppSettings(theme = "light")) {
+            NewGroupScreen(state = groupState, onCreate = { _, _, _ -> }, onBack = {}, onCreated = {})
+        }
+    }
+
+    @Test
+    fun groupDetails() = paparazzi.snapshot {
+        DuoChatTheme(AppSettings(theme = "dark")) {
+            GroupDetailsScreen(
+                state = groupState, groupId = "g1", onBack = {}, onAddMembers = { _, _ -> }, onRemove = { _, _ -> },
+                onRename = { _, _ -> }, onLeave = {}, onVerify = {}, onMessage = {}, onLeft = {},
+            )
+        }
+    }
+
+    @Test
     fun chatDark() = paparazzi.snapshot { chat(AppSettings(theme = "dark")) }
 
     @Test

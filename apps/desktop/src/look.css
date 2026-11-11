@@ -34,6 +34,8 @@
   --on-ink: #131112;
   --apricot: #f2a65a;
   --on-apricot: #2b1608;
+  --apricot-container: #3a2516;
+  --on-apricot-container: #ffd2b3;
   --bubble-own: var(--accent-fill);
   --bubble-theirs: var(--tonal);
   --radius: 16px;
@@ -357,4 +359,89 @@ textarea.code-area {
 }
 .switch[aria-checked='true'] {
   background: var(--accent-fill);
+}
+
+/* ---------------------------------------------------------------- dialogs, inside */
+
+.modal-header {
+  padding: 24px 28px 12px;
+  border-bottom: 0;
+}
+.modal-body {
+  padding: 8px 28px 24px;
+  font-size: 0.95rem;
+}
+.modal-footer {
+  padding: 16px 28px 22px;
+  border-top: 1px solid var(--border);
+}
+
+/* Fields: tonal, no box line; the focus ring is ink, never the accent. */
+input:not([type='checkbox']):not([type='radio']):not([type='range']),
+textarea,
+select {
+  background: var(--tonal);
+  border: 1px solid transparent;
+  border-radius: 14px;
+  padding: 12px 15px;
+}
+input:not([type='checkbox']):not([type='radio']):focus,
+textarea:focus,
+select:focus {
+  border-color: var(--ink);
+  box-shadow: none;
+}
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--accent-fill);
+  width: 18px;
+  height: 18px;
+}
+.input-label,
+.field > span {
+  font-size: 0.86rem;
+  font-weight: 650;
+  color: var(--text);
+}
+
+/* Lists of people (new group, group details): rows with air between them. */
+.pick-row,
+.member-row {
+  padding: 10px 12px;
+  border-radius: 16px;
+  gap: 14px;
+}
+.pick-row:hover,
+.member-row:hover {
+  background: var(--tonal);
+}
+.member-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Inset cards inside dialogs: one surface, no outline. */
+.safety-block,
+.verify-panel,
+.success-panel,
+.connection-summary,
+.setting-block,
+.erase-step,
+.choice-card {
+  background: var(--surface);
+  border: 0;
+  border-radius: 18px;
+}
+.safety-number {
+  background: var(--apricot-container);
+  color: var(--on-apricot-container);
+  border: 0;
+  border-radius: 14px;
+  letter-spacing: 0.06em;
+}
+.danger-zone {
+  border: 0;
+  border-radius: 18px;
+  background: var(--danger-soft);
 }

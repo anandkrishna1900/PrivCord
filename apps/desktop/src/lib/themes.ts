@@ -94,6 +94,13 @@ export function accentFill(accent: string): string {
   return fill;
 }
 
+/** The accent as text and lines on the background: lightened (dark themes) or darkened until it reads at 4.5:1. */
+export function accentText(accent: string, bg: string, dark: boolean): string {
+  let c = accent;
+  for (let i = 0; i < 20 && contrast(c, bg) < 4.5; i += 1) c = mix(c, dark ? '#ffffff' : '#000000', 0.1);
+  return c;
+}
+
 /** Every CSS variable a theme sets. Removing these puts the classic look back. */
 export function themeVars(t: ThemeDef): Record<string, string> {
   const fill = accentFill(t.accent);
@@ -112,7 +119,8 @@ export function themeVars(t: ThemeDef): Record<string, string> {
     '--muted': mix(t.text, t.bg, 0.42),
     '--border': rgba(t.text, 0.1),
     '--border-strong': rgba(t.text, 0.2),
-    '--accent': t.accent,
+    // Text, links, dots and outlines use a readable accent; filled things (buttons, your bubbles) use --accent-fill.
+    '--accent': accentText(t.accent, t.bg, t.dark),
     '--accent-soft': rgba(t.accent, 0.18),
     '--accent-strong': mix(t.accent, '#000000', 0.14),
     '--accent-fill': fill,
@@ -125,6 +133,8 @@ export function themeVars(t: ThemeDef): Record<string, string> {
     '--on-ink': t.bg,
     '--apricot': APRICOT,
     '--on-apricot': '#2b1608',
+    '--apricot-container': t.dark ? '#3a2516' : '#fce6d6',
+    '--on-apricot-container': t.dark ? '#ffd2b3' : '#5a2a0c',
     '--accent-container': mix(t.bg, t.accent, t.dark ? 0.22 : 0.14),
     '--on-accent-container': t.dark ? mix(t.accent, '#ffffff', 0.55) : mix(t.accent, '#000000', 0.45),
     '--danger': t.dark ? '#f87171' : '#dc2626',

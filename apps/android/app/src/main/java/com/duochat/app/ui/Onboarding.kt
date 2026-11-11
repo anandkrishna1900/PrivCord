@@ -187,9 +187,9 @@ private fun ConfirmPhrase(phrase: String, busy: Boolean, error: String?, onBack:
     Spacer(Modifier.height(8.dp))
     Text("Type two of the words you wrote down.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Spacer(Modifier.height(12.dp))
-    OutlinedTextField(first, { first = it; wrong = false }, label = { Text("Word #${picks[0] + 1}") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+    DuoTextField(first, { first = it; wrong = false }, label = { Text("Word #${picks[0] + 1}") }, singleLine = true, modifier = Modifier.fillMaxWidth())
     Spacer(Modifier.height(8.dp))
-    OutlinedTextField(second, { second = it; wrong = false }, label = { Text("Word #${picks[1] + 1}") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+    DuoTextField(second, { second = it; wrong = false }, label = { Text("Word #${picks[1] + 1}") }, singleLine = true, modifier = Modifier.fillMaxWidth())
     (if (wrong) "One or both words do not match. Check and try again." else error)?.let {
         Spacer(Modifier.height(8.dp))
         Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -230,7 +230,7 @@ private fun RestorePhrase(busy: Boolean, error: String?, onBack: () -> Unit, onD
             for (col in 0 until 2) {
                 val idx = row * 2 + col
                 val wordNum = idx + 1
-                OutlinedTextField(
+                DuoTextField(
                     value = wordStates[idx].value,
                     onValueChange = { raw ->
                         val v = raw.trim().lowercase()
@@ -240,7 +240,7 @@ private fun RestorePhrase(busy: Boolean, error: String?, onBack: () -> Unit, onD
                             if (parts.size == 12) {
                                 parts.forEachIndexed { i, w -> wordStates[i].value = w }
                                 problem = null
-                                return@OutlinedTextField
+                                return@DuoTextField
                             }
                         }
                         wordStates[idx].value = v
@@ -266,7 +266,7 @@ private fun RestorePhrase(busy: Boolean, error: String?, onBack: () -> Unit, onD
     }
 
     Spacer(Modifier.height(10.dp))
-    OutlinedTextField(
+    DuoTextField(
         pass, { pass = it },
         label = { Text("Passphrase (optional — only if you set one)") },
         singleLine = true,

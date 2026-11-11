@@ -210,7 +210,7 @@ fun ManualConnectDialog(
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Spacer(Modifier.height(8.dp))
-                        OutlinedTextField(
+                        DuoTextField(
                             value = answerInput,
                             onValueChange = { answerInput = it },
                             label = { Text("Answer code") },
@@ -267,7 +267,7 @@ fun ManualConnectDialog(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
+                    DuoTextField(
                         value = joinInput,
                         onValueChange = { joinInput = it },
                         label = { Text("Offer code") },
@@ -482,7 +482,7 @@ private fun CodeBlock(code: String, onCopy: () -> Unit) {
         }
     }
     Spacer(Modifier.height(8.dp))
-    OutlinedTextField(
+    DuoTextField(
         value = code,
         onValueChange = {},
         readOnly = true,

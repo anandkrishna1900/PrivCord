@@ -605,7 +605,7 @@ private fun MessageBubble(
                 // A message that failed is not "yours yet": it drops the plum for the error tone, with words saying so.
                 color = when {
                     own && failed -> MaterialTheme.colorScheme.errorContainer
-                    own -> MaterialTheme.colorScheme.primary
+                    own -> LocalOwnFill.current
                     else -> incoming
                 },
                 shape = shape,
@@ -625,7 +625,7 @@ private fun MessageBubble(
                     }
                     val bodyColor = when {
                         own && failed -> MaterialTheme.colorScheme.onErrorContainer
-                        own -> MaterialTheme.colorScheme.onPrimary
+                        own -> Color.White
                         else -> MaterialTheme.colorScheme.onSurface
                     }
                     message.replyTo?.let { reply ->

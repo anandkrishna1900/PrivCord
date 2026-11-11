@@ -63,7 +63,7 @@ fun ChannelsDialog(
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
+                DuoTextField(
                     value = name, onValueChange = { name = it.take(40); error = null },
                     label = { Text("Channel name") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                 )

@@ -76,7 +76,7 @@ fun NewGroupScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
                 title = { Text("New group") },
             )
@@ -103,7 +103,7 @@ fun NewGroupScreen(
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            OutlinedTextField(
+            DuoTextField(
                 value = name,
                 onValueChange = { name = it.take(60) },
                 label = { Text("Group name") },
@@ -184,7 +184,7 @@ fun GroupDetailsScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
                 title = { Text(group?.name ?: "Group", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 actions = {
@@ -346,7 +346,7 @@ fun GroupDetailsScreen(
             AlertDialog(
                 onDismissRequest = { renaming = false },
                 title = { Text("Rename group") },
-                text = { OutlinedTextField(value = newName, onValueChange = { newName = it.take(60) }, singleLine = true) },
+                text = { DuoTextField(value = newName, onValueChange = { newName = it.take(60) }, singleLine = true) },
                 confirmButton = {
                     TextButton(enabled = newName.isNotBlank(), onClick = {
                         renaming = false
@@ -383,7 +383,7 @@ fun FriendDetailsDialog(
                     )
                     Spacer(Modifier.height(8.dp))
                 }
-                OutlinedTextField(value = name, onValueChange = { name = it.take(40) }, label = { Text("Name") }, singleLine = true)
+                DuoTextField(value = name, onValueChange = { name = it.take(40) }, label = { Text("Name") }, singleLine = true)
                 Spacer(Modifier.height(12.dp))
                 Text(
                     if (friend.checked) "You checked these numbers." else "Check it's really them: their numbers must match yours.",
