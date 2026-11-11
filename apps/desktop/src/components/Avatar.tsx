@@ -1,4 +1,4 @@
-import appIcon from '../assets/app-icon.png';
+import appIcon from '../assets/app-icon.webp';
 import { avatarHue, initials } from '../lib/format';
 
 /** A soft tonal circle (a rounded square for groups) with the initials in a deeper shade of the same hue. */

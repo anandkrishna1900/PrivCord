@@ -51,7 +51,11 @@ android {
         versionName = "0.1.0"
 
         // The Rust core (crates/privcord-ffi) is built per phone CPU type into src/main/jniLibs (see docs/rust/ANDROID.md).
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86") }
+        // Phones only (arm); each extra CPU type adds about 15 MB. -Pduochat.emulator=true adds x86_64 for the emulator.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+            if (project.findProperty("duochat.emulator") == "true") abiFilters += "x86_64"
+        }
 
         buildConfigString("CONVERSATION_ID", setting("duochat.conversationId", "duo"))
         buildConfigString("TURN_URL", setting("turn.url"))
@@ -83,9 +87,13 @@ android {
             isMinifyEnabled = false
         }
         release {
+            // CI test builds (-Pduochat.ciSign=true) use the committed debug key, so they update earlier test builds in
+            // place; a real release only ever uses the release key from the environment.
             signingConfig = signingConfigs.findByName("release")
-            // Minification is off on purpose: it has not been tested on a device (WebRTC, Room, reflection).
-            isMinifyEnabled = false
+                ?: if (project.findProperty("duochat.ciSign") == "true") signingConfigs.getByName("debug") else null
+            // R8 drops unused library code (most of the icon set) but renames nothing: see proguard-rules.pro.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -116,6 +124,8 @@ android {
     }
 
     packaging {
+        // Compressed native libraries: the APK download is about half the size; Android unpacks them once at install.
+        jniLibs { useLegacyPackaging = true }
         resources {
             excludes += setOf(
                 "META-INF/AL2.0",

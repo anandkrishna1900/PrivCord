@@ -27,7 +27,7 @@ jobs:
           path: apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
 
   android:
-    name: Android debug APK
+    name: Android APK
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -43,11 +43,28 @@ jobs:
         run: npm ci
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager --licenses > /dev/null || true
+      # The Rust core, built for the two phone CPU types and packed into the APK (apps/android/app/src/main/jniLibs).
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+      - name: Build the Rust core for Android
+        # The runner sets ANDROID_NDK_ROOT (not ANDROID_NDK_LATEST_HOME on this image).
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
+          cargo ndk -t arm64-v8a -t armeabi-v7a \
+            -o apps/android/app/src/main/jniLibs build -p privcord-ffi --release --locked
       - uses: gradle/actions/setup-gradle@v6
       - name: Build
         working-directory: apps/android
-        run: ./gradlew :app:assembleDebug --console=plain
+        run: ./gradlew :app:assembleRelease -Pduochat.ciSign=true --console=plain
+      - name: The APK contains the Rust core for both CPU types
+        run: |
+          unzip -l apps/android/app/build/outputs/apk/release/app-release.apk | grep libprivcord_ffi.so | tee /tmp/libs.txt
+          test "$(wc -l < /tmp/libs.txt)" -eq 2
       - uses: actions/upload-artifact@v7
         with:
-          name: duochat-android-debug
-          path: apps/android/app/build/outputs/apk/debug/app-debug.apk
+          name: duochat-android
+          path: apps/android/app/build/outputs/apk/release/app-release.apk

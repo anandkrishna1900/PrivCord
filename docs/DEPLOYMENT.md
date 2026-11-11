@@ -20,7 +20,7 @@ Be clear with users about what they are trusting: see [CONNECTIVITY.md](CONNECTI
    `apps/android/app/build.gradle.kts` (`versionName`, **and increase `versionCode`**).
 3. `npm ci && npm run typecheck && npm test && npm run build:desktop`
 4. `npm run e2e --workspace @duochat/desktop` (needs Playwright, see README).
-5. Android: `cd apps/android && ./gradlew :app:testDebugUnitTest :app:assembleDebug`
+5. Android: `cd apps/android && ./gradlew :app:testDebugUnitTest :app:assembleRelease -Pduochat.ciSign=true`
 6. Tag `vX.Y.Z` and push the tag: `.github/workflows/release.yml` builds the installer,
    the Android bundle, and the relay image.
 7. **Test the signed artifacts on real machines** before announcing (see section 6).
@@ -71,10 +71,10 @@ cd apps/android
 * TURN defaults can be baked in at build time through `local.properties`
   (`turn.url`, `turn.username`, `turn.credential`); users can also change STUN and TURN in
   the app. Do not ship long-lived TURN credentials in a public build.
-* The release build (`assembleRelease`/`bundleRelease`) was **not completed** in the development
-  sandbox (the lint dependency download was rate-limited); only the debug build and unit tests
-  were run, and the signing configuration was checked with `signingReport`. Do a full release
-  build on a normal machine or in CI before shipping. Minification is deliberately off.
+* The release build shrinks with R8 (`-dontobfuscate`, keep rules in `app/proguard-rules.pro`) and includes only
+  the arm CPU types. CI test builds pass `-Pduochat.ciSign=true` to sign with the committed debug key; a real release
+  is signed only with the key from the secrets above. The Rust core must be in `app/src/main/jniLibs` first (CI does
+  this with `cargo ndk`; see [rust/ANDROID.md](rust/ANDROID.md)).
 * There is no push service: Android receives messages only while the app is running and
   connected. See [ANDROID_STATUS.md](ANDROID_STATUS.md) for what is implemented and untested.
 

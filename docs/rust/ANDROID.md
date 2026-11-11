@@ -14,7 +14,7 @@ What stage 1 does:
   "not available (...)" means the library for that CPU is missing from the APK.
 
 Building locally needs the Android NDK, `cargo-ndk` and the four Rust targets; otherwise download the APK from the CI
-run's `duochat-android-debug` artifact.
+run's `duochat-android` artifact.
 
 **Stage 2, first piece: the engine probe.** Settings > About > **Rust engine** starts a real Rust engine on the phone
 against a throwaway database and Keystore slot, creates an identity, reads its card and snapshot, checks the secret

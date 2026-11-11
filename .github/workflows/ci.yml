@@ -150,7 +150,7 @@ jobs:
         working-directory: apps/desktop
 
   android:
-    name: Android unit tests and debug build
+    name: Android unit tests and APK
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -168,10 +168,10 @@ jobs:
       # The runner image already ships the Android SDK; just accept its licenses so Gradle can fetch platform 35.
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager --licenses > /dev/null || true
-      # The Rust core, built for the four phone CPU types and packed into the APK (apps/android/app/src/main/jniLibs).
+      # The Rust core, built for the two phone CPU types and packed into the APK (apps/android/app/src/main/jniLibs).
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+          targets: aarch64-linux-android,armv7-linux-androideabi
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
@@ -179,25 +179,25 @@ jobs:
         # The runner sets ANDROID_NDK_ROOT (not ANDROID_NDK_LATEST_HOME on this image).
         run: |
           export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
-          cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -t x86 \
+          cargo ndk -t arm64-v8a -t armeabi-v7a \
             -o apps/android/app/src/main/jniLibs build -p privcord-ffi --release --locked
       - uses: gradle/actions/setup-gradle@v6
       - name: Test and assemble
         working-directory: apps/android
-        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug --console=plain
+        run: ./gradlew :app:testDebugUnitTest :app:assembleRelease -Pduochat.ciSign=true --console=plain
         # The built-in TURN relay (empty when the secrets are not set, e.g. on forks): see docs/turn-server/README.md.
         env:
           PRIVCORD_TURN_URLS: ${{ secrets.PRIVCORD_TURN_URLS }}
           PRIVCORD_TURN_USERNAME: ${{ secrets.PRIVCORD_TURN_USERNAME }}
           PRIVCORD_TURN_CREDENTIAL: ${{ secrets.PRIVCORD_TURN_CREDENTIAL }}
-      - name: The APK contains the Rust core for every CPU type
+      - name: The APK contains the Rust core for both CPU types
         run: |
-          unzip -l apps/android/app/build/outputs/apk/debug/app-debug.apk | grep libprivcord_ffi.so | tee /tmp/libs.txt
-          test "$(wc -l < /tmp/libs.txt)" -eq 4
+          unzip -l apps/android/app/build/outputs/apk/release/app-release.apk | grep libprivcord_ffi.so | tee /tmp/libs.txt
+          test "$(wc -l < /tmp/libs.txt)" -eq 2
       - uses: actions/upload-artifact@v7
         with:
-          name: duochat-android-debug
-          path: apps/android/app/build/outputs/apk/debug/app-debug.apk
+          name: duochat-android
+          path: apps/android/app/build/outputs/apk/release/app-release.apk
 
   windows-installer:
     name: Windows installer (unsigned) build

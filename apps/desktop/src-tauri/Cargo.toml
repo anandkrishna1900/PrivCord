@@ -39,3 +39,10 @@ btleplug = "=0.13.5"
 futures = "0.3"
 tokio = { version = "1", features = ["rt", "time", "sync"] }
 uuid = "1"
+
+# Smaller, faster release builds: whole-program optimisation, one codegen unit, no symbol table.
+# (Panics still unwind: the FFI layer catches them instead of aborting the app.)
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
