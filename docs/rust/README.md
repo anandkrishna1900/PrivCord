@@ -2,7 +2,7 @@
 
 One Rust implementation of PrivCord's rules for Android and Windows (Linux and macOS are not targets for now), replacing the duplicated TypeScript (`packages/protocol`, `apps/desktop/src/lib`) and Kotlin (`apps/android/.../{data,security,engine,groups,p2p}`) logic. This follows [the product requirements document](../../README.md) "Unified Rust Engine PRD v1.0" and its phases M0 to M9.
 
-**Status: foundation built and tested; the apps do not call it yet.** See [Status](#status) before relying on any of it.
+**Status: the engine is built and tested. The Android "rust" build flavor runs on it; the Windows app does not call it yet.** See [Status](#status) before relying on any of it.
 
 ## Crates
 
@@ -35,9 +35,9 @@ Events are numbered and delivered through bounded queues. A reader that falls be
 | M4 Protocol services | Done for what the apps do: direct messages, receipts, privacy frames, both handshakes, groups (log, coordinator, sync on link-up, fan-out messages), files, public channels and the Bluetooth mesh, six-word invites, sealed connection setup and store-and-forward messages through the signaling services (rules for Nostr and the relay in Rust, sockets in the adapters), relaying through mutual contacts, the dead-link timer, dial backoff, friend removal and emergency deletion with a truthful report. Also done: delete for everyone (tombstones that survive late copies), reactions, search, muting, and encrypted backups that the apps' backup files restore into. |
 | M5 Engine | Done, with mock-adapter integration tests, crash and restart tests, shutdown tests, and three-engine tests for groups, files, channels, invites and relaying. |
 | M6 Storage | SQLite storage (schema 3: files, reactions, deleted marks), migrations, crash-safety tests, and importers for the existing desktop and Android databases ([IMPORTERS.md](IMPORTERS.md)) tested on generated fixtures. **Not yet run on a real device's data.** |
-| M7 Desktop | Not started: the Tauri shell does not host the engine. |
-| M8 Android | Kotlin bindings generate from the FFI crate; they are not compiled into the app, and `ChatEngine.kt` still runs the app. |
-| M9 Retirement | Not started. Nothing was deleted. |
+| M7 Desktop | Not started: the Tauri shell does not host the engine. Plan and exit criteria: [M7_DESKTOP_PLAN.md](M7_DESKTOP_PLAN.md). |
+| M8 Android | Built as the "rust" build flavor (`RustChatEngine`, app id `com.duochat.app.rust`): every screen goes through the engine, WebRTC, Bluetooth, mesh and relay sockets are thin Kotlin adapters. CI builds and unit-tests it; it has been run on real phones only in the last few days and is a **preview**. The classic Kotlin engine still ships beside it. Exit criteria: [M7_DESKTOP_PLAN.md](M7_DESKTOP_PLAN.md#retirement-m9). |
+| M9 Retirement | Not started. Nothing was deleted, on purpose: see the exit criteria in [M7_DESKTOP_PLAN.md](M7_DESKTOP_PLAN.md#retirement-m9). |
 
 ## Commands
 
