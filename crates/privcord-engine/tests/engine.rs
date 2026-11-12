@@ -580,11 +580,13 @@ fn a_failed_write_changes_nothing_and_a_failed_receive_is_not_acknowledged() {
 
     // Receiving: if Bob cannot store it he does not acknowledge, so Alice's retry delivers it.
     connect(&mut a, &mut b, &au, &bu);
-    // The first send happened during connect(); drop that attempt by failing Bob's storage first.
+    // Connect first (connecting also stores the keys the two exchange), then make Bob's next write, the message
+    // itself, fail.
     let (mut a, mut b, au, bu) = pair();
-    let id2 = a.core.send_message(&bu, "will retry", None).unwrap();
-    b.storage.fail_next_applies(1);
     connect(&mut a, &mut b, &au, &bu);
+    b.storage.fail_next_applies(1);
+    let id2 = a.core.send_message(&bu, "will retry", None).unwrap();
+    pump(&mut a, &mut b, &au, &bu);
     assert!(texts(&b, &au).is_empty());
     assert_ne!(status(&a, &id2), DeliveryState::Delivered);
     pass_time(&mut a, &mut b, &au, &bu, RETRY_AFTER_MS + 1);

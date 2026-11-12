@@ -173,10 +173,6 @@ fn a_file_frame_tampered_in_transit_is_refused_and_never_stored() {
     let clock = FakeClock::at(1_700_000_000_000);
     let (mut a, mut b) = (node("alice", &clock), node("bob", &clock));
     befriend(&mut a, &mut b);
-    let id = a
-        .core
-        .send_file(&b.uid, "pic.png", "image/png", sample(30_000), None)
-        .unwrap();
     let (au, bu) = (a.uid.clone(), b.uid.clone());
     a.transport.set_connected(&bu, true);
     b.transport.set_connected(&au, true);
@@ -193,6 +189,24 @@ fn a_file_frame_tampered_in_transit_is_refused_and_never_stored() {
             ConnectionPath::DirectNat,
             LinkSecurity::TransportEncrypted,
         )
+        .unwrap();
+    // Connect fully first (handshakes and the key handover), then send the file: the first big frame after that is a
+    // piece of it.
+    loop {
+        let (from_a, from_b) = (a.transport.drain(), b.transport.drain());
+        if from_a.is_empty() && from_b.is_empty() {
+            break;
+        }
+        for (_, f) in from_a {
+            b.core.frame_received(&au, &f);
+        }
+        for (_, f) in from_b {
+            a.core.frame_received(&bu, &f);
+        }
+    }
+    let id = a
+        .core
+        .send_file(&b.uid, "pic.png", "image/png", sample(30_000), None)
         .unwrap();
     // Protocol v2: every frame is inside the post-quantum channel, so a byte changed in transit makes the frame fail to
     // decrypt; the chunk is refused whole and can never be stored as part of the file. (The file's own hash check

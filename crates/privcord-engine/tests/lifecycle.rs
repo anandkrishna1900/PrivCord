@@ -951,3 +951,94 @@ fn a_stranger_cannot_get_anything_but_a_genuine_request_through() {
     }
     assert!(b.core.snapshot().requests.iter().any(|r| r.uid == a.uid));
 }
+
+#[test]
+fn after_a_link_offline_messages_are_sealed_post_quantum_to_one_time_keys_and_v1_is_refused() {
+    use privcord_domain::blob::SealedBlob;
+    let clock = FakeClock::at(1_700_000_000_000);
+    let (mut a, mut b) = (node("alice", &clock), node("bob", &clock));
+    befriend(&mut a, &mut b);
+    // One post-quantum link: the two hand each other their keys. Then Bob goes offline.
+    connect(&mut a, &mut b);
+    a.core.link_down(&b.uid);
+    b.core.link_down(&a.uid);
+    a.transport.set_connected(&b.uid, false);
+    b.transport.set_connected(&a.uid, false);
+    a.transport.set_signaling(true);
+    b.transport.set_signaling(true);
+    a.core.set_store_forward(true).unwrap();
+    put_blobs(&a);
+
+    let texts = ["first while away", "second while away"];
+    let mut blobs = Vec::new();
+    for t in texts {
+        a.core.send_message(&b.uid, t, None).unwrap();
+        a.core.tick();
+        blobs.extend(
+            put_blobs(&a)
+                .into_iter()
+                .filter(|(_, _, k)| *k == privcord_domain::signaling::PutKind::Msg),
+        );
+    }
+    assert_eq!(blobs.len(), 2);
+    let decoded: Vec<SealedBlob> = blobs
+        .iter()
+        .map(|(_, blob, _)| SealedBlob::decode(blob).unwrap())
+        .collect();
+    for (blob, t) in decoded.iter().zip(texts) {
+        assert_eq!(blob.v, 2, "post-quantum sealed");
+        assert!(blob.kem.is_some());
+        assert!(!blobs.iter().any(|(_, raw, _)| raw.contains(t)));
+    }
+    assert_ne!(
+        decoded[0].key, decoded[1].key,
+        "each message has its own one-time key"
+    );
+
+    // Bob gets both through the service.
+    for (m, blob, _) in &blobs {
+        b.core.signal_blob(m, blob);
+    }
+    let got: Vec<String> = b
+        .core
+        .snapshot()
+        .messages
+        .into_iter()
+        .flat_map(|(_, v)| v)
+        .map(|m| m.text)
+        .collect();
+    assert_eq!(got, texts);
+
+    // A classic (v1) blob from Alice is refused now that the two have exchanged keys: nobody can force the old protocol.
+    let secrets = a.secure.load_identity().unwrap().unwrap();
+    let mut stored = privcord_crypto::identity::StoredSecrets {
+        sign: [0u8; 32],
+        dh: [0u8; 32],
+    };
+    stored.sign.copy_from_slice(&secrets[..32]);
+    stored.dh.copy_from_slice(&secrets[32..]);
+    let alice = privcord_crypto::identity::Identity::from_stored(&stored).unwrap();
+    let bob_card =
+        privcord_crypto::card::ContactCard::decode(&b.core.own_card(None).unwrap()).unwrap();
+    let old = privcord_crypto::seal::seal(
+        &alice,
+        &b.uid,
+        &bob_card.card.dh,
+        &serde_json::json!({ "t": "msg", "id": "old-1", "text": "v1 attempt", "at": 1 }),
+        &mut privcord_crypto::rng::SeededEntropy::new("v1"),
+    )
+    .unwrap();
+    b.core.signal_blob(
+        &privcord_crypto::seal::mailbox_for(b.uid.as_str()),
+        &old.encode(),
+    );
+    assert!(
+        b.core
+            .snapshot()
+            .messages
+            .into_iter()
+            .flat_map(|(_, v)| v)
+            .all(|m| m.text != "v1 attempt"),
+        "the downgrade is refused"
+    );
+}

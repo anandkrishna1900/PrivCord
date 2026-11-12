@@ -58,6 +58,7 @@ use zeroize::Zeroizing;
 
 mod backup;
 mod invites;
+mod keys;
 mod privacy;
 mod signaling;
 mod social;
@@ -219,6 +220,8 @@ pub struct Core {
     /// Our place in the Bluetooth mesh (neighbours are anonymous radio links, not contacts).
     mesh: MeshNode,
     invites: invites::InviteState,
+    /// Protocol v2 keys for sealed blobs (ours and our contacts').
+    keys: keys::KeyState,
     sealed: signaling::SealedState,
     /// Channel mailboxes we are listening on (the adapter opens the sockets).
     channel_subscribed: HashSet<String>,
@@ -276,6 +279,7 @@ impl Core {
             channels: BTreeMap::new(),
             mesh: MeshNode::default(),
             invites: invites::InviteState::default(),
+            keys: keys::KeyState::default(),
             sealed: signaling::SealedState::default(),
             channel_subscribed: HashSet::new(),
             channel_people: BTreeMap::new(),
@@ -317,6 +321,7 @@ impl Core {
         self.channel_subscribed.clear();
         self.channel_people.clear();
         self.groups = None;
+        self.load_keys();
         for stored in self.ports.storage.contacts()? {
             if let Some(contact) = ContactCard::decode(&stored.card).filter(|c| c.uid == stored.uid)
             {
@@ -407,6 +412,8 @@ impl Core {
         self.ports.secure.save_identity(&both)?;
         self.uid = Some(identity.uid()?);
         self.identity = Some(identity);
+        // Keys belong to an identity: a new one starts with none (contacts hand theirs over on the next link).
+        self.reset_keys();
         self.groups = None;
         self.ensure_groups()?;
         self.hub.publish(EngineEvent::IdentityCreated);
@@ -913,6 +920,7 @@ impl Core {
             p.attempts = 0;
         }
         self.step(peer, ConnectionEvent::Established(path));
+        self.keys_on_link(peer);
         self.send_privacy(peer);
         self.send_group_hello(peer);
         self.sync_social(peer);
@@ -1082,6 +1090,7 @@ impl Core {
         match frame.get("kind").and_then(Value::as_str) {
             Some("message") => self.on_message(peer, frame),
             Some("ack") => self.on_ack(peer, frame),
+            Some("keys") => self.on_keys_frame(peer, frame),
             Some("declined") => self.on_declined(peer, frame),
             Some("group_push" | "group_events" | "group_have") => self.on_group_frame(peer, frame),
             Some("gmsg") => self.on_group_message(peer, frame),

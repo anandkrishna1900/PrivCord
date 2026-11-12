@@ -12,10 +12,7 @@ use crate::{
     api::{EngineEvent, SignalMessage},
     error::ErrorCode,
 };
-use privcord_crypto::{
-    group_coordinator::GroupFrame,
-    seal::{mailbox_for, open, seal},
-};
+use privcord_crypto::{group_coordinator::GroupFrame, seal::mailbox_for};
 use privcord_domain::{
     blob::SealedBlob,
     link_policy::is_initiator,
@@ -88,14 +85,8 @@ impl Core {
             .card
             .dh
             .clone();
-        let identity = self.identity.as_ref().ok_or(ErrorCode::NoIdentity)?;
-        Ok(seal(
-            identity,
-            peer,
-            &dh,
-            payload,
-            &mut *self.ports.entropy,
-        )?)
+        // v2 to one of their keys once we have them; v1 only before the first link (see core::keys).
+        self.seal_for(peer, payload, &dh)
     }
 
     /// Seal `payload` to a contact and send it: through signaling if it is up, else (for live signaling only) through
@@ -206,10 +197,10 @@ impl Core {
         if !self.sealed.seen.first_time(&blob.sig) {
             return;
         }
-        let (Ok(from), Some(own), Some(identity)) = (
+        let (Ok(from), Some(own), true) = (
             UserId::new(blob.from.as_str()),
             self.uid.clone(),
-            self.identity.as_ref(),
+            self.identity.is_some(),
         ) else {
             return;
         };
@@ -222,7 +213,7 @@ impl Core {
             self.on_friend_request(&blob);
             return;
         };
-        let Some(Value::Object(payload)) = open(&blob, &own, identity, &sign, &from) else {
+        let Some(Value::Object(payload)) = self.open_from_contact(&blob, &from, &sign) else {
             return;
         };
         let text = |k: &str| payload.get(k).and_then(Value::as_str);
