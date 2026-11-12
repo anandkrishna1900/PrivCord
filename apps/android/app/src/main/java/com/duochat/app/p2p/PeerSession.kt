@@ -368,7 +368,7 @@ class PeerSession(
             failPeer("Peer identity proof is invalid.")
             return
         }
-        if (identityManager.uidFor(dh) != uid) {
+        if (identityManager.uidFor(key, dh) != uid) {
             failPeer("Peer identity does not match its key.")
             return
         }

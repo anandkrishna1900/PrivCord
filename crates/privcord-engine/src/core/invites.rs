@@ -462,7 +462,11 @@ impl Core {
         let Some(blob) = SealedBlob::decode(encoded) else {
             return;
         };
-        if !self.invites.seen.first_time(&blob.sig) {
+        if !self
+            .invites
+            .seen
+            .first_time(&privcord_crypto::seal::replay_id(&blob))
+        {
             return;
         }
         let Ok(value) = serde_json::to_value(&blob) else {
@@ -492,6 +496,12 @@ impl Core {
                 .get(&contact.uid)
                 .is_some_and(|c| c.stored.trust == ContactTrust::Verified);
             if Some(&contact.uid) == self.uid.as_ref() || already_friend {
+                return;
+            }
+            // Anyone holding the words can answer under any number of fresh identities: same cap as card requests.
+            if self.invites.requests.len() >= MAX_REQUESTS
+                && !self.invites.requests.contains_key(&contact.uid)
+            {
                 return;
             }
             let Ok(safety_number) = derive_safety_number(&own, &contact.card.sign) else {

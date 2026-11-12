@@ -4,7 +4,7 @@ import {
   encodeContactCard,
   isPairingRecord,
   signatureToBase64,
-  uidFromDh,
+  uidFromKeys,
   verifyIdentityProof,
   type ChatMessage,
   type PairingRecord,
@@ -80,7 +80,7 @@ export async function loadIdentity(): Promise<DeviceIdentity | null> {
   if (!signPriv || !dhPriv || !identityProof) return null;
   const dhPublicJwk = slimPublic(dhPriv);
   return {
-    uid: await uidFromDh(dhPublicJwk),
+    uid: await uidFromKeys(slimPublic(signPriv), dhPublicJwk),
     deviceId: localDeviceId(),
     privateJwk: signPriv,
     publicJwk: slimPublic(signPriv),
@@ -102,7 +102,7 @@ export function contactCardOf(identity: DeviceIdentity, name?: string): string {
 
 /** An id is only valid if it is the fingerprint of the key it comes with. */
 export async function uidMatchesKeys(uid: string, dh: JsonWebKey, sign: JsonWebKey, proof: string): Promise<boolean> {
-  return (await uidFromDh(dh)) === uid && (await verifyIdentityProof(sign, dh, proof));
+  return (await uidFromKeys(sign, dh)) === uid && (await verifyIdentityProof(sign, dh, proof));
 }
 
 export async function signChallenge(

@@ -1,7 +1,8 @@
 import {
   canonicalJson,
+  concatBytes,
   fromB64Url,
-  identityFingerprintHex,
+  sha256,
   toB64Url,
   validatePublicJwk,
   verifyIdentityProof,
@@ -27,8 +28,19 @@ export interface Contact {
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
-export function uidFromDh(dh: PublicJwk): Promise<string> {
-  return identityFingerprintHex(dh);
+function keyBytes(key: PublicJwk): Uint8Array {
+  if (!key.x || !key.y) throw new Error('incomplete public key');
+  return concatBytes(enc.encode(`${key.kty}|${key.crv}|`), fromB64Url(key.x), enc.encode('|'), fromB64Url(key.y));
+}
+
+/**
+ * The person's id: SHA-256 (hex) of both public keys, `duocord-uid-v2\n<ECDH key>\n<signing key>`. Both are in it: a card
+ * proves only that its signing key signed the ECDH key, so an id from the ECDH key alone let anyone claim someone else's
+ * id with their own signing key. Same as `uid_from_keys` in the Rust crate.
+ */
+export async function uidFromKeys(sign: PublicJwk, dh: PublicJwk): Promise<string> {
+  const bytes = await sha256(concatBytes(enc.encode('duocord-uid-v2\n'), keyBytes(dh), enc.encode('\n'), keyBytes(sign)));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 export function encodeContactCard(card: ContactCard): string {
@@ -55,7 +67,7 @@ export async function decodeContactCard(text: string): Promise<Contact | null> {
     if (c.name !== undefined && typeof c.name !== 'string') return null;
     if (!(await verifyIdentityProof(c.sign, c.dh, c.proof))) return null;
     return {
-      uid: await uidFromDh(c.dh),
+      uid: await uidFromKeys(c.sign, c.dh),
       card: { v: 1, sign: c.sign, dh: c.dh, proof: c.proof, ...(c.name ? { name: String(c.name).slice(0, 40) } : {}) },
     };
   } catch {

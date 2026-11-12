@@ -89,6 +89,8 @@ const KV_GROUP_ONLY: &str = "settings.group_only";
 const KV_GROUPS: &str = "groups.v1";
 const KV_CHANNELS: &str = "channels.v1";
 const KV_CHANNEL_PEOPLE: &str = "channel.people.v1";
+/// Channel authors whose names we remember at most.
+const MAX_CHANNEL_PEOPLE: usize = 2000;
 
 /// Everything the engine reaches the outside world through.
 pub struct Ports {
@@ -312,6 +314,36 @@ impl Core {
         Ok(core)
     }
 
+    /// Ids used to come from the ECDH key alone (protocol v1); now they come from both public keys. Data stored under an
+    /// old id (ours, or a friend's whose card shows it was theirs) moves to the new one, so chats survive the change. A
+    /// no-op once moved.
+    fn move_legacy_ids(&mut self) -> Result<(), ErrorCode> {
+        use privcord_crypto::identity::legacy_uid;
+        let mut ops = Vec::new();
+        if let (Some(id), Some(own)) = (self.identity.as_ref(), self.uid.clone()) {
+            if let Ok(old) = legacy_uid(&id.dh_public()) {
+                ops.push(StorageOp::RenameUser { from: old, to: own });
+            }
+        }
+        for stored in self.ports.storage.contacts()? {
+            let Some(card) = ContactCard::decode(&stored.card) else {
+                continue;
+            };
+            if card.uid != stored.uid
+                && legacy_uid(&card.card.dh).is_ok_and(|old| old == stored.uid)
+            {
+                ops.push(StorageOp::RenameUser {
+                    from: stored.uid,
+                    to: card.uid,
+                });
+            }
+        }
+        if !ops.is_empty() {
+            self.ports.storage.apply(&ops)?;
+        }
+        Ok(())
+    }
+
     /// (Re)read everything the engine keeps from storage: after start, and after a backup was restored into it.
     fn reload_from_storage(&mut self) -> Result<(), ErrorCode> {
         self.contacts.clear();
@@ -322,6 +354,7 @@ impl Core {
         self.channel_people.clear();
         self.groups = None;
         self.load_keys();
+        self.move_legacy_ids()?;
         for stored in self.ports.storage.contacts()? {
             if let Some(contact) = ContactCard::decode(&stored.card).filter(|c| c.uid == stored.uid)
             {
@@ -412,6 +445,9 @@ impl Core {
         self.ports.secure.save_identity(&both)?;
         self.uid = Some(identity.uid()?);
         self.identity = Some(identity);
+        // Data already stored (an imported or restored database) may be under this identity's v1 id: move it, and
+        // read it again now that cards can be checked against our own id.
+        self.reload_from_storage()?;
         // Keys belong to an identity: a new one starts with none (contacts hand theirs over on the next link).
         self.reset_keys();
         self.groups = None;
@@ -475,6 +511,16 @@ impl Core {
         let contact = ContactCard::decode(card_text).ok_or(ErrorCode::InvalidCard)?;
         if contact.uid == own {
             return Err(ErrorCode::OwnCard);
+        }
+        // A card proves its signing key, not the key the uid comes from: anyone can pair someone else's uid with their
+        // own signing key. A friend's keys never change (they come from the recovery phrase), so a card that would
+        // replace the signing key we already hold for this uid is a forgery.
+        if self
+            .contacts
+            .get(&contact.uid)
+            .is_some_and(|c| c.contact.card.sign != contact.card.sign)
+        {
+            return Err(ErrorCode::InvalidCard);
         }
         // Meeting someone again never lowers trust.
         let trust = match self.contacts.get(&contact.uid) {
@@ -1121,8 +1167,9 @@ impl Core {
         let Some(mut message) = ChatMessage::from_peer_frame(frame) else {
             return;
         };
-        // The link is authenticated as `peer`; a message that claims another sender is forged.
-        if &message.sender_id != peer {
+        // The link is authenticated as `peer`; a message that claims another sender, or carries an id that is not
+        // theirs, is forged.
+        if &message.sender_id != peer || !id_is_from(&message.message_id, peer) {
             return;
         }
         let trust = self
@@ -1319,16 +1366,15 @@ impl Core {
 
     /* ---------------------------------------------------------------- messaging and delivery */
 
+    /// A new id for one of our messages: our author tag, then 128 random bits. Ids are one namespace across everyone, so
+    /// they carry their author: nobody else can send a message under one of ours to make the real one look like a
+    /// repeat (see [`id_is_from`]).
     fn new_message_id(&mut self) -> Result<MessageId, ErrorCode> {
+        let own = self.uid.clone().ok_or(ErrorCode::NoIdentity)?;
         let mut b = [0u8; 16];
         self.ports.entropy.fill(&mut b).map_err(ErrorCode::from)?;
-        b[6] = (b[6] & 0x0f) | 0x40;
-        b[8] = (b[8] & 0x3f) | 0x80;
-        let [b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15] = b;
-        let id = format!(
-            "{b0:02x}{b1:02x}{b2:02x}{b3:02x}-{b4:02x}{b5:02x}-{b6:02x}{b7:02x}-{b8:02x}{b9:02x}-{b10:02x}{b11:02x}{b12:02x}{b13:02x}{b14:02x}{b15:02x}"
-        );
-        MessageId::new(id).map_err(|_| ErrorCode::Crypto)
+        let random: String = b.iter().map(|x| format!("{x:02x}")).collect();
+        MessageId::new(format!("{}-{random}", author_tag(&own))).map_err(|_| ErrorCode::Crypto)
     }
 
     /// Write a message to someone. It is stored with its outbox entry in one atomic step, so a crash can never lose it
@@ -2067,6 +2113,9 @@ impl Core {
         let Ok(gid) = GroupId::new(m.group_id.as_str()) else {
             return;
         };
+        if !id_is_from(&m.message_id, peer) {
+            return;
+        }
         let ack = |core: &mut Self, id: &MessageId| {
             let at = core.now();
             core.send_ack(peer, id, at);
@@ -2264,6 +2313,9 @@ impl Core {
             return;
         };
         let id = offer.message_id.clone();
+        if !id_is_from(&id, peer) {
+            return;
+        }
         let (group, name, size) = (offer.group_id.clone(), offer.name.clone(), offer.size);
         match &offer.group_id {
             None => {
@@ -2632,11 +2684,19 @@ impl Core {
         if self.messages.contains_key(&id)
             || Some(&m.contact.uid) == self.uid.as_ref()
             || self.muted.contains(&m.contact.uid)
+            // Posting as one of our friends with another signing key (a card can name someone else's uid).
+            || self
+                .contacts
+                .get(&m.contact.uid)
+                .is_some_and(|c| c.contact.card.sign != m.contact.card.sign)
         {
             return;
         }
         if let Some(n) = m.contact.card.name.as_ref().filter(|n| !n.is_empty()) {
-            if self.channel_people.get(&m.contact.uid) != Some(n) {
+            // Anyone can post under fresh identities: the name list stops growing at a cap (they show unnamed).
+            let room = self.channel_people.len() < MAX_CHANNEL_PEOPLE
+                || self.channel_people.contains_key(&m.contact.uid);
+            if room && self.channel_people.get(&m.contact.uid) != Some(n) {
                 self.channel_people.insert(m.contact.uid.clone(), n.clone());
                 let list: Vec<(&str, &String)> = self
                     .channel_people
@@ -2824,4 +2884,19 @@ impl Core {
         }
         self.hub.publish(EngineEvent::ShutDown);
     }
+}
+
+/// The first 16 hex digits of a hash of someone's id: the start of every message id they make. Making another person's
+/// tag means finding keys whose id hashes to the same 64 bits.
+fn author_tag(uid: &UserId) -> String {
+    let mut tag = privcord_crypto::kdf::sha256_hex(format!("duocord-msg-v2|{uid}").as_bytes());
+    tag.truncate(16);
+    tag
+}
+
+/// Whether a message id was made by `author` (it starts with their tag).
+fn id_is_from(id: &MessageId, author: &UserId) -> bool {
+    id.as_str()
+        .strip_prefix(author_tag(author).as_str())
+        .is_some_and(|rest| rest.starts_with('-'))
 }

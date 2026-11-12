@@ -17,12 +17,18 @@ import java.security.spec.ECPublicKeySpec
 object IdentityCodec {
     private const val IDENTITY_PROOF_PREFIX = "duochat-identity-proof-v1\n"
 
-    /** uid = SHA-256 hex of "EC|P-256|" + x bytes + "|" + y bytes of the ECDH identity key. */
-    fun uidFor(dh: PublicJwk): String {
-        val input = "EC|P-256|".toByteArray(Charsets.UTF_8) +
-            SignatureCodec.base64UrlDecode(dh.x) +
-            "|".toByteArray(Charsets.UTF_8) +
-            SignatureCodec.base64UrlDecode(dh.y)
+    private fun keyBytes(key: PublicJwk): ByteArray =
+        "EC|P-256|".toByteArray(Charsets.UTF_8) + SignatureCodec.base64UrlDecode(key.x) +
+            "|".toByteArray(Charsets.UTF_8) + SignatureCodec.base64UrlDecode(key.y)
+
+    /**
+     * uid = SHA-256 hex of "duocord-uid-v2\n" + ECDH key + "\n" + signing key (each "EC|P-256|" + x + "|" + y). Both
+     * keys are in it, as in the Rust engine (`uid_from_keys`): an id from the ECDH key alone could be claimed by anyone
+     * who signs that key with their own signing key.
+     */
+    fun uidFor(sign: PublicJwk, dh: PublicJwk): String {
+        val input = "duocord-uid-v2\n".toByteArray(Charsets.UTF_8) + keyBytes(dh) +
+            "\n".toByteArray(Charsets.UTF_8) + keyBytes(sign)
         return MessageDigest.getInstance("SHA-256").digest(input)
             .joinToString("") { "%02x".format(it) }
     }

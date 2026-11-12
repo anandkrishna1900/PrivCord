@@ -106,7 +106,7 @@ class AndroidIdentityManager(context: Context) {
         signPrivate = privateKeyFrom(sign.d)
         dhPrivate = privateKeyFrom(dh.d)
         val dhPublic = PublicJwk(dh.x, dh.y)
-        return DeviceIdentity(IdentityCodec.uidFor(dhPublic), deviceId(), PublicJwk(sign.x, sign.y), dhPublic, proof)
+        return DeviceIdentity(IdentityCodec.uidFor(PublicJwk(sign.x, sign.y), dhPublic), deviceId(), PublicJwk(sign.x, sign.y), dhPublic, proof)
     }
 
     /** ECDH with our identity DH key (used to open sealed blobs). */
@@ -124,7 +124,7 @@ class AndroidIdentityManager(context: Context) {
     fun verifyIdentityProof(sign: PublicJwk, dh: PublicJwk, proof: String): Boolean =
         IdentityCodec.verifyIdentityProof(sign, dh, proof)
 
-    fun uidFor(dh: PublicJwk): String = IdentityCodec.uidFor(dh)
+    fun uidFor(sign: PublicJwk, dh: PublicJwk): String = IdentityCodec.uidFor(sign, dh)
 
     /**
      * Kill switch helper: delete the identity keys. Without them the old

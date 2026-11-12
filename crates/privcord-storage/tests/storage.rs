@@ -439,6 +439,43 @@ fn an_unencrypted_database_is_encrypted_in_place_and_nothing_readable_is_left() 
 }
 
 #[test]
+fn plaintext_copies_left_by_an_interrupted_encryption_are_removed_on_the_next_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("privcord.db");
+    let key = random_key();
+    // The state after a crash between encrypt_in_place's rename and its cleanup: the database is already encrypted, but
+    // an old plaintext pre-migration copy is still beside it.
+    drop(SqliteStorage::open_encrypted(&path, &key).unwrap());
+    let plain = dir.path().join("plain.db");
+    SqliteStorage::open(&plain)
+        .unwrap()
+        .apply(&[StorageOp::InsertMessage(msg("m-1", 1, "left behind"))])
+        .unwrap();
+    std::fs::copy(&plain, dir.path().join("privcord.db.bak-v1")).unwrap();
+    // An encrypted copy made by a later migration.
+    std::fs::copy(&path, dir.path().join("privcord.db.bak-v2")).unwrap();
+
+    drop(SqliteStorage::open_encrypted(&path, &key).unwrap());
+    assert!(!dir.path().join("privcord.db.bak-v1").exists());
+    // Opened and checked: the encrypted copy goes too (it would keep messages erased after it was made).
+    assert!(!dir.path().join("privcord.db.bak-v2").exists());
+}
+
+#[test]
+fn a_pre_migration_copy_stays_while_the_database_does_not_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("privcord.db");
+    let key = random_key();
+    drop(SqliteStorage::open_encrypted(&path, &key).unwrap());
+    std::fs::copy(&path, dir.path().join("privcord.db.bak-v2")).unwrap();
+    // A key that does not open the database: the copy is all there is to recover from, so it stays.
+    assert!(SqliteStorage::open_encrypted(&path, &random_key()).is_err());
+    assert!(dir.path().join("privcord.db.bak-v2").exists());
+    drop(SqliteStorage::open_encrypted(&path, &key).unwrap());
+    assert!(!dir.path().join("privcord.db.bak-v2").exists());
+}
+
+#[test]
 fn a_new_encrypted_database_starts_empty_and_reopens() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("fresh.db");

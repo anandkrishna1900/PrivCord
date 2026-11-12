@@ -90,3 +90,18 @@ What that does **not** cover: the WebRTC path against the live app, groups, file
 ## Data
 
 Existing installs are brought over by `privcord-import` (desktop SQLite and Android Room). See [IMPORTERS.md](IMPORTERS.md) for what is checked, what is left behind and why, and what has not been tried on a real device.
+
+## Addendum: user ids come from both public keys
+
+A contact card proves only that its signing key signed its ECDH key. In v1 the user id was a hash of the ECDH key alone,
+so anyone could build a valid card pairing someone else's ECDH key (and therefore their id) with their own signing key,
+and appear under that id in channels, friend requests and group introductions.
+
+The id is now `SHA-256("duocord-uid-v2\n" || ECDH key || "\n" || signing key)` (each key as `EC|P-256|x|y`), in Rust
+(`identity::uid_from_keys`), TypeScript (`uidFromKeys`) and the legacy Kotlin code. A forged card gets its own,
+different id.
+
+Migration: on start (and when an identity is restored), the engine moves everything stored under a v1 id to the v2 id:
+our own id, and each friend whose stored card shows the v1 id was theirs (`StorageOp::RenameUser`). Legacy imports and
+backups made before this change are accepted under the v1 id and moved the same way. Groups are not migrated: their
+signed history names members by v1 ids, and accepting those again would reopen the forgery. They are made again.

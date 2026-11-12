@@ -19,7 +19,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - run: npm ci
       - name: Build installer
         run: npm run tauri:build
@@ -44,10 +44,10 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager --licenses > /dev/null || true
       # The Rust core, built for the two phone CPU types and packed into the APK (apps/android/app/src/main/jniLibs).
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
       - name: Build the Rust core for Android
@@ -59,7 +59,7 @@ jobs:
           export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
           cargo ndk -t arm64-v8a -t armeabi-v7a \
             -o apps/android/app/src/main/jniLibs build -p privcord-ffi --release --locked
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
       - name: Build release bundle
         working-directory: apps/android
         run: ./gradlew :app:bundleRelease :app:assembleRelease --console=plain
@@ -85,12 +85,12 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v7
-      - uses: docker/login-action@v4
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v7
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: relay
           push: true

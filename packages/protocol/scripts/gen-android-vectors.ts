@@ -26,7 +26,7 @@ import {
   reconnectDelayMs,
   seal,
   toB64Url,
-  uidFromDh,
+  uidFromKeys,
   validateRecoveryPhrase,
 } from '../src';
 import { eventId, makeEvent, verifyEvent } from '../../../apps/desktop/src/lib/signaling/nostr';
@@ -43,7 +43,7 @@ const hex = (b: Uint8Array) => bytesToHex(b);
 async function person(phrase: string, passphrase: string) {
   const derived = await deriveIdentityFromPhrase(phrase, passphrase);
   const id = derived.identity;
-  const uid = await uidFromDh(id.dhKey.pubJwk);
+  const uid = await uidFromKeys(id.signKey.pubJwk, id.dhKey.pubJwk);
   return { derived, id, uid };
 }
 

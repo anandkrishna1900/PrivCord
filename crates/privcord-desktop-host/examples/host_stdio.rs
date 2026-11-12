@@ -15,7 +15,9 @@
 )]
 
 use privcord_desktop_host::DesktopHost;
-use privcord_ffi::{NotifierCallbacks, SecureStoreCallbacks, SignalKind, TransportCallbacks};
+use privcord_ffi::{
+    DatabaseKeyRead, NotifierCallbacks, SecureStoreCallbacks, SignalKind, TransportCallbacks,
+};
 use serde_json::{json, Value};
 use std::io::{BufRead, Write};
 use std::sync::{Arc, Mutex};
@@ -44,8 +46,11 @@ impl SecureStoreCallbacks for Keys {
         *self.0.lock().unwrap() = None;
     }
     // Keeps the database key the engine generates, in this store's own slot (like the OS key store would).
-    fn load_database_key(&self) -> Option<Vec<u8>> {
-        self.1.lock().unwrap().clone()
+    fn load_database_key(&self) -> DatabaseKeyRead {
+        match self.1.lock().unwrap().clone() {
+            Some(key) => DatabaseKeyRead::Found { key },
+            None => DatabaseKeyRead::Missing,
+        }
     }
     fn save_database_key(&self, key: Vec<u8>) -> bool {
         *self.1.lock().unwrap() = Some(key);

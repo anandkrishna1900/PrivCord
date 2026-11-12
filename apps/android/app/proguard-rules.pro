@@ -16,3 +16,11 @@
 -dontwarn org.webrtc.**
 
 -keep class com.google.zxing.** { *; }
+
+# Release builds log nothing below warnings: info/debug lines name peers and mailboxes (prefixes of ids), which any app
+# with log access (adb, OEM tools) could read.
+-assumenosideeffects class android.util.Log {
+    public static int v(...);
+    public static int d(...);
+    public static int i(...);
+}

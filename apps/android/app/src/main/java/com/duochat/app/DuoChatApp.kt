@@ -8,6 +8,7 @@ class DuoChatApp : Application() {
     override fun onCreate() {
         super.onCreate()
         CrashLog.install(this)
+        com.duochat.app.engine.EngineHost.app = this
         DuoNotifications.ensureChannel(this)
         PeerConnectionFactoryHolder.initialize(this)
         android.util.Log.i("DuoChat", "Rust core: ${RustCore.status}")

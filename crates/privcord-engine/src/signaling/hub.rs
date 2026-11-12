@@ -181,7 +181,10 @@ impl SignalingHub {
         for e in raw.events {
             match e {
                 Event::Blob { blob, id } => {
-                    if self.seen.first_time(&blob.sig) {
+                    if self
+                        .seen
+                        .first_time(&privcord_crypto::seal::replay_id(&blob))
+                    {
                         out.events.push(Event::Blob { blob, id });
                     }
                 }

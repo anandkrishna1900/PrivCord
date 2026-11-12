@@ -13,7 +13,7 @@ import {
   GroupLog,
   deriveIdentityFromPhrase,
   signGroupEvent,
-  uidFromDh,
+  uidFromKeys,
   type ContactCard,
   type GroupEvent,
 } from '../src';
@@ -28,7 +28,7 @@ async function person(i: number) {
     v: 1, sign: identity.signKey.pubJwk, dh: identity.dhKey.pubJwk, proof: identity.identityProof,
     ...(i === 4 ? {} : { name: NAMES[i]! }),
   };
-  return { name: NAMES[i]!, phrase, uid: await uidFromDh(identity.dhKey.pubJwk), card, signPriv: identity.signKey.privJwk };
+  return { name: NAMES[i]!, phrase, uid: await uidFromKeys(identity.signKey.pubJwk, identity.dhKey.pubJwk), card, signPriv: identity.signKey.privJwk };
 }
 
 type P = Awaited<ReturnType<typeof person>>;

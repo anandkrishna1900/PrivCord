@@ -3,13 +3,13 @@
   "context": "duo",
   "ann": {
     "phrase": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
-    "uid": "bf9861c45fd771142637ca6a8ec6b22ba848e4f0758311f9b173bc546aae65de",
+    "uid": "d2360f62fee1f1d2679278d1799927888ca4f8692d0e294918be14cae4d5798a",
     "deviceId": "device-ann",
     "nonce": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
   },
   "bob": {
     "phrase": "legal winner thank year wave sausage worth useful legal winner thank yellow",
-    "uid": "83f73744bf8a8006334ba2a309be5c27a4f05fe081897de3266f37238dea1170",
+    "uid": "3ad080e6c1cec573ea7a1f2ba74dfbe9bba7a0c143f8dd4b221a419254862c50",
     "deviceId": "device-bob",
     "nonce": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
   },
@@ -17,7 +17,7 @@
     "annHello": {
       "v": 1,
       "kind": "hello",
-      "uid": "bf9861c45fd771142637ca6a8ec6b22ba848e4f0758311f9b173bc546aae65de",
+      "uid": "d2360f62fee1f1d2679278d1799927888ca4f8692d0e294918be14cae4d5798a",
       "deviceId": "device-ann",
       "publicKeyJwk": {
         "kty": "EC",
@@ -31,13 +31,13 @@
         "x": "OyVbnLBhsYLY9xRJkEXDYQz_L532SLotLsmv-PKstiQ",
         "y": "wJX41dT23t_LnQYG6RhIrWrupy2J4uw32tcwu90-reg"
       },
-      "identityProof": "odExuabbRzvU5jxHj5m12snDb6D6d3CH8_4cVeUCHf5v2dvZdkfjirUfpOjBfJmrlNlq8nZFM6fSd2XSB7HAOg",
+      "identityProof": "CmKnZeIn24YL_QG0rDcvm2_IkYxPS5kbr2q4ZtUhG1OlbB0WtmzZV5ygyF8ienN0ogB4jVZnd1xAmVlNpAECWA",
       "nonce": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
     },
     "bobHello": {
       "v": 1,
       "kind": "hello",
-      "uid": "83f73744bf8a8006334ba2a309be5c27a4f05fe081897de3266f37238dea1170",
+      "uid": "3ad080e6c1cec573ea7a1f2ba74dfbe9bba7a0c143f8dd4b221a419254862c50",
       "deviceId": "device-bob",
       "publicKeyJwk": {
         "kty": "EC",
@@ -51,35 +51,35 @@
         "x": "zYcBKuj3Ij1qQqN-liw_a8DhfZvDG6tKgxCfRFG6uxU",
         "y": "5mMzHrj708RGhJ15I1IYdy4cL8RFJxq9HeU0bjRmBl0"
       },
-      "identityProof": "bjqg5ACC9nNmxxB_1qajVjzx6DhiCw7b1H_RxzJ44lBA7OwRRYxDD13jPdebu1QKKYgrekVcZjRsLwD-f2yLzQ",
+      "identityProof": "YlSfMPYlyhmQQ_Qccd7YfDd9grppxPAZ_GHMWFisP4u87YyG-EBBSmdekRo9EINH1n42EnZmXJyUDvCJr7A0KQ",
       "nonce": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
     },
     "annProof": {
       "v": 1,
       "kind": "auth_proof",
-      "uid": "bf9861c45fd771142637ca6a8ec6b22ba848e4f0758311f9b173bc546aae65de",
-      "signature": "RcG4oVx7aFSfjjmbG72g3CERjK01cvWq1k6c-FWjEnfWx4K4FGDTwvsndNv520Y2PalzObcOuUZ0us-dW9eDxw"
+      "uid": "d2360f62fee1f1d2679278d1799927888ca4f8692d0e294918be14cae4d5798a",
+      "signature": "4_VWEE5VInzUOOaGJNXZoVvga0AlqgExL8NYfmsN4Q2CxHt0Oi7Z7ULr5x3uCScG1F1AHTPmlMkjvLgW3WWk-Q"
     },
     "bobProof": {
       "v": 1,
       "kind": "auth_proof",
-      "uid": "83f73744bf8a8006334ba2a309be5c27a4f05fe081897de3266f37238dea1170",
-      "signature": "QQwWB7nIurQJZYUJdWXuZs9s2sHPEQBvJSukhTb1obHtwBnqlAGxGMk_UJzScp49QSXxbj2dnw91vH2WHCSOaw"
+      "uid": "3ad080e6c1cec573ea7a1f2ba74dfbe9bba7a0c143f8dd4b221a419254862c50",
+      "signature": "fLqxQuQeZ5ZD6M-NoyMfp99DE3CfYcuA-p4UNDgxN1J9WqBL9VaPMSA8gQ6XMPQLGgEbrS5AKB7L7Sq2cREnog"
     },
     "annOk": {
       "v": 1,
       "kind": "auth_ok",
-      "uid": "bf9861c45fd771142637ca6a8ec6b22ba848e4f0758311f9b173bc546aae65de"
+      "uid": "d2360f62fee1f1d2679278d1799927888ca4f8692d0e294918be14cae4d5798a"
     },
     "bobOk": {
       "v": 1,
       "kind": "auth_ok",
-      "uid": "83f73744bf8a8006334ba2a309be5c27a4f05fe081897de3266f37238dea1170"
+      "uid": "3ad080e6c1cec573ea7a1f2ba74dfbe9bba7a0c143f8dd4b221a419254862c50"
     }
   },
   "challenges": {
-    "ann": "duochat-peer-auth-v1\nduo\nbf9861c45fd771142637ca6a8ec6b22ba848e4f0758311f9b173bc546aae65de\ndevice-ann\na1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\nb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
-    "bob": "duochat-peer-auth-v1\nduo\n83f73744bf8a8006334ba2a309be5c27a4f05fe081897de3266f37238dea1170\ndevice-bob\nb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\na1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+    "ann": "duochat-peer-auth-v1\nduo\nd2360f62fee1f1d2679278d1799927888ca4f8692d0e294918be14cae4d5798a\ndevice-ann\na1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\nb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+    "bob": "duochat-peer-auth-v1\nduo\n3ad080e6c1cec573ea7a1f2ba74dfbe9bba7a0c143f8dd4b221a419254862c50\ndevice-bob\nb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\na1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
   },
   "other": [
     {
@@ -159,7 +159,7 @@
       "frame": {
         "v": 1,
         "kind": "hello",
-        "uid": "bf9861c45fd771142637ca6a8ec6b22ba848e4f0758311f9b173bc546aae65de",
+        "uid": "d2360f62fee1f1d2679278d1799927888ca4f8692d0e294918be14cae4d5798a",
         "deviceId": "device-ann",
         "publicKeyJwk": {
           "kty": "EC",
@@ -173,7 +173,7 @@
           "x": "OyVbnLBhsYLY9xRJkEXDYQz_L532SLotLsmv-PKstiQ",
           "y": "wJX41dT23t_LnQYG6RhIrWrupy2J4uw32tcwu90-reg"
         },
-        "identityProof": "odExuabbRzvU5jxHj5m12snDb6D6d3CH8_4cVeUCHf5v2dvZdkfjirUfpOjBfJmrlNlq8nZFM6fSd2XSB7HAOg",
+        "identityProof": "CmKnZeIn24YL_QG0rDcvm2_IkYxPS5kbr2q4ZtUhG1OlbB0WtmzZV5ygyF8ienN0ogB4jVZnd1xAmVlNpAECWA",
         "nonce": "short"
       },
       "parsed": null
@@ -183,7 +183,7 @@
       "frame": {
         "v": 1,
         "kind": "hello",
-        "uid": "bf9861c45fd771142637ca6a8ec6b22ba848e4f0758311f9b173bc546aae65de",
+        "uid": "d2360f62fee1f1d2679278d1799927888ca4f8692d0e294918be14cae4d5798a",
         "deviceId": "",
         "publicKeyJwk": {
           "kty": "EC",
@@ -197,7 +197,7 @@
           "x": "OyVbnLBhsYLY9xRJkEXDYQz_L532SLotLsmv-PKstiQ",
           "y": "wJX41dT23t_LnQYG6RhIrWrupy2J4uw32tcwu90-reg"
         },
-        "identityProof": "odExuabbRzvU5jxHj5m12snDb6D6d3CH8_4cVeUCHf5v2dvZdkfjirUfpOjBfJmrlNlq8nZFM6fSd2XSB7HAOg",
+        "identityProof": "CmKnZeIn24YL_QG0rDcvm2_IkYxPS5kbr2q4ZtUhG1OlbB0WtmzZV5ygyF8ienN0ogB4jVZnd1xAmVlNpAECWA",
         "nonce": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
       },
       "parsed": null
@@ -207,7 +207,7 @@
       "frame": {
         "v": 1,
         "kind": "hello",
-        "uid": "bf9861c45fd771142637ca6a8ec6b22ba848e4f0758311f9b173bc546aae65de",
+        "uid": "d2360f62fee1f1d2679278d1799927888ca4f8692d0e294918be14cae4d5798a",
         "deviceId": "device-ann",
         "publicKeyJwk": {
           "kty": "EC",

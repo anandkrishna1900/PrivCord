@@ -5,7 +5,7 @@ import {
   mailboxFor,
   open,
   seal,
-  uidFromDh,
+  uidFromKeys,
   type SealedBlob,
 } from '@duochat/protocol';
 // The real self-hosted relay, so the client is tested against the actual wire protocol.
@@ -17,7 +17,7 @@ import { RelayClient } from './relayClient';
 
 async function person() {
   const { identity } = await deriveIdentityFromPhrase(generateRecoveryPhrase());
-  return { identity, uid: await uidFromDh(identity.dhKey.pubJwk) };
+  return { identity, uid: await uidFromKeys(identity.signKey.pubJwk, identity.dhKey.pubJwk) };
 }
 
 async function sealTo(a: Awaited<ReturnType<typeof person>>, b: Awaited<ReturnType<typeof person>>, payload: unknown) {

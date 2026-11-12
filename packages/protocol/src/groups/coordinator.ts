@@ -369,6 +369,6 @@ export class GroupCoordinator {
 }
 
 async function uidOf(card: ContactCard): Promise<string> {
-  const { uidFromDh } = await import('../connectivity/contactCard');
-  return uidFromDh(card.dh);
+  const { uidFromKeys } = await import('../connectivity/contactCard');
+  return uidFromKeys(card.sign, card.dh);
 }

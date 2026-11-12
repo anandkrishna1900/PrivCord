@@ -11,6 +11,9 @@ export const MAX_MSG_TTL = 7 * 24 * 3600;
 export const MAX_PER_MAILBOX = 500;
 const MAX_SUBS_PER_CONN = 16;
 const MAX_FIELD = 128;
+// Outbound bytes queued for one socket before it is dropped as a slow/non-reading
+// consumer. Fits a full-mailbox replay (MAX_PER_MAILBOX * MAX_BLOB) with headroom.
+export const MAX_BUFFERED = 2 * MAX_PER_MAILBOX * MAX_BLOB;
 
 export function startRelay({
   port = 8787,
@@ -22,9 +25,13 @@ export function startRelay({
   sweepMs = 500,
   trustProxy = false, // read the client IP from X-Forwarded-For (only behind a proxy you control)
   maxQueued = 50_000, // total stored messages across all mailboxes
+  // Total stored blob bytes. Bounds heap use and keeps the compacted log well under
+  // V8's max string length, which load()/compact() would otherwise hit and crash on.
+  maxQueuedBytes = 256 * 1024 * 1024,
   maxConnsPerIp = 20,
   heartbeatMs = 30_000,
   compactMs = 10 * 60_000,
+  maxBuffered = MAX_BUFFERED,
 } = {}) {
   /** @type {Map<string, Map<string, {id:string, blob:string, ts:number, exp:number}>>} persisted msg items */
   const queues = new Map();
@@ -34,6 +41,7 @@ export function startRelay({
   const conns = new Map(); // ip -> open connection count
   const stats = { connections: 0, put: 0, delivered: 0, rejected: 0 };
   const logFile = join(dataDir, 'queue.jsonl');
+  let bytes = 0; // sum of stored blob lengths
 
   if (allowStoreForward) {
     mkdirSync(dataDir, { recursive: true });
@@ -62,6 +70,7 @@ export function startRelay({
         queues.get(r.mailbox)?.delete(r.id);
       }
     }
+    for (const q of queues.values()) for (const it of q.values()) bytes += it.blob.length;
     compact();
   }
 
@@ -98,7 +107,7 @@ export function startRelay({
   function sweep() {
     const now = Date.now();
     for (const [mailbox, q] of queues) {
-      for (const [id, it] of q) if (it.exp <= now) q.delete(id);
+      for (const [id, it] of q) if (it.exp <= now) { bytes -= it.blob.length; q.delete(id); }
       if (q.size === 0) queues.delete(mailbox);
     }
     for (const [ip, r] of rates) if (r.reset <= now) rates.delete(ip);
@@ -109,7 +118,12 @@ export function startRelay({
   const compactor = allowStoreForward ? setInterval(compact, compactMs) : null;
   compactor?.unref();
 
-  const send = (ws, obj) => ws.readyState === 1 && ws.send(JSON.stringify(obj));
+  const send = (ws, obj) => {
+    if (ws.readyState !== 1) return;
+    // A peer that never reads would otherwise make us buffer every event forever.
+    if (ws.bufferedAmount > maxBuffered) return ws.terminate();
+    ws.send(JSON.stringify(obj));
+  };
   const str = (v) => typeof v === 'string' && v.length > 0 && v.length <= MAX_FIELD;
 
   function limited(ip) {
@@ -123,8 +137,9 @@ export function startRelay({
     if (trustProxy) {
       const xff = req.headers['x-forwarded-for'];
       if (typeof xff === 'string' && xff) {
-        const first = xff.split(',')[0].trim();
-        if (first) return first;
+        // The rightmost entry is the one our proxy appended; earlier ones are client-supplied.
+        const last = xff.split(',').pop().trim();
+        if (last) return last;
       }
     }
     return req.socket.remoteAddress ?? 'unknown';
@@ -173,12 +188,14 @@ export function startRelay({
           const isNew = !q?.has(m.id);
           if (isNew) {
             if (q && q.size >= MAX_PER_MAILBOX) return fail('mailbox full');
-            if (queued() >= maxQueued) return fail('relay full');
+            if (queued() >= maxQueued || bytes + m.blob.length > maxQueuedBytes) return fail('relay full');
             if (!q) { q = new Map(); queues.set(m.mailbox, q); }
             const it = { id: m.id, blob: m.blob, ts, exp: ts + m.ttl * 1000 };
             q.set(m.id, it);
+            bytes += it.blob.length;
             if (!persist({ op: 'put', mailbox: m.mailbox, ...it })) {
               q.delete(m.id);
+              bytes -= it.blob.length;
               if (q.size === 0) queues.delete(m.mailbox);
               return fail('storage error');
             }
@@ -195,7 +212,9 @@ export function startRelay({
       case 'del': {
         if (!str(m.mailbox) || !str(m.id)) return fail('bad del');
         const q = queues.get(m.mailbox);
-        if (q?.delete(m.id)) {
+        const it = q?.get(m.id);
+        if (it && q.delete(m.id)) {
+          bytes -= it.blob.length;
           if (q.size === 0) queues.delete(m.mailbox);
           persist({ op: 'del', mailbox: m.mailbox, id: m.id });
         }

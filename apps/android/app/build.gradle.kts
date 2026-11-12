@@ -174,7 +174,7 @@ dependencies {
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
 
-    implementation("io.github.webrtc-sdk:android:125.6422.07")
+    implementation("io.github.webrtc-sdk:android:150.7871.04")
     // Voice notes and audio files: plays the WebM/Opus that desktop browsers record (MediaPlayer often refuses it).
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("com.google.zxing:core:3.5.3")

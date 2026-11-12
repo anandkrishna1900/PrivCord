@@ -15,7 +15,9 @@
 //! | `privcord://notify`            | `{ conversation, sender, preview }`       | show a notification                           |
 
 use privcord_desktop_host::DesktopHost;
-use privcord_ffi::{NotifierCallbacks, SecureStoreCallbacks, SignalKind, TransportCallbacks};
+use privcord_ffi::{
+    DatabaseKeyRead, NotifierCallbacks, SecureStoreCallbacks, SignalKind, TransportCallbacks,
+};
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -62,9 +64,17 @@ impl SecureStoreCallbacks for KeyringSecure {
     }
 
     /// The database key, in its own Credential Manager entry (deleting the identity does not touch it).
-    fn load_database_key(&self) -> Option<Vec<u8>> {
-        let entry = keyring::Entry::new(SERVICE, DATABASE_KEY).ok()?;
-        unhex(&entry.get_password().ok()?)
+    /// Only "no entry" (or an entry that can never decode) is Missing; any other keyring error (locked, no access,
+    /// platform failure) is Unavailable, so a locked store never leads to a new key.
+    fn load_database_key(&self) -> DatabaseKeyRead {
+        let Ok(entry) = keyring::Entry::new(SERVICE, DATABASE_KEY) else {
+            return DatabaseKeyRead::Unavailable;
+        };
+        match entry.get_password() {
+            Ok(text) => unhex(&text).map_or(DatabaseKeyRead::Missing, |key| DatabaseKeyRead::Found { key }),
+            Err(keyring::Error::NoEntry | keyring::Error::BadEncoding(_)) => DatabaseKeyRead::Missing,
+            Err(_) => DatabaseKeyRead::Unavailable,
+        }
     }
 
     fn save_database_key(&self, key: Vec<u8>) -> bool {
@@ -254,8 +264,19 @@ pub async fn engine_stop(state: State<'_, EngineState>) -> Result<(), String> {
 
 /// Delete the engine's database files. Missing files are fine; anything else is an error, so a wipe never claims success it
 /// did not have.
+/// Every `engine.db*` file goes: the database and its journals, but also the pre-migration copies (`engine.db.bak-v<n>`,
+/// encrypted with the database key, which stays in the credential store), set-aside files and an interrupted encryption.
 fn erase_engine_files(dir: &std::path::Path) -> Result<(), String> {
-    for name in ["engine.db", "engine.db-wal", "engine.db-shm", "engine.db-journal"] {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(format!("could not list the data folder: {e}")),
+    };
+    for entry in entries {
+        let name = entry.map_err(|e| e.to_string())?.file_name();
+        let Some(name) = name.to_str().filter(|n| n.starts_with("engine.db")) else {
+            continue;
+        };
         match std::fs::remove_file(dir.join(name)) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}

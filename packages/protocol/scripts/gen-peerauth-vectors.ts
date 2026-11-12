@@ -11,7 +11,7 @@ import {
   ecdsaSign,
   parsePeerFrame,
   toB64Url,
-  uidFromDh,
+  uidFromKeys,
 } from '../src';
 
 const PHRASES = {
@@ -22,7 +22,7 @@ const CONTEXT = 'duo';
 
 async function side(name: 'ann' | 'bob', deviceId: string, nonce: string) {
   const { identity } = await deriveIdentityFromPhrase(PHRASES[name]);
-  const uid = await uidFromDh(identity.dhKey.pubJwk);
+  const uid = await uidFromKeys(identity.signKey.pubJwk, identity.dhKey.pubJwk);
   return { name, deviceId, nonce, identity, uid };
 }
 

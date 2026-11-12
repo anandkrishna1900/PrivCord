@@ -4,7 +4,8 @@
 //! Design points, all from the PRD's storage requirements:
 //! * every change is a batch applied in one transaction, so a message never exists without its outbox entry;
 //! * the schema is versioned with `PRAGMA user_version`; migrations run one transaction each, and an existing
-//!   database is copied to `<name>.bak-v<old>` before its first migration;
+//!   database is copied to `<name>.bak-v<old>` before its first migration, and the copy is deleted once the migrated
+//!   database has opened and passed its checks (a copy kept forever would keep messages erased after it was made);
 //! * a database written by a newer version is refused, never downgraded or "repaired";
 //! * the file is checked with `PRAGMA integrity_check` when opened;
 //! * statements are prepared and cached, and one connection is owned for the store's whole life.
@@ -211,6 +212,14 @@ fn encrypt_in_place(path: &Path, key: &[u8; 32]) -> Result<(), StorageError> {
     for suffix in ["-wal", "-shm", "-journal"] {
         let _ = std::fs::remove_file(sibling(path, suffix));
     }
+    Ok(())
+}
+
+/// Remove pre-migration copies: before the database is opened only the unencrypted ones (an interruption between
+/// [`encrypt_in_place`]'s rename and its cleanup would otherwise leave readable copies forever), and every copy once
+/// the database has opened, migrated and passed its integrity check. A copy is only for getting back a database that a
+/// failed migration broke; kept after that, it would hold messages that were erased or deleted for everyone later.
+fn remove_backups(path: &Path, only_plain: bool) {
     if let (Some(dir), Some(name)) = (path.parent(), path.file_name().and_then(|n| n.to_str())) {
         let prefix = format!("{name}.bak-v");
         if let Ok(entries) = std::fs::read_dir(if dir.as_os_str().is_empty() {
@@ -222,13 +231,13 @@ fn encrypt_in_place(path: &Path, key: &[u8; 32]) -> Result<(), StorageError> {
                 if e.file_name()
                     .to_str()
                     .is_some_and(|n| n.starts_with(&prefix))
+                    && (!only_plain || is_plain_sqlite(&e.path()))
                 {
                     let _ = std::fs::remove_file(e.path());
                 }
             }
         }
     }
-    Ok(())
 }
 
 impl SqliteStorage {
@@ -245,6 +254,7 @@ impl SqliteStorage {
         if is_plain_sqlite(path) {
             encrypt_in_place(path, key)?;
         }
+        remove_backups(path, true);
         let conn = Connection::open(path).map_err(unavailable)?;
         conn.pragma_update(None, "key", &*key_pragma(key))
             .map_err(unavailable)?;
@@ -254,6 +264,8 @@ impl SqliteStorage {
         })
         .map_err(|_| StorageError::Corrupt)?;
         init(&conn, MIGRATIONS, Some(path))?;
+        // Opened, migrated and checked: the pre-migration copies are no longer needed.
+        remove_backups(path, false);
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -443,6 +455,60 @@ fn apply_op(tx: &rusqlite::Transaction<'_>, op: &StorageOp) -> Result<(), Storag
                         params![message_id.as_str(), uid.as_str()],
                     )
                     .map_err(rej)?;
+                }
+            }
+        }
+        StorageOp::RenameUser { from, to } => {
+            let (old, new) = (from.as_str(), to.as_str());
+            let (old_chat, new_chat) = (
+                conversation_key(&ConversationId::Direct(from.clone())),
+                conversation_key(&ConversationId::Direct(to.clone())),
+            );
+            // Where the new id already has a row, the old one goes (OR IGNORE leaves it, the DELETE removes it).
+            for (sql, a, b) in [
+                (
+                    "UPDATE OR IGNORE contacts SET uid = ?2 WHERE uid = ?1",
+                    old,
+                    new,
+                ),
+                ("DELETE FROM contacts WHERE uid = ?1", old, new),
+                (
+                    "UPDATE contacts SET introduced_by = ?2 WHERE introduced_by = ?1",
+                    old,
+                    new,
+                ),
+                (
+                    "UPDATE messages SET conversation = ?2 WHERE conversation = ?1",
+                    &old_chat,
+                    &new_chat,
+                ),
+                (
+                    "UPDATE messages SET sender_id = ?2 WHERE sender_id = ?1",
+                    old,
+                    new,
+                ),
+                (
+                    "UPDATE messages SET reply_author = ?2 WHERE reply_author = ?1",
+                    old,
+                    new,
+                ),
+                (
+                    "UPDATE OR IGNORE outbox SET recipient = ?2 WHERE recipient = ?1",
+                    old,
+                    new,
+                ),
+                ("DELETE FROM outbox WHERE recipient = ?1", old, new),
+                (
+                    "UPDATE OR IGNORE reactions SET uid = ?2 WHERE uid = ?1",
+                    old,
+                    new,
+                ),
+                ("DELETE FROM reactions WHERE uid = ?1", old, new),
+            ] {
+                if sql.starts_with("DELETE") {
+                    tx.execute(sql, params![a]).map_err(rej)?;
+                } else {
+                    tx.execute(sql, params![a, b]).map_err(rej)?;
                 }
             }
         }

@@ -80,7 +80,18 @@ pub fn import(
             report.skip("contact_card_not_valid");
             continue;
         };
-        if contact.uid.as_str() != c.uid || &contact.uid == own_uid {
+        // The old apps recorded the v1 id (from the ECDH key alone). It is kept as recorded here, under that id, and the
+        // engine moves it (and every chat under it) to the v2 id when it starts.
+        let legacy = privcord_crypto::identity::legacy_uid(&contact.card.dh).ok();
+        let recorded = if contact.uid.as_str() == c.uid {
+            contact.uid.clone()
+        } else if let Some(old) = legacy.filter(|u| u.as_str() == c.uid) {
+            old
+        } else {
+            report.skip("contact_uid_mismatch");
+            continue;
+        };
+        if &recorded == own_uid || &contact.uid == own_uid {
             report.skip("contact_uid_mismatch");
             continue;
         }
@@ -89,14 +100,14 @@ pub fn import(
             continue;
         };
         // Meeting someone again never lowers trust.
-        let prior = existing.get(&contact.uid);
+        let prior = existing.get(&recorded);
         let trust = if prior.is_some_and(|p| p.trust == ContactTrust::Verified) {
             ContactTrust::Verified
         } else {
             c.trust
         };
         batch.push(StorageOp::PutContact(StoredContact {
-            uid: contact.uid.clone(),
+            uid: recorded.clone(),
             card: text,
             name: c.nickname.clone().or_else(|| contact.card.name.clone()),
             trust,
@@ -104,7 +115,7 @@ pub fn import(
             introduced_by: c.introduced_by.as_deref().and_then(|u| UserId::new(u).ok()),
             created_at: prior.map_or(c.created_at, |p| p.created_at),
         }));
-        known.insert(contact.uid);
+        known.insert(recorded);
         report.contacts += 1;
     }
     if !batch.is_empty() {

@@ -10,7 +10,7 @@ use crate::{
     canonical::canonical_json,
     card::ContactCard,
     error::CryptoError,
-    identity::{uid_from_dh, verify_identity_proof, verify_signature, Identity},
+    identity::{uid_from_keys, verify_identity_proof, verify_signature, Identity},
     kdf::sha256_hex,
 };
 use privcord_domain::{
@@ -279,7 +279,7 @@ fn card_from_value(v: &Value) -> Option<ContactCard> {
 
 fn card_is_valid(card: &ContactCard, expected_uid: &str) -> bool {
     verify_identity_proof(&card.sign, &card.dh, &card.proof)
-        && uid_from_dh(&card.dh).is_ok_and(|u| u.as_str() == expected_uid)
+        && uid_from_keys(&card.sign, &card.dh).is_ok_and(|u| u.as_str() == expected_uid)
 }
 
 fn signature_valid(e: &GroupEvent, signer: &PublicJwk) -> bool {
@@ -427,7 +427,25 @@ impl GroupLog {
         if e.group_id != self.group_id {
             return AddStatus::Invalid;
         }
-        if self.events.contains_key(&e.event_id) || self.pending.contains_key(&e.event_id) {
+        if let Some(stored) = self.events.get(&e.event_id) {
+            // The id does not cover the signature: a copy with a broken signature, relayed first by anyone, must not
+            // shadow the genuine one forever. Take another copy of an event that had no effect if it then takes effect.
+            if stored.sig == e.sig || self.valid.contains(&e.event_id) || !id_matches(&e) {
+                return AddStatus::Duplicate;
+            }
+            let id = e.event_id.clone();
+            let old = self.events.insert(id.clone(), e);
+            self.refold();
+            if self.valid.contains(&id) {
+                return AddStatus::Applied;
+            }
+            if let Some(old) = old {
+                self.events.insert(id, old);
+            }
+            self.refold();
+            return AddStatus::Duplicate;
+        }
+        if self.pending.contains_key(&e.event_id) {
             return AddStatus::Duplicate;
         }
         if !id_matches(&e) {
@@ -522,7 +540,7 @@ impl GroupLog {
     fn verify_sig(&mut self, e: &GroupEvent, signer: &ContactCard) -> bool {
         let key = (
             e.event_id.clone(),
-            format!("{}.{}", signer.sign.x, signer.sign.y),
+            format!("{}.{}.{}", signer.sign.x, signer.sign.y, e.sig),
         );
         if let Some(hit) = self.sig_cache.get(&key) {
             return *hit;
@@ -573,7 +591,7 @@ impl GroupLog {
             let ok_sig = {
                 let key = (
                     e.event_id.clone(),
-                    format!("{}.{}", author.card.sign.x, author.card.sign.y),
+                    format!("{}.{}.{}", author.card.sign.x, author.card.sign.y, e.sig),
                 );
                 match self.sig_cache.get(&key) {
                     Some(hit) => *hit,

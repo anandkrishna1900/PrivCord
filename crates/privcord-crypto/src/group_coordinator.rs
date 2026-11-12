@@ -8,7 +8,7 @@ use crate::{
     card::ContactCard,
     error::CryptoError,
     group::{sign_group_event, AddStatus, EventType, GroupEvent, GroupLog, GroupState, NewEvent},
-    identity::{uid_from_dh, Identity},
+    identity::{uid_from_keys, Identity},
 };
 use privcord_domain::{
     blob::SealedBlob,
@@ -413,7 +413,7 @@ impl GroupCoordinator {
         card: &ContactCard,
         now_ms: i64,
     ) -> Result<GroupResult, GroupError> {
-        let uid = uid_from_dh(&card.dh)?.to_string();
+        let uid = uid_from_keys(&card.sign, &card.dh)?.to_string();
         if self.is_member(group_id, &uid) {
             return Err(GroupError::AlreadyMember);
         }

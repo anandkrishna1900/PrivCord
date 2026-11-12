@@ -5,9 +5,19 @@ mod engine_host;
 
 const SERVICE: &str = "com.duochat.desktop";
 
+/// The engine's own entries (its identity and database key) are kept by the shell; the page never reads or writes
+/// them (it may only delete the identity, when the person erases it), so script in the page cannot take or replace
+/// the database key.
+fn page_entry(key: &str, deleting: bool) -> Result<keyring::Entry, String> {
+    if key.starts_with("engine-") && !(deleting && key == "engine-identity-v1") {
+        return Err("not available to the page".into());
+    }
+    keyring::Entry::new(SERVICE, key).map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 fn secret_get(key: String) -> Result<Option<String>, String> {
-    let entry = keyring::Entry::new(SERVICE, &key).map_err(|error| error.to_string())?;
+    let entry = page_entry(&key, false)?;
     match entry.get_password() {
         Ok(value) => Ok(Some(value)),
         Err(keyring::Error::NoEntry) => Ok(None),
@@ -17,7 +27,7 @@ fn secret_get(key: String) -> Result<Option<String>, String> {
 
 #[tauri::command]
 fn secret_set(key: String, value: String) -> Result<(), String> {
-    let entry = keyring::Entry::new(SERVICE, &key).map_err(|error| error.to_string())?;
+    let entry = page_entry(&key, false)?;
     entry
         .set_password(&value)
         .map_err(|error| error.to_string())
@@ -25,7 +35,7 @@ fn secret_set(key: String, value: String) -> Result<(), String> {
 
 #[tauri::command]
 fn secret_delete(key: String) -> Result<(), String> {
-    let entry = keyring::Entry::new(SERVICE, &key).map_err(|error| error.to_string())?;
+    let entry = page_entry(&key, true)?;
     match entry.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(error) => Err(error.to_string()),
@@ -46,12 +56,16 @@ mod ble_commands {
     pub struct BleState(Mutex<Option<BleLink>>);
 
     fn unhex(s: &str) -> Result<Vec<u8>, String> {
-        if s.len() % 2 != 0 {
-            return Err("odd-length hex".into());
+        if s.len() % 2 != 0 || !s.is_ascii() {
+            return Err("not hex".into());
         }
         (0..s.len())
             .step_by(2)
-            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).map_err(|e| e.to_string()))
+            .map(|i| {
+                s.get(i..i + 2)
+                    .and_then(|h| u8::from_str_radix(h, 16).ok())
+                    .ok_or_else(|| "not hex".to_string())
+            })
             .collect()
     }
 

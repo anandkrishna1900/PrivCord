@@ -36,6 +36,13 @@ pub fn signed_part(blob: &SealedBlob) -> Result<Vec<u8>, CryptoError> {
     Ok(canonical_json(&v)?.into_bytes())
 }
 
+/// What a blob is remembered by, to drop copies already handled. Not the signature string: the same signature has
+/// several encodings that all verify (spare base64 bits, high or low S), so a replayer could re-send each as "new".
+/// The signed content has only one.
+pub fn replay_id(blob: &SealedBlob) -> String {
+    signed_part(blob).map_or_else(|_| blob.sig.clone(), |b| sha256_hex(&b))
+}
+
 /// Where a client publishes to and listens on. Hashing keeps the uid out of relay logs.
 pub fn mailbox_for(uid: &str) -> String {
     sha256_hex(format!("{MAILBOX_PREFIX}{uid}").as_bytes())
@@ -162,4 +169,34 @@ pub fn open_from_stranger(
 /// so they keep the shape every relay and client already validates.
 pub(crate) fn placeholder_epk(entropy: &mut dyn Entropy) -> Result<PublicJwk, CryptoError> {
     Ok(jwk_of(&random_secret_key(entropy)?.public_key()))
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+    use crate::{identity::Identity, rng::SeededEntropy};
+
+    #[test]
+    fn a_blob_is_remembered_by_what_its_signature_covers_not_by_the_signature_text() {
+        let mut rng = SeededEntropy::new("replay");
+        let (a, b) = (
+            Identity::generate(&mut rng).unwrap(),
+            Identity::generate(&mut rng).unwrap(),
+        );
+        let blob = seal(
+            &a,
+            &b.uid().unwrap(),
+            &b.dh_public(),
+            &json!({ "t": "ready" }),
+            &mut rng,
+        )
+        .unwrap();
+        let mut resigned = blob.clone();
+        resigned.sig.push('A'); // another encoding of "the same" signature
+        assert_eq!(replay_id(&blob), replay_id(&resigned));
+        let mut other = blob.clone();
+        other.ct.push('A');
+        assert_ne!(replay_id(&blob), replay_id(&other));
+    }
 }
