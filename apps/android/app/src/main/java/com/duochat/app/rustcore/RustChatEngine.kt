@@ -507,7 +507,7 @@ class RustChatEngine(
             offer(peer)
         } else {
             // The other side offers; tell them we are here.
-            io { engine?.sendSignal(peer, SignalKindDto.READY, null) }
+            signal(peer, SignalKindDto.READY, null)
         }
     }
 
@@ -582,7 +582,23 @@ class RustChatEngine(
     private suspend fun offer(peer: String) {
         val t = newTransport(peer)
         val sdp = runCatching { t.createOffer() }.getOrNull() ?: return
-        io { engine?.sendSignal(peer, SignalKindDto.OFFER, sdp) }
+        if (!signal(peer, SignalKindDto.OFFER, sdp)) {
+            // Nothing carried it: drop this half-made connection, so the engine's next try is not held back by it.
+            if (links.remove(peer, t)) t.close()
+            dialStartedAt.remove(peer)
+        }
+    }
+
+    /**
+     * Connection setup for [peer], through whatever can carry it (a relay, or a friend in the middle). False when nothing
+     * can right now (no relay, no route: the engine answers NoRoute) or the engine is busy; it dials again on its own
+     * schedule, so this is not an error.
+     */
+    private suspend fun signal(peer: String, kind: SignalKindDto, sdp: String?): Boolean = io {
+        val e = engine ?: return@io false
+        runCatching { e.sendSignal(peer, kind, sdp) }
+            .onFailure { android.util.Log.w("RustEngine", "signal ${kind.name.lowercase()} not sent: ${it.javaClass.simpleName}") }
+            .isSuccess
     }
 
     private suspend fun onSignal(peer: String, kind: SignalKindDto, sdp: String?) {
@@ -602,7 +618,7 @@ class RustChatEngine(
                 if (sdp == null) return
                 val t = newTransport(peer)
                 val answer = runCatching { t.acceptOffer(sdp) }.getOrNull() ?: return
-                io { engine?.sendSignal(peer, SignalKindDto.ANSWER, answer) }
+                signal(peer, SignalKindDto.ANSWER, answer)
             }
             SignalKindDto.ANSWER -> {
                 if (sdp == null) return

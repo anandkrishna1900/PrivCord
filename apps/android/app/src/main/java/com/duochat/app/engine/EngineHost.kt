@@ -35,7 +35,7 @@ object EngineHost {
     @Volatile var app: Application? = null
     private val survive = CoroutineExceptionHandler { _, error ->
         android.util.Log.e("EngineHost", "background error", error)
-        app?.let { com.duochat.app.CrashLog.record(it, error, "engine (app kept running)") }
+        app?.let { com.duochat.app.CrashLog.record(it, error, "engine (app kept running)", fatal = false) }
     }
 
     /** Stops the engine and everything it launched. */
