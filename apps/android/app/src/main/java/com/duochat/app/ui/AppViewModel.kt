@@ -63,7 +63,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _crash = MutableStateFlow<CrashNotice?>(null)
     val crash: StateFlow<CrashNotice?> = _crash.asStateFlow()
 
-    class CrashNotice(val details: String, val radioTurnedOff: Boolean)
+    class CrashNotice(val details: String, val radioTurnedOff: Boolean, val survived: Boolean = false)
 
     /** Set while the engine waits for the crash dialog to be answered (see init). */
     private var held = false
@@ -85,7 +85,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val radioOn = s.mesh || s.network.bluetooth
             val turnOff = radioOn && (report.radio || report.atStartup)
             if (turnOff) settingsRepository.update { copy(mesh = false, network = network.copy(bluetooth = false)) }
-            _crash.value = CrashNotice(report.details, turnOff)
+            _crash.value = CrashNotice(report.details, turnOff, report.survived)
             // A crash at start-up would likely close the app again within seconds, before the details can be copied:
             // the engine waits until the dialog is answered.
             held = report.atStartup && engine == null

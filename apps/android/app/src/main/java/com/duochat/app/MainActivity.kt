@@ -350,13 +350,14 @@ private fun RootScreen(viewModel: AppViewModel) {
     if (!locked) crash?.let { notice ->
         androidx.compose.material3.AlertDialog(
             onDismissRequest = viewModel::dismissCrash,
-            title = { androidx.compose.material3.Text("DuoCord closed unexpectedly") },
+            title = { androidx.compose.material3.Text(if (notice.survived) "DuoCord hit an error" else "DuoCord closed unexpectedly") },
             text = {
                 androidx.compose.foundation.layout.Column {
                     androidx.compose.material3.Text(
                         (if (notice.radioTurnedOff) "Bluetooth was turned off so the app could open. You can turn it back on in Settings. " else "") +
                             "Copy the details (or take a screenshot) and send them to whoever builds the app, so it can be fixed. " +
-                            "They contain no messages or names. The app starts once you close this.",
+                            "They contain no messages or names." +
+                            (if (notice.survived) " The app kept running." else " The app starts once you close this."),
                     )
                     // The details themselves, readable and scrollable, so a screenshot works even if copying does not.
                     androidx.compose.foundation.text.selection.SelectionContainer {
