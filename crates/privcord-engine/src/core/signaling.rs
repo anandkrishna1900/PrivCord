@@ -194,7 +194,11 @@ impl Core {
 
     /// A blob on our own mailbox (from the service, or handed over by a contact).
     pub(super) fn handle_own_blob(&mut self, blob: SealedBlob) {
-        if !self.sealed.seen.first_time(&blob.sig) {
+        if !self
+            .sealed
+            .seen
+            .first_time(&privcord_crypto::seal::replay_id(&blob))
+        {
             return;
         }
         let (Ok(from), Some(own), true) = (

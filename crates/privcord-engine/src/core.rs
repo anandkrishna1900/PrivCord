@@ -89,6 +89,8 @@ const KV_GROUP_ONLY: &str = "settings.group_only";
 const KV_GROUPS: &str = "groups.v1";
 const KV_CHANNELS: &str = "channels.v1";
 const KV_CHANNEL_PEOPLE: &str = "channel.people.v1";
+/// Channel authors whose names we remember at most.
+const MAX_CHANNEL_PEOPLE: usize = 2000;
 
 /// Everything the engine reaches the outside world through.
 pub struct Ports {
@@ -475,6 +477,16 @@ impl Core {
         let contact = ContactCard::decode(card_text).ok_or(ErrorCode::InvalidCard)?;
         if contact.uid == own {
             return Err(ErrorCode::OwnCard);
+        }
+        // A card proves its signing key, not the key the uid comes from: anyone can pair someone else's uid with their
+        // own signing key. A friend's keys never change (they come from the recovery phrase), so a card that would
+        // replace the signing key we already hold for this uid is a forgery.
+        if self
+            .contacts
+            .get(&contact.uid)
+            .is_some_and(|c| c.contact.card.sign != contact.card.sign)
+        {
+            return Err(ErrorCode::InvalidCard);
         }
         // Meeting someone again never lowers trust.
         let trust = match self.contacts.get(&contact.uid) {
@@ -2632,11 +2644,19 @@ impl Core {
         if self.messages.contains_key(&id)
             || Some(&m.contact.uid) == self.uid.as_ref()
             || self.muted.contains(&m.contact.uid)
+            // Posting as one of our friends with another signing key (a card can name someone else's uid).
+            || self
+                .contacts
+                .get(&m.contact.uid)
+                .is_some_and(|c| c.contact.card.sign != m.contact.card.sign)
         {
             return;
         }
         if let Some(n) = m.contact.card.name.as_ref().filter(|n| !n.is_empty()) {
-            if self.channel_people.get(&m.contact.uid) != Some(n) {
+            // Anyone can post under fresh identities: the name list stops growing at a cap (they show unnamed).
+            let room = self.channel_people.len() < MAX_CHANNEL_PEOPLE
+                || self.channel_people.contains_key(&m.contact.uid);
+            if room && self.channel_people.get(&m.contact.uid) != Some(n) {
                 self.channel_people.insert(m.contact.uid.clone(), n.clone());
                 let list: Vec<(&str, &String)> = self
                     .channel_people

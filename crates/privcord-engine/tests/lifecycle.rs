@@ -1042,3 +1042,55 @@ fn after_a_link_offline_messages_are_sealed_post_quantum_to_one_time_keys_and_v1
         "the downgrade is refused"
     );
 }
+
+#[test]
+fn answers_to_our_words_cannot_flood_the_request_list() {
+    use privcord_crypto::{
+        identity::Identity,
+        invite::{derive_invite, parse_invite_words, seal_invite, InviteKind},
+    };
+    let clock = FakeClock::at(1_700_000_000_000);
+    let mut a = node("alice", &clock);
+    a.transport.set_signaling(true);
+    let (words, _) = a.core.create_invite().unwrap();
+    let rv = derive_invite(&parse_invite_words(&words).unwrap()).unwrap();
+    // Someone who learned the words answers under 25 throwaway identities.
+    let mut entropy = SeededEntropy::new("flood");
+    for _ in 0..25 {
+        let id = Identity::generate(&mut entropy).unwrap();
+        let blob = seal_invite(&rv, InviteKind::Reply, &id, None, &mut entropy).unwrap();
+        a.core.signal_blob(&rv.mailbox, &blob.encode());
+    }
+    assert_eq!(a.core.snapshot().requests.len(), 20);
+}
+
+#[test]
+fn a_card_that_pairs_a_friends_uid_with_another_signing_key_is_refused() {
+    use privcord_crypto::{card::ContactCard, identity::Identity};
+    let clock = FakeClock::at(1_700_000_000_000);
+    let mut a = node("forge-a", &clock);
+    let mut b = node("forge-b", &clock);
+    befriend(&mut a, &mut b);
+    // Eve signs Bob's public ECDH key with her own signing key: the card verifies and its uid is Bob's.
+    let eve = Identity::generate(&mut SeededEntropy::new("forge-eve")).unwrap();
+    let bob = ContactCard::decode(&b.core.own_card(Some("B")).unwrap()).unwrap();
+    let payload = privcord_crypto::identity::identity_proof_payload(&bob.card.dh).unwrap();
+    let forged = ContactCard {
+        sign: eve.sign_public(),
+        dh: bob.card.dh.clone(),
+        proof: privcord_domain::codec::encode(&eve.sign_message(&payload)),
+        name: Some("B".into()),
+    }
+    .encode()
+    .unwrap();
+    assert_eq!(ContactCard::decode(&forged).unwrap().uid, b.uid);
+    assert_eq!(
+        a.core.add_contact(&forged, ContactTrust::Verified),
+        Err(ErrorCode::InvalidCard)
+    );
+    // Bob's real card is still the one Alice holds.
+    assert!(a
+        .core
+        .add_contact(&b.core.own_card(Some("B")).unwrap(), ContactTrust::Verified)
+        .is_ok());
+}

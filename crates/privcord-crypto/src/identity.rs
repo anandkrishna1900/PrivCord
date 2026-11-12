@@ -169,7 +169,8 @@ pub(crate) fn thumb(jwk: &PublicJwk) -> serde_json::Value {
     json!({ "kty": jwk.kty, "crv": jwk.crv, "x": jwk.x, "y": jwk.y })
 }
 
-fn identity_proof_payload(dh: &PublicJwk) -> Result<Vec<u8>, CryptoError> {
+/// What an identity proof signs: the ECDH key it binds to the signing key.
+pub fn identity_proof_payload(dh: &PublicJwk) -> Result<Vec<u8>, CryptoError> {
     Ok(format!("{IDENTITY_PROOF_PREFIX}{}", canonical_json(&thumb(dh))?).into_bytes())
 }
 
