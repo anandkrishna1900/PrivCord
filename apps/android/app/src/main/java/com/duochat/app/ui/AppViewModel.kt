@@ -65,7 +65,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     class CrashNotice(val details: String, val radioTurnedOff: Boolean)
 
-    fun dismissCrash() { _crash.value = null }
+    /** Set while the engine waits for the crash dialog to be answered (see init). */
+    private var held = false
+
+    fun dismissCrash() {
+        _crash.value = null
+        com.duochat.app.CrashLog.clear(getApplication())
+        if (held) {
+            held = false
+            attachEngine()
+        }
+    }
 
     init {
         // A crash in Bluetooth, or any crash while starting, would happen again on this launch: Bluetooth and the mesh
@@ -76,8 +86,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val turnOff = radioOn && (report.radio || report.atStartup)
             if (turnOff) settingsRepository.update { copy(mesh = false, network = network.copy(bluetooth = false)) }
             _crash.value = CrashNotice(report.details, turnOff)
+            // A crash at start-up would likely close the app again within seconds, before the details can be copied:
+            // the engine waits until the dialog is answered.
+            held = report.atStartup && engine == null
         }
-        attachEngine()
+        if (!held) attachEngine()
         com.duochat.app.engine.EngineHost.watchNetwork(application)
     }
 

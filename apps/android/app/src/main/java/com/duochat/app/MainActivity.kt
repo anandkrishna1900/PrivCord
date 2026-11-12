@@ -22,6 +22,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
@@ -347,10 +351,24 @@ private fun RootScreen(viewModel: AppViewModel) {
             onDismissRequest = viewModel::dismissCrash,
             title = { androidx.compose.material3.Text("DuoCord closed unexpectedly") },
             text = {
-                androidx.compose.material3.Text(
-                    (if (notice.radioTurnedOff) "Bluetooth was turned off so the app could open. You can turn it back on in Settings. " else "") +
-                        "Copy the details and send them to whoever builds the app, so it can be fixed. They contain no messages or names.",
-                )
+                androidx.compose.foundation.layout.Column {
+                    androidx.compose.material3.Text(
+                        (if (notice.radioTurnedOff) "Bluetooth was turned off so the app could open. You can turn it back on in Settings. " else "") +
+                            "Copy the details (or take a screenshot) and send them to whoever builds the app, so it can be fixed. " +
+                            "They contain no messages or names. The app starts once you close this.",
+                    )
+                    // The details themselves, readable and scrollable, so a screenshot works even if copying does not.
+                    androidx.compose.foundation.text.selection.SelectionContainer {
+                        androidx.compose.material3.Text(
+                            notice.details.take(4000),
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                            modifier = Modifier
+                                .padding(top = 12.dp)
+                                .heightIn(max = 220.dp)
+                                .verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                        )
+                    }
+                }
             },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {

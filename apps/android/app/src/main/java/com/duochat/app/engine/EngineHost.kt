@@ -3,6 +3,7 @@ package com.duochat.app.engine
 import android.app.Application
 import android.net.ConnectivityManager
 import android.net.Network
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -24,7 +25,17 @@ object EngineHost {
     /** A fresh scope for a new engine (same dispatcher the screen's scope used). */
     fun newScope(): CoroutineScope {
         scope?.cancel()
-        return CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate).also { scope = it }
+        return CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + survive).also { scope = it }
+    }
+
+    /**
+     * An error in one piece of the engine's background work (one event, one link) must not close the whole app: it is
+     * written down (shown on the next launch, to copy) and the rest keeps running.
+     */
+    @Volatile var app: Application? = null
+    private val survive = CoroutineExceptionHandler { _, error ->
+        android.util.Log.e("EngineHost", "background error", error)
+        app?.let { com.duochat.app.CrashLog.record(it, error, "engine (app kept running)") }
     }
 
     /** Stops the engine and everything it launched. */
