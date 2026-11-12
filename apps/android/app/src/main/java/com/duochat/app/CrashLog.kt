@@ -53,6 +53,9 @@ object CrashLog {
             if (!native && info.reason != android.app.ApplicationExitInfo.REASON_CRASH) return
             val prefs = context.getSharedPreferences("crashlog", Context.MODE_PRIVATE)
             if (prefs.getLong("seenExit", 0L) >= info.timestamp) return
+            // Android keeps exit records across updates: a crash of the version this one replaced is not ours to report.
+            val installed = context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime
+            if (info.timestamp < installed) return
             prefs.edit().putLong("seenExit", info.timestamp).commit()
             // A Java crash was already written by the handler, with its full stack trace.
             if (!native && file(context).exists()) return
