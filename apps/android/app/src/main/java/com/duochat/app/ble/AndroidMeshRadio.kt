@@ -130,7 +130,7 @@ class AndroidMeshRadio(private val context: Context) : MeshRadio {
         val l = links[link]
         if (l == null || !l.ready) return false
         val chunks = try {
-            BleFraming.chunkJson(json, (l.mtu - BleConstants.ATT_OVERHEAD).coerceAtLeast(BleFraming.MIN_CHUNK_BYTES))
+            BleFraming.chunkJson(json, BleConstants.chunkBytes(l.mtu))
         } catch (_: BleFramingException) {
             return false
         }

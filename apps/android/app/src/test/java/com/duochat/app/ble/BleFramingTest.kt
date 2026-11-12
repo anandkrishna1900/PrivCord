@@ -135,4 +135,14 @@ class BleFramingTest {
         assertEquals(3, BleTag.acceptTags(secret, 900_000).size)
         assertTrue(hex(BleTag.tag(ByteArray(32), 1)) != list.getJSONObject(1).getString("tagHex"))
     }
+
+    @Test
+    fun chunksNeverExceedTheLargestAttributeAndroidAccepts() {
+        // A phone that grants the requested 517-byte MTU must still get chunks of at most 512 bytes.
+        assertEquals(512, BleConstants.chunkBytes(517))
+        assertEquals(244, BleConstants.chunkBytes(247))
+        assertEquals(20, BleConstants.chunkBytes(BleConstants.DEFAULT_MTU))
+        val json = "{\"t\":\"" + "x".repeat(5000) + "\"}"
+        for (chunk in BleFraming.chunkJson(json, BleConstants.chunkBytes(517))) assertTrue(chunk.size <= 512)
+    }
 }
