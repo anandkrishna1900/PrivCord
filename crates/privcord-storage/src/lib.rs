@@ -155,10 +155,113 @@ fn init(
     Ok(())
 }
 
+/// The first 16 bytes of every unencrypted SQLite file. An encrypted (SQLCipher) file starts with random bytes instead.
+const PLAIN_HEADER: &[u8; 16] = b"SQLite format 3\0";
+
+fn is_plain_sqlite(path: &Path) -> bool {
+    use std::io::Read;
+    let mut head = [0u8; 16];
+    std::fs::File::open(path)
+        .and_then(|mut f| f.read_exact(&mut head))
+        .is_ok_and(|()| &head == PLAIN_HEADER)
+}
+
+/// SQLCipher's raw-key form: the 256-bit key is used as it is (no password stretching; it is already random).
+fn key_pragma(key: &[u8; 32]) -> zeroize::Zeroizing<String> {
+    let hex: String = key.iter().map(|b| format!("{b:02x}")).collect();
+    zeroize::Zeroizing::new(format!("x'{hex}'"))
+}
+
+fn sibling(path: &Path, suffix: &str) -> std::path::PathBuf {
+    let mut name = path
+        .file_name()
+        .map(|n| n.to_os_string())
+        .unwrap_or_default();
+    name.push(suffix);
+    path.with_file_name(name)
+}
+
+/// Turn an unencrypted database file into an encrypted one, in place. The encrypted copy is written beside it and then
+/// renamed over it (atomic), so an interruption leaves either the old file or the new one, never half of each. The
+/// old journal files and pre-migration copies, which may hold readable pages, are removed.
+fn encrypt_in_place(path: &Path, key: &[u8; 32]) -> Result<(), StorageError> {
+    let tmp = sibling(path, ".encrypting");
+    let _ = std::fs::remove_file(&tmp);
+    {
+        let conn = Connection::open(path).map_err(unavailable)?;
+        conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
+            .map_err(unavailable)?;
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .map_err(unavailable)?;
+        let target = tmp.to_str().ok_or(StorageError::Unavailable)?;
+        conn.execute(
+            "ATTACH DATABASE ?1 AS encrypted KEY ?2",
+            rusqlite::params![target, &*key_pragma(key)],
+        )
+        .map_err(unavailable)?;
+        conn.query_row("SELECT sqlcipher_export('encrypted')", [], |_| Ok(()))
+            .map_err(unavailable)?;
+        conn.execute_batch(&format!("PRAGMA encrypted.user_version = {version}"))
+            .map_err(unavailable)?;
+        conn.execute_batch("DETACH DATABASE encrypted")
+            .map_err(unavailable)?;
+    }
+    std::fs::rename(&tmp, path).map_err(unavailable)?;
+    for suffix in ["-wal", "-shm", "-journal"] {
+        let _ = std::fs::remove_file(sibling(path, suffix));
+    }
+    if let (Some(dir), Some(name)) = (path.parent(), path.file_name().and_then(|n| n.to_str())) {
+        let prefix = format!("{name}.bak-v");
+        if let Ok(entries) = std::fs::read_dir(if dir.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            dir
+        }) {
+            for e in entries.flatten() {
+                if e.file_name()
+                    .to_str()
+                    .is_some_and(|n| n.starts_with(&prefix))
+                {
+                    let _ = std::fs::remove_file(e.path());
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 impl SqliteStorage {
-    /// Open (and migrate) a database file.
+    /// Open (and migrate) an unencrypted database file. Only for tests and one-off tools: the apps use
+    /// [`Self::open_encrypted`].
     pub fn open(path: &Path) -> Result<Self, StorageError> {
         Self::open_with(path, MIGRATIONS)
+    }
+
+    /// Open (and migrate) the database encrypted with `key` (SQLCipher: AES-256 over every page, including indexes,
+    /// the journal and free pages). An unencrypted database from an older version is encrypted in place first.
+    /// A file this key does not open gives [`StorageError::Corrupt`].
+    pub fn open_encrypted(path: &Path, key: &[u8; 32]) -> Result<Self, StorageError> {
+        if is_plain_sqlite(path) {
+            encrypt_in_place(path, key)?;
+        }
+        let conn = Connection::open(path).map_err(unavailable)?;
+        conn.pragma_update(None, "key", &*key_pragma(key))
+            .map_err(unavailable)?;
+        // The first read is where a wrong key shows ("file is not a database").
+        conn.query_row("SELECT count(*) FROM sqlite_master", [], |r| {
+            r.get::<_, i64>(0)
+        })
+        .map_err(|_| StorageError::Corrupt)?;
+        init(&conn, MIGRATIONS, Some(path))?;
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
+    }
+
+    /// Is there an encrypted database at `path` (one that needs its key)?
+    pub fn is_encrypted_file(path: &Path) -> bool {
+        std::fs::metadata(path).is_ok_and(|m| m.len() > 0) && !is_plain_sqlite(path)
     }
 
     #[doc(hidden)]

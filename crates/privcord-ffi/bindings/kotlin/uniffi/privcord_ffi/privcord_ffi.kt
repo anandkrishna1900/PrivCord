@@ -672,6 +672,12 @@ internal interface UniffiCallbackInterfaceSecureStoreCallbacksMethod1 : com.sun.
 internal interface UniffiCallbackInterfaceSecureStoreCallbacksMethod2 : com.sun.jna.Callback {
     fun callback(`uniffiHandle`: Long,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,)
 }
+internal interface UniffiCallbackInterfaceSecureStoreCallbacksMethod3 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,)
+}
+internal interface UniffiCallbackInterfaceSecureStoreCallbacksMethod4 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`key`: RustBuffer.ByValue,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,)
+}
 internal interface UniffiCallbackInterfaceTransportCallbacksMethod0 : com.sun.jna.Callback {
     fun callback(`uniffiHandle`: Long,`peer`: RustBuffer.ByValue,`frame`: RustBuffer.ByValue,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,)
 }
@@ -741,24 +747,30 @@ internal open class UniffiVTableCallbackInterfaceNotifierCallbacks(
     }
 
 }
-@Structure.FieldOrder("loadIdentity", "saveIdentity", "deleteIdentity", "uniffiFree")
+@Structure.FieldOrder("loadIdentity", "saveIdentity", "deleteIdentity", "loadDatabaseKey", "saveDatabaseKey", "uniffiFree")
 internal open class UniffiVTableCallbackInterfaceSecureStoreCallbacks(
     @JvmField internal var `loadIdentity`: UniffiCallbackInterfaceSecureStoreCallbacksMethod0? = null,
     @JvmField internal var `saveIdentity`: UniffiCallbackInterfaceSecureStoreCallbacksMethod1? = null,
     @JvmField internal var `deleteIdentity`: UniffiCallbackInterfaceSecureStoreCallbacksMethod2? = null,
+    @JvmField internal var `loadDatabaseKey`: UniffiCallbackInterfaceSecureStoreCallbacksMethod3? = null,
+    @JvmField internal var `saveDatabaseKey`: UniffiCallbackInterfaceSecureStoreCallbacksMethod4? = null,
     @JvmField internal var `uniffiFree`: UniffiCallbackInterfaceFree? = null,
 ) : Structure() {
     class UniffiByValue(
         `loadIdentity`: UniffiCallbackInterfaceSecureStoreCallbacksMethod0? = null,
         `saveIdentity`: UniffiCallbackInterfaceSecureStoreCallbacksMethod1? = null,
         `deleteIdentity`: UniffiCallbackInterfaceSecureStoreCallbacksMethod2? = null,
+        `loadDatabaseKey`: UniffiCallbackInterfaceSecureStoreCallbacksMethod3? = null,
+        `saveDatabaseKey`: UniffiCallbackInterfaceSecureStoreCallbacksMethod4? = null,
         `uniffiFree`: UniffiCallbackInterfaceFree? = null,
-    ): UniffiVTableCallbackInterfaceSecureStoreCallbacks(`loadIdentity`,`saveIdentity`,`deleteIdentity`,`uniffiFree`,), Structure.ByValue
+    ): UniffiVTableCallbackInterfaceSecureStoreCallbacks(`loadIdentity`,`saveIdentity`,`deleteIdentity`,`loadDatabaseKey`,`saveDatabaseKey`,`uniffiFree`,), Structure.ByValue
 
    internal fun uniffiSetValue(other: UniffiVTableCallbackInterfaceSecureStoreCallbacks) {
         `loadIdentity` = other.`loadIdentity`
         `saveIdentity` = other.`saveIdentity`
         `deleteIdentity` = other.`deleteIdentity`
+        `loadDatabaseKey` = other.`loadDatabaseKey`
+        `saveDatabaseKey` = other.`saveDatabaseKey`
         `uniffiFree` = other.`uniffiFree`
     }
 
@@ -797,6 +809,10 @@ internal open class UniffiVTableCallbackInterfaceTransportCallbacks(
     }
 
 }
+
+
+
+
 
 
 
@@ -1202,6 +1218,10 @@ internal interface UniffiLib : Library {
     ): Byte
     fun uniffi_privcord_ffi_fn_method_securestorecallbacks_delete_identity(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_privcord_ffi_fn_method_securestorecallbacks_load_database_key(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_privcord_ffi_fn_method_securestorecallbacks_save_database_key(`ptr`: Pointer,`key`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
     fun uniffi_privcord_ffi_fn_clone_transportcallbacks(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Pointer
     fun uniffi_privcord_ffi_fn_free_transportcallbacks(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1476,6 +1496,10 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_privcord_ffi_checksum_method_securestorecallbacks_delete_identity(
     ): Short
+    fun uniffi_privcord_ffi_checksum_method_securestorecallbacks_load_database_key(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_securestorecallbacks_save_database_key(
+    ): Short
     fun uniffi_privcord_ffi_checksum_method_transportcallbacks_send(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_transportcallbacks_send_raw(
@@ -1708,6 +1732,12 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_securestorecallbacks_delete_identity() != 54833.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_securestorecallbacks_load_database_key() != 12472.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_securestorecallbacks_save_database_key() != 46720.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_transportcallbacks_send() != 17330.toShort()) {
@@ -4286,6 +4316,13 @@ public interface SecureStoreCallbacks {
     
     fun `deleteIdentity`()
     
+    /**
+     * The 32-byte key the database is encrypted with, in its own slot (deleting the identity must not lose it).
+     */
+    fun `loadDatabaseKey`(): kotlin.ByteArray?
+    
+    fun `saveDatabaseKey`(`key`: kotlin.ByteArray): kotlin.Boolean
+    
     companion object
 }
 
@@ -4409,6 +4446,33 @@ open class SecureStoreCallbacksImpl: Disposable, AutoCloseable, SecureStoreCallb
     
 
     
+    /**
+     * The 32-byte key the database is encrypted with, in its own slot (deleting the identity must not lose it).
+     */override fun `loadDatabaseKey`(): kotlin.ByteArray? {
+            return FfiConverterOptionalByteArray.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_securestorecallbacks_load_database_key(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    override fun `saveDatabaseKey`(`key`: kotlin.ByteArray): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_securestorecallbacks_save_database_key(
+        it, FfiConverterByteArray.lower(`key`),_status)
+}
+    }
+    )
+    }
+    
+
+    
 
     
     
@@ -4453,6 +4517,29 @@ internal object uniffiCallbackInterfaceSecureStoreCallbacks {
             uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
         }
     }
+    internal object `loadDatabaseKey`: UniffiCallbackInterfaceSecureStoreCallbacksMethod3 {
+        override fun callback(`uniffiHandle`: Long,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeSecureStoreCallbacks.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`loadDatabaseKey`(
+                )
+            }
+            val writeReturn = { value: kotlin.ByteArray? -> uniffiOutReturn.setValue(FfiConverterOptionalByteArray.lower(value)) }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
+    internal object `saveDatabaseKey`: UniffiCallbackInterfaceSecureStoreCallbacksMethod4 {
+        override fun callback(`uniffiHandle`: Long,`key`: RustBuffer.ByValue,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeSecureStoreCallbacks.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`saveDatabaseKey`(
+                    FfiConverterByteArray.lift(`key`),
+                )
+            }
+            val writeReturn = { value: kotlin.Boolean -> uniffiOutReturn.setValue(FfiConverterBoolean.lower(value)) }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
 
     internal object uniffiFree: UniffiCallbackInterfaceFree {
         override fun callback(handle: Long) {
@@ -4464,6 +4551,8 @@ internal object uniffiCallbackInterfaceSecureStoreCallbacks {
         `loadIdentity`,
         `saveIdentity`,
         `deleteIdentity`,
+        `loadDatabaseKey`,
+        `saveDatabaseKey`,
         uniffiFree,
     )
 

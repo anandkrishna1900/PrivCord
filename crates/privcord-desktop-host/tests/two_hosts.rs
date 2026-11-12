@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 
 #[derive(Default)]
-struct Keys(Mutex<Option<Vec<u8>>>);
+struct Keys(Mutex<Option<Vec<u8>>>, Mutex<Option<Vec<u8>>>);
 impl SecureStoreCallbacks for Keys {
     fn load_identity(&self) -> Option<Vec<u8>> {
         self.0.lock().unwrap().clone()
@@ -24,6 +24,14 @@ impl SecureStoreCallbacks for Keys {
     }
     fn delete_identity(&self) {
         *self.0.lock().unwrap() = None;
+    }
+    // Keeps the database key the engine generates, in this store's own slot (like the OS key store would).
+    fn load_database_key(&self) -> Option<Vec<u8>> {
+        self.1.lock().unwrap().clone()
+    }
+    fn save_database_key(&self, key: Vec<u8>) -> bool {
+        *self.1.lock().unwrap() = Some(key);
+        true
     }
 }
 

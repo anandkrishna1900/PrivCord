@@ -127,6 +127,9 @@ private fun QrScannerScreen(prompt: String, onResult: (String) -> Unit, onClose:
         ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY).build()
     }
     val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
+    // The camera starts in the background; if the scanner closed meanwhile, it must not start (and stay on) anyway.
+    val alive = remember { AtomicBoolean(true) }
+    var analysisCase by remember { mutableStateOf<ImageAnalysis?>(null) }
 
     fun found(text: String) {
         if (!done.compareAndSet(false, true)) return
@@ -146,6 +149,10 @@ private fun QrScannerScreen(prompt: String, onResult: (String) -> Unit, onClose:
 
     DisposableEffect(Unit) {
         onDispose {
+            alive.set(false)
+            // Stop frames first, then let go of the camera, then end the worker thread (in that order, so no frame is
+            // handed to a thread that is gone).
+            runCatching { analysisCase?.clearAnalyzer() }
             runCatching { ProcessCameraProvider.getInstance(context).get().unbindAll() }
             analysisExecutor.shutdown()
         }
@@ -166,7 +173,12 @@ private fun QrScannerScreen(prompt: String, onResult: (String) -> Unit, onClose:
                         val view = this
                         val providerFuture = ProcessCameraProvider.getInstance(ctx)
                         providerFuture.addListener({
-                            val provider = runCatching { providerFuture.get() }.getOrNull() ?: return@addListener
+                            if (!alive.get()) return@addListener
+                            val provider = runCatching { providerFuture.get() }.getOrNull()
+                            if (provider == null) {
+                                hint = "The camera could not start. Try the gallery button, or type the six words instead."
+                                return@addListener
+                            }
                             val preview = Preview.Builder().build().also { it.surfaceProvider = view.surfaceProvider }
                             val analysis = ImageAnalysis.Builder()
                                 .setResolutionSelector(
@@ -177,9 +189,32 @@ private fun QrScannerScreen(prompt: String, onResult: (String) -> Unit, onClose:
                                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                                 .build()
                             analysis.setAnalyzer(analysisExecutor) { image -> analyze(image)?.let { text -> view.post { found(text) } } }
+                            analysisCase = analysis
+                            // The back camera when there is one; a tablet or laptop-style device may only have a front one.
+                            val selector = when {
+                                runCatching { provider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA) }.getOrDefault(false) -> CameraSelector.DEFAULT_BACK_CAMERA
+                                runCatching { provider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA) }.getOrDefault(false) -> CameraSelector.DEFAULT_FRONT_CAMERA
+                                else -> null
+                            }
+                            if (selector == null) {
+                                hint = "This device has no camera. Use the gallery button, or type the six words instead."
+                                return@addListener
+                            }
                             try {
                                 provider.unbindAll()
-                                camera = provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis, capture)
+                                val bound = provider.bindToLifecycle(lifecycleOwner, selector, preview, analysis, capture)
+                                camera = bound
+                                // Say why the picture is black instead of leaving the user guessing.
+                                bound.cameraInfo.cameraState.observe(lifecycleOwner) { state ->
+                                    hint = when (state.error?.code) {
+                                        null -> hint
+                                        androidx.camera.core.CameraState.ERROR_CAMERA_IN_USE, androidx.camera.core.CameraState.ERROR_MAX_CAMERAS_IN_USE ->
+                                            "Another app is using the camera. Close it, or use the gallery button."
+                                        androidx.camera.core.CameraState.ERROR_CAMERA_DISABLED -> "The camera is turned off on this phone (a policy or privacy setting)."
+                                        else -> "The camera stopped. Close the scanner and open it again."
+                                    }
+                                }
+                                if (!alive.get()) provider.unbindAll()
                             } catch (e: Exception) {
                                 hint = "The camera could not start. Try the gallery button, or type the six words instead."
                             }

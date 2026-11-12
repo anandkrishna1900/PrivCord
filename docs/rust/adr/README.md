@@ -14,3 +14,4 @@ Each record gives context, options considered, the decision, consequences and wh
 | [008](ADR-008-adapters.md) | WebRTC and Bluetooth stay platform adapters |
 | [009](ADR-009-x3dh-ratchet.md) | X3DH and the Double Ratchet are not ported until the apps use them |
 | [010](ADR-010-unsafe-and-errors.md) | No `unsafe` outside the FFI crate; typed errors; no panics in library code |
+| [011](ADR-011-protocol-v2.md) | Protocol v2: post-quantum hybrid links with a per-frame ratchet, one-time keys for offline messages, encrypted storage |

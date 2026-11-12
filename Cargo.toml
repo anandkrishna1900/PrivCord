@@ -44,10 +44,12 @@ aes-gcm = "0.10"
 p256 = { version = "0.14", features = ["ecdsa", "ecdh", "arithmetic"] }
 k256 = { version = "0.14", default-features = false, features = ["schnorr", "arithmetic", "std"] }
 bip39 = "3"
+# ML-KEM-768 (FIPS 203), post-quantum half of the hybrid key exchange; driven with seeds from our own entropy.
+ml-kem = { version = "0.2", features = ["deterministic"] }
 getrandom = "0.2"
 unicode-normalization = "0.1"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "time", "macros"] }
-rusqlite = { version = "0.41", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled-sqlcipher-vendored-openssl"] }
 proptest = "1"
 privcord-domain = { path = "crates/privcord-domain" }
 privcord-crypto = { path = "crates/privcord-crypto" }

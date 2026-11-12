@@ -168,15 +168,11 @@ fn a_file_arrives_intact_is_kept_and_acknowledged() {
 }
 
 #[test]
-fn a_corrupted_file_is_refused_and_never_stored() {
+fn a_file_frame_tampered_in_transit_is_refused_and_never_stored() {
     use privcord_engine::LinkSecurity;
     let clock = FakeClock::at(1_700_000_000_000);
     let (mut a, mut b) = (node("alice", &clock), node("bob", &clock));
     befriend(&mut a, &mut b);
-    let id = a
-        .core
-        .send_file(&b.uid, "pic.png", "image/png", sample(30_000), None)
-        .unwrap();
     let (au, bu) = (a.uid.clone(), b.uid.clone());
     a.transport.set_connected(&bu, true);
     b.transport.set_connected(&au, true);
@@ -194,7 +190,27 @@ fn a_corrupted_file_is_refused_and_never_stored() {
             LinkSecurity::TransportEncrypted,
         )
         .unwrap();
-    // Plain frames on an already-encrypted link: change one byte of one chunk in transit.
+    // Connect fully first (handshakes and the key handover), then send the file: the first big frame after that is a
+    // piece of it.
+    loop {
+        let (from_a, from_b) = (a.transport.drain(), b.transport.drain());
+        if from_a.is_empty() && from_b.is_empty() {
+            break;
+        }
+        for (_, f) in from_a {
+            b.core.frame_received(&au, &f);
+        }
+        for (_, f) in from_b {
+            a.core.frame_received(&bu, &f);
+        }
+    }
+    let id = a
+        .core
+        .send_file(&b.uid, "pic.png", "image/png", sample(30_000), None)
+        .unwrap();
+    // Protocol v2: every frame is inside the post-quantum channel, so a byte changed in transit makes the frame fail to
+    // decrypt; the chunk is refused whole and can never be stored as part of the file. (The file's own hash check
+    // against a dishonest sender is covered by the domain crate's file tests.)
     let mut tampered = false;
     loop {
         let from_a = a.transport.drain();
@@ -204,10 +220,16 @@ fn a_corrupted_file_is_refused_and_never_stored() {
         }
         for (_, f) in from_a {
             let mut v: serde_json::Value = serde_json::from_str(&f).unwrap();
-            if !tampered && v["kind"] == "file_chunk" && v["index"] == 1 {
-                let data = v["data"].as_str().unwrap().to_owned();
+            assert_ne!(
+                v["kind"], "file_chunk",
+                "no file chunk travels outside the channel"
+            );
+            // The first big frame is a file chunk.
+            if !tampered && v["kind"] == "pq" && v["ct"].as_str().is_some_and(|c| c.len() > 10_000)
+            {
+                let data = v["ct"].as_str().unwrap().to_owned();
                 let first = if data.starts_with('A') { "B" } else { "A" };
-                v["data"] = serde_json::Value::String(format!("{first}{}", &data[1..]));
+                v["ct"] = serde_json::Value::String(format!("{first}{}", &data[1..]));
                 tampered = true;
             }
             b.core.frame_received(&au, &v.to_string());
@@ -219,13 +241,9 @@ fn a_corrupted_file_is_refused_and_never_stored() {
     assert!(tampered);
     assert!(
         file_of(&b, &id).is_none(),
-        "a file that fails its hash is not stored"
+        "a file with a refused chunk is not stored"
     );
-    assert_eq!(
-        state_of(&a, &id),
-        DeliveryState::Failed,
-        "the sender is told it was refused"
-    );
+    assert_ne!(state_of(&a, &id), DeliveryState::Delivered);
 }
 
 #[test]

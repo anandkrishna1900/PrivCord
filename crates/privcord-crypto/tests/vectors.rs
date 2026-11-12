@@ -21,7 +21,7 @@ use privcord_crypto::{
     },
     rng::{Entropy, SeededEntropy},
     safety::derive_safety_number,
-    seal::{mailbox_for, open, seal, signed_part, verify_blob_signature},
+    seal::{mailbox_for, open, open_from_stranger, seal, signed_part, verify_blob_signature},
     CryptoError,
 };
 use privcord_domain::{blob::SealedBlob, codec};
@@ -682,4 +682,40 @@ fn nostr_events_match_typescript_and_the_relay_rules_hold() {
         now
     )
     .is_none());
+}
+
+#[test]
+fn a_friend_request_opens_only_from_the_identity_on_its_card() {
+    let (ann, bob, eve) = people();
+    let bob_uid = bob.uid().unwrap();
+    let mut rng = SeededEntropy::new("hello");
+    let ann_card = ContactCard::of(&ann, Some("Ann"))
+        .unwrap()
+        .encode()
+        .unwrap();
+    // Ann added Bob from his QR code; Bob does not know her yet.
+    let hello = json!({ "t": "hello", "card": ann_card });
+    let blob = seal(&ann, &bob_uid, &bob.dh_public(), &hello, &mut rng).unwrap();
+    let (contact, payload) = open_from_stranger(&blob, &bob_uid, &bob).unwrap();
+    assert_eq!(contact.uid, ann.uid().unwrap());
+    assert_eq!(payload["t"], "hello");
+
+    // Eve signs her own request but puts Ann's card in it: the card is not the sender, so it is refused.
+    let forged = seal(&eve, &bob_uid, &bob.dh_public(), &hello, &mut rng).unwrap();
+    assert!(open_from_stranger(&forged, &bob_uid, &bob).is_none());
+    // Eve copies Ann's blob and claims to be Ann: the signature no longer matches what was signed.
+    let mut relabelled = blob.clone();
+    relabelled.sig = forged.sig.clone();
+    assert!(open_from_stranger(&relabelled, &bob_uid, &bob).is_none());
+    // Not for Bob, or no card inside: refused.
+    assert!(open_from_stranger(&blob, &eve.uid().unwrap(), &eve).is_none());
+    let bare = seal(
+        &ann,
+        &bob_uid,
+        &bob.dh_public(),
+        &json!({ "t": "hello" }),
+        &mut rng,
+    )
+    .unwrap();
+    assert!(open_from_stranger(&bare, &bob_uid, &bob).is_none());
 }

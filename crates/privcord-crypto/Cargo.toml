@@ -26,6 +26,7 @@ aes-gcm.workspace = true
 p256.workspace = true
 k256.workspace = true
 bip39.workspace = true
+ml-kem.workspace = true
 getrandom.workspace = true
 unicode-normalization.workspace = true
 

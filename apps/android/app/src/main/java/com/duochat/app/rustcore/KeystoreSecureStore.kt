@@ -56,4 +56,43 @@ class KeystoreSecureStore(context: Context, private val slot: String) : SecureSt
         prefs.edit().remove("identity").commit()
         runCatching { KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(alias) }
     }
+
+    /*
+     * The database key (SQLCipher) lives in its own Keystore key and preference, so deleting the identity can never
+     * make the database unreadable. Only wiping the app's data (or the emergency erase, which deletes the database
+     * too) removes it.
+     */
+    private val dbAlias = "${alias}_database"
+
+    private fun dbKey(): SecretKey {
+        val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (ks.getKey(dbAlias, null) as? SecretKey)?.let { return it }
+        val gen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        gen.init(
+            KeyGenParameterSpec.Builder(dbAlias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256)
+                .build(),
+        )
+        return gen.generateKey()
+    }
+
+    override fun loadDatabaseKey(): ByteArray? {
+        val stored = prefs.getString("database", null) ?: return null
+        return runCatching {
+            val raw = Base64.decode(stored, Base64.NO_WRAP)
+            val iv = raw.copyOfRange(0, 12)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, dbKey(), GCMParameterSpec(128, iv))
+            cipher.doFinal(raw, 12, raw.size - 12)
+        }.getOrNull()
+    }
+
+    override fun saveDatabaseKey(key: ByteArray): Boolean = runCatching {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, dbKey())
+        val out = cipher.iv + cipher.doFinal(key)
+        prefs.edit().putString("database", Base64.encodeToString(out, Base64.NO_WRAP)).commit()
+    }.getOrDefault(false)
 }

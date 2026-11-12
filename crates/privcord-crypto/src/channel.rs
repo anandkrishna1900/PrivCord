@@ -88,6 +88,8 @@ pub fn seal_channel_message(
         iv: codec::encode(&iv),
         ct: codec::encode(&ct),
         sig: String::new(),
+        kem: None,
+        key: None,
     };
     blob.sig = sign_blob(identity, &blob)?;
     Ok(blob)

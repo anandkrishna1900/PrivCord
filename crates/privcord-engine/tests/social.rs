@@ -260,7 +260,8 @@ fn a_forged_delete_or_reaction_from_the_wrong_person_does_nothing() {
     let clock = FakeClock::at(1_700_000_000_000);
     let (mut a, mut b) = (node("alice", &clock), node("bob", &clock));
     befriend(&mut a, &mut b);
-    // Plain frames (an already-encrypted link) so the test can write them by hand.
+    // Protocol v2: frames written by hand outside the post-quantum channel are refused outright, forged or not; the
+    // genuine reaction below goes through the channel.
     a.transport.set_connected(&b.uid, true);
     b.transport.set_connected(&a.uid, true);
     a.core
@@ -291,6 +292,12 @@ fn a_forged_delete_or_reaction_from_the_wrong_person_does_nothing() {
     let _ = carol;
     let rx = serde_json::json!({ "v": 1, "kind": "react", "messageId": mine, "emoji": "\u{1F44D}", "on": true });
     b.core.frame_received(&a.uid, &rx.to_string());
+    assert!(
+        reactions_on(&b, &find(&b, "Alice wrote this")).is_empty(),
+        "a plain frame does nothing"
+    );
+    a.core.react(&mine, "\u{1F44D}").unwrap();
+    pump(&mut a, &mut b);
     assert_eq!(
         reactions_on(&b, &find(&b, "Alice wrote this")),
         [(a.uid.clone(), "\u{1F44D}".to_owned())],
@@ -298,9 +305,10 @@ fn a_forged_delete_or_reaction_from_the_wrong_person_does_nothing() {
     );
     let bad = serde_json::json!({ "v": 1, "kind": "react", "messageId": mine, "emoji": "\u{1F4A9}", "on": true });
     a.core.frame_received(&b.uid, &bad.to_string());
-    assert!(
-        reactions_on(&a, &mine).is_empty(),
-        "only the six reactions exist"
+    assert_eq!(
+        reactions_on(&a, &mine),
+        [(a.uid.clone(), "\u{1F44D}".to_owned())],
+        "only her own genuine reaction; the forged one (not one of the six, and plain) never lands"
     );
 }
 

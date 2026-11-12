@@ -136,6 +136,8 @@ pub fn seal_invite(
         iv: codec::encode(&iv),
         ct: codec::encode(&ct),
         sig: String::new(),
+        kem: None,
+        key: None,
     };
     blob.sig = sign_blob(identity, &blob)?;
     Ok(blob)

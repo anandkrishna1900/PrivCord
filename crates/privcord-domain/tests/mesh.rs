@@ -23,6 +23,8 @@ fn blob(n: usize, from: &str) -> SealedBlob {
         ct: format!("ct{n}"),
         // Distinct in the first 24 characters, as real signatures are.
         sig: format!("{n:0>24}tail"),
+        kem: None,
+        key: None,
     }
 }
 

@@ -27,7 +27,12 @@ const MAILBOX_PREFIX: &str = "duochat-mailbox-v1|";
 
 /// The bytes a blob's signature covers.
 pub fn signed_part(blob: &SealedBlob) -> Result<Vec<u8>, CryptoError> {
-    let v = json!({ "v": blob.v, "to": blob.to, "from": blob.from, "epk": thumb(&blob.epk), "iv": blob.iv, "ct": blob.ct });
+    let mut v = json!({ "v": blob.v, "to": blob.to, "from": blob.from, "epk": thumb(&blob.epk), "iv": blob.iv, "ct": blob.ct });
+    // v2 also signs the ML-KEM ciphertext and which key it was sealed to, so neither can be swapped in transit.
+    if let (Some(kem), Some(key), Some(o)) = (&blob.kem, &blob.key, v.as_object_mut()) {
+        o.insert("kem".into(), json!(kem));
+        o.insert("key".into(), json!(key));
+    }
     Ok(canonical_json(&v)?.into_bytes())
 }
 
@@ -64,6 +69,8 @@ pub fn seal(
         iv: codec::encode(&iv),
         ct: codec::encode(&ct),
         sig: String::new(),
+        kem: None,
+        key: None,
     };
     blob.sig = codec::encode(&identity.sign_message(&signed_part(&blob)?));
     if blob.encode().encode_utf16().count() > MAX_SEALED_BLOB_BYTES {
@@ -115,6 +122,40 @@ pub fn open(
     )
     .ok()?;
     serde_json::from_slice(&plain).ok()
+}
+
+/// Open a blob from someone who is not a contact yet: a friend request after they added us from our card (a QR code).
+/// The payload must carry their contact card under `"card"`. Their identity is taken from that card (its proof binds the
+/// signing key to the key the uid comes from) and must be the blob's sender; only then is the signature checked with the
+/// card's own key. So a request can only come from whoever holds that identity's private keys.
+pub fn open_from_stranger(
+    blob: &SealedBlob,
+    own_uid: &UserId,
+    own: &Identity,
+) -> Option<(crate::card::Contact, Value)> {
+    if blob.v != 1 || blob.to != own_uid.as_str() {
+        return None;
+    }
+    let shared = own.agree(&blob.epk).ok()?;
+    let key = hkdf_sha256::<32>(
+        &*shared,
+        &seal_salt(),
+        format!("{}|{}", blob.to, blob.from).as_bytes(),
+    )
+    .ok()?;
+    let plain = aead::decrypt(
+        &key,
+        &codec::decode(&blob.iv)?,
+        &codec::decode(&blob.ct)?,
+        format!("{}|{}", blob.to, blob.from).as_bytes(),
+    )
+    .ok()?;
+    let payload: Value = serde_json::from_slice(&plain).ok()?;
+    let contact = crate::card::ContactCard::decode(payload.get("card")?.as_str()?)?;
+    if contact.uid.as_str() != blob.from || !verify_blob_signature(blob, &contact.card.sign) {
+        return None;
+    }
+    Some((contact, payload))
 }
 
 /// A fresh throwaway key whose public half fills the `epk` slot of blobs that are not ECDH-sealed (invites, channels),

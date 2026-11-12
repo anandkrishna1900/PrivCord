@@ -32,6 +32,17 @@ const REPUBLISH_MS: i64 = 4_000;
 const LOOKUP_MS: i64 = 40_000;
 const ANSWER_LINGER_MS: i64 = 1_500;
 const LIVE_TTL_SEC: u32 = 120;
+/// After adding someone from their card (a QR code), we ask them to add us back this often until we are connected...
+const HELLO_EVERY_MS: i64 = 60_000;
+/// ...for at most this long (they may be offline; on their side it waits as a request).
+const HELLO_FOR_MS: i64 = 30 * 60_000;
+/// Requests kept at once: someone who saw our QR code cannot fill the screen with them.
+const MAX_REQUESTS: usize = 20;
+
+struct Hello {
+    next_at: i64,
+    until: i64,
+}
 
 struct ActiveInvite {
     words: String,
@@ -72,6 +83,7 @@ pub(super) struct InviteState {
     redeemed: Option<Redeemed>,
     answer: Option<Answer>,
     pub(super) requests: BTreeMap<UserId, Request>,
+    hellos: BTreeMap<UserId, Hello>,
     seen: SeenSet,
 }
 
@@ -290,8 +302,90 @@ impl Core {
         self.invites.requests.remove(&uid);
         if let Some(rv) = answer_with {
             self.run_answer(uid.clone(), rv);
+        } else {
+            // From their card (a QR code): they do not know us yet. Ask them to add us back, so they only have to accept.
+            let now = self.now();
+            self.invites.hellos.insert(
+                uid.clone(),
+                Hello {
+                    next_at: now,
+                    until: now + HELLO_FOR_MS,
+                },
+            );
+            self.send_hellos();
         }
         Ok(uid)
+    }
+
+    /// Sends the "please add me back" requests that are due, until the link is up or the time runs out.
+    fn send_hellos(&mut self) {
+        let now = self.now();
+        let due: Vec<UserId> = self
+            .invites
+            .hellos
+            .iter()
+            .filter(|(_, h)| h.next_at <= now)
+            .map(|(u, _)| u.clone())
+            .collect();
+        for uid in due {
+            let linked = self.peers.get(&uid).is_some_and(super::Peer::ready);
+            let expired = self.invites.hellos.get(&uid).is_none_or(|h| h.until <= now);
+            if linked || expired || !self.contacts.contains_key(&uid) {
+                self.invites.hellos.remove(&uid);
+                continue;
+            }
+            if let Some(h) = self.invites.hellos.get_mut(&uid) {
+                h.next_at = now + HELLO_EVERY_MS;
+            }
+            let Ok(card) = self.own_card(self.display_name.clone().as_deref()) else {
+                continue;
+            };
+            let payload = serde_json::json!({ "t": "hello", "card": card });
+            if let Ok(blob) = self.seal_to(&uid, &payload) {
+                // A failed send is tried again on the next round.
+                let _ =
+                    self.put_everywhere(&privcord_crypto::seal::mailbox_for(uid.as_str()), &blob);
+            }
+        }
+    }
+
+    /// Someone added us from our card and asks to be added back: it waits as a request, like someone who used our
+    /// six words. Only a blob signed by the identity on the card inside it gets this far (`open_from_stranger`).
+    pub(super) fn on_friend_request(&mut self, blob: &SealedBlob) {
+        let (Some(own_uid), Some(identity)) = (self.uid.clone(), self.identity.as_ref()) else {
+            return;
+        };
+        let Some((contact, payload)) =
+            privcord_crypto::seal::open_from_stranger(blob, &own_uid, identity)
+        else {
+            return;
+        };
+        if payload.get("t").and_then(serde_json::Value::as_str) != Some("hello")
+            || contact.uid == own_uid
+        {
+            return;
+        }
+        if self.invites.requests.len() >= MAX_REQUESTS
+            && !self.invites.requests.contains_key(&contact.uid)
+        {
+            return;
+        }
+        let Ok(safety_number) = derive_safety_number(&identity.sign_public(), &contact.card.sign)
+        else {
+            return;
+        };
+        let uid = contact.uid.clone();
+        let new = !self.invites.requests.contains_key(&uid);
+        self.invites.requests.insert(
+            uid.clone(),
+            Request {
+                contact,
+                safety_number,
+            },
+        );
+        if new {
+            self.hub.publish(EngineEvent::InviteRequest { uid });
+        }
     }
 
     fn run_answer(&mut self, uid: UserId, rv: Rendezvous) {
@@ -459,6 +553,7 @@ impl Core {
 
     /// Time passes: republish the open invite, expire it, give up on a search, stop listening after an answer.
     pub(super) fn tick_invites(&mut self) {
+        self.send_hellos();
         let now = self.now();
         let (expired, due) = self.invites.active.as_ref().map_or((false, false), |a| {
             (a.expires_at <= now, a.next_publish_at <= now)
