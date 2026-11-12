@@ -11,10 +11,10 @@ Status meanings: **Ported, tested** = the Rust implementation exists and is chec
 | Ported, tested | 70 | 10033 |
 | Partly ported | 1 | 2162 |
 | Not yet ported | 0 | 0 |
-| Stays (UI) | 59 | 12664 |
+| Stays (UI) | 59 | 12672 |
 | Stays (platform adapter) | 50 | 10521 |
 | Replaced by a library | 4 | 333 |
-| **All mapped files** | **184** | **35713** |
+| **All mapped files** | **184** | **35721** |
 
 Ported does not mean retired: the TypeScript and Kotlin versions stay in production until the apps call the Rust engine (M7 desktop, M8 Android) and the compatibility gates pass (PRD section 16).
 
@@ -146,7 +146,7 @@ Ported does not mean retired: the TypeScript and Kotlin versions stay in product
 | File | Lines | Main symbols | Current responsibility | Destination | Class | Status | Removal condition | Tests |
 |---|---:|---|---|---|---|---|---|---|
 | `apps/android/app/src/main/java/com/duochat/app/AppConfig.kt` | 30 | `AppConfig` | Android shell and the loader for the Rust core | UI / platform | UI | Stays (UI) | Stays | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/CrashLog.kt` | 90 | `CrashLog` | Android shell and the loader for the Rust core | UI / platform | UI | Stays (UI) | Stays | n/a |
+| `apps/android/app/src/main/java/com/duochat/app/CrashLog.kt` | 93 | `CrashLog` | Android shell and the loader for the Rust core | UI / platform | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/DuoChatApp.kt` | 17 | `DuoChatApp` | Android shell and the loader for the Rust core | UI / platform | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/MainActivity.kt` | 408 | `MainActivity`, `RootScreen`, `exists` | Android shell and the loader for the Rust core | UI / platform | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/RustCore.kt` | 16 | `RustCore` | Android shell and the loader for the Rust core | UI / platform | UI | Stays (UI) | Stays | n/a |
@@ -205,7 +205,7 @@ Ported does not mean retired: the TypeScript and Kotlin versions stay in product
 | `apps/android/app/src/main/java/com/duochat/app/ui/AppViewModel.kt` | 396 | `AppViewModel` | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ui/BackupSection.kt` | 82 | `BackupSection` | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ui/ChannelsDialog.kt` | 90 | `ChannelsDialog` | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/ui/ChatScreen.kt` | 1509 | `ChatScreen`, `Banner`, `MessageList`, `DaySeparator`, `MessageBubble`, `FileContent` +15 | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
+| `apps/android/app/src/main/java/com/duochat/app/ui/ChatScreen.kt` | 1514 | `ChatScreen`, `Banner`, `MessageList`, `DaySeparator`, `MessageBubble`, `FileContent` +15 | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ui/Clipboard.kt` | 34 | `copySensitive` | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ui/GroupScreens.kt` | 423 | `NewGroupScreen`, `FriendCheckRow`, `GroupDetailsScreen`, `FriendDetailsDialog` | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ui/HomeScreen.kt` | 448 | `Filter`, `HomeScreen`, `Header`, `Notice`, `SearchField`, `EmptyHome` +4 | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
