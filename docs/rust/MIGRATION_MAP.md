@@ -11,10 +11,10 @@ Status meanings: **Ported, tested** = the Rust implementation exists and is chec
 | Ported, tested | 70 | 10015 |
 | Partly ported | 1 | 2162 |
 | Not yet ported | 0 | 0 |
-| Stays (UI) | 58 | 12553 |
-| Stays (platform adapter) | 50 | 10444 |
+| Stays (UI) | 58 | 12594 |
+| Stays (platform adapter) | 50 | 10455 |
 | Replaced by a library | 4 | 333 |
-| **All mapped files** | **183** | **35507** |
+| **All mapped files** | **183** | **35559** |
 
 Ported does not mean retired: the TypeScript and Kotlin versions stay in production until the apps call the Rust engine (M7 desktop, M8 Android) and the compatibility gates pass (PRD section 16).
 
@@ -146,9 +146,9 @@ Ported does not mean retired: the TypeScript and Kotlin versions stay in product
 | File | Lines | Main symbols | Current responsibility | Destination | Class | Status | Removal condition | Tests |
 |---|---:|---|---|---|---|---|---|---|
 | `apps/android/app/src/main/java/com/duochat/app/AppConfig.kt` | 30 | `AppConfig` | Android shell and the loader for the Rust core | UI / platform | UI | Stays (UI) | Stays | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/CrashLog.kt` | 50 | `CrashLog` | Android shell and the loader for the Rust core | UI / platform | UI | Stays (UI) | Stays | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/DuoChatApp.kt` | 15 | `DuoChatApp` | Android shell and the loader for the Rust core | UI / platform | UI | Stays (UI) | Stays | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/MainActivity.kt` | 389 | `MainActivity`, `RootScreen`, `exists` | Android shell and the loader for the Rust core | UI / platform | UI | Stays (UI) | Stays | n/a |
+| `apps/android/app/src/main/java/com/duochat/app/CrashLog.kt` | 59 | `CrashLog` | Android shell and the loader for the Rust core | UI / platform | UI | Stays (UI) | Stays | n/a |
+| `apps/android/app/src/main/java/com/duochat/app/DuoChatApp.kt` | 16 | `DuoChatApp` | Android shell and the loader for the Rust core | UI / platform | UI | Stays (UI) | Stays | n/a |
+| `apps/android/app/src/main/java/com/duochat/app/MainActivity.kt` | 407 | `MainActivity`, `RootScreen`, `exists` | Android shell and the loader for the Rust core | UI / platform | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/RustCore.kt` | 16 | `RustCore` | Android shell and the loader for the Rust core | UI / platform | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ble/AndroidMeshRadio.kt` | 456 | `AndroidMeshRadio` | Android Bluetooth radio, permissions, link | BLE adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ble/BleEnvironment.kt` | 71 | `BleAvailability`, `bluetoothStatusFor`, `BleEnvironment`, `AndroidBleEnvironment` | Android Bluetooth radio, permissions, link | BLE adapter | Adapter | Stays (platform adapter) | Stays | n/a |
@@ -170,7 +170,7 @@ Ported does not mean retired: the TypeScript and Kotlin versions stay in product
 | `apps/android/app/src/main/java/com/duochat/app/data/Themes.kt` | 68 | `ThemeDef`, `themeById`, `channel`, `mixColors`, `luminance`, `contrastRatio` +2 | Themes | UI | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/data/local/DuoDatabase.kt` | 358 | `MessageEntity`, `OutboxEntity`, `ContactEntity`, `KvEntity`, `GroupLogEntity`, `DuoDao` +1 | Room database | storage::SqliteStorage; privcord-import (Room importer, Keystore decryptor supplied by the app) | Storage | Ported, tested | M8: after the importer has run on every install | importer tests on generated Room v7 fixtures |
 | `apps/android/app/src/main/java/com/duochat/app/engine/ChatEngineApi.kt` | 68 | `ChatEngineApi`, `IncomingNotice`, `SearchHit` | The interface the screens use to talk to a chat engine (the Rust engine) | Platform seam (stays) | Adapter | Stays (platform adapter) | Stays | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/engine/EngineHost.kt` | 53 | `EngineHost` | Keeps the running engine in the process so it outlives the screen | Platform seam (stays) | Adapter | Stays (platform adapter) | Stays | n/a |
+| `apps/android/app/src/main/java/com/duochat/app/engine/EngineHost.kt` | 64 | `EngineHost` | Keeps the running engine in the process so it outlives the screen | Platform seam (stays) | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/notifications/DuoBackgroundService.kt` | 107 | `DuoBackgroundService` | Notifications and background service | Notifier adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/notifications/DuoNotifications.kt` | 96 | `DuoNotifications` | Notifications and background service | Notifier adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/p2p/IceServers.kt` | 34 | `iceServers`, `builtinTurnServer` | ICE servers, WebRTC data channel | WebRTC adapter | Adapter | Stays (platform adapter) | Stays | n/a |
@@ -202,7 +202,7 @@ Ported does not mean retired: the TypeScript and Kotlin versions stay in product
 | `apps/android/app/src/main/java/com/duochat/app/signaling/Schnorr.kt` | 125 | `Schnorr` | Hand-written BIP-340 Schnorr | k256 crate (crypto::nostr) | Crypto | Replaced by a library | Delete with the Kotlin app's signaling | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/signaling/Signaling.kt` | 180 | `SignalingStatus`, `SignalingTransport`, `reconnectDelayMs`, `socketBackoff`, `ManagedSocket`, `newSignalingClient` +2 | Nostr, relay client, signaling hub | engine::signaling (state machines) + crypto::nostr; a socket adapter remains | Engine/Adapter | Ported, tested | M8: replace with the socket adapter that feeds SignalingHub | same tests as the desktop clients |
 | `apps/android/app/src/main/java/com/duochat/app/ui/AddFriendScreen.kt` | 384 | `AddFriendScreen`, `SafetyNumberBox` | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/ui/AppViewModel.kt` | 382 | `AppViewModel` | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
+| `apps/android/app/src/main/java/com/duochat/app/ui/AppViewModel.kt` | 395 | `AppViewModel` | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ui/BackupSection.kt` | 82 | `BackupSection` | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ui/ChannelsDialog.kt` | 90 | `ChannelsDialog` | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ui/ChatScreen.kt` | 1509 | `ChatScreen`, `Banner`, `MessageList`, `DaySeparator`, `MessageBubble`, `FileContent` +15 | Compose screens | UI | UI | Stays (UI) | Stays | n/a |
