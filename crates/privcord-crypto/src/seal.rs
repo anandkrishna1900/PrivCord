@@ -117,6 +117,40 @@ pub fn open(
     serde_json::from_slice(&plain).ok()
 }
 
+/// Open a blob from someone who is not a contact yet: a friend request after they added us from our card (a QR code).
+/// The payload must carry their contact card under `"card"`. Their identity is taken from that card (its proof binds the
+/// signing key to the key the uid comes from) and must be the blob's sender; only then is the signature checked with the
+/// card's own key. So a request can only come from whoever holds that identity's private keys.
+pub fn open_from_stranger(
+    blob: &SealedBlob,
+    own_uid: &UserId,
+    own: &Identity,
+) -> Option<(crate::card::Contact, Value)> {
+    if blob.v != 1 || blob.to != own_uid.as_str() {
+        return None;
+    }
+    let shared = own.agree(&blob.epk).ok()?;
+    let key = hkdf_sha256::<32>(
+        &*shared,
+        &seal_salt(),
+        format!("{}|{}", blob.to, blob.from).as_bytes(),
+    )
+    .ok()?;
+    let plain = aead::decrypt(
+        &key,
+        &codec::decode(&blob.iv)?,
+        &codec::decode(&blob.ct)?,
+        format!("{}|{}", blob.to, blob.from).as_bytes(),
+    )
+    .ok()?;
+    let payload: Value = serde_json::from_slice(&plain).ok()?;
+    let contact = crate::card::ContactCard::decode(payload.get("card")?.as_str()?)?;
+    if contact.uid.as_str() != blob.from || !verify_blob_signature(blob, &contact.card.sign) {
+        return None;
+    }
+    Some((contact, payload))
+}
+
 /// A fresh throwaway key whose public half fills the `epk` slot of blobs that are not ECDH-sealed (invites, channels),
 /// so they keep the shape every relay and client already validates.
 pub(crate) fn placeholder_epk(entropy: &mut dyn Entropy) -> Result<PublicJwk, CryptoError> {

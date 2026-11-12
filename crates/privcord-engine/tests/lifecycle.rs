@@ -877,3 +877,77 @@ fn replayed_offers_and_answers_to_replaced_offers_are_ignored_and_a_quiet_link_g
         ConnectionState::Connected { .. }
     ));
 }
+
+#[test]
+fn adding_someone_from_their_qr_code_asks_them_to_add_us_back() {
+    let clock = FakeClock::at(1_700_000_000_000);
+    let (mut a, mut b) = (node("alice", &clock), node("bob", &clock));
+    a.transport.set_signaling(true);
+    b.transport.set_signaling(true);
+    // Alice scans Bob's QR code (his card). Bob does not know her yet.
+    let bob_card = b.core.own_card(Some("Bob")).unwrap();
+    assert_eq!(a.core.accept_invite(&bob_card).unwrap(), b.uid);
+    let bob_mailbox = privcord_crypto::seal::mailbox_for(b.uid.as_str());
+    let sent = put_blobs(&a);
+    let hello: Vec<_> = sent.iter().filter(|(m, _, _)| *m == bob_mailbox).collect();
+    assert!(!hello.is_empty(), "a request goes to Bob's mailbox");
+
+    // Bob's phone gets it: Alice waits as a request he can accept with one tap.
+    drain_events(&mut b);
+    for (m, blob, _) in &hello {
+        b.core.signal_blob(m, blob);
+    }
+    assert!(b.core.snapshot().requests.iter().any(|r| r.uid == a.uid));
+    assert!(drain_events(&mut b)
+        .iter()
+        .any(|e| matches!(e, EngineEvent::InviteRequest { uid } if *uid == a.uid)));
+    assert_eq!(b.core.accept_request(&a.uid).unwrap(), a.uid);
+    assert!(b.core.snapshot().requests.is_empty());
+    assert!(b.core.snapshot().contacts.iter().any(|c| c.uid == a.uid));
+
+    // While they have not connected, Alice asks again every minute, and stops after half an hour.
+    clock.advance(60_000);
+    a.core.tick();
+    assert!(put_blobs(&a).iter().any(|(m, _, _)| *m == bob_mailbox));
+    clock.advance(31 * 60_000);
+    a.core.tick();
+    put_blobs(&a);
+    clock.advance(60_000);
+    a.core.tick();
+    assert!(!put_blobs(&a).iter().any(|(m, _, _)| *m == bob_mailbox));
+}
+
+#[test]
+fn a_stranger_cannot_get_anything_but_a_genuine_request_through() {
+    let clock = FakeClock::at(1_700_000_000_000);
+    let (mut a, mut b, mut eve) = (
+        node("alice", &clock),
+        node("bob", &clock),
+        node("eve", &clock),
+    );
+    for n in [&a, &b, &eve] {
+        n.transport.set_signaling(true);
+    }
+    let bob_card = b.core.own_card(Some("Bob")).unwrap();
+    let bob_mailbox = privcord_crypto::seal::mailbox_for(b.uid.as_str());
+    // Eve adds Bob too, then tries to pass her request off as Alice's by swapping the sender.
+    eve.core.accept_invite(&bob_card).unwrap();
+    let alice_uid = a.uid.as_str().to_owned();
+    for (m, blob, _) in put_blobs(&eve)
+        .into_iter()
+        .filter(|(m, _, _)| *m == bob_mailbox)
+    {
+        let forged = blob.replace(eve.uid.as_str(), &alice_uid);
+        b.core.signal_blob(&m, &forged);
+    }
+    assert!(b.core.snapshot().requests.iter().all(|r| r.uid != a.uid));
+    // A genuine one from Alice still works.
+    a.core.accept_invite(&bob_card).unwrap();
+    for (m, blob, _) in put_blobs(&a)
+        .into_iter()
+        .filter(|(m, _, _)| *m == bob_mailbox)
+    {
+        b.core.signal_blob(&m, &blob);
+    }
+    assert!(b.core.snapshot().requests.iter().any(|r| r.uid == a.uid));
+}

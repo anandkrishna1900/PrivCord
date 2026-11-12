@@ -75,7 +75,11 @@ impl Core {
         }
     }
 
-    fn seal_to(&mut self, peer: &UserId, payload: &Value) -> Result<SealedBlob, ErrorCode> {
+    pub(super) fn seal_to(
+        &mut self,
+        peer: &UserId,
+        payload: &Value,
+    ) -> Result<SealedBlob, ErrorCode> {
         let dh = self
             .contacts
             .get(peer)
@@ -214,6 +218,8 @@ impl Core {
             .get(&from)
             .map(|c| c.contact.card.sign.clone())
         else {
+            // Not a contact: the only thing a stranger may send is a friend request after adding us from our card.
+            self.on_friend_request(&blob);
             return;
         };
         let Some(Value::Object(payload)) = open(&blob, &own, identity, &sign, &from) else {

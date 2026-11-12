@@ -443,6 +443,15 @@ class RustChatEngine(
             }
             is EventDto.InviteFound -> { lookup?.complete(true); requestRefresh() }
             is EventDto.InviteLookupFailed -> { lookup?.complete(false); requestRefresh() }
+            // Someone used our six words or scanned our QR code: they wait as a request, accepted with one tap. Say so
+            // even when the app is in the background (the request screen opens with the app).
+            is EventDto.InviteRequest -> {
+                val e = engine
+                val name = e?.let { runCatching { withContext(Dispatchers.IO) { it.snapshot() } }.getOrNull() }
+                    ?.requests?.firstOrNull { it.uid == event.uid }?.name ?: "Someone"
+                onNotify(IncomingNotice("request-${event.uid}", "", "$name wants to add you", "Open DuoCord to accept.", isMessage = false))
+                requestRefresh()
+            }
             is EventDto.FileProgress -> {
                 if (event.percent >= 100u) progress.remove(event.messageId) else progress[event.messageId] = event.percent.toInt() / 100f
                 _state.update { it.copy(transfers = progress.toMap()) }
