@@ -8,6 +8,7 @@ const relay = await startRelay({
   trustProxy: process.env.TRUST_PROXY === 'true',
   maxQueued: Number(process.env.MAX_QUEUED ?? 50000),
   maxConnsPerIp: Number(process.env.MAX_CONNS_PER_IP ?? 20),
+  maxQueuedBytes: Number(process.env.MAX_QUEUED_BYTES ?? 256 * 1024 * 1024),
 });
 console.log(`privcord-relay listening on :${relay.port} (store-and-forward ${process.env.ALLOW_STORE_FORWARD === 'true' ? 'on' : 'off'}, trust-proxy ${process.env.TRUST_PROXY === 'true' ? 'on' : 'off'})`);
 

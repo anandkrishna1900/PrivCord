@@ -188,3 +188,53 @@ test('/healthz reports counters only', async () => {
     assert.equal((await fetch(`http://127.0.0.1:${relay.port}/other`)).status, 404);
   });
 });
+
+test('total stored bytes are capped', async () => {
+  await withRelay({ allowStoreForward: true, rateLimit: 10_000, maxQueuedBytes: 2 * MAX_BLOB }, async (relay) => {
+    const a = await client(relay.port);
+    const put = async (id) => { a.send({ op: 'put', mailbox: 'mb', id, blob: 'x'.repeat(MAX_BLOB), ttl: 60, kind: 'msg' }); return a.next((m) => m.op === 'ok' || m.op === 'err'); };
+    assert.equal((await put('b1')).op, 'ok');
+    assert.equal((await put('b2')).op, 'ok');
+    assert.equal((await put('b3')).reason, 'relay full');
+    a.send({ op: 'del', mailbox: 'mb', id: 'b1' });
+    await a.next((m) => m.op === 'ok');
+    assert.equal((await put('b4')).op, 'ok', 'del frees budget');
+    a.close();
+  });
+});
+
+test('a subscriber that never reads is dropped instead of buffering forever', async () => {
+  await withRelay({ rateLimit: 100_000, maxBuffered: 256 * 1024 }, async (relay) => {
+    const slow = await client(relay.port);
+    slow.send({ op: 'sub', mailbox: 'mb' });
+    await slow.next((m) => m.op === 'ok');
+    slow.ws._socket.pause(); // stop reading: relay-side buffer grows
+    const closed = new Promise((r) => slow.ws.on('close', r));
+    const a = await client(relay.port);
+    const blob = 'x'.repeat(MAX_BLOB);
+    for (let i = 0; i < 300; i++) { // ~20 MB, well past socket buffers
+      a.send({ op: 'put', mailbox: 'mb', id: `p${i}`, blob, ttl: 10, kind: 'sig' });
+      await a.next((m) => m.op === 'ok');
+    }
+    slow.ws._socket.resume();
+    const done = await Promise.race([closed.then(() => true), sleep(3000).then(() => false)]);
+    assert.ok(done, 'non-reading subscriber should have been terminated');
+    a.close();
+  });
+});
+
+test('trustProxy uses the proxy-appended (rightmost) X-Forwarded-For entry', async () => {
+  await withRelay({ trustProxy: true, maxConnsPerIp: 1 }, async (relay) => {
+    const open = (xff) => new Promise((resolve) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${relay.port}`, { headers: { 'x-forwarded-for': xff } });
+      ws.on('close', (code) => resolve({ ws, code }));
+      ws.on('open', () => setTimeout(() => resolve({ ws, code: null }), 200));
+    });
+    const first = await open('1.1.1.1, 9.9.9.9');
+    assert.equal(first.code, null);
+    // spoofed leftmost entry must not get a fresh per-IP budget
+    const second = await open('2.2.2.2, 9.9.9.9');
+    assert.equal(second.code, 1013);
+    first.ws.close();
+  });
+});
