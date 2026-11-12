@@ -15,13 +15,13 @@ import {
   seal,
   SecureChannel,
   selectedPairFromStats,
-  uidFromDh,
+  uidFromKeys,
 } from '../src';
 
 async function person() {
   const phrase = generateRecoveryPhrase();
   const { identity } = await deriveIdentityFromPhrase(phrase);
-  const uid = await uidFromDh(identity.dhKey.pubJwk);
+  const uid = await uidFromKeys(identity.signKey.pubJwk, identity.dhKey.pubJwk);
   const card = {
     v: 1 as const,
     sign: identity.signKey.pubJwk,
@@ -42,7 +42,7 @@ describe('contact cards', () => {
   it('the same phrase always gives the same uid (recovery)', async () => {
     const a = await person();
     const again = await deriveIdentityFromPhrase(a.phrase);
-    expect(await uidFromDh(again.identity.dhKey.pubJwk)).toBe(a.uid);
+    expect(await uidFromKeys(again.identity.signKey.pubJwk, again.identity.dhKey.pubJwk)).toBe(a.uid);
   });
 
   it('rejects a card whose keys were swapped for another identity', async () => {

@@ -6,7 +6,7 @@ use crate::{
     SecureStoreError, Storage, StorageError, StorageOp, StoredContact, StoredFile, StoredMessage,
     StoredReaction, Transport, TransportError,
 };
-use privcord_domain::{signaling::PutKind, MessageId, UserId};
+use privcord_domain::{signaling::PutKind, ConversationId, MessageId, UserId};
 use std::{
     collections::HashMap,
     sync::{
@@ -163,6 +163,43 @@ impl Storage for MemoryStorage {
                             uid: uid.clone(),
                             emoji: e.clone(),
                         });
+                    }
+                }
+                StorageOp::RenameUser { from, to } => {
+                    if let Some(mut c) = next.contacts.remove(from) {
+                        c.uid = to.clone();
+                        next.contacts.entry(to.clone()).or_insert(c);
+                    }
+                    for c in next.contacts.values_mut() {
+                        if c.introduced_by.as_ref() == Some(from) {
+                            c.introduced_by = Some(to.clone());
+                        }
+                    }
+                    for m in &mut next.messages {
+                        if m.conversation == ConversationId::Direct(from.clone()) {
+                            m.conversation = ConversationId::Direct(to.clone());
+                        }
+                        if &m.message.sender_id == from {
+                            m.message.sender_id = to.clone();
+                        }
+                        if let Some(r) = m
+                            .message
+                            .reply_to
+                            .as_mut()
+                            .filter(|r| r.author == from.as_str())
+                        {
+                            r.author = to.to_string();
+                        }
+                    }
+                    for o in &mut next.outbox {
+                        if &o.recipient == from {
+                            o.recipient = to.clone();
+                        }
+                    }
+                    for r in &mut next.reactions {
+                        if &r.uid == from {
+                            r.uid = to.clone();
+                        }
                     }
                 }
                 StorageOp::Tombstone(id) => {

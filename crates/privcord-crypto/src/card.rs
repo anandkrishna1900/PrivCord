@@ -4,7 +4,7 @@
 use crate::{
     canonical::canonical_json,
     error::CryptoError,
-    identity::{thumb, uid_from_dh, verify_identity_proof, Identity},
+    identity::{thumb, uid_from_keys, verify_identity_proof, Identity},
 };
 use privcord_domain::{blob::PublicJwk, codec, ids::UserId, text::utf16_len};
 use serde_json::{json, Map, Value};
@@ -92,7 +92,7 @@ impl ContactCard {
         if !verify_identity_proof(&sign, &dh, proof) {
             return None;
         }
-        let uid = uid_from_dh(&dh).ok()?;
+        let uid = uid_from_keys(&sign, &dh).ok()?;
         let name = name.filter(|n| !n.is_empty()).map(|n| cut_name(&n));
         debug_assert!(name.as_ref().is_none_or(|n| utf16_len(n) <= MAX_NAME_UNITS));
         Some(Contact {

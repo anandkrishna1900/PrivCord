@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_NETWORK_CONFIG, deriveIdentityFromPhrase, uidFromDh, type SealedBlob } from '@duochat/protocol';
+import { DEFAULT_NETWORK_CONFIG, deriveIdentityFromPhrase, uidFromKeys, type SealedBlob } from '@duochat/protocol';
 import { legacySecretsHex } from './legacyIdentity';
 import type { EngineBridge } from '../engineBridge';
 import type { PeerTransportHandlers } from '../p2p';
@@ -207,7 +207,7 @@ async function makeSides(opts: Options) {
       phrase = PHRASES[index]!;
       const d = await deriveIdentityFromPhrase(phrase, '');
       identity = {
-        uid: await uidFromDh(d.identity.dhKey.pubJwk as never),
+        uid: await uidFromKeys(d.identity.signKey.pubJwk, d.identity.dhKey.pubJwk as never),
         deviceId: `device-${name}`,
         publicJwk: d.identity.signKey.pubJwk as JsonWebKey,
         dhPublicJwk: d.identity.dhKey.pubJwk as JsonWebKey,
@@ -350,9 +350,9 @@ describe.skipIf(!present)('moving the existing identity to the engine', () => {
       await bridge.start();
       const snapshot = (await bridge.invoke('snapshot')) as { own_uid: string | null };
       // The id the app itself shows for this identity (the user id, not the recovery fingerprint).
-      const appUid = await uidFromDh(derived.identity.dhKey.pubJwk as never);
+      const appUid = await uidFromKeys(derived.identity.signKey.pubJwk, derived.identity.dhKey.pubJwk as never);
       expect(snapshot.own_uid).toBe(appUid);
-      expect(appUid).toBe('bf9861c45fd771142637ca6a8ec6b22ba848e4f0758311f9b173bc546aae65de');
+      expect(appUid).toBe('d2360f62fee1f1d2679278d1799927888ca4f8692d0e294918be14cae4d5798a');
     } finally {
       kill();
     }

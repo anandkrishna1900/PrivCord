@@ -174,15 +174,31 @@ pub fn identity_proof_payload(dh: &PublicJwk) -> Result<Vec<u8>, CryptoError> {
     Ok(format!("{IDENTITY_PROOF_PREFIX}{}", canonical_json(&thumb(dh))?).into_bytes())
 }
 
-/// The person's id: SHA-256 of `EC|P-256|<x bytes>|<y bytes>` in lower-case hex.
-pub fn uid_from_dh(dh: &PublicJwk) -> Result<UserId, CryptoError> {
-    let x = codec::decode(&dh.x).ok_or(CryptoError::InvalidKey)?;
-    let y = codec::decode(&dh.y).ok_or(CryptoError::InvalidKey)?;
-    let mut input = format!("{}|{}|", dh.kty, dh.crv).into_bytes();
-    input.extend_from_slice(&x);
-    input.push(b'|');
-    input.extend_from_slice(&y);
+fn key_bytes(key: &PublicJwk) -> Result<Vec<u8>, CryptoError> {
+    let x = codec::decode(&key.x).ok_or(CryptoError::InvalidKey)?;
+    let y = codec::decode(&key.y).ok_or(CryptoError::InvalidKey)?;
+    let mut out = format!("{}|{}|", key.kty, key.crv).into_bytes();
+    out.extend_from_slice(&x);
+    out.push(b'|');
+    out.extend_from_slice(&y);
+    Ok(out)
+}
+
+/// The person's id: SHA-256 (lower-case hex) of both public keys, `duocord-uid-v2\n<ECDH key>\n<signing key>`, each key
+/// as `EC|P-256|<x bytes>|<y bytes>`. Both keys are in it: a card proves only that its signing key signed the ECDH key,
+/// so an id from the ECDH key alone let anyone pair someone else's ECDH key (and so their id) with their own signing key.
+pub fn uid_from_keys(sign: &PublicJwk, dh: &PublicJwk) -> Result<UserId, CryptoError> {
+    let mut input = b"duocord-uid-v2\n".to_vec();
+    input.extend_from_slice(&key_bytes(dh)?);
+    input.push(b'\n');
+    input.extend_from_slice(&key_bytes(sign)?);
     UserId::new(crate::kdf::sha256_hex(&input)).map_err(|_| CryptoError::InvalidKey)
+}
+
+/// The protocol v1 id (SHA-256 of the ECDH key alone). Only to find data stored under it and move it to the v2 id; never
+/// accepted as anyone's identity.
+pub fn legacy_uid(dh: &PublicJwk) -> Result<UserId, CryptoError> {
+    UserId::new(crate::kdf::sha256_hex(&key_bytes(dh)?)).map_err(|_| CryptoError::InvalidKey)
 }
 
 /// ECDSA P-256 / SHA-256 signature check; the signature is the 64-byte `r || s` form WebCrypto produces.
@@ -291,7 +307,7 @@ impl Identity {
     }
 
     pub fn uid(&self) -> Result<UserId, CryptoError> {
-        uid_from_dh(&self.dh_public())
+        uid_from_keys(&self.sign_public(), &self.dh_public())
     }
 
     /// The self-signature that binds the ECDH key to the signing key, as base64url.

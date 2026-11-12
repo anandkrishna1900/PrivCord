@@ -10,7 +10,7 @@ import {
   openChannelMessage,
   parseMeshPacket,
   sealChannelMessage,
-  uidFromDh,
+  uidFromKeys,
   type ContactCard,
   type Outgoing,
   type SealedBlob,
@@ -19,7 +19,7 @@ import {
 async function person(name: string) {
   const { identity } = await deriveIdentityFromPhrase(generateRecoveryPhrase());
   const card: ContactCard = { v: 1, sign: identity.signKey.pubJwk, dh: identity.dhKey.pubJwk, proof: identity.identityProof, name };
-  return { uid: await uidFromDh(identity.dhKey.pubJwk), card, signPriv: identity.signKey.privJwk };
+  return { uid: await uidFromKeys(identity.signKey.pubJwk, identity.dhKey.pubJwk), card, signPriv: identity.signKey.privJwk };
 }
 
 describe('open channels', () => {

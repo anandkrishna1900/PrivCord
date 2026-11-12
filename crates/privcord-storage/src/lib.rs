@@ -458,6 +458,60 @@ fn apply_op(tx: &rusqlite::Transaction<'_>, op: &StorageOp) -> Result<(), Storag
                 }
             }
         }
+        StorageOp::RenameUser { from, to } => {
+            let (old, new) = (from.as_str(), to.as_str());
+            let (old_chat, new_chat) = (
+                conversation_key(&ConversationId::Direct(from.clone())),
+                conversation_key(&ConversationId::Direct(to.clone())),
+            );
+            // Where the new id already has a row, the old one goes (OR IGNORE leaves it, the DELETE removes it).
+            for (sql, a, b) in [
+                (
+                    "UPDATE OR IGNORE contacts SET uid = ?2 WHERE uid = ?1",
+                    old,
+                    new,
+                ),
+                ("DELETE FROM contacts WHERE uid = ?1", old, new),
+                (
+                    "UPDATE contacts SET introduced_by = ?2 WHERE introduced_by = ?1",
+                    old,
+                    new,
+                ),
+                (
+                    "UPDATE messages SET conversation = ?2 WHERE conversation = ?1",
+                    &old_chat,
+                    &new_chat,
+                ),
+                (
+                    "UPDATE messages SET sender_id = ?2 WHERE sender_id = ?1",
+                    old,
+                    new,
+                ),
+                (
+                    "UPDATE messages SET reply_author = ?2 WHERE reply_author = ?1",
+                    old,
+                    new,
+                ),
+                (
+                    "UPDATE OR IGNORE outbox SET recipient = ?2 WHERE recipient = ?1",
+                    old,
+                    new,
+                ),
+                ("DELETE FROM outbox WHERE recipient = ?1", old, new),
+                (
+                    "UPDATE OR IGNORE reactions SET uid = ?2 WHERE uid = ?1",
+                    old,
+                    new,
+                ),
+                ("DELETE FROM reactions WHERE uid = ?1", old, new),
+            ] {
+                if sql.starts_with("DELETE") {
+                    tx.execute(sql, params![a]).map_err(rej)?;
+                } else {
+                    tx.execute(sql, params![a, b]).map_err(rej)?;
+                }
+            }
+        }
         StorageOp::Tombstone(id) => {
             let changed = tx
                 .execute(

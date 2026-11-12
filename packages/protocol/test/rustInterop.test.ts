@@ -15,7 +15,7 @@ import {
   decodeManualSignal,
   parsePairingState,
   parsePeerFrame,
-  uidFromDh,
+  uidFromKeys,
   decodeContactCard,
   deriveChannel,
   deriveIdentityFromPhrase,
@@ -88,7 +88,7 @@ describe('artifacts produced by the Rust engine', () => {
     for (const f of [h.annHello, h.bobHello, h.annProof[0], h.bobProof[0], h.annOk[0], h.bobOk[0]]) expect(parsePeerFrame(f)).not.toBeNull();
     // Hellos: the uid is the fingerprint of the ECDH key, and the identity proof binds it to the signing key.
     for (const [hello, id] of [[h.annHello, ann], [h.bobHello, bob]] as const) {
-      expect(hello.uid).toBe(await uidFromDh(id.dhKey.pubJwk));
+      expect(hello.uid).toBe(await uidFromKeys(id.signKey.pubJwk, id.dhKey.pubJwk));
       expect(await verifyIdentityProof(hello.publicKeyJwk, hello.dhJwk, hello.identityProof)).toBe(true);
     }
     // Proofs: each signs the challenge built from both nonces, verified with the sender's signing key.

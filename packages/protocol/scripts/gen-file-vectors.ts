@@ -20,7 +20,7 @@ import {
   makeMeshPacket,
   normalizeChannelName,
   sealInvite,
-  uidFromDh,
+  uidFromKeys,
   type ContactCard as Card,
   acceptsDirect,
   canStartDirect,
@@ -70,7 +70,7 @@ for (const trust of trusts) for (const mine of [false, true]) for (const peer of
 const inviteWords = ['apple', 'river', 'tiger', 'moon', 'cloud', 'seven'];
 const inviter = (await deriveIdentityFromPhrase(entropyToMnemonic(new Uint8Array(16).fill(0x51), wordlist))).identity;
 const inviterCard: Card = { v: 1, sign: inviter.signKey.pubJwk, dh: inviter.dhKey.pubJwk, proof: inviter.identityProof, name: 'Ivy' };
-const inviterUid = await uidFromDh(inviter.dhKey.pubJwk);
+const inviterUid = await uidFromKeys(inviter.signKey.pubJwk, inviter.dhKey.pubJwk);
 const rv = await deriveInvite(inviteWords);
 const inviteBlob = await sealInvite({ rendezvous: rv, kind: 'card', card: inviterCard, uid: inviterUid, signPriv: inviter.signKey.privJwk });
 

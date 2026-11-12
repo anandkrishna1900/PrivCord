@@ -8,13 +8,13 @@ Status meanings: **Ported, tested** = the Rust implementation exists and is chec
 
 | Status | Files | Lines |
 |---|---:|---:|
-| Ported, tested | 70 | 10015 |
+| Ported, tested | 70 | 10033 |
 | Partly ported | 1 | 2162 |
 | Not yet ported | 0 | 0 |
 | Stays (UI) | 58 | 12597 |
-| Stays (platform adapter) | 50 | 10515 |
+| Stays (platform adapter) | 50 | 10521 |
 | Replaced by a library | 4 | 333 |
-| **All mapped files** | **183** | **35622** |
+| **All mapped files** | **183** | **35646** |
 
 Ported does not mean retired: the TypeScript and Kotlin versions stay in production until the apps call the Rust engine (M7 desktop, M8 Android) and the compatibility gates pass (PRD section 16).
 
@@ -24,7 +24,7 @@ Ported does not mean retired: the TypeScript and Kotlin versions stay in product
 |---|---:|---|---|---|---|---|---|---|
 | `packages/protocol/src/backup.ts` | 45 | `BACKUP_PREFIX`, `BACKUP_MIN_PASSPHRASE`, `sealBackup`, `openBackup` | Encrypted backup format | crypto::backup | Crypto | Ported, tested | M7/M8 | vectors both ways |
 | `packages/protocol/src/connectivity/connectionPath.ts` | 67 | `CandidateType`, `ConnectionPath`, `classifyPath`, `selectedPairFromStats`, `BLUETOOTH_PATH` | Classify the selected ICE pair | domain::state | Domain | Ported, tested | M7/M8 | domain unit |
-| `packages/protocol/src/connectivity/contactCard.ts` | 64 | `CONTACT_CARD_PREFIX`, `ContactCard`, `Contact`, `uidFromDh`, `encodeContactCard`, `decodeContactCard` | Contact card encode, decode, verify | crypto::card | Crypto | Ported, tested | M7/M8 | vectors byte-identical |
+| `packages/protocol/src/connectivity/contactCard.ts` | 76 | `CONTACT_CARD_PREFIX`, `ContactCard`, `Contact`, `uidFromKeys`, `encodeContactCard`, `decodeContactCard` | Contact card encode, decode, verify | crypto::card | Crypto | Ported, tested | M7/M8 | vectors byte-identical |
 | `packages/protocol/src/connectivity/diagnosis.ts` | 84 | `ConnectionFacts`, `DiagnosisAction`, `Diagnosis`, `diagnoseConnection`, `countSdpCandidates` | Why isn't it connecting | domain::diagnosis | Domain | Ported, tested | M7/M8 | domain unit |
 | `packages/protocol/src/connectivity/inviteCode.ts` | 118 | `INVITE_WORDS`, `INVITE_TTL_SEC`, `newInviteWords`, `parseInviteWords`, `InviteRendezvous`, `deriveInvite` +4 | Six-word invites | crypto::invite | Crypto | Ported, tested | M7/M8 | vectors both ways |
 | `packages/protocol/src/connectivity/networkConfig.ts` | 120 | `TransportMode`, `TurnServer`, `SignalingConfig`, `NetworkConfig`, `DEFAULT_NOSTR_RELAYS`, `DEFAULT_NETWORK_CONFIG` +4 | Network settings parsing | domain::network | Domain | Ported, tested | M7/M8 | domain unit |
@@ -178,7 +178,7 @@ Ported does not mean retired: the TypeScript and Kotlin versions stay in product
 | `apps/android/app/src/main/java/com/duochat/app/p2p/Liveness.kt` | 49 | `Liveness`, `LivenessMonitor` | Liveness probe | domain::link_policy, domain::signaling; engine::core (ping, dead-link timer) | Engine | Ported, tested | M8 | misc vectors; engine lifecycle tests |
 | `apps/android/app/src/main/java/com/duochat/app/p2p/PeerSession.kt` | 572 | `PeerSession` | WebRTC peer session (handshake, receipts, liveness and framing rules are in the engine) | crypto::peer_auth + engine; the WebRTC session itself is platform code | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/p2p/WebRtcTransport.kt` | 408 | `WebRtcTransport`, `PeerConnectionFactoryHolder` | ICE servers, WebRTC data channel | WebRTC adapter | Adapter | Stays (platform adapter) | Stays | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/rustcore/KeystoreSecureStore.kt` | 118 | `KeystoreSecureStore` | Android adapters for the Rust engine (Keystore secret store, on-device probe) | Platform adapter for engine ports | Adapter | Stays (platform adapter) | Stays | n/a |
+| `apps/android/app/src/main/java/com/duochat/app/rustcore/KeystoreSecureStore.kt` | 124 | `KeystoreSecureStore` | Android adapters for the Rust engine (Keystore secret store, on-device probe) | Platform adapter for engine ports | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/rustcore/RustChatEngine.kt` | 1298 | `RustChatEngine` | Android adapters for the Rust engine (Keystore secret store, on-device probe) | Platform adapter for engine ports | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/rustcore/RustEngineProbe.kt` | 62 | `RustEngineProbe` | Android adapters for the Rust engine (Keystore secret store, on-device probe) | Platform adapter for engine ports | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/security/AndroidIdentity.kt` | 252 | `PublicJwk`, `DeviceIdentity`, `PinnedPeer`, `AndroidIdentityManager` | Keystore identity storage, at-rest encryption, biometric lock | SecureStore adapter | Adapter | Stays (platform adapter) | Stays | n/a |
@@ -188,7 +188,7 @@ Ported does not mean retired: the TypeScript and Kotlin versions stay in product
 | `apps/android/app/src/main/java/com/duochat/app/security/Channels.kt` | 88 | `Channels` | Cryptography duplicated from TypeScript | crypto | Crypto | Ported, tested | M8 | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/security/ContactCard.kt` | 38 | `ContactCard`, `Contact`, `ContactCards` | Cryptography duplicated from TypeScript | crypto | Crypto | Ported, tested | M8 | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/security/EcKeys.kt` | 59 | `EcKeys` | Cryptography duplicated from TypeScript | crypto | Crypto | Ported, tested | M8 | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/security/IdentityCodec.kt` | 75 | `IdentityCodec` | Cryptography duplicated from TypeScript | crypto | Crypto | Ported, tested | M8 | n/a |
+| `apps/android/app/src/main/java/com/duochat/app/security/IdentityCodec.kt` | 81 | `IdentityCodec` | Cryptography duplicated from TypeScript | crypto | Crypto | Ported, tested | M8 | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/security/InviteCode.kt` | 85 | `InviteCode` | Cryptography duplicated from TypeScript | crypto | Crypto | Ported, tested | M8 | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/security/KillSwitch.kt` | 441 | `KillSwitchScope`, `KillSwitchMode`, `StepStatus`, `KillSwitchPlanStep`, `KillSwitchStepResult`, `KillSwitchReport` +8 | Emergency erase steps for Android (Keystore key, files, Room) | domain::killswitch + engine::core::privacy run the plan; these steps call Android APIs | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/security/LocalCrypto.kt` | 88 | `LocalCrypto` | Keystore identity storage, at-rest encryption, biometric lock | SecureStore adapter | Adapter | Stays (platform adapter) | Stays | n/a |

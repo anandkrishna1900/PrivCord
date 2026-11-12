@@ -18,7 +18,7 @@ object RecoveryIdentity {
         val dhD: ByteArray,
         val dhPub: PublicJwk,
     ) {
-        val uid: String get() = IdentityCodec.uidFor(dhPub)
+        val uid: String get() = IdentityCodec.uidFor(signPub, dhPub)
     }
 
     fun derive(phrase: String, passphrase: String = ""): Keys {

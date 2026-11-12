@@ -9,7 +9,7 @@ import {
   type PrivateJwk,
   type PublicJwk,
 } from '../e2ee';
-import { uidFromDh, type ContactCard } from '../connectivity/contactCard';
+import { uidFromKeys, type ContactCard } from '../connectivity/contactCard';
 
 /**
  * A group is nothing but a signed, causally ordered log of membership events.
@@ -141,7 +141,7 @@ export async function cardIsValid(card: ContactCard | undefined, expectedUid: st
   if (!card) return false;
   try {
     if (!(await verifyIdentityProof(card.sign, card.dh, card.proof))) return false;
-    return (await uidFromDh(card.dh)) === expectedUid;
+    return (await uidFromKeys(card.sign, card.dh)) === expectedUid;
   } catch {
     return false;
   }

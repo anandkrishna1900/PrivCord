@@ -10,7 +10,7 @@ use crate::{
     canonical::canonical_json,
     card::ContactCard,
     error::CryptoError,
-    identity::{uid_from_dh, verify_identity_proof, verify_signature, Identity},
+    identity::{uid_from_keys, verify_identity_proof, verify_signature, Identity},
     kdf::sha256_hex,
 };
 use privcord_domain::{
@@ -279,7 +279,7 @@ fn card_from_value(v: &Value) -> Option<ContactCard> {
 
 fn card_is_valid(card: &ContactCard, expected_uid: &str) -> bool {
     verify_identity_proof(&card.sign, &card.dh, &card.proof)
-        && uid_from_dh(&card.dh).is_ok_and(|u| u.as_str() == expected_uid)
+        && uid_from_keys(&card.sign, &card.dh).is_ok_and(|u| u.as_str() == expected_uid)
 }
 
 fn signature_valid(e: &GroupEvent, signer: &PublicJwk) -> bool {

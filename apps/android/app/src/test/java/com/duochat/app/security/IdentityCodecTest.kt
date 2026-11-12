@@ -17,9 +17,9 @@ class IdentityCodecTest {
     private val bDh = PublicJwk("zYcBKuj3Ij1qQqN-liw_a8DhfZvDG6tKgxCfRFG6uxU", "5mMzHrj708RGhJ15I1IYdy4cL8RFJxq9HeU0bjRmBl0")
 
     @Test
-    fun `uid is the fingerprint of the ECDH identity key`() {
-        assertEquals("bf9861c45fd771142637ca6a8ec6b22ba848e4f0758311f9b173bc546aae65de", IdentityCodec.uidFor(aDh))
-        assertEquals("83f73744bf8a8006334ba2a309be5c27a4f05fe081897de3266f37238dea1170", IdentityCodec.uidFor(bDh))
+    fun `uid is the hash of both public keys`() {
+        assertEquals("d2360f62fee1f1d2679278d1799927888ca4f8692d0e294918be14cae4d5798a", IdentityCodec.uidFor(aSign, aDh))
+        assertEquals("3ad080e6c1cec573ea7a1f2ba74dfbe9bba7a0c143f8dd4b221a419254862c50", IdentityCodec.uidFor(bSign, bDh))
     }
 
     @Test

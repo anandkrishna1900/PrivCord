@@ -12,7 +12,7 @@ use privcord_domain::{
     killswitch::{KillSwitchScope, StepStatus},
     privacy::ContactTrust,
     state::{ConnectionFailure, ConnectionPath, ConnectionState},
-    ConversationId, UserId,
+    ConversationId, MessageId, UserId,
 };
 use privcord_engine::{Core, EngineEvent, ErrorCode, EventStream, Ports};
 use privcord_ports::{
@@ -1071,7 +1071,8 @@ fn a_card_that_pairs_a_friends_uid_with_another_signing_key_is_refused() {
     let mut a = node("forge-a", &clock);
     let mut b = node("forge-b", &clock);
     befriend(&mut a, &mut b);
-    // Eve signs Bob's public ECDH key with her own signing key: the card verifies and its uid is Bob's.
+    // Eve signs Bob's public ECDH key with her own signing key. The card verifies, but the id comes from both keys,
+    // so it is Eve's own id, not Bob's: she cannot pass for him anywhere.
     let eve = Identity::generate(&mut SeededEntropy::new("forge-eve")).unwrap();
     let bob = ContactCard::decode(&b.core.own_card(Some("B")).unwrap()).unwrap();
     let payload = privcord_crypto::identity::identity_proof_payload(&bob.card.dh).unwrap();
@@ -1083,14 +1084,86 @@ fn a_card_that_pairs_a_friends_uid_with_another_signing_key_is_refused() {
     }
     .encode()
     .unwrap();
-    assert_eq!(ContactCard::decode(&forged).unwrap().uid, b.uid);
-    assert_eq!(
-        a.core.add_contact(&forged, ContactTrust::Verified),
-        Err(ErrorCode::InvalidCard)
-    );
-    // Bob's real card is still the one Alice holds.
+    let forged_uid = ContactCard::decode(&forged).unwrap().uid;
+    assert_ne!(forged_uid, b.uid);
+    // And Bob's id can only ever be held with Bob's own signing key.
+    assert!(a.core.add_contact(&forged, ContactTrust::Verified).is_ok());
     assert!(a
         .core
         .add_contact(&b.core.own_card(Some("B")).unwrap(), ContactTrust::Verified)
         .is_ok());
+    let snap = a.core.snapshot();
+    assert!(snap.contacts.iter().any(|c| c.uid == b.uid));
+}
+
+#[test]
+fn data_stored_under_v1_ids_moves_to_the_v2_ids_when_the_engine_starts() {
+    use privcord_crypto::{card::ContactCard, identity::legacy_uid};
+    use privcord_ports::{StorageOp, StoredContact, StoredMessage};
+    let clock = FakeClock::at(1_700_000_000_000);
+    let a = node("legacy-a", &clock);
+    let b = node("legacy-b", &clock);
+    let card = b.core.own_card(Some("B")).unwrap();
+    let bob = ContactCard::decode(&card).unwrap();
+    let (old_bob, old_me) = (
+        legacy_uid(&bob.card.dh).unwrap(),
+        legacy_uid(
+            &ContactCard::decode(&a.core.own_card(None).unwrap())
+                .unwrap()
+                .card
+                .dh,
+        )
+        .unwrap(),
+    );
+    // What an older version left behind: Bob, a chat with him and one of our messages, all under v1 ids.
+    let msg = |id: &str, from: &UserId| StoredMessage {
+        conversation: ConversationId::Direct(old_bob.clone()),
+        message: privcord_domain::message::ChatMessage {
+            message_id: MessageId::new(id).unwrap(),
+            client_message_id: MessageId::new(id).unwrap(),
+            sender_id: from.clone(),
+            text: "hi".into(),
+            client_created_at: 1,
+            kind: privcord_domain::message::MessageKind::Text,
+            transport: privcord_domain::message::TransportKind::P2p,
+            delivery_state: privcord_domain::message::DeliveryState::Delivered,
+            read_at: None,
+            reply_to: None,
+        },
+    };
+    a.storage
+        .apply(&[
+            StorageOp::PutContact(StoredContact {
+                uid: old_bob.clone(),
+                card,
+                name: Some("B".into()),
+                trust: ContactTrust::Verified,
+                checked: false,
+                introduced_by: None,
+                created_at: 1,
+            }),
+            StorageOp::InsertMessage(msg("00000000-0000-4000-8000-000000000001", &old_bob)),
+            StorageOp::InsertMessage(msg("00000000-0000-4000-8000-000000000002", &old_me)),
+        ])
+        .unwrap();
+    let core = Core::new(Ports {
+        storage: a.storage.clone(),
+        secure: a.secure.clone(),
+        transport: RecordingTransport::new(),
+        clock: clock.clone(),
+        notifier: RecordingNotifier::new(),
+        entropy: Box::new(SeededEntropy::new("legacy-a2")),
+    })
+    .unwrap();
+    let snap = core.snapshot();
+    assert!(snap.contacts.iter().any(|c| c.uid == b.uid));
+    let chat = &snap
+        .messages
+        .iter()
+        .find(|(c, _)| *c == ConversationId::Direct(b.uid.clone()))
+        .expect("the chat moved to Bob's v2 id")
+        .1;
+    assert_eq!(chat.len(), 2);
+    assert!(chat.iter().any(|m| m.sender_id == a.uid));
+    assert!(chat.iter().any(|m| m.sender_id == b.uid));
 }

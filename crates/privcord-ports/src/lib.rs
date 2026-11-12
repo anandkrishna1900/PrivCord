@@ -139,6 +139,12 @@ pub enum StorageOp {
     /// Deleted for everyone: keep only a tombstone (no text, file, reply, reactions or unsent copies).
     Tombstone(MessageId),
     Erase(EraseScope),
+    /// Someone's id changed (protocol v2 derives it from both public keys): everything stored under `from` moves to
+    /// `to`. If a contact already exists under `to`, the old one is dropped.
+    RenameUser {
+        from: UserId,
+        to: UserId,
+    },
 }
 
 /// Persistent state. `apply` is the only way to change it, and it is atomic: a crash or an error part-way leaves

@@ -6,7 +6,7 @@ import {
   deriveIdentityFromPhrase,
   open,
   SecureChannel,
-  uidFromDh,
+  uidFromKeys,
   verifyIdentityProof,
 } from '../src';
 import { verifyEvent } from '../../../apps/desktop/src/lib/signaling/nostr';
@@ -41,7 +41,7 @@ describe.skipIf(!existsSync(file))('artifacts produced by the Android app', () =
       senderUid: k.sealedFromUid,
     });
     expect(payload).toEqual({ t: 'msg', text: 'from kotlin ✓' });
-    expect(await uidFromDh(bob.dhKey.pubJwk)).toBe(k.sealedToUid);
+    expect(await uidFromKeys(bob.signKey.pubJwk, bob.dhKey.pubJwk)).toBe(k.sealedToUid);
     const wrong = await open({ blob, ownUid: k.sealedFromUid, ownDhPriv: ann.dhKey.privJwk, senderSign: ann.signKey.pubJwk, senderUid: k.sealedFromUid });
     expect(wrong).toBeNull();
   });

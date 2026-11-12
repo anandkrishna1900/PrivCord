@@ -599,28 +599,23 @@ fn the_engine_opens_what_was_imported_and_carries_on() {
     .unwrap();
     core.recover_identity(f["me"]["phrase"].as_str().unwrap(), "")
         .unwrap();
-    assert_eq!(
-        core.own_uid().unwrap(),
-        &uid(&f, "me"),
-        "the recovered phrase is the same person"
-    );
+    // The same person (the recovered phrase gives the keys whose v1 id the old app recorded), now under the v2 id.
+    assert_ne!(core.own_uid().unwrap(), &uid(&f, "me"));
     let snap = core.snapshot();
     assert_eq!(snap.contacts.len(), 3);
     assert_eq!(snap.channels, ["town"]);
-    assert_eq!(snap.groups.len(), 1);
-    assert_eq!(snap.groups[0].name, "Trip");
-    assert_eq!(snap.groups[0].members.len(), 3);
+    // Groups do not come over: their signed history names members by v1 ids, which v2 no longer accepts (accepting
+    // them is exactly what let a forged card claim someone's id). They are made again.
+    assert!(snap.groups.is_empty());
     let total: usize = snap.messages.iter().map(|(_, v)| v.len()).sum();
     assert_eq!(total, 14);
     assert_eq!(snap.queued, 3, "unsent messages are still waiting");
-    // The imported file opens, and the old group can be written to straight away.
+    // The imported file opens.
     let id = MessageId::new("00000000-0000-4000-8000-000000000004").unwrap();
     assert_eq!(
         core.file(&id).unwrap().unwrap().bytes.len() as u64,
         f["pngLen"].as_u64().unwrap()
     );
-    core.send_group_message(f["groupId"].as_str().unwrap(), "back again", None)
-        .unwrap();
 }
 
 #[test]
@@ -652,7 +647,8 @@ fn a_backup_made_by_the_desktop_app_restores_into_the_engine() {
     assert_eq!((r.friends, r.groups, r.messages), (1, 1, 4));
     let snap = core.snapshot();
     assert_eq!(snap.contacts.len(), 1);
-    assert_eq!(snap.groups[0].name, "Trip");
+    // The group's signed history uses v1 ids: it is not taken (see above), the rest of the backup is.
+    assert!(snap.groups.is_empty());
     assert_eq!(snap.channels, ["town"]);
     assert_eq!(snap.muted, [uid(&f, "carol")]);
     assert_eq!(snap.deleted.len(), 1);

@@ -9,7 +9,7 @@ import { writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { entropyToMnemonic } from '@scure/bip39';
 import { wordlist } from '@scure/bip39/wordlists/english.js';
-import { GroupCoordinator, deriveIdentityFromPhrase, sealBackup, uidFromDh, type ContactCard } from '../src';
+import { GroupCoordinator, deriveIdentityFromPhrase, sealBackup, uidFromKeys, type ContactCard } from '../src';
 
 const KEY = new Uint8Array(32).map((_, i) => (i * 7 + 3) & 0xff);
 const hex = (b: Uint8Array) => Buffer.from(b).toString('hex');
@@ -33,7 +33,7 @@ async function person(i: number, name?: string) {
   const phrase = entropyToMnemonic(new Uint8Array(16).fill(0x70 + i), wordlist);
   const { identity } = await deriveIdentityFromPhrase(phrase);
   const card: ContactCard = { v: 1, sign: identity.signKey.pubJwk, dh: identity.dhKey.pubJwk, proof: identity.identityProof, ...(name ? { name } : {}) };
-  return { phrase, uid: await uidFromDh(identity.dhKey.pubJwk), card, signPriv: identity.signKey.privJwk };
+  return { phrase, uid: await uidFromKeys(identity.signKey.pubJwk, identity.dhKey.pubJwk), card, signPriv: identity.signKey.privJwk };
 }
 const [me, bob, carol, dave, eve] = await Promise.all([person(0, 'Me'), person(1, 'Bob'), person(2, 'Carol'), person(3, 'Dave'), person(4)]);
 

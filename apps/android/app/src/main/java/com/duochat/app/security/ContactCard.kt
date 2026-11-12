@@ -30,7 +30,7 @@ object ContactCards {
             val name = if (json.has("name")) (json.opt("name") as? String ?: return null).take(40) else null
             if (json.optInt("v", -1) != 1 || sign == null || dh == null || proof == null) null
             else if (!IdentityCodec.verifyIdentityProof(sign, dh, proof)) null
-            else Contact(IdentityCodec.uidFor(dh), ContactCard(sign, dh, proof, name?.ifEmpty { null }))
+            else Contact(IdentityCodec.uidFor(sign, dh), ContactCard(sign, dh, proof, name?.ifEmpty { null }))
         }
     } catch (_: Exception) {
         null

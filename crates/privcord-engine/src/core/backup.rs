@@ -165,15 +165,25 @@ impl Core {
         let own = self.uid.clone().ok_or(ErrorCode::NoIdentity)?;
         let data = open_backup(text, passphrase).ok_or(ErrorCode::BackupUnreadable)?;
         let (owner, bundle) = read_bundle(&data).ok_or(ErrorCode::BackupUnreadable)?;
-        if owner != own.as_str() {
+        // A backup made before protocol v2 names its owner by our v1 id: it is ours all the same. It goes in under that
+        // id and the reload below moves it to the v2 id.
+        let legacy = self
+            .identity
+            .as_ref()
+            .and_then(|i| privcord_crypto::identity::legacy_uid(&i.dh_public()).ok());
+        let owner_id = if owner == own.as_str() {
+            own
+        } else if let Some(old) = legacy.filter(|l| owner == l.as_str()) {
+            old
+        } else {
             return Err(ErrorCode::BackupNotYours);
-        }
+        };
         let now = self.now();
         let report = import(
             &bundle,
             Source::Backup,
             &NoFiles,
-            &own,
+            &owner_id,
             &*self.ports.storage,
             now,
         )

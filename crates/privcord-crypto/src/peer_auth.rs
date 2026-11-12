@@ -8,7 +8,7 @@
 
 use crate::{
     error::CryptoError,
-    identity::{uid_from_dh, verify_identity_proof, verify_signature, Identity},
+    identity::{uid_from_keys, verify_identity_proof, verify_signature, Identity},
     rng::{random_array, Entropy},
 };
 use privcord_domain::{blob::PublicJwk, codec};
@@ -224,7 +224,7 @@ impl PeerAuth {
         if same_key(&own.sign_public(), &hello.sign) {
             return Err(AuthError::OwnIdentity);
         }
-        let uid_ok = uid_from_dh(&hello.dh).is_ok_and(|u| u.as_str() == hello.uid);
+        let uid_ok = uid_from_keys(&hello.sign, &hello.dh).is_ok_and(|u| u.as_str() == hello.uid);
         if !uid_ok || !verify_identity_proof(&hello.sign, &hello.dh, &hello.identity_proof) {
             return Err(AuthError::BadIdentity);
         }

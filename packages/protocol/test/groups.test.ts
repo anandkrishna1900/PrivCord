@@ -6,7 +6,7 @@ import {
   generateRecoveryPhrase,
   parseGroupFrame,
   signGroupEvent,
-  uidFromDh,
+  uidFromKeys,
   type ContactCard,
   type GroupEvent,
   type GroupFrame,
@@ -25,7 +25,7 @@ interface Person {
 async function person(name: string): Promise<Person> {
   const { identity } = await deriveIdentityFromPhrase(generateRecoveryPhrase());
   return {
-    uid: await uidFromDh(identity.dhKey.pubJwk),
+    uid: await uidFromKeys(identity.signKey.pubJwk, identity.dhKey.pubJwk),
     signPriv: identity.signKey.privJwk,
     card: { v: 1, sign: identity.signKey.pubJwk, dh: identity.dhKey.pubJwk, proof: identity.identityProof, name },
   };

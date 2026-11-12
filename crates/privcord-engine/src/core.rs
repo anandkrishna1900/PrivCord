@@ -314,6 +314,36 @@ impl Core {
         Ok(core)
     }
 
+    /// Ids used to come from the ECDH key alone (protocol v1); now they come from both public keys. Data stored under an
+    /// old id (ours, or a friend's whose card shows it was theirs) moves to the new one, so chats survive the change. A
+    /// no-op once moved.
+    fn move_legacy_ids(&mut self) -> Result<(), ErrorCode> {
+        use privcord_crypto::identity::legacy_uid;
+        let mut ops = Vec::new();
+        if let (Some(id), Some(own)) = (self.identity.as_ref(), self.uid.clone()) {
+            if let Ok(old) = legacy_uid(&id.dh_public()) {
+                ops.push(StorageOp::RenameUser { from: old, to: own });
+            }
+        }
+        for stored in self.ports.storage.contacts()? {
+            let Some(card) = ContactCard::decode(&stored.card) else {
+                continue;
+            };
+            if card.uid != stored.uid
+                && legacy_uid(&card.card.dh).is_ok_and(|old| old == stored.uid)
+            {
+                ops.push(StorageOp::RenameUser {
+                    from: stored.uid,
+                    to: card.uid,
+                });
+            }
+        }
+        if !ops.is_empty() {
+            self.ports.storage.apply(&ops)?;
+        }
+        Ok(())
+    }
+
     /// (Re)read everything the engine keeps from storage: after start, and after a backup was restored into it.
     fn reload_from_storage(&mut self) -> Result<(), ErrorCode> {
         self.contacts.clear();
@@ -324,6 +354,7 @@ impl Core {
         self.channel_people.clear();
         self.groups = None;
         self.load_keys();
+        self.move_legacy_ids()?;
         for stored in self.ports.storage.contacts()? {
             if let Some(contact) = ContactCard::decode(&stored.card).filter(|c| c.uid == stored.uid)
             {
@@ -414,6 +445,9 @@ impl Core {
         self.ports.secure.save_identity(&both)?;
         self.uid = Some(identity.uid()?);
         self.identity = Some(identity);
+        // Data already stored (an imported or restored database) may be under this identity's v1 id: move it, and
+        // read it again now that cards can be checked against our own id.
+        self.reload_from_storage()?;
         // Keys belong to an identity: a new one starts with none (contacts hand theirs over on the next link).
         self.reset_keys();
         self.groups = None;
