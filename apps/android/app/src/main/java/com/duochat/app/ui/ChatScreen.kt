@@ -1197,11 +1197,15 @@ private fun Composer(
                 // One rounded field holding the attach button and the text; the round send/record button sits beside it.
                 Row(
                     verticalAlignment = Alignment.Bottom,
-                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                        .padding(start = if (isChannel) 6.dp else 0.dp),
+                    // 28 dp corners on a 56 dp field: the ends are exact half circles.
+                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(28.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .padding(start = if (isChannel) 6.dp else 4.dp),
                 ) {
-                if (!isChannel) IconButton(onClick = { picker.launch("*/*") }, modifier = Modifier.size(48.dp)) {
-                    Icon(Icons.Filled.AttachFile, contentDescription = "Send a file (up to 8 MB)", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                // The clip sits centred on the first line (a one-line field is 56 dp tall) and stays there as text grows.
+                if (!isChannel) Box(Modifier.height(56.dp), contentAlignment = Alignment.Center) {
+                    IconButton(onClick = { picker.launch("*/*") }, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Filled.AttachFile, contentDescription = "Send a file (up to 8 MB)", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
                 androidx.compose.material3.TextField(
                     value = text,
@@ -1232,7 +1236,8 @@ private fun Composer(
                 }
                 Spacer(Modifier.width(8.dp))
                 val showMic = text.isBlank() && !isChannel && !sending
-                androidx.compose.animation.AnimatedContent(targetState = showMic, transitionSpec = { Motion.swap() }, label = "send") { mic ->
+                // 48 dp button + 4 dp above and below: centred on the 56 dp field's first line, like the clip.
+                androidx.compose.animation.AnimatedContent(targetState = showMic, transitionSpec = { Motion.swap() }, label = "send", modifier = Modifier.padding(vertical = 4.dp)) { mic ->
                 if (mic) {
                     RoundAction(
                         onClick = {
