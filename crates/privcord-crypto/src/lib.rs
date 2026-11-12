@@ -25,6 +25,8 @@ pub mod invite;
 pub mod kdf;
 pub mod nostr;
 pub mod peer_auth;
+pub mod pq;
+pub mod pq_channel;
 pub mod rng;
 pub mod safety;
 pub mod seal;

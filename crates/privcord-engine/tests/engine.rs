@@ -430,17 +430,50 @@ fn a_message_that_claims_another_sender_is_refused() {
     let mut chan = SecureChannel::new(
         au.as_str(),
         bu.as_str(),
-        bob_card.sign,
+        bob_card.sign.clone(),
         &mut SeededEntropy::new("forger"),
     )
     .unwrap();
     b.core
         .frame_received(&au, &chan.hello(&alice).unwrap().to_value().to_string());
     chan.accept(&bob_hello).unwrap();
-    let mut send = |sender: &str, id: &str| {
-        let frame = json!({ "v": 1, "kind": "message", "messageId": id, "clientMessageId": id, "senderId": sender, "text": "from someone", "clientCreatedAt": 5 });
+    // Protocol v2: the post-quantum channel inside the link, done by hand as well.
+    use privcord_crypto::{
+        pq_channel::{PqChannel, PqData, PqHello, PqKem},
+        secure_channel::Data,
+    };
+    let mut rng = SeededEntropy::new("forger-pq");
+    let mut pq = PqChannel::new(au.as_str(), bu.as_str(), bob_card.sign.clone(), &mut rng).unwrap();
+    let from_bob = |chan: &mut SecureChannel, b: &Node| -> Vec<Value> {
+        b.transport
+            .drain()
+            .into_iter()
+            .map(|(_, f)| {
+                chan.decrypt(&Data::from_value(&serde_json::from_str(&f).unwrap()).unwrap())
+                    .unwrap()
+            })
+            .collect()
+    };
+    let bob_pq_hello = from_bob(&mut chan, &b)
+        .into_iter()
+        .find_map(|v| PqHello::from_value(&v))
+        .unwrap();
+    let my_kem = pq.on_hello(&bob_pq_hello, &mut rng).unwrap();
+    for frame in [pq.hello(&alice).to_value(), my_kem.to_value()] {
         b.core
             .frame_received(&au, &chan.encrypt(&frame).unwrap().to_value().to_string());
+    }
+    let bob_kem = from_bob(&mut chan, &b)
+        .into_iter()
+        .find_map(|v| PqKem::from_value(&v))
+        .unwrap();
+    pq.on_kem(&bob_kem).unwrap();
+    let _ = PqData::from_value;
+    let mut send = |sender: &str, id: &str| {
+        let frame = json!({ "v": 1, "kind": "message", "messageId": id, "clientMessageId": id, "senderId": sender, "text": "from someone", "clientCreatedAt": 5 });
+        let wrapped = pq.encrypt(&frame).unwrap().to_value();
+        b.core
+            .frame_received(&au, &chan.encrypt(&wrapped).unwrap().to_value().to_string());
     };
     send("somebody-else", "m-forged");
     send(au.as_str(), "m-honest");
@@ -493,13 +526,19 @@ fn group_only_privacy_blocks_direct_messages_from_introduced_people_but_not_veri
     b.transport.set_connected(&au2, true);
     a2.core.link_up(&bu, ConnectionPath::DirectNat).unwrap();
     b.core.link_up(&au2, ConnectionPath::DirectNat).unwrap();
-    // Handshake only: hold back Bob's privacy frame so Alice does not know yet.
-    for (_, f) in a2.transport.drain() {
-        b.core.frame_received(&au2, &f);
-    }
-    let bob_frames = b.transport.drain();
-    for (_, f) in bob_frames.iter().take(1) {
-        a2.core.frame_received(&bu, f);
+    // Handshake only: hold back Bob's privacy frame so Alice does not know yet. Frames go both ways until Alice is
+    // connected; whatever Bob sent after that (his privacy choice among it) is dropped.
+    let connected =
+        |n: &Node, who: &UserId| matches!(state_of(n, who), ConnectionState::Connected { .. });
+    while !connected(&a2, &bu) {
+        for (_, f) in a2.transport.drain() {
+            b.core.frame_received(&au2, &f);
+        }
+        for (_, f) in b.transport.drain() {
+            if !connected(&a2, &bu) {
+                a2.core.frame_received(&bu, &f);
+            }
+        }
     }
     let id = a2.core.send_message(&bu, "uninvited", None).unwrap();
     for (_, f) in a2.transport.drain() {
@@ -788,7 +827,7 @@ fn connect_with(
 }
 
 #[test]
-fn over_an_already_encrypted_link_the_engine_uses_the_legacy_handshake_and_plain_frames() {
+fn over_an_already_encrypted_link_messages_still_travel_inside_the_post_quantum_channel() {
     use privcord_engine::LinkSecurity;
     let (mut a, mut b, au, bu) = pair();
     connect_with(&mut a, &mut b, &au, &bu, LinkSecurity::TransportEncrypted);
@@ -805,16 +844,19 @@ fn over_an_already_encrypted_link_the_engine_uses_the_legacy_handshake_and_plain
         }
     );
 
-    // After the handshake frames are plain JSON, like the existing apps send.
-    let id = a.core.send_message(&bu, "plain over DTLS", None).unwrap();
+    // Protocol v2: even over DTLS, every frame is a post-quantum channel frame; the text never appears.
+    let id = a
+        .core
+        .send_message(&bu, "inside the channel", None)
+        .unwrap();
     let frames = a.transport.drain();
     assert_eq!(frames.len(), 1);
     let v: Value = serde_json::from_str(&frames[0].1).unwrap();
-    assert_eq!(v["kind"], "message");
-    assert_eq!(v["text"], "plain over DTLS");
+    assert_eq!(v["kind"], "pq");
+    assert!(!frames[0].1.contains("inside the channel"));
     b.core.frame_received(&au, &frames[0].1);
     pump(&mut a, &mut b, &au, &bu);
-    assert_eq!(texts(&b, &au), vec!["plain over DTLS"]);
+    assert_eq!(texts(&b, &au), vec!["inside the channel"]);
     assert_eq!(status(&a, &id), DeliveryState::Delivered);
 }
 

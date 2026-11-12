@@ -20,6 +20,7 @@ use privcord_crypto::{
     },
     identity::{Identity, StoredSecrets},
     peer_auth::{Expected, PeerAuth},
+    pq_channel::{PqChannel, PqData, PqHello, PqKem},
     rng::Entropy,
     safety::derive_safety_number,
     secure_channel::{Data, Hello, SecureChannel},
@@ -68,6 +69,8 @@ pub use invites::InvitePreview;
 
 /// A frame larger than this is dropped before it is parsed (SEC-04, SEC-09).
 pub const MAX_FRAME_BYTES: usize = 128 * 1024;
+/// Time for the post-quantum handshake once a link is authenticated.
+const PQ_SETUP_MS: i64 = 10_000;
 /// How long to wait for a delivery receipt before sending a message again.
 pub const RETRY_AFTER_MS: i64 = 20_000;
 /// How long a file is left to arrive (and be acknowledged) before it is sent again.
@@ -153,6 +156,10 @@ struct Peer {
     offer_out: Option<String>,
     offer_in: Option<String>,
     offer_in_at: i64,
+    /// Protocol v2: the post-quantum channel inside the link. The link carries nothing else until it is ready.
+    pq: Option<Box<PqChannel>>,
+    /// The handshake above must be done by this time, or the link is dropped and made again.
+    pq_deadline: i64,
 }
 
 impl Peer {
@@ -170,11 +177,19 @@ impl Peer {
             last_attempt_at: 0,
             bad_frames: 0,
             offer_out: None,
+            pq: None,
+            pq_deadline: 0,
             offer_in: None,
             offer_in_at: 0,
         }
     }
+    /// Ready to carry messages: the link is authenticated AND its post-quantum channel is up.
     fn ready(&self) -> bool {
+        self.outer_ready() && self.pq.as_ref().is_some_and(|c| c.ready())
+    }
+
+    /// The link itself is authenticated (its own handshake is done); the post-quantum handshake runs inside it.
+    fn outer_ready(&self) -> bool {
         match &self.session {
             Some(Session::Secure(c)) => c.ready(),
             Some(Session::Legacy(a)) => a.authenticated(),
@@ -704,6 +719,7 @@ impl Core {
     pub fn link_down(&mut self, peer: &UserId) {
         if let Some(p) = self.peers.get_mut(peer) {
             p.session = None;
+            p.pq = None;
             p.early_hello = None;
             p.files.clear();
         }
@@ -720,6 +736,7 @@ impl Core {
     fn fail(&mut self, peer: &UserId, reason: ConnectionFailure) {
         if let Some(p) = self.peers.get_mut(peer) {
             p.session = None;
+            p.pq = None;
             p.files.clear();
         }
         self.step(peer, ConnectionEvent::Failed(reason));
@@ -753,8 +770,8 @@ impl Core {
             }
             return;
         }
-        let ready = self.peers.get(peer).is_some_and(Peer::ready);
-        if !ready {
+        let outer_ready = self.peers.get(peer).is_some_and(Peer::outer_ready);
+        if !outer_ready {
             self.heard_from(peer);
             self.handshake_frame(peer, &value);
             return;
@@ -794,7 +811,118 @@ impl Core {
             p.bad_frames = 0;
         }
         self.heard_from(peer);
-        self.dispatch(peer, &inner);
+        self.on_inner(peer, &inner);
+    }
+
+    /// A frame inside an authenticated link: the post-quantum handshake, or a frame of the post-quantum channel.
+    /// Nothing else is accepted (protocol v2 has no plain frames).
+    fn on_inner(&mut self, peer: &UserId, frame: &Value) {
+        match frame.get("kind").and_then(Value::as_str) {
+            Some("pq_hello") => {
+                let Some(hello) = PqHello::from_value(frame) else {
+                    return;
+                };
+                let reply = match self.peers.get_mut(peer).and_then(|p| p.pq.as_mut()) {
+                    Some(c) => c.on_hello(&hello, &mut *self.ports.entropy),
+                    None => return,
+                };
+                match reply {
+                    Ok(kem) => {
+                        self.send_outer(peer, &kem.to_value());
+                        self.pq_progress(peer);
+                    }
+                    Err(_) => self.pq_failed(peer),
+                }
+            }
+            Some("pq_kem") => {
+                let Some(kem) = PqKem::from_value(frame) else {
+                    return;
+                };
+                let done = match self.peers.get_mut(peer).and_then(|p| p.pq.as_mut()) {
+                    Some(c) => c.on_kem(&kem),
+                    None => return,
+                };
+                match done {
+                    Ok(()) => self.pq_progress(peer),
+                    Err(_) => self.pq_failed(peer),
+                }
+            }
+            Some("pq") => {
+                let Some(data) = PqData::from_value(frame) else {
+                    return;
+                };
+                let inner = match self.peers.get_mut(peer).and_then(|p| p.pq.as_mut()) {
+                    Some(c) if c.ready() => c.decrypt(&data),
+                    _ => return,
+                };
+                match inner {
+                    // A frame inside the channel never carries another channel frame.
+                    Ok(v)
+                        if !matches!(
+                            v.get("kind").and_then(Value::as_str),
+                            Some("pq" | "pq_hello" | "pq_kem")
+                        ) =>
+                    {
+                        self.dispatch(peer, &v)
+                    }
+                    Ok(_) => {}
+                    Err(_) => self.bad_frame(peer),
+                }
+            }
+            // A plain frame on a v2 link: refused.
+            _ => {}
+        }
+    }
+
+    /// The link is authenticated: start the post-quantum handshake inside it.
+    fn start_pq(&mut self, peer: &UserId) {
+        let (Some(own), Some(identity)) = (self.uid.clone(), self.identity.as_ref()) else {
+            return;
+        };
+        let Some(sign) = self.contacts.get(peer).map(|c| c.contact.card.sign.clone()) else {
+            return;
+        };
+        let Ok(channel) =
+            PqChannel::new(own.as_str(), peer.as_str(), sign, &mut *self.ports.entropy)
+        else {
+            self.pq_failed(peer);
+            return;
+        };
+        let hello = channel.hello(identity).to_value();
+        let deadline = self.now() + PQ_SETUP_MS;
+        if let Some(p) = self.peers.get_mut(peer) {
+            p.pq = Some(Box::new(channel));
+            p.pq_deadline = deadline;
+        }
+        self.send_outer(peer, &hello);
+    }
+
+    /// The post-quantum handshake moved on; once it is done the link is up for messages.
+    fn pq_progress(&mut self, peer: &UserId) {
+        if !self.peers.get(peer).is_some_and(Peer::ready) {
+            return;
+        }
+        let path = self
+            .peers
+            .get(peer)
+            .map_or(ConnectionPath::Unknown, |p| p.path);
+        let now = self.now();
+        if let Some(p) = self.peers.get_mut(peer) {
+            p.liveness = LivenessMonitor::new(now);
+            p.last_ping_at = now;
+            p.attempts = 0;
+        }
+        self.step(peer, ConnectionEvent::Established(path));
+        self.send_privacy(peer);
+        self.send_group_hello(peer);
+        self.sync_social(peer);
+        self.flush(peer);
+    }
+
+    /// The post-quantum handshake failed (or never finished): this link is not used; it is closed and made again.
+    fn pq_failed(&mut self, peer: &UserId) {
+        self.fail(peer, ConnectionFailure::AuthenticationFailed);
+        self.ports.transport.close(peer);
     }
 
     /// A frame would not decrypt. One is noise; several in a row mean the two ends are out of step (a lost frame, a
@@ -897,21 +1025,8 @@ impl Core {
                     }
                 }
                 if ready {
-                    let path = self
-                        .peers
-                        .get(peer)
-                        .map_or(ConnectionPath::Unknown, |p| p.path);
-                    let now = self.now();
-                    if let Some(p) = self.peers.get_mut(peer) {
-                        p.liveness = LivenessMonitor::new(now);
-                        p.last_ping_at = now;
-                        p.attempts = 0;
-                    }
-                    self.step(peer, ConnectionEvent::Established(path));
-                    self.send_privacy(peer);
-                    self.send_group_hello(peer);
-                    self.sync_social(peer);
-                    self.flush(peer);
+                    // The link is authenticated. Messages wait for the post-quantum channel inside it.
+                    self.start_pq(peer);
                 }
             }
             Some(Err(())) => self.fail(peer, ConnectionFailure::AuthenticationFailed),
@@ -919,9 +1034,21 @@ impl Core {
         }
     }
 
-    /// Send one inner frame: encrypted by the engine on a link that is not encrypted, plain on one that is. A transport
-    /// that refuses ends the session (it will be re-established).
+    /// Send one frame to a peer: inside the post-quantum channel, which must be up (protocol v2 sends nothing plain).
     fn send_secure(&mut self, peer: &UserId, frame: &Value) -> bool {
+        let wrapped = match self.peers.get_mut(peer).and_then(|p| p.pq.as_mut()) {
+            Some(c) if c.ready() => match c.encrypt(frame) {
+                Ok(d) => d.to_value(),
+                Err(_) => return false,
+            },
+            _ => return false,
+        };
+        self.send_outer(peer, &wrapped)
+    }
+
+    /// Send one frame through the link's own layer: encrypted by the engine on a link that is not encrypted, as it is on
+    /// one that is. A transport that refuses ends the session (it will be re-established).
+    fn send_outer(&mut self, peer: &UserId, frame: &Value) -> bool {
         let text = match self.peers.get_mut(peer).and_then(|p| p.session.as_mut()) {
             Some(Session::Secure(c)) if c.ready() => match c.encrypt(frame) {
                 Ok(data) => data.to_value().to_string(),
@@ -1436,6 +1563,16 @@ impl Core {
             return;
         }
         let now = self.now();
+        // An authenticated link whose post-quantum handshake did not finish in time is dropped and made again.
+        let stalled: Vec<UserId> = self
+            .peers
+            .iter()
+            .filter(|(_, p)| p.outer_ready() && !p.ready() && p.pq.is_some() && now > p.pq_deadline)
+            .map(|(u, _)| u.clone())
+            .collect();
+        for peer in stalled {
+            self.pq_failed(&peer);
+        }
         let ready: Vec<UserId> = self
             .peers
             .iter()
