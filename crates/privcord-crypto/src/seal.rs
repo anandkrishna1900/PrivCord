@@ -27,7 +27,12 @@ const MAILBOX_PREFIX: &str = "duochat-mailbox-v1|";
 
 /// The bytes a blob's signature covers.
 pub fn signed_part(blob: &SealedBlob) -> Result<Vec<u8>, CryptoError> {
-    let v = json!({ "v": blob.v, "to": blob.to, "from": blob.from, "epk": thumb(&blob.epk), "iv": blob.iv, "ct": blob.ct });
+    let mut v = json!({ "v": blob.v, "to": blob.to, "from": blob.from, "epk": thumb(&blob.epk), "iv": blob.iv, "ct": blob.ct });
+    // v2 also signs the ML-KEM ciphertext and which key it was sealed to, so neither can be swapped in transit.
+    if let (Some(kem), Some(key), Some(o)) = (&blob.kem, &blob.key, v.as_object_mut()) {
+        o.insert("kem".into(), json!(kem));
+        o.insert("key".into(), json!(key));
+    }
     Ok(canonical_json(&v)?.into_bytes())
 }
 
@@ -64,6 +69,8 @@ pub fn seal(
         iv: codec::encode(&iv),
         ct: codec::encode(&ct),
         sig: String::new(),
+        kem: None,
+        key: None,
     };
     blob.sig = codec::encode(&identity.sign_message(&signed_part(&blob)?));
     if blob.encode().encode_utf16().count() > MAX_SEALED_BLOB_BYTES {

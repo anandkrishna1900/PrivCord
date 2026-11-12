@@ -51,17 +51,32 @@ pub struct SealedBlob {
     pub iv: String,
     pub ct: String,
     pub sig: String,
+    /// Protocol v2: the ML-KEM-768 ciphertext of the hybrid key exchange.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kem: Option<String>,
+    /// Protocol v2: which of the recipient's keys it was sealed to (a one-time key, or their standing key).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
 }
 
 impl SealedBlob {
     /// The blob if it has the right shape; `None` otherwise (same test as `validateBlob`).
     pub fn from_value(value: &Value) -> Option<Self> {
         let o = value.as_object()?;
-        if o.get("v")?.as_u64()? != 1 {
-            return None;
-        }
+        let v = o.get("v")?.as_u64()?;
+        // v1: classic ECDH. v2: hybrid, with the ML-KEM ciphertext and the recipient key it was sealed to.
+        let (kem, key) = match v {
+            1 => (None, None),
+            2 => (
+                Some(o.get("kem")?.as_str()?.to_owned()),
+                Some(o.get("key")?.as_str()?.to_owned()),
+            ),
+            _ => return None,
+        };
         Some(Self {
-            v: 1,
+            v: u8::try_from(v).ok()?,
+            kem,
+            key,
             to: o.get("to")?.as_str()?.to_owned(),
             from: o.get("from")?.as_str()?.to_owned(),
             epk: PublicJwk::from_value(o.get("epk")?)?,

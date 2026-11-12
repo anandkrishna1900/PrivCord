@@ -141,6 +141,71 @@ impl From<ErrorCode> for FfiError {
     }
 }
 
+/* ------------------------------------------------------------------ the encrypted database */
+
+/// Open the app's database, encrypted with a random 256-bit key kept in the OS key store (Android Keystore, Windows
+/// Credential Manager), never on disk beside the database. An older unencrypted database is encrypted in place.
+///
+/// A new key is made only when no encrypted database exists yet, so a key that fails to load can never be replaced by
+/// one that cannot open the data. If an encrypted database exists and its key is gone for good (the key store was
+/// wiped), the unreadable file is set aside (renamed, not deleted) and a fresh one is started: the app still opens, and
+/// the identity (kept separately) is untouched.
+fn open_encrypted_database(
+    path: &std::path::Path,
+    secure: &dyn SecureStoreCallbacks,
+) -> Result<privcord_storage::SqliteStorage, FfiError> {
+    use privcord_storage::SqliteStorage;
+    let stored = secure.load_database_key().filter(|k| k.len() == 32);
+    let key: Zeroizing<[u8; 32]> = match stored {
+        Some(k) => {
+            let mut key = Zeroizing::new([0u8; 32]);
+            key.copy_from_slice(&k);
+            key
+        }
+        None => {
+            if SqliteStorage::is_encrypted_file(path) {
+                set_aside(path);
+            }
+            let mut key = Zeroizing::new([0u8; 32]);
+            privcord_crypto::rng::Entropy::fill(&mut OsEntropy, &mut key[..])
+                .map_err(|_| FfiError::SecureStorage)?;
+            if !secure.save_database_key(key.to_vec()) {
+                return Err(FfiError::SecureStorage);
+            }
+            key
+        }
+    };
+    match SqliteStorage::open_encrypted(path, &key) {
+        Ok(db) => Ok(db),
+        // The key does not open this file: keep the file aside and start a fresh database with this key.
+        Err(privcord_ports::StorageError::Corrupt) if SqliteStorage::is_encrypted_file(path) => {
+            set_aside(path);
+            SqliteStorage::open_encrypted(path, &key).map_err(|_| FfiError::Storage)
+        }
+        Err(_) => Err(FfiError::Storage),
+    }
+}
+
+fn set_aside(path: &std::path::Path) {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let mut name = path
+        .file_name()
+        .map(|n| n.to_os_string())
+        .unwrap_or_default();
+    name.push(format!(".unreadable-{stamp}"));
+    let _ = std::fs::rename(path, path.with_file_name(name));
+    for suffix in ["-wal", "-shm"] {
+        let mut side = path
+            .file_name()
+            .map(|n| n.to_os_string())
+            .unwrap_or_default();
+        side.push(suffix);
+        let _ = std::fs::remove_file(path.with_file_name(side));
+    }
+}
+
 /* ------------------------------------------------------------------ callbacks the platform implements */
 
 /// OS-backed secret storage. `load` returns 64 bytes (the two private scalars) or nothing.
@@ -149,6 +214,9 @@ pub trait SecureStoreCallbacks: Send + Sync {
     fn load_identity(&self) -> Option<Vec<u8>>;
     fn save_identity(&self, secrets: Vec<u8>) -> bool;
     fn delete_identity(&self);
+    /// The 32-byte key the database is encrypted with, in its own slot (deleting the identity must not lose it).
+    fn load_database_key(&self) -> Option<Vec<u8>>;
+    fn save_database_key(&self, key: Vec<u8>) -> bool;
 }
 
 /// Sends a text frame to a peer over whatever link is up. Returns false if it cannot.
@@ -830,8 +898,7 @@ impl PrivcordEngine {
         transport: Arc<dyn TransportCallbacks>,
         notifier: Arc<dyn NotifierCallbacks>,
     ) -> Result<Arc<Self>, FfiError> {
-        let storage = privcord_storage::SqliteStorage::open(std::path::Path::new(&db_path))
-            .map_err(|_| FfiError::Storage)?;
+        let storage = open_encrypted_database(std::path::Path::new(&db_path), secure.as_ref())?;
         let ports = Ports {
             storage: Arc::new(storage),
             secure: Arc::new(SecureAdapter(secure)),

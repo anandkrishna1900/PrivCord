@@ -43,6 +43,13 @@ impl SecureStoreCallbacks for Keys {
     fn delete_identity(&self) {
         *self.0.lock().unwrap() = None;
     }
+    // A fixed test key: every database in these tests is new, and reopening one must find the same key.
+    fn load_database_key(&self) -> Option<Vec<u8>> {
+        Some(vec![9u8; 32])
+    }
+    fn save_database_key(&self, _key: Vec<u8>) -> bool {
+        true
+    }
 }
 
 struct Page;

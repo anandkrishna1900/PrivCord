@@ -27,6 +27,7 @@ pub mod nostr;
 pub mod peer_auth;
 pub mod pq;
 pub mod pq_channel;
+pub mod prekeys;
 pub mod rng;
 pub mod safety;
 pub mod seal;

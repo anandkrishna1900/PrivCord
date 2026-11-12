@@ -23,6 +23,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 const SERVICE: &str = "com.duochat.desktop";
 const IDENTITY_KEY: &str = "engine-identity-v1";
+/// The database encryption key (SQLCipher), separate from the identity.
+const DATABASE_KEY: &str = "engine-database-key-v1";
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
@@ -57,6 +59,18 @@ impl SecureStoreCallbacks for KeyringSecure {
         if let Ok(entry) = keyring::Entry::new(SERVICE, IDENTITY_KEY) {
             let _ = entry.delete_credential();
         }
+    }
+
+    /// The database key, in its own Credential Manager entry (deleting the identity does not touch it).
+    fn load_database_key(&self) -> Option<Vec<u8>> {
+        let entry = keyring::Entry::new(SERVICE, DATABASE_KEY).ok()?;
+        unhex(&entry.get_password().ok()?)
+    }
+
+    fn save_database_key(&self, key: Vec<u8>) -> bool {
+        keyring::Entry::new(SERVICE, DATABASE_KEY)
+            .and_then(|entry| entry.set_password(&hex(&key)))
+            .is_ok()
     }
 }
 

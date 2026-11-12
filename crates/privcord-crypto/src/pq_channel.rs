@@ -147,7 +147,7 @@ impl Chain {
 }
 
 /// Pads to a bucket: 256-byte steps up to 4 KiB, then 4 KiB steps. ISO 7816-4 style (0x80 then zeros).
-fn pad(plain: &[u8]) -> Vec<u8> {
+pub(crate) fn pad(plain: &[u8]) -> Vec<u8> {
     let need = plain.len() + 1;
     let size = if need <= 4096 {
         need.div_ceil(256) * 256
@@ -161,7 +161,7 @@ fn pad(plain: &[u8]) -> Vec<u8> {
     out
 }
 
-fn unpad(padded: &[u8]) -> Option<&[u8]> {
+pub(crate) fn unpad(padded: &[u8]) -> Option<&[u8]> {
     let end = padded.iter().rposition(|b| *b != 0)?;
     (padded.get(end) == Some(&0x80))
         .then(|| padded.get(..end))

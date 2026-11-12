@@ -373,3 +373,85 @@ fn file_info_reports_type_and_size_without_reading_the_bytes() {
     assert_eq!((info.mime.as_str(), info.size), ("image/jpeg", 1234));
     assert!(db.file_info(&mid("nope")).unwrap().is_none());
 }
+
+#[test]
+fn an_unencrypted_database_is_encrypted_in_place_and_nothing_readable_is_left() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("privcord.db");
+    let secret = "the meeting is at the old mill";
+    {
+        let db = SqliteStorage::open(&path).unwrap();
+        db.apply(&[
+            StorageOp::InsertMessage(msg("m-1", 1, secret)),
+            StorageOp::SetKv {
+                key: "k".into(),
+                value: b"kv-secret-value".to_vec(),
+            },
+        ])
+        .unwrap();
+    }
+    // A plaintext copy from an older migration, which must not survive.
+    std::fs::copy(&path, dir.path().join("privcord.db.bak-v1")).unwrap();
+    let raw = std::fs::read(&path).unwrap();
+    assert!(
+        raw.windows(secret.len()).any(|w| w == secret.as_bytes()),
+        "readable before"
+    );
+
+    let key = [7u8; 32];
+    {
+        let db = SqliteStorage::open_encrypted(&path, &key).unwrap();
+        assert_eq!(db.messages().unwrap()[0].message.text, secret);
+        assert_eq!(db.kv("k").unwrap().unwrap(), b"kv-secret-value");
+        db.apply(&[StorageOp::SetKv {
+            key: "k2".into(),
+            value: b"after".to_vec(),
+        }])
+        .unwrap();
+    }
+    // Nothing readable on disk: not the main file, nor any journal, nor the old copy (gone).
+    for entry in std::fs::read_dir(dir.path()).unwrap() {
+        let p = entry.unwrap().path();
+        let bytes = std::fs::read(&p).unwrap();
+        assert!(
+            !bytes.windows(secret.len()).any(|w| w == secret.as_bytes()),
+            "{p:?} still holds the text"
+        );
+        assert!(
+            !bytes.windows(15).any(|w| w == b"kv-secret-value"),
+            "{p:?} still holds the kv value"
+        );
+        assert!(
+            !p.to_string_lossy().contains(".bak-v"),
+            "{p:?} should be gone"
+        );
+    }
+    assert!(SqliteStorage::is_encrypted_file(&path));
+    // The wrong key opens nothing; the right one opens everything.
+    assert!(matches!(
+        SqliteStorage::open_encrypted(&path, &[8u8; 32]),
+        Err(StorageError::Corrupt)
+    ));
+    let db = SqliteStorage::open_encrypted(&path, &key).unwrap();
+    assert_eq!(db.messages().unwrap()[0].message.text, secret);
+    assert_eq!(db.kv("k2").unwrap().unwrap(), b"after");
+    assert_eq!(db.schema_version().unwrap(), SCHEMA_VERSION);
+}
+
+#[test]
+fn a_new_encrypted_database_starts_empty_and_reopens() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("fresh.db");
+    let key = [3u8; 32];
+    {
+        let db = SqliteStorage::open_encrypted(&path, &key).unwrap();
+        db.apply(&[StorageOp::SetKv {
+            key: "a".into(),
+            value: b"b".to_vec(),
+        }])
+        .unwrap();
+    }
+    assert!(SqliteStorage::is_encrypted_file(&path));
+    let db = SqliteStorage::open_encrypted(&path, &key).unwrap();
+    assert_eq!(db.kv("a").unwrap().unwrap(), b"b");
+}
