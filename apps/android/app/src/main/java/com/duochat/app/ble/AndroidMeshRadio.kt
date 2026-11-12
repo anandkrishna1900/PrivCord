@@ -62,6 +62,7 @@ class AndroidMeshRadio(private val context: Context) : MeshRadio {
         var busy = false
         /** Bumped on every chunk sent, so a late "radio is slow" timer for an earlier chunk cannot release a later one. */
         var turn = 0
+        var discovering = false
     }
 
     private val handler = SafeRadioHandler { stop() }
@@ -75,6 +76,8 @@ class AndroidMeshRadio(private val context: Context) : MeshRadio {
     private var advertiseCallback: AdvertiseCallback? = null
     private var scanCallback: ScanCallback? = null
     private var started = false
+    private var adapterWatch: android.content.BroadcastReceiver? = null
+    private var scanWaitTurn = 0
 
     override val linkCount: Int get() = links.values.count { it.ready }
 
@@ -83,7 +86,44 @@ class AndroidMeshRadio(private val context: Context) : MeshRadio {
     override fun start(listener: MeshRadio.Listener) {
         wanted = true
         this.listener = listener
-        handler.post { tryStart() }
+        handler.post {
+            watchAdapter()
+            tryStart()
+        }
+    }
+
+    /**
+     * Bluetooth switched off: the mesh lets go of everything (instead of sitting on dead links). Switched back on: it
+     * starts again by itself.
+     */
+    private fun watchAdapter() {
+        if (adapterWatch != null) return
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(c: Context, intent: android.content.Intent) {
+                when (intent.getIntExtra(android.bluetooth.BluetoothAdapter.EXTRA_STATE, android.bluetooth.BluetoothAdapter.ERROR)) {
+                    android.bluetooth.BluetoothAdapter.STATE_TURNING_OFF, android.bluetooth.BluetoothAdapter.STATE_OFF -> handler.post { teardown() }
+                    android.bluetooth.BluetoothAdapter.STATE_ON -> handler.post { tryStart() }
+                }
+            }
+        }
+        androidx.core.content.ContextCompat.registerReceiver(
+            context, receiver, android.content.IntentFilter(android.bluetooth.BluetoothAdapter.ACTION_STATE_CHANGED),
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        adapterWatch = receiver
+    }
+
+    /** Lets go of the radio but stays wanted, so [tryStart] can bring it back. */
+    private fun teardown() {
+        started = false
+        runCatching { manager?.adapter?.bluetoothLeAdvertiser?.stopAdvertising(advertiseCallback) }
+        runCatching { manager?.adapter?.bluetoothLeScanner?.stopScan(scanCallback) }
+        scanCallback = null
+        for (l in links.values.toList()) drop(l)
+        runCatching { server?.close() }
+        server = null
+        links.clear()
+        connecting.clear()
     }
 
     /** Starts the radio if Bluetooth is on and permitted; otherwise looks again soon (the user may turn it on later). */
@@ -115,14 +155,9 @@ class AndroidMeshRadio(private val context: Context) : MeshRadio {
     override fun stop() {
         wanted = false
         handler.post {
-            started = false
-            runCatching { manager?.adapter?.bluetoothLeAdvertiser?.stopAdvertising(advertiseCallback) }
-            runCatching { manager?.adapter?.bluetoothLeScanner?.stopScan(scanCallback) }
-            for (l in links.values.toList()) drop(l)
-            runCatching { server?.close() }
-            server = null
-            links.clear()
-            connecting.clear()
+            adapterWatch?.let { runCatching { context.unregisterReceiver(it) } }
+            adapterWatch = null
+            teardown()
         }
     }
 
@@ -220,6 +255,12 @@ class AndroidMeshRadio(private val context: Context) : MeshRadio {
 
     private fun startScan() {
         val scanner = manager?.adapter?.bluetoothLeScanner ?: return
+        val wait = ScanLimiter.shared.reserve(System.currentTimeMillis())
+        if (wait > 0) {
+            val turn = ++scanWaitTurn
+            handler.postDelayed({ if (started && scanWaitTurn == turn) startScan() }, wait)
+            return
+        }
         val filter = ScanFilter.Builder().setServiceUuid(ParcelUuid(SERVICE)).build()
         val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_BALANCED).build()
         val callback = object : ScanCallback() {
@@ -254,6 +295,18 @@ class AndroidMeshRadio(private val context: Context) : MeshRadio {
         } catch (t: Throwable) {
             android.util.Log.w("DuoChat", "Bluetooth mesh connect failed", t)
             connecting.remove(id)
+            return
+        }
+        // An attempt that never calls back (or stalls in setup) would hold one of the few link slots for good.
+        handler.postDelayed({ if (!l.ready && connecting.contains(id)) { connecting.remove(id); drop(l) } }, BleTimeouts.SETUP_MS)
+    }
+
+    private fun discover(l: Link, gatt: BluetoothGatt) {
+        if (l.discovering || l.gatt !== gatt) return
+        l.discovering = true
+        if (!gatt.discoverServices()) {
+            connecting.remove(l.id)
+            drop(l)
         }
     }
 
@@ -261,7 +314,9 @@ class AndroidMeshRadio(private val context: Context) : MeshRadio {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             handler.post {
                 if (newState == android.bluetooth.BluetoothProfile.STATE_CONNECTED) {
-                    if (!gatt.requestMtu(REQUESTED_MTU)) gatt.discoverServices()
+                    // Refused, or never answered on some phones: carry on with the default packet size.
+                    if (!gatt.requestMtu(REQUESTED_MTU)) discover(l, gatt)
+                    else handler.postDelayed({ discover(l, gatt) }, BleTimeouts.MTU_MS)
                 } else {
                     connecting.remove(l.id)
                     drop(l)
@@ -272,7 +327,7 @@ class AndroidMeshRadio(private val context: Context) : MeshRadio {
         override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
             handler.post {
                 l.mtu = mtu
-                gatt.discoverServices()
+                discover(l, gatt)
             }
         }
 
@@ -392,7 +447,9 @@ class AndroidMeshRadio(private val context: Context) : MeshRadio {
         l.ready = false
         links.remove(l.id)
         connecting.remove(l.id)
+        runCatching { l.gatt?.disconnect() }
         runCatching { l.gatt?.close() }
+        l.gatt = null
         if (l.viaServer) runCatching { server?.cancelConnection(l.device) }
         if (wasReady) listener?.onLinkDown(l.id)
     }

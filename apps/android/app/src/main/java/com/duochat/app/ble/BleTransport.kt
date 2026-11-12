@@ -100,6 +100,17 @@ class BleTransport(
     private var scanCallback: ScanCallback? = null
     private var advertiseCallback: AdvertiseCallback? = null
 
+    // Reliability (BleReliability.kt): growing waits between connection attempts, retries for a busy radio, and turn
+    // numbers so a timer from an earlier attempt can never act on a later one.
+    private val rescan = Backoff()
+    private val busyRetry = BusyRetry()
+    private var rescanTurn = 0
+    private var scanWaitTurn = 0
+    private var setupTurn = 0
+    private var mtuTurn = 0
+    private var discovering = false
+    private var adapterWatch: android.content.BroadcastReceiver? = null
+
     private val reassembler = BleReassembler()
     private val outbound = ArrayDeque<ByteArray>()
     private var writeBusy = false
@@ -129,6 +140,7 @@ class BleTransport(
             // A radio call that throws (a vendor Bluetooth stack, a permission revoked mid-way) must turn Bluetooth off for
             // this friend, never take the whole app down: Bluetooth starts on its own at launch, so a crash here repeats.
             try {
+                watchAdapter()
                 startGattServer()
                 startAdvertising()
                 if (initiateAsCentral) startScan()
@@ -160,6 +172,8 @@ class BleTransport(
         handler.post {
             val wasOpen = isOpen
             started = false
+            adapterWatch?.let { runCatching { context.unregisterReceiver(it) } }
+            adapterWatch = null
             stopScan()
             stopAdvertising()
             try { clientGatt?.disconnect(); clientGatt?.close() } catch (_: Exception) {}
@@ -190,6 +204,7 @@ class BleTransport(
         if (isOpen) return
         role = newRole
         isOpen = true
+        rescan.reset()
         stopScan()
         handlers.onOpen()
     }
@@ -199,8 +214,49 @@ class BleTransport(
         val wasOpen = isOpen
         resetLink()
         if (wasOpen) handlers.onClose()
-        // Keep advertising/scanning so the contact can reconnect.
-        if (started && initiateAsCentral) radio { startScan() }
+        // Advertising carries on, so the contact can reconnect; the scanning side looks again after a short wait.
+        if (lostRole == Role.CENTRAL) scheduleRescan()
+    }
+
+    /** Scan again after a growing wait: retrying at once after a failure runs into Android's scan limit. */
+    private fun scheduleRescan() {
+        if (!started || !initiateAsCentral) return
+        val turn = ++rescanTurn
+        handler.postDelayed({ if (started && !isOpen && clientGatt == null && rescanTurn == turn) startScan() }, rescan.next())
+    }
+
+    /** Gives up on the current outgoing connection (it failed or stalled) and looks again later. */
+    @SuppressLint("MissingPermission")
+    private fun dropClient(gatt: BluetoothGatt) {
+        // close() as well as disconnect(): an unclosed connection keeps one of the phone's few Bluetooth client slots.
+        runCatching { gatt.disconnect() }
+        runCatching { gatt.close() }
+        if (gatt !== clientGatt) return
+        clientGatt = null
+        clientRx = null
+        discovering = false
+        if (role == Role.CENTRAL) linkLost(Role.CENTRAL) else scheduleRescan()
+    }
+
+    /** Bluetooth switched off ends the link at once (instead of leaving it dead); the engine connects again when it is back. */
+    private fun watchAdapter() {
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(c: Context, intent: android.content.Intent) {
+                val state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)
+                if (state == BluetoothAdapter.STATE_TURNING_OFF || state == BluetoothAdapter.STATE_OFF) {
+                    handler.post {
+                        if (!started) return@post
+                        fail("Bluetooth was turned off.")
+                        close()
+                    }
+                }
+            }
+        }
+        androidx.core.content.ContextCompat.registerReceiver(
+            context, receiver, android.content.IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED),
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        adapterWatch = receiver
     }
 
     private fun fail(message: String) = handlers.onError(message)
@@ -235,14 +291,23 @@ class BleTransport(
             null -> false
         }
         if (ok) {
+            busyRetry.reset()
             outbound.removeFirst()
             writeBusy = true
             // If the radio never reports this write as done, the link would stall for good: release it after a while.
             val turn = ++writeTurn
             handler.postDelayed({ if (writeBusy && writeTurn == turn) writeDone() }, WRITE_WATCHDOG_MS)
         } else {
-            fail("Bluetooth write failed.")
-            close()
+            // The radio would not take it right now (usually still busy with the last one): try the same chunk again
+            // shortly, and only treat the link as broken after several refusals in a row.
+            val wait = busyRetry.next()
+            if (wait == null) {
+                fail("Bluetooth write failed.")
+                close()
+            } else {
+                val turn = ++writeTurn
+                handler.postDelayed({ if (writeTurn == turn) pump() }, wait)
+            }
         }
     }
 
@@ -364,6 +429,14 @@ class BleTransport(
                         try { gattServer?.cancelConnection(device) } catch (_: Exception) {}
                     } else {
                         serverDevice = device
+                        // A phone that connects but never finishes setting up would hold the only slot for good.
+                        val turn = ++setupTurn
+                        handler.postDelayed({
+                            if (setupTurn == turn && serverDevice?.address == device.address && !isOpen) {
+                                runCatching { gattServer?.cancelConnection(device) }
+                                serverDevice = null
+                            }
+                        }, BleTimeouts.SETUP_MS)
                     }
                 } else if (device.address == serverDevice?.address) {
                     serverDevice = null
@@ -436,6 +509,12 @@ class BleTransport(
     private fun startScan() {
         val scanner = adapter?.bluetoothLeScanner ?: return fail("This phone cannot scan over Bluetooth LE.")
         stopScan()
+        val wait = ScanLimiter.shared.reserve(System.currentTimeMillis())
+        if (wait > 0) {
+            val turn = ++scanWaitTurn
+            handler.postDelayed({ if (started && !isOpen && clientGatt == null && scanWaitTurn == turn) startScan() }, wait)
+            return
+        }
         val tags = BleTag.acceptTags(secretProvider(), System.currentTimeMillis())
         val filters = tags.map { tag ->
             ScanFilter.Builder().setManufacturerData(BleConstants.COMPANY_ID, tag).build()
@@ -448,7 +527,19 @@ class BleTransport(
                     val data = result.scanRecord?.getManufacturerSpecificData(BleConstants.COMPANY_ID) ?: return@post
                     if (tags.none { it.contentEquals(data) }) return@post
                     stopScan()
-                    radio { clientGatt = result.device.connectGatt(context, false, clientCallback, BluetoothDevice.TRANSPORT_LE) }
+                    radio {
+                        val gatt = result.device.connectGatt(context, false, clientCallback, BluetoothDevice.TRANSPORT_LE)
+                        clientGatt = gatt
+                        discovering = false
+                        // Some phones never call back on a connection attempt, or stall half-way through setup.
+                        val turn = ++setupTurn
+                        handler.postDelayed({
+                            if (setupTurn == turn && clientGatt === gatt && !isOpen) {
+                                fail("Bluetooth connection timed out. Trying again.")
+                                dropClient(gatt)
+                            }
+                        }, BleTimeouts.SETUP_MS)
+                    }
                 }
             }
 
@@ -469,20 +560,32 @@ class BleTransport(
         scanCallback = null
     }
 
+    @SuppressLint("MissingPermission")
+    private fun discover(gatt: BluetoothGatt) {
+        if (discovering || gatt !== clientGatt) return
+        discovering = true
+        if (!gatt.discoverServices()) {
+            fail("Bluetooth could not read the nearby device. Trying again.")
+            dropClient(gatt)
+        }
+    }
+
     private val clientCallback = object : BluetoothGattCallback() {
         @SuppressLint("MissingPermission")
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             handler.post {
                 if (newState == BluetoothProfile.STATE_CONNECTED && status == BluetoothGatt.GATT_SUCCESS) {
-                    gatt.requestMtu(BleConstants.REQUESTED_MTU)
-                } else {
-                    try { gatt.close() } catch (_: Exception) {}
-                    if (gatt === clientGatt) {
-                        clientGatt = null
-                        clientRx = null
-                        linkLost(Role.CENTRAL)
-                        if (started && initiateAsCentral && !isOpen) startScan()
+                    // A refused request (or a phone that never answers it) must not stall setup: carry on with the
+                    // default packet size.
+                    if (!gatt.requestMtu(BleConstants.REQUESTED_MTU)) {
+                        discover(gatt)
+                    } else {
+                        val turn = ++mtuTurn
+                        handler.postDelayed({ if (mtuTurn == turn && gatt === clientGatt) discover(gatt) }, BleTimeouts.MTU_MS)
                     }
+                } else {
+                    // Includes the common status 133 (GATT_ERROR): close, and look again after a growing wait.
+                    dropClient(gatt)
                 }
             }
         }
@@ -490,8 +593,9 @@ class BleTransport(
         @SuppressLint("MissingPermission")
         override fun onMtuChanged(gatt: BluetoothGatt, newMtu: Int, status: Int) {
             handler.post {
+                mtuTurn++
                 if (status == BluetoothGatt.GATT_SUCCESS) mtu = newMtu
-                gatt.discoverServices()
+                discover(gatt)
             }
         }
 
