@@ -140,11 +140,10 @@ jobs:
             npx playwright install chromium
           }
       - run: npm run e2e --workspace @duochat/desktop
-      # The built desktop app against the Rust engine as a separate process, over the simulated Bluetooth radio.
+      # The desktop page's hosted-engine code against two real Rust engine processes (the stand-in for the Tauri shell):
+      # what the installed app runs. (The browser-only TypeScript engine cannot talk to the Rust engine since protocol v2,
+      # so the old TypeScript-vs-Rust Bluetooth check is gone; see ADR-011.)
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build -p privcord-engine --example peer --locked
-      - run: node apps/desktop/e2e/rust-peer.mjs
-      # The desktop page's hosted-engine code against two real Rust engine processes (the stand-in for the Tauri shell).
       - run: cargo build -p privcord-desktop-host --example host_stdio --locked
       - run: npx vitest run src/lib/hosted/e2e.test.ts
         working-directory: apps/desktop

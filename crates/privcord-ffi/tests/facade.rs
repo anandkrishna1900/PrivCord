@@ -10,7 +10,7 @@ use privcord_ffi::*;
 use std::sync::{Arc, Mutex, OnceLock};
 
 #[derive(Default)]
-struct FakeKeystore(Mutex<Option<Vec<u8>>>);
+struct FakeKeystore(Mutex<Option<Vec<u8>>>, Mutex<Option<Vec<u8>>>);
 impl SecureStoreCallbacks for FakeKeystore {
     fn load_identity(&self) -> Option<Vec<u8>> {
         self.0.lock().unwrap().clone()
@@ -22,12 +22,12 @@ impl SecureStoreCallbacks for FakeKeystore {
     fn delete_identity(&self) {
         *self.0.lock().unwrap() = None;
     }
-    // Keeps the key the engine generates (shared by every store in this process, so a reopened database finds it).
+    // Keeps the database key the engine generates, in this store's own slot (like the OS key store would).
     fn load_database_key(&self) -> Option<Vec<u8>> {
-        DATABASE_KEY.lock().unwrap().clone()
+        self.1.lock().unwrap().clone()
     }
     fn save_database_key(&self, key: Vec<u8>) -> bool {
-        *DATABASE_KEY.lock().unwrap() = Some(key);
+        *self.1.lock().unwrap() = Some(key);
         true
     }
 }
@@ -367,5 +367,3 @@ fn the_on_device_self_test_passes_here_too() {
     assert_eq!(self_test(), "ok");
     assert!(!core_version().is_empty());
 }
-
-static DATABASE_KEY: std::sync::Mutex<Option<Vec<u8>>> = std::sync::Mutex::new(None);
