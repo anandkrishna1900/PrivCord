@@ -75,7 +75,10 @@ class BleTransport(
         fun onError(message: String)
     }
 
-    private val handler = Handler(Looper.getMainLooper())
+    private val handler = SafeRadioHandler { t ->
+        fail("Bluetooth stopped: ${t.message ?: t.javaClass.simpleName}")
+        close()
+    }
     private val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
     private val adapter: BluetoothAdapter? get() = manager?.adapter
 
@@ -114,9 +117,17 @@ class BleTransport(
             if (bt == null || !bt.isEnabled) return@post fail("Bluetooth is off or unavailable.")
             if (!hasPermissions()) return@post fail("Bluetooth permission not granted.")
             started = true
-            startGattServer()
-            startAdvertising()
-            if (initiateAsCentral) startScan()
+            // A radio call that throws (a vendor Bluetooth stack, a permission revoked mid-way) must turn Bluetooth off for
+            // this friend, never take the whole app down: Bluetooth starts on its own at launch, so a crash here repeats.
+            try {
+                startGattServer()
+                startAdvertising()
+                if (initiateAsCentral) startScan()
+            } catch (t: Throwable) {
+                android.util.Log.w("DuoChat", "Bluetooth link could not start", t)
+                fail("Bluetooth could not start: ${t.message ?: t.javaClass.simpleName}")
+                close()
+            }
         }
     }
 
@@ -180,10 +191,21 @@ class BleTransport(
         resetLink()
         if (wasOpen) handlers.onClose()
         // Keep advertising/scanning so the contact can reconnect.
-        if (started && initiateAsCentral) startScan()
+        if (started && initiateAsCentral) radio { startScan() }
     }
 
     private fun fail(message: String) = handlers.onError(message)
+
+    /** Runs a radio call; if it throws, this link closes with a message instead of crashing the app. */
+    private inline fun radio(block: () -> Unit) {
+        try {
+            block()
+        } catch (t: Throwable) {
+            android.util.Log.w("DuoChat", "Bluetooth call failed", t)
+            fail("Bluetooth stopped: ${t.message ?: t.javaClass.simpleName}")
+            close()
+        }
+    }
 
     private fun onChunk(bytes: ByteArray) {
         try {
@@ -284,7 +306,7 @@ class BleTransport(
         // Re-advertise with the next tag when the epoch rolls over.
         val epochMs = BleTag.EPOCH_SECONDS * 1000
         val untilNext = epochMs - (System.currentTimeMillis() % epochMs) + 1000
-        handler.postDelayed({ if (started) startAdvertising() }, untilNext)
+        handler.postDelayed({ if (started) radio { startAdvertising() } }, untilNext)
     }
 
     @SuppressLint("MissingPermission")
@@ -417,7 +439,7 @@ class BleTransport(
                     val data = result.scanRecord?.getManufacturerSpecificData(BleConstants.COMPANY_ID) ?: return@post
                     if (tags.none { it.contentEquals(data) }) return@post
                     stopScan()
-                    clientGatt = result.device.connectGatt(context, false, clientCallback, BluetoothDevice.TRANSPORT_LE)
+                    radio { clientGatt = result.device.connectGatt(context, false, clientCallback, BluetoothDevice.TRANSPORT_LE) }
                 }
             }
 
@@ -428,7 +450,7 @@ class BleTransport(
         scanCallback = callback
         scanner.startScan(filters, settings, callback)
         // Tags rotate: restart the scan with a fresh accept window every epoch while not connected.
-        handler.postDelayed({ if (started && !isOpen && scanCallback === callback) startScan() }, BleTag.EPOCH_SECONDS * 1000)
+        handler.postDelayed({ if (started && !isOpen && scanCallback === callback) radio { startScan() } }, BleTag.EPOCH_SECONDS * 1000)
     }
 
     @SuppressLint("MissingPermission")

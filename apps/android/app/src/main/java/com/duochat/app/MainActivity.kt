@@ -341,6 +341,28 @@ private fun RootScreen(viewModel: AppViewModel) {
             }
     }
 
+    val crash by viewModel.crash.collectAsStateWithLifecycle()
+    crash?.let { notice ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = viewModel::dismissCrash,
+            title = { androidx.compose.material3.Text("DuoCord closed unexpectedly") },
+            text = {
+                androidx.compose.material3.Text(
+                    (if (notice.radioTurnedOff) "Bluetooth was turned off so the app could open. You can turn it back on in Settings. " else "") +
+                        "Copy the details and send them to whoever builds the app, so it can be fixed. They contain no messages or names.",
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+                    clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("DuoCord crash", notice.details))
+                    viewModel.dismissCrash()
+                }) { androidx.compose.material3.Text("Copy details") }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = viewModel::dismissCrash) { androidx.compose.material3.Text("OK") } },
+        )
+    }
+
     if (nukeOpen || killSwitchReport != null) {
         NukeDialog(
             autoRun = panic,

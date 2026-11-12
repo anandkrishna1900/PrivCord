@@ -64,7 +64,7 @@ class AndroidMeshRadio(private val context: Context) : MeshRadio {
         var turn = 0
     }
 
-    private val handler = Handler(Looper.getMainLooper())
+    private val handler = SafeRadioHandler { stop() }
     private val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
     private val nodeId = ByteArray(4).also { SecureRandom().nextBytes(it) }
     private val links = HashMap<String, Link>()
@@ -95,9 +95,21 @@ class AndroidMeshRadio(private val context: Context) : MeshRadio {
             return
         }
         started = true
-        startServer()
-        startAdvertising()
-        startScan()
+        // The mesh starts on its own at launch when it is on, so a radio call that throws must stop the mesh, not crash
+        // the app (which would then crash again on every launch).
+        try {
+            startServer()
+            startAdvertising()
+            startScan()
+        } catch (t: Throwable) {
+            android.util.Log.w("DuoChat", "Bluetooth mesh could not start", t)
+            started = false
+            wanted = false
+            runCatching { manager?.adapter?.bluetoothLeAdvertiser?.stopAdvertising(advertiseCallback) }
+            runCatching { manager?.adapter?.bluetoothLeScanner?.stopScan(scanCallback) }
+            runCatching { server?.close() }
+            server = null
+        }
     }
 
     override fun stop() {
@@ -160,7 +172,7 @@ class AndroidMeshRadio(private val context: Context) : MeshRadio {
             device: BluetoothDevice, requestId: Int, descriptor: BluetoothGattDescriptor, preparedWrite: Boolean,
             responseNeeded: Boolean, offset: Int, value: ByteArray,
         ) {
-            if (responseNeeded) server?.sendResponse(device, requestId, android.bluetooth.BluetoothGatt.GATT_SUCCESS, 0, null)
+            if (responseNeeded) runCatching { server?.sendResponse(device, requestId, android.bluetooth.BluetoothGatt.GATT_SUCCESS, 0, null) }
             if (descriptor.uuid != CCCD) return
             handler.post {
                 val id = "s:${device.address}"
@@ -180,7 +192,7 @@ class AndroidMeshRadio(private val context: Context) : MeshRadio {
             device: BluetoothDevice, requestId: Int, characteristic: BluetoothGattCharacteristic, preparedWrite: Boolean,
             responseNeeded: Boolean, offset: Int, value: ByteArray,
         ) {
-            if (responseNeeded) server?.sendResponse(device, requestId, android.bluetooth.BluetoothGatt.GATT_SUCCESS, 0, null)
+            if (responseNeeded) runCatching { server?.sendResponse(device, requestId, android.bluetooth.BluetoothGatt.GATT_SUCCESS, 0, null) }
             val copy = value.copyOf()
             handler.post { links["s:${device.address}"]?.let { received(it, copy) } }
         }
@@ -237,7 +249,12 @@ class AndroidMeshRadio(private val context: Context) : MeshRadio {
             return
         }
         val l = Link(id, device, viaServer = false)
-        l.gatt = device.connectGatt(context, false, clientCallback(l), BluetoothDevice.TRANSPORT_LE)
+        try {
+            l.gatt = device.connectGatt(context, false, clientCallback(l), BluetoothDevice.TRANSPORT_LE)
+        } catch (t: Throwable) {
+            android.util.Log.w("DuoChat", "Bluetooth mesh connect failed", t)
+            connecting.remove(id)
+        }
     }
 
     private fun clientCallback(l: Link) = object : BluetoothGattCallback() {

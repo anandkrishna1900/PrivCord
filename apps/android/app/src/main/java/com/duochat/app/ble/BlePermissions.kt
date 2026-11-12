@@ -21,3 +21,19 @@ object BlePermissions {
 
 /** Delay before the next automatic Bluetooth attempt: 15 s doubling to 120 s (searching drains the battery). */
 fun bleReconnectDelayMs(attempt: Int): Long = minOf(120_000L, 15_000L shl minOf(maxOf(attempt, 0), 3))
+
+/**
+ * The main-thread handler both Bluetooth radios run their work on. Anything a radio call throws inside it (a vendor
+ * Bluetooth stack, a permission revoked mid-way, a link that vanished) goes to [onError] instead of crashing the app;
+ * Bluetooth starts on its own at launch, so an uncaught error there would crash the app on every launch.
+ */
+class SafeRadioHandler(private val onError: (Throwable) -> Unit) : android.os.Handler(android.os.Looper.getMainLooper()) {
+    override fun dispatchMessage(msg: android.os.Message) {
+        try {
+            super.dispatchMessage(msg)
+        } catch (t: Throwable) {
+            android.util.Log.w("DuoChat", "Bluetooth call failed", t)
+            runCatching { onError(t) }
+        }
+    }
+}
