@@ -211,6 +211,13 @@ fn encrypt_in_place(path: &Path, key: &[u8; 32]) -> Result<(), StorageError> {
     for suffix in ["-wal", "-shm", "-journal"] {
         let _ = std::fs::remove_file(sibling(path, suffix));
     }
+    Ok(())
+}
+
+/// Remove pre-migration copies that are still unencrypted. Run on every encrypted open, not only right after
+/// [`encrypt_in_place`]: an interruption between its rename and this cleanup would otherwise leave readable copies
+/// forever. Encrypted copies (made by later migrations) are kept.
+fn remove_plain_backups(path: &Path) {
     if let (Some(dir), Some(name)) = (path.parent(), path.file_name().and_then(|n| n.to_str())) {
         let prefix = format!("{name}.bak-v");
         if let Ok(entries) = std::fs::read_dir(if dir.as_os_str().is_empty() {
@@ -222,13 +229,13 @@ fn encrypt_in_place(path: &Path, key: &[u8; 32]) -> Result<(), StorageError> {
                 if e.file_name()
                     .to_str()
                     .is_some_and(|n| n.starts_with(&prefix))
+                    && is_plain_sqlite(&e.path())
                 {
                     let _ = std::fs::remove_file(e.path());
                 }
             }
         }
     }
-    Ok(())
 }
 
 impl SqliteStorage {
@@ -245,6 +252,7 @@ impl SqliteStorage {
         if is_plain_sqlite(path) {
             encrypt_in_place(path, key)?;
         }
+        remove_plain_backups(path);
         let conn = Connection::open(path).map_err(unavailable)?;
         conn.pragma_update(None, "key", &*key_pragma(key))
             .map_err(unavailable)?;

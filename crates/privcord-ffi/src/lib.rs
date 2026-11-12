@@ -161,15 +161,17 @@ fn open_encrypted_database(
             Zeroizing::new(<[u8; 32]>::try_from(k.as_slice()).map_err(|_| FfiError::SecureStorage)?)
         }
         None => {
-            if SqliteStorage::is_encrypted_file(path) {
-                set_aside(path);
-            }
             let key = Zeroizing::new(
                 privcord_crypto::rng::random_array::<32>(&mut OsEntropy)
                     .map_err(|_| FfiError::SecureStorage)?,
             );
+            // Save first: a key store that is only unavailable (locked, not wiped) fails here, and the database must
+            // then stay where it is so the next start, with the store back, opens it with its own key.
             if !secure.save_database_key(key.to_vec()) {
                 return Err(FfiError::SecureStorage);
+            }
+            if SqliteStorage::is_encrypted_file(path) {
+                set_aside(path);
             }
             key
         }

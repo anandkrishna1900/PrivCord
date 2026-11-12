@@ -367,3 +367,64 @@ fn the_on_device_self_test_passes_here_too() {
     assert_eq!(self_test(), "ok");
     assert!(!core_version().is_empty());
 }
+
+/// A key store that is there but locked: it can neither read nor write.
+struct LockedKeystore;
+impl SecureStoreCallbacks for LockedKeystore {
+    fn load_identity(&self) -> Option<Vec<u8>> {
+        None
+    }
+    fn save_identity(&self, _secrets: Vec<u8>) -> bool {
+        false
+    }
+    fn delete_identity(&self) {}
+    fn load_database_key(&self) -> Option<Vec<u8>> {
+        None
+    }
+    fn save_database_key(&self, _key: Vec<u8>) -> bool {
+        false
+    }
+}
+
+#[test]
+fn a_locked_key_store_does_not_set_the_database_aside() {
+    let dir = tempfile::tempdir().unwrap();
+    let keystore = Arc::new(FakeKeystore::default());
+    let e = start(
+        dir.path(),
+        "z.db",
+        keystore.clone(),
+        Arc::new(Wire::default()),
+        Arc::new(Bell::default()),
+    );
+    e.create_identity().unwrap();
+    e.shutdown().unwrap();
+    drop(e);
+    let path = dir.path().join("z.db").to_string_lossy().into_owned();
+    assert_eq!(
+        PrivcordEngine::start(
+            path.clone(),
+            "duo".into(),
+            Arc::new(LockedKeystore),
+            Arc::new(Wire::default()),
+            Arc::new(Bell::default())
+        )
+        .unwrap_err(),
+        FfiError::SecureStorage
+    );
+    for entry in std::fs::read_dir(dir.path()).unwrap() {
+        let name = entry.unwrap().file_name().to_string_lossy().into_owned();
+        assert!(!name.contains(".unreadable-"), "{name} was set aside");
+    }
+    // Once the store is unlocked again, the same database opens with its own key.
+    let e = PrivcordEngine::start(
+        path,
+        "duo".into(),
+        keystore,
+        Arc::new(Wire::default()),
+        Arc::new(Bell::default()),
+    )
+    .unwrap();
+    assert!(e.own_card(None).is_ok());
+    e.shutdown().unwrap();
+}
