@@ -128,7 +128,8 @@ private fun RootScreen(viewModel: AppViewModel) {
     }
 
     // Somebody typed our six words and answered: we confirm who it is before adding them.
-    state?.requests?.firstOrNull()?.let { request ->
+    // Nothing from the chats (names, safety numbers) and no action is reachable over the app lock.
+    if (!locked) state?.requests?.firstOrNull()?.let { request ->
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { viewModel.dismissRequest(request.uid) },
             title = { androidx.compose.material3.Text("${request.name} used your invite") },
@@ -346,7 +347,7 @@ private fun RootScreen(viewModel: AppViewModel) {
     }
 
     val crash by viewModel.crash.collectAsStateWithLifecycle()
-    crash?.let { notice ->
+    if (!locked) crash?.let { notice ->
         androidx.compose.material3.AlertDialog(
             onDismissRequest = viewModel::dismissCrash,
             title = { androidx.compose.material3.Text("DuoCord closed unexpectedly") },
@@ -381,7 +382,7 @@ private fun RootScreen(viewModel: AppViewModel) {
         )
     }
 
-    if (nukeOpen || killSwitchReport != null) {
+    if (!locked && (nukeOpen || killSwitchReport != null)) {
         NukeDialog(
             autoRun = panic,
             onDismiss = { nukeOpen = false },

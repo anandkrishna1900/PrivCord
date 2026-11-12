@@ -335,6 +335,13 @@ fn tampering_missing_parents_and_foreign_groups_are_refused() {
     );
     assert!(!log.is_effective(good["eventId"].as_str().unwrap()));
     assert_eq!(log.state().unwrap().members.len(), 1);
+    // The broken copy came first, but it must not shadow the genuine event: the real one still takes effect, and a
+    // broken copy arriving after it changes nothing.
+    assert_eq!(log.add(&good), AddStatus::Applied);
+    assert!(log.is_effective(good["eventId"].as_str().unwrap()));
+    assert_eq!(log.state().unwrap().members.len(), 2);
+    assert_eq!(log.add(&forged_sig), AddStatus::Duplicate);
+    assert!(log.is_effective(good["eventId"].as_str().unwrap()));
 
     let mut other = GroupLog::new("0".repeat(64).as_str());
     assert_eq!(other.add(&good), AddStatus::Invalid, "wrong group");

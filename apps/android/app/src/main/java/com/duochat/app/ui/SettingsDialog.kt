@@ -578,10 +578,11 @@ SectionTitle("Security")
                             onUpdateSettings { copy(appLock = true) }
                         } else {
                             // Turning it off needs the same proof as opening the app.
-                            val activity = appContext as? androidx.fragment.app.FragmentActivity
-                            if (activity == null) {
-                                onUpdateSettings { copy(appLock = false) }
-                            } else {
+                            // Inside a Dialog the context is a ContextThemeWrapper, not the activity: unwrap it. With no
+                            // activity there is no prompt, so the lock stays on (never turned off without proof).
+                            val activity = generateSequence(appContext) { (it as? android.content.ContextWrapper)?.baseContext }
+                                .firstNotNullOfOrNull { it as? androidx.fragment.app.FragmentActivity }
+                            if (activity != null) {
                                 com.duochat.app.security.AppLock.prompt(activity, "Turn off app lock") { ok, _ ->
                                     if (ok) onUpdateSettings { copy(appLock = false) }
                                 }

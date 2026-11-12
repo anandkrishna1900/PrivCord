@@ -89,6 +89,12 @@ class KeystoreSecureStore(context: Context, private val slot: String) : SecureSt
         }.getOrNull()
     }
 
+    /** Crypto-erasure of the database key (emergency erase, after the database file is deleted). */
+    fun deleteDatabaseKey() {
+        prefs.edit().remove("database").commit()
+        runCatching { KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(dbAlias) }
+    }
+
     override fun saveDatabaseKey(key: ByteArray): Boolean = runCatching {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, dbKey())

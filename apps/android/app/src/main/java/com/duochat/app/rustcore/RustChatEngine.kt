@@ -101,6 +101,7 @@ class RustChatEngine(
     private var visible = false
     private var openChat: String? = null
     private var pump: Thread? = null
+    @Volatile private var closer: Thread? = null
     private var refreshJob: Job? = null
     private val refreshRequests = Channel<Unit>(Channel.CONFLATED)
     private var last: SnapshotDto? = null
@@ -390,10 +391,10 @@ class RustChatEngine(
         hubs.clear()
         val e = engine
         engine = null
-        Thread {
+        closer = Thread {
             runCatching { e?.shutdown() }
             runCatching { e?.close() }
-        }.start()
+        }.also { it.start() }
         _state.update { it.copy(phase = EnginePhase.STOPPED) }
     }
 
@@ -1120,11 +1121,15 @@ class RustChatEngine(
     override suspend fun clearLocalData() {
         call { wipeEverything() }
         secure.deleteIdentity()
-        // The engine's database (erased in place above) is removed as well once it is closed.
-        scope.launch(Dispatchers.IO) {
-            delay(1500)
-            for (suffix in listOf("", "-wal", "-shm", "-journal")) runCatching { File(app.noBackupFilesDir, "privcord.db$suffix").delete() }
+        // The database (erased in place above) and its Keystore key go too. It must be closed first, so this engine
+        // stops here and waits for the close; the caller starts a fresh one. (A delayed delete on the engine's scope was
+        // cancelled by that restart, leaving the file and its key behind.)
+        stop()
+        withContext(Dispatchers.IO) {
+            closer?.join(10_000)
+            for (suffix in listOf("", "-wal", "-shm", "-journal")) File(app.noBackupFilesDir, "privcord.db$suffix").delete()
         }
+        secure.deleteDatabaseKey()
     }
 
     /** Settings changed: the sockets follow the new settings, so reopen every mailbox. */

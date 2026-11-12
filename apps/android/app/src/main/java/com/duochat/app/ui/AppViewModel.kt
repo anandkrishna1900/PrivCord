@@ -313,7 +313,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun clearLocalData(onResult: (Result<Unit>) -> Unit) {
-        withEngine(onResult) { Result.success(it.clearLocalData()) }
+        // Clearing stops the engine (its database is deleted): start a fresh one, which opens on the setup screen.
+        withEngine(onResult) { Result.success(it.clearLocalData()).also { startEngine() } }
     }
 
     /** Looks for a friend over Bluetooth. Fails with a readable message instead of prompting. */
