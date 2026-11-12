@@ -1734,7 +1734,7 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_privcord_ffi_checksum_method_securestorecallbacks_delete_identity() != 54833.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_privcord_ffi_checksum_method_securestorecallbacks_load_database_key() != 12472.toShort()) {
+    if (lib.uniffi_privcord_ffi_checksum_method_securestorecallbacks_load_database_key() != 30018.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_securestorecallbacks_save_database_key() != 46720.toShort()) {
@@ -4318,8 +4318,10 @@ public interface SecureStoreCallbacks {
     
     /**
      * The 32-byte key the database is encrypted with, in its own slot (deleting the identity must not lose it).
+     * "Unavailable" (the store is locked or failing right now) must be told apart from "Missing" (there is no key, or it
+     * is gone for good): only "Missing" may lead to a new key, which would make the existing database unreadable.
      */
-    fun `loadDatabaseKey`(): kotlin.ByteArray?
+    fun `loadDatabaseKey`(): DatabaseKeyRead
     
     fun `saveDatabaseKey`(`key`: kotlin.ByteArray): kotlin.Boolean
     
@@ -4448,8 +4450,10 @@ open class SecureStoreCallbacksImpl: Disposable, AutoCloseable, SecureStoreCallb
     
     /**
      * The 32-byte key the database is encrypted with, in its own slot (deleting the identity must not lose it).
-     */override fun `loadDatabaseKey`(): kotlin.ByteArray? {
-            return FfiConverterOptionalByteArray.lift(
+     * "Unavailable" (the store is locked or failing right now) must be told apart from "Missing" (there is no key, or it
+     * is gone for good): only "Missing" may lead to a new key, which would make the existing database unreadable.
+     */override fun `loadDatabaseKey`(): DatabaseKeyRead {
+            return FfiConverterTypeDatabaseKeyRead.lift(
     callWithPointer {
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_securestorecallbacks_load_database_key(
@@ -4524,7 +4528,7 @@ internal object uniffiCallbackInterfaceSecureStoreCallbacks {
                 uniffiObj.`loadDatabaseKey`(
                 )
             }
-            val writeReturn = { value: kotlin.ByteArray? -> uniffiOutReturn.setValue(FfiConverterOptionalByteArray.lower(value)) }
+            val writeReturn = { value: DatabaseKeyRead -> uniffiOutReturn.setValue(FfiConverterTypeDatabaseKeyRead.lower(value)) }
             uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
         }
     }
@@ -6015,6 +6019,93 @@ public object FfiConverterTypeAnswerState: FfiConverterRustBuffer<AnswerState> {
 
     override fun write(value: AnswerState, buf: ByteBuffer) {
         buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * What the platform found when asked for the database key.
+ */
+sealed class DatabaseKeyRead {
+    
+    data class Found(
+        val `key`: kotlin.ByteArray) : DatabaseKeyRead() {
+        companion object
+    }
+    
+    /**
+     * No key was ever saved, or it can never be read again (the key store was wiped or its key invalidated).
+     */
+    object Missing : DatabaseKeyRead()
+    
+    
+    /**
+     * The key store cannot answer right now (locked, busy, failing). The engine does not start, and nothing changes.
+     */
+    object Unavailable : DatabaseKeyRead()
+    
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeDatabaseKeyRead : FfiConverterRustBuffer<DatabaseKeyRead>{
+    override fun read(buf: ByteBuffer): DatabaseKeyRead {
+        return when(buf.getInt()) {
+            1 -> DatabaseKeyRead.Found(
+                FfiConverterByteArray.read(buf),
+                )
+            2 -> DatabaseKeyRead.Missing
+            3 -> DatabaseKeyRead.Unavailable
+            else -> throw RuntimeException("invalid enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: DatabaseKeyRead) = when(value) {
+        is DatabaseKeyRead.Found -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterByteArray.allocationSize(value.`key`)
+            )
+        }
+        is DatabaseKeyRead.Missing -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+        is DatabaseKeyRead.Unavailable -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+    }
+
+    override fun write(value: DatabaseKeyRead, buf: ByteBuffer) {
+        when(value) {
+            is DatabaseKeyRead.Found -> {
+                buf.putInt(1)
+                FfiConverterByteArray.write(value.`key`, buf)
+                Unit
+            }
+            is DatabaseKeyRead.Missing -> {
+                buf.putInt(2)
+                Unit
+            }
+            is DatabaseKeyRead.Unavailable -> {
+                buf.putInt(3)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
     }
 }
 

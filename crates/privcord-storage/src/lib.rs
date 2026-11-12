@@ -4,7 +4,8 @@
 //! Design points, all from the PRD's storage requirements:
 //! * every change is a batch applied in one transaction, so a message never exists without its outbox entry;
 //! * the schema is versioned with `PRAGMA user_version`; migrations run one transaction each, and an existing
-//!   database is copied to `<name>.bak-v<old>` before its first migration;
+//!   database is copied to `<name>.bak-v<old>` before its first migration, and the copy is deleted once the migrated
+//!   database has opened and passed its checks (a copy kept forever would keep messages erased after it was made);
 //! * a database written by a newer version is refused, never downgraded or "repaired";
 //! * the file is checked with `PRAGMA integrity_check` when opened;
 //! * statements are prepared and cached, and one connection is owned for the store's whole life.
@@ -214,10 +215,11 @@ fn encrypt_in_place(path: &Path, key: &[u8; 32]) -> Result<(), StorageError> {
     Ok(())
 }
 
-/// Remove pre-migration copies that are still unencrypted. Run on every encrypted open, not only right after
-/// [`encrypt_in_place`]: an interruption between its rename and this cleanup would otherwise leave readable copies
-/// forever. Encrypted copies (made by later migrations) are kept.
-fn remove_plain_backups(path: &Path) {
+/// Remove pre-migration copies: before the database is opened only the unencrypted ones (an interruption between
+/// [`encrypt_in_place`]'s rename and its cleanup would otherwise leave readable copies forever), and every copy once
+/// the database has opened, migrated and passed its integrity check. A copy is only for getting back a database that a
+/// failed migration broke; kept after that, it would hold messages that were erased or deleted for everyone later.
+fn remove_backups(path: &Path, only_plain: bool) {
     if let (Some(dir), Some(name)) = (path.parent(), path.file_name().and_then(|n| n.to_str())) {
         let prefix = format!("{name}.bak-v");
         if let Ok(entries) = std::fs::read_dir(if dir.as_os_str().is_empty() {
@@ -229,7 +231,7 @@ fn remove_plain_backups(path: &Path) {
                 if e.file_name()
                     .to_str()
                     .is_some_and(|n| n.starts_with(&prefix))
-                    && is_plain_sqlite(&e.path())
+                    && (!only_plain || is_plain_sqlite(&e.path()))
                 {
                     let _ = std::fs::remove_file(e.path());
                 }
@@ -252,7 +254,7 @@ impl SqliteStorage {
         if is_plain_sqlite(path) {
             encrypt_in_place(path, key)?;
         }
-        remove_plain_backups(path);
+        remove_backups(path, true);
         let conn = Connection::open(path).map_err(unavailable)?;
         conn.pragma_update(None, "key", &*key_pragma(key))
             .map_err(unavailable)?;
@@ -262,6 +264,8 @@ impl SqliteStorage {
         })
         .map_err(|_| StorageError::Corrupt)?;
         init(&conn, MIGRATIONS, Some(path))?;
+        // Opened, migrated and checked: the pre-migration copies are no longer needed.
+        remove_backups(path, false);
         Ok(Self {
             conn: Mutex::new(conn),
         })

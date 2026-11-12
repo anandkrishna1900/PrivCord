@@ -15,7 +15,9 @@
 //! | `privcord://notify`            | `{ conversation, sender, preview }`       | show a notification                           |
 
 use privcord_desktop_host::DesktopHost;
-use privcord_ffi::{NotifierCallbacks, SecureStoreCallbacks, SignalKind, TransportCallbacks};
+use privcord_ffi::{
+    DatabaseKeyRead, NotifierCallbacks, SecureStoreCallbacks, SignalKind, TransportCallbacks,
+};
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -62,9 +64,17 @@ impl SecureStoreCallbacks for KeyringSecure {
     }
 
     /// The database key, in its own Credential Manager entry (deleting the identity does not touch it).
-    fn load_database_key(&self) -> Option<Vec<u8>> {
-        let entry = keyring::Entry::new(SERVICE, DATABASE_KEY).ok()?;
-        unhex(&entry.get_password().ok()?)
+    /// Only "no entry" (or an entry that can never decode) is Missing; any other keyring error (locked, no access,
+    /// platform failure) is Unavailable, so a locked store never leads to a new key.
+    fn load_database_key(&self) -> DatabaseKeyRead {
+        let Ok(entry) = keyring::Entry::new(SERVICE, DATABASE_KEY) else {
+            return DatabaseKeyRead::Unavailable;
+        };
+        match entry.get_password() {
+            Ok(text) => unhex(&text).map_or(DatabaseKeyRead::Missing, |key| DatabaseKeyRead::Found { key }),
+            Err(keyring::Error::NoEntry | keyring::Error::BadEncoding(_)) => DatabaseKeyRead::Missing,
+            Err(_) => DatabaseKeyRead::Unavailable,
+        }
     }
 
     fn save_database_key(&self, key: Vec<u8>) -> bool {

@@ -155,12 +155,16 @@ fn open_encrypted_database(
     secure: &dyn SecureStoreCallbacks,
 ) -> Result<privcord_storage::SqliteStorage, FfiError> {
     use privcord_storage::SqliteStorage;
-    let stored = secure.load_database_key().filter(|k| k.len() == 32);
-    let key: Zeroizing<[u8; 32]> = match stored {
-        Some(k) => {
-            Zeroizing::new(<[u8; 32]>::try_from(k.as_slice()).map_err(|_| FfiError::SecureStorage)?)
+    let key: Zeroizing<[u8; 32]> = match secure.load_database_key() {
+        // A key store that cannot answer now must not lead to a new key: the database would never open again.
+        DatabaseKeyRead::Unavailable => return Err(FfiError::SecureStorage),
+        DatabaseKeyRead::Found { key } => {
+            let key = Zeroizing::new(key);
+            Zeroizing::new(
+                <[u8; 32]>::try_from(key.as_slice()).map_err(|_| FfiError::SecureStorage)?,
+            )
         }
-        None => {
+        DatabaseKeyRead::Missing => {
             let key = Zeroizing::new(
                 privcord_crypto::rng::random_array::<32>(&mut OsEntropy)
                     .map_err(|_| FfiError::SecureStorage)?,
@@ -209,6 +213,18 @@ fn set_aside(path: &std::path::Path) {
 
 /* ------------------------------------------------------------------ callbacks the platform implements */
 
+/// What the platform found when asked for the database key.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum DatabaseKeyRead {
+    Found {
+        key: Vec<u8>,
+    },
+    /// No key was ever saved, or it can never be read again (the key store was wiped or its key invalidated).
+    Missing,
+    /// The key store cannot answer right now (locked, busy, failing). The engine does not start, and nothing changes.
+    Unavailable,
+}
+
 /// OS-backed secret storage. `load` returns 64 bytes (the two private scalars) or nothing.
 #[uniffi::export(with_foreign)]
 pub trait SecureStoreCallbacks: Send + Sync {
@@ -216,7 +232,9 @@ pub trait SecureStoreCallbacks: Send + Sync {
     fn save_identity(&self, secrets: Vec<u8>) -> bool;
     fn delete_identity(&self);
     /// The 32-byte key the database is encrypted with, in its own slot (deleting the identity must not lose it).
-    fn load_database_key(&self) -> Option<Vec<u8>>;
+    /// "Unavailable" (the store is locked or failing right now) must be told apart from "Missing" (there is no key, or it
+    /// is gone for good): only "Missing" may lead to a new key, which would make the existing database unreadable.
+    fn load_database_key(&self) -> DatabaseKeyRead;
     fn save_database_key(&self, key: Vec<u8>) -> bool;
 }
 
