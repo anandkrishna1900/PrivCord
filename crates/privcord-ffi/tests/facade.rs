@@ -22,11 +22,12 @@ impl SecureStoreCallbacks for FakeKeystore {
     fn delete_identity(&self) {
         *self.0.lock().unwrap() = None;
     }
-    // A fixed test key: every database in these tests is new, and reopening one must find the same key.
+    // Keeps the key the engine generates (shared by every store in this process, so a reopened database finds it).
     fn load_database_key(&self) -> Option<Vec<u8>> {
-        Some(vec![9u8; 32])
+        DATABASE_KEY.lock().unwrap().clone()
     }
-    fn save_database_key(&self, _key: Vec<u8>) -> bool {
+    fn save_database_key(&self, key: Vec<u8>) -> bool {
+        *DATABASE_KEY.lock().unwrap() = Some(key);
         true
     }
 }
@@ -366,3 +367,5 @@ fn the_on_device_self_test_passes_here_too() {
     assert_eq!(self_test(), "ok");
     assert!(!core_version().is_empty());
 }
+
+static DATABASE_KEY: std::sync::Mutex<Option<Vec<u8>>> = std::sync::Mutex::new(None);

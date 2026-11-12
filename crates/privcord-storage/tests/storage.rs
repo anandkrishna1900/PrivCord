@@ -398,7 +398,7 @@ fn an_unencrypted_database_is_encrypted_in_place_and_nothing_readable_is_left() 
         "readable before"
     );
 
-    let key = [7u8; 32];
+    let key = random_key();
     {
         let db = SqliteStorage::open_encrypted(&path, &key).unwrap();
         assert_eq!(db.messages().unwrap()[0].message.text, secret);
@@ -429,7 +429,7 @@ fn an_unencrypted_database_is_encrypted_in_place_and_nothing_readable_is_left() 
     assert!(SqliteStorage::is_encrypted_file(&path));
     // The wrong key opens nothing; the right one opens everything.
     assert!(matches!(
-        SqliteStorage::open_encrypted(&path, &[8u8; 32]),
+        SqliteStorage::open_encrypted(&path, &random_key()),
         Err(StorageError::Corrupt)
     ));
     let db = SqliteStorage::open_encrypted(&path, &key).unwrap();
@@ -442,7 +442,7 @@ fn an_unencrypted_database_is_encrypted_in_place_and_nothing_readable_is_left() 
 fn a_new_encrypted_database_starts_empty_and_reopens() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("fresh.db");
-    let key = [3u8; 32];
+    let key = random_key();
     {
         let db = SqliteStorage::open_encrypted(&path, &key).unwrap();
         db.apply(&[StorageOp::SetKv {
@@ -454,4 +454,11 @@ fn a_new_encrypted_database_starts_empty_and_reopens() {
     assert!(SqliteStorage::is_encrypted_file(&path));
     let db = SqliteStorage::open_encrypted(&path, &key).unwrap();
     assert_eq!(db.kv("a").unwrap().unwrap(), b"b");
+}
+
+/// A fresh random key for each test database.
+fn random_key() -> [u8; 32] {
+    let mut key = [1u8; 32];
+    getrandom::getrandom(&mut key).unwrap();
+    key
 }

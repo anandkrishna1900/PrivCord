@@ -16,6 +16,7 @@ rusqlite.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
+getrandom.workspace = true
 tempfile = "3"
 rusqlite.workspace = true
 zeroize.workspace = true

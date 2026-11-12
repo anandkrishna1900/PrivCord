@@ -10,6 +10,7 @@
 use crate::{error::CryptoError, kdf::hkdf_sha256, rng::random_array, rng::Entropy};
 use ml_kem::{
     array::Array, kem::Decapsulate, EncapsulateDeterministic, EncodedSizeUser, KemCore, MlKem768,
+    B32,
 };
 use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
@@ -36,15 +37,19 @@ impl std::fmt::Debug for KemKeyPair {
     }
 }
 
+/// The key pair from its 64-byte seed: the two 32-byte halves are FIPS 203's `d` and `z`.
 fn keys_from_seed(seed: &[u8; KEM_SEED_BYTES]) -> (Dk, Ek) {
-    let mut d = [0u8; 32];
-    let mut z = [0u8; 32];
-    d.copy_from_slice(&seed[..32]);
-    z.copy_from_slice(&seed[32..]);
-    let keys = MlKem768::generate_deterministic(&Array::from(d), &Array::from(z));
-    zeroize::Zeroize::zeroize(&mut d);
-    zeroize::Zeroize::zeroize(&mut z);
-    keys
+    let (d, z) = seed.split_at(32);
+    let d = B32::from_fn(|i| d.get(i).copied().unwrap_or_default());
+    let z = B32::from_fn(|i| z.get(i).copied().unwrap_or_default());
+    MlKem768::generate_deterministic(&d, &z)
+}
+
+/// A 32-byte secret out of ML-KEM, moved into memory that is wiped on drop.
+fn secret(ss: &ml_kem::SharedKey<MlKem768>) -> Zeroizing<[u8; 32]> {
+    Zeroizing::new(std::array::from_fn(|i| {
+        ss.get(i).copied().unwrap_or_default()
+    }))
 }
 
 impl KemKeyPair {
@@ -79,9 +84,7 @@ impl KemKeyPair {
         let ct = Array::try_from(ciphertext).map_err(|_| CryptoError::Invalid)?;
         let (dk, _) = keys_from_seed(&self.seed);
         let ss = dk.decapsulate(&ct).map_err(|()| CryptoError::Invalid)?;
-        let mut out = Zeroizing::new([0u8; 32]);
-        out.copy_from_slice(&ss);
-        Ok(out)
+        Ok(secret(&ss))
     }
 }
 
@@ -103,9 +106,7 @@ pub fn kem_encapsulate(
     let (ct, ss) = ek
         .encapsulate_deterministic(&Array::from(*m))
         .map_err(|()| CryptoError::Invalid)?;
-    let mut out = Zeroizing::new([0u8; 32]);
-    out.copy_from_slice(&ss);
-    Ok((ct.to_vec(), out))
+    Ok((ct.to_vec(), secret(&ss)))
 }
 
 /// The hybrid combiner: one 32-byte key from an ECDH secret and one or more ML-KEM secrets, bound to `label` and to the

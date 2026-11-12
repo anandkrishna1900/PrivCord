@@ -158,17 +158,16 @@ fn open_encrypted_database(
     let stored = secure.load_database_key().filter(|k| k.len() == 32);
     let key: Zeroizing<[u8; 32]> = match stored {
         Some(k) => {
-            let mut key = Zeroizing::new([0u8; 32]);
-            key.copy_from_slice(&k);
-            key
+            Zeroizing::new(<[u8; 32]>::try_from(k.as_slice()).map_err(|_| FfiError::SecureStorage)?)
         }
         None => {
             if SqliteStorage::is_encrypted_file(path) {
                 set_aside(path);
             }
-            let mut key = Zeroizing::new([0u8; 32]);
-            privcord_crypto::rng::Entropy::fill(&mut OsEntropy, &mut key[..])
-                .map_err(|_| FfiError::SecureStorage)?;
+            let key = Zeroizing::new(
+                privcord_crypto::rng::random_array::<32>(&mut OsEntropy)
+                    .map_err(|_| FfiError::SecureStorage)?,
+            );
             if !secure.save_database_key(key.to_vec()) {
                 return Err(FfiError::SecureStorage);
             }

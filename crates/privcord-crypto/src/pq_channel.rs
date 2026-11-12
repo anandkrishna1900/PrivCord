@@ -24,11 +24,9 @@ use crate::{
     rng::{random_array, random_secret_key, Entropy},
     secure_channel::ChannelError,
 };
-use hmac::{Hmac, Mac};
 use p256::{ecdh::diffie_hellman, SecretKey};
 use privcord_domain::{blob::PublicJwk, codec, text::cmp_utf16};
 use serde_json::{json, Value};
-use sha2::Sha256;
 use zeroize::Zeroizing;
 
 pub const PQ_VERSION: u64 = 2;
@@ -124,25 +122,22 @@ fn hello_payload(
     Ok(format!("duocord-pq-v2|{signer}|{other}|{thumb}|{kem_hash}|{nonce}").into_bytes())
 }
 
+type Secret = Zeroizing<[u8; 32]>;
+
 /// One direction of the symmetric ratchet: `index` is the next frame number, `key` its chain key.
 struct Chain {
     key: Zeroizing<[u8; 32]>,
     index: u64,
 }
 
-fn hmac(key: &[u8; 32], byte: u8) -> Zeroizing<[u8; 32]> {
-    // HMAC accepts any key length; the error branch cannot happen with 32 bytes.
-    let Ok(mut mac) = <Hmac<Sha256> as Mac>::new_from_slice(key) else {
-        return Zeroizing::new([0u8; 32]);
-    };
-    mac.update(&[byte]);
-    Zeroizing::new(mac.finalize().into_bytes().into())
-}
-
 impl Chain {
-    /// The key for the frame at `index`, and the chain key after it.
-    fn step(key: &[u8; 32]) -> (Zeroizing<[u8; 32]>, Zeroizing<[u8; 32]>) {
-        (hmac(key, 0x01), hmac(key, 0x02))
+    /// The key for the frame at `index`, and the chain key after it (HKDF-SHA-256 with two labels, so neither can be
+    /// worked out from the other).
+    fn step(key: &[u8; 32]) -> Result<(Secret, Secret), CryptoError> {
+        Ok((
+            Zeroizing::new(hkdf_sha256::<32>(key, b"", b"duocord-pq-v2|frame-key")?),
+            Zeroizing::new(hkdf_sha256::<32>(key, b"", b"duocord-pq-v2|chain-key")?),
+        ))
     }
 }
 
@@ -191,6 +186,8 @@ pub struct PqChannel {
     got: Option<(Vec<u8>, Zeroizing<[u8; 32]>)>,
     send: Option<Chain>,
     recv: Option<Chain>,
+    /// The handshake is over (its ML-KEM secrets were dropped); a repeated hello or ciphertext is refused.
+    done: bool,
 }
 
 impl std::fmt::Debug for PqChannel {
@@ -231,6 +228,7 @@ impl PqChannel {
             got: None,
             send: None,
             recv: None,
+            done: false,
         })
     }
 
@@ -255,7 +253,7 @@ impl PqChannel {
         hello: &PqHello,
         entropy: &mut dyn Entropy,
     ) -> Result<PqKem, ChannelError> {
-        if self.peer.is_some() {
+        if self.peer.is_some() || self.done {
             return Err(ChannelError::AlreadyEstablished);
         }
         let kem = codec::decode(&hello.kem)
@@ -285,7 +283,7 @@ impl PqChannel {
 
     /// Their ciphertext for our ML-KEM key.
     pub fn on_kem(&mut self, frame: &PqKem) -> Result<(), ChannelError> {
-        if self.got.is_some() {
+        if self.got.is_some() || self.done {
             return Err(ChannelError::AlreadyEstablished);
         }
         let ct = codec::decode(&frame.ct)
@@ -344,8 +342,9 @@ impl PqChannel {
             index: 0,
         });
         // The ML-KEM secrets and ciphertexts are no longer needed.
-        self.sent = Some((Vec::new(), Zeroizing::new([0u8; 32])));
-        self.got = Some((Vec::new(), Zeroizing::new([0u8; 32])));
+        self.sent = None;
+        self.got = None;
+        self.done = true;
         Ok(())
     }
 
@@ -355,7 +354,7 @@ impl PqChannel {
             return Err(ChannelError::Exhausted);
         }
         let n = chain.index;
-        let (mk, next) = Chain::step(&chain.key);
+        let (mk, next) = Chain::step(&chain.key)?;
         chain.key = next;
         chain.index += 1;
         let ct = aead::encrypt(
@@ -382,9 +381,9 @@ impl PqChannel {
         }
         let mut key = Zeroizing::new(*chain.key);
         for _ in chain.index..frame.n {
-            key = Chain::step(&key).1;
+            key = Chain::step(&key)?.1;
         }
-        let (mk, next) = Chain::step(&key);
+        let (mk, next) = Chain::step(&key)?;
         let ct = codec::decode(&frame.ct).ok_or(ChannelError::Decrypt)?;
         let padded = aead::decrypt(
             &mk[..],
