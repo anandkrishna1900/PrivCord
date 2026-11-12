@@ -47,7 +47,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.duochat.app.security.Bip39
 
-private enum class Step { INTRO, SHOW, CONFIRM, RESTORE }
+/** [depth] orders the steps, so moving between them slides the right way. */
+private enum class Step(val depth: Int) { INTRO(0), SHOW(1), CONFIRM(2), RESTORE(1) }
 
 /**
  * First run: the 12-word recovery phrase is mandatory. There is no skip: the chat does not open until an
@@ -80,8 +81,16 @@ fun OnboardingScreen(onCreate: (phrase: String, passphrase: String, onResult: (R
                 Spacer(Modifier.width(12.dp))
                 Text("DuoCord", style = MaterialTheme.typography.titleLarge)
             }
-            Spacer(Modifier.height(if (step == Step.INTRO) 56.dp else 28.dp))
-            when (step) {
+            val gap by androidx.compose.animation.core.animateDpAsState(if (step == Step.INTRO) 56.dp else 28.dp, Motion.settle(), label = "gap")
+            Spacer(Modifier.height(gap))
+            // Each step slides in from the side it comes from: onward from the end, back from the start.
+            androidx.compose.animation.AnimatedContent(
+                targetState = step,
+                transitionSpec = { Motion.slide(forward = targetState.depth >= initialState.depth) },
+                label = "setup",
+            ) { shown ->
+            Column {
+            when (shown) {
                 Step.INTRO -> {
                     Text("Talk to your people.\nNobody in between.", style = MaterialTheme.typography.displaySmall)
                     Spacer(Modifier.height(16.dp))
@@ -116,6 +125,8 @@ fun OnboardingScreen(onCreate: (phrase: String, passphrase: String, onResult: (R
                 Step.CONFIRM -> ConfirmPhrase(phrase, busy, error, onBack = { step = Step.SHOW }) { finish(phrase, "") }
 
                 Step.RESTORE -> RestorePhrase(busy, error, onBack = { step = Step.INTRO }) { words, pass -> finish(words, pass) }
+            }
+            }
             }
         }
     }

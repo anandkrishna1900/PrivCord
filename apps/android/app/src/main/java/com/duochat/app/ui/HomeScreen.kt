@@ -64,6 +64,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.composed
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -183,13 +188,30 @@ fun HomeScreen(
                     }
                 }
             }
+            val introPlaying = remember { !homeIntroPlayed }
+            LaunchedEffect(Unit) { homeIntroPlayed = true }
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
                 // Room under the last chat so the floating button (and the navigation bar under it) never covers it.
                 contentPadding = PaddingValues(top = 6.dp, bottom = navBottom + 96.dp),
             ) {
-                items(chats, key = { it.id }) { chat -> ChatRow(chat) { onOpenChat(chat) } }
+                itemsIndexed(chats, key = { _, chat -> chat.id }) { index, chat ->
+                    // A chat with a new message glides to the top instead of jumping there; on the first view after the
+                    // app opens, the rows rise in one after another.
+                    Box(
+                        Modifier
+                            .animateItem(
+                                fadeInSpec = androidx.compose.animation.core.tween(Motion.SMALL_IN),
+                                placementSpec = androidx.compose.animation.core.spring(
+                                    stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
+                                    visibilityThreshold = androidx.compose.ui.unit.IntOffset.VisibilityThreshold,
+                                ),
+                                fadeOutSpec = androidx.compose.animation.core.tween(Motion.SMALL_OUT),
+                            )
+                            .riseIn(play = introPlaying && index < 10, delayMillis = 60 + index * 40),
+                    ) { ChatRow(chat) { onOpenChat(chat) } }
+                }
             }
         }
     }
@@ -406,5 +428,21 @@ fun formatListItemTime(epochMs: Long): String {
         day.isAfter(today.minusDays(7)) -> then.format(java.time.format.DateTimeFormatter.ofPattern("EEE", Locale.getDefault()))
         day.year == today.year -> then.format(java.time.format.DateTimeFormatter.ofPattern("MMM d", Locale.getDefault()))
         else -> then.format(java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.getDefault()))
+    }
+}
+
+/** The staggered entrance plays once per launch, not every time you come back from a chat. */
+private var homeIntroPlayed = false
+
+/** Rises a little and fades in after [delayMillis]; used for the rows on the first view after opening. */
+private fun Modifier.riseIn(play: Boolean, delayMillis: Int): Modifier = if (!play) this else composed {
+    val p = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(delayMillis.toLong())
+        p.animateTo(1f, Motion.settle())
+    }
+    graphicsLayer {
+        alpha = p.value.coerceIn(0f, 1f)
+        translationY = (1f - p.value) * 18.dp.toPx()
     }
 }
