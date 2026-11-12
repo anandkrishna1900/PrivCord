@@ -17,7 +17,7 @@ use crate::{
     canonical::canonical_json,
     error::CryptoError,
     identity::{jwk_of, public_key_from_jwk, verify_signature, Identity},
-    kdf::hkdf_sha256,
+    kdf::hkdf_expand,
     pq::{
         combine, fingerprint, kem_encapsulate, KemKeyPair, KEM_CIPHERTEXT_BYTES, KEM_PUBLIC_BYTES,
     },
@@ -135,8 +135,8 @@ impl Chain {
     /// worked out from the other).
     fn step(key: &[u8; 32]) -> Result<(Secret, Secret), CryptoError> {
         Ok((
-            Zeroizing::new(hkdf_sha256::<32>(key, b"", b"duocord-pq-v2|frame-key")?),
-            Zeroizing::new(hkdf_sha256::<32>(key, b"", b"duocord-pq-v2|chain-key")?),
+            Zeroizing::new(hkdf_expand::<32>(key, b"duocord-pq-v2|frame-key")?),
+            Zeroizing::new(hkdf_expand::<32>(key, b"duocord-pq-v2|chain-key")?),
         ))
     }
 }
@@ -163,10 +163,16 @@ pub(crate) fn unpad(padded: &[u8]) -> Option<&[u8]> {
         .flatten()
 }
 
+/// The nonce for frame `n`: its number, big-endian, in the last 8 of 12 bytes. Every frame has its own key, so a nonce
+/// is never reused under a key.
 fn frame_iv(n: u64) -> [u8; 12] {
-    let mut iv = [0u8; 12];
-    iv[4..].copy_from_slice(&n.to_be_bytes());
-    iv
+    let counter = n.to_be_bytes();
+    std::array::from_fn(|i| {
+        i.checked_sub(4)
+            .and_then(|j| counter.get(j))
+            .copied()
+            .unwrap_or_default()
+    })
 }
 
 /// One side of the v2 channel on one link.
@@ -322,16 +328,8 @@ impl PqChannel {
             &[ss_low, ss_high],
             &[pay_low, pay_high, ct_low, ct_high],
         )?;
-        let low = Zeroizing::new(hkdf_sha256::<32>(
-            &root[..],
-            b"",
-            b"duocord-pq-v2|low->high",
-        )?);
-        let high = Zeroizing::new(hkdf_sha256::<32>(
-            &root[..],
-            b"",
-            b"duocord-pq-v2|high->low",
-        )?);
+        let low = Zeroizing::new(hkdf_expand::<32>(&root, b"duocord-pq-v2|low->high")?);
+        let high = Zeroizing::new(hkdf_expand::<32>(&root, b"duocord-pq-v2|high->low")?);
         let (send, recv) = if low_is_me { (low, high) } else { (high, low) };
         self.send = Some(Chain {
             key: send,

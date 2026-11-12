@@ -37,6 +37,17 @@ pub fn hkdf_sha256<const N: usize>(
     Ok(out)
 }
 
+/// HKDF-Expand only (RFC 5869 section 3.3): for a key that is already uniformly random (a chain key, a root from
+/// [`crate::pq::combine`]), the extract step and its salt add nothing, so there is no salt at all.
+pub fn hkdf_expand<const N: usize>(prk: &[u8; 32], info: &[u8]) -> Result<[u8; N], CryptoError> {
+    let mut out = blank::<N>();
+    Hkdf::<Sha256>::from_prk(prk)
+        .map_err(|_| CryptoError::Invalid)?
+        .expand(info, &mut out)
+        .map_err(|_| CryptoError::Invalid)?;
+    Ok(out)
+}
+
 /// PBKDF2-HMAC-SHA-256 into 32 bytes.
 pub fn pbkdf2_sha256(password: &[u8], salt: &[u8], iterations: u32) -> [u8; 32] {
     let mut out = blank::<32>();
