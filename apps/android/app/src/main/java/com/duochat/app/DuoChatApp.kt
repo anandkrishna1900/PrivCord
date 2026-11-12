@@ -7,6 +7,7 @@ import com.duochat.app.p2p.PeerConnectionFactoryHolder
 class DuoChatApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        CrashLog.captureLastExit(this)
         CrashLog.install(this)
         com.duochat.app.engine.EngineHost.app = this
         DuoNotifications.ensureChannel(this)

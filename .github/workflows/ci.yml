@@ -197,10 +197,73 @@ jobs:
           for abi in arm64-v8a armeabi-v7a; do
             unzip -l apps/android/app/build/outputs/apk/release/app-$abi-release.apk | grep "lib/$abi/libprivcord_ffi.so"
           done
+      # R8 cannot see what native code reaches by name (JNI exports, class lookups); a miss crashes at run time, not
+      # here (WebRTC's org.jni_zero.JniZero did, on every launch). Check the shipped APKs.
+      - name: Native code still finds every Java class and method it needs
+        run: |
+          dexdump="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/dexdump"
+          for abi in arm64-v8a armeabi-v7a; do
+            python3 apps/android/tools/check_native_links.py apps/android/app/build/outputs/apk/release/app-$abi-release.apk "$dexdump"
+          done
       - uses: actions/upload-artifact@v7
         with:
           name: duochat-android
           path: apps/android/app/build/outputs/apk/release/*.apk
+
+  android-launch:
+    name: Android release APK opens on an emulator
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager --licenses > /dev/null || true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+      # The same release build phones get (R8, the same Rust profile), only for the emulator's CPU.
+      - name: Build the Rust core for the emulator
+        env:
+          CARGO_PROFILE_RELEASE_OPT_LEVEL: s
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
+          cargo ndk -t x86_64 -o apps/android/app/src/main/jniLibs build -p privcord-ffi --release --locked
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Assemble the release APK
+        working-directory: apps/android
+        run: ./gradlew :app:assembleRelease -Pduochat.ciSign=true -Pduochat.emulator=true --console=plain
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      # Install, open, wait, and fail if the app is no longer running. The full log is kept either way.
+      - name: Open the app and keep it open for 30 seconds
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: |
+            adb install -r apps/android/app/build/outputs/apk/release/app-x86_64-release.apk
+            adb logcat -c
+            adb shell am start -W -n com.duochat.app/.MainActivity
+            sleep 30
+            adb logcat -d -b main -b system -b crash > android-launch-logcat.txt || true
+            grep -E "FATAL EXCEPTION|Fatal signal|AndroidRuntime|DEBUG   :|libprivcord|uniffi" android-launch-logcat.txt | head -200 || true
+            adb shell pidof com.duochat.app
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-launch-logcat
+          path: android-launch-logcat.txt
 
   windows-installer:
     name: Windows installer (unsigned) build

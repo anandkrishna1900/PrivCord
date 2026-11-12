@@ -38,6 +38,37 @@ object CrashLog {
         }
     }
 
+    /**
+     * A crash in native code (the Rust core, SQLCipher, WebRTC) never reaches the Java handler above. Android 11+ keeps
+     * why the last run ended: if that was a crash we did not record, write it down from there (with the readable parts
+     * of the native report: library and function names), so the next launch can still show it. Treated as a crash at
+     * start-up, so the engine waits for the dialog. Call first thing in Application.onCreate.
+     */
+    fun captureLastExit(context: Context) {
+        if (Build.VERSION.SDK_INT < 30) return
+        runCatching {
+            val am = context.getSystemService(android.app.ActivityManager::class.java) ?: return
+            val info = am.getHistoricalProcessExitReasons(context.packageName, 0, 1).firstOrNull() ?: return
+            val native = info.reason == android.app.ApplicationExitInfo.REASON_CRASH_NATIVE
+            if (!native && info.reason != android.app.ApplicationExitInfo.REASON_CRASH) return
+            val prefs = context.getSharedPreferences("crashlog", Context.MODE_PRIVATE)
+            if (prefs.getLong("seenExit", 0L) >= info.timestamp) return
+            prefs.edit().putLong("seenExit", info.timestamp).commit()
+            // A Java crash was already written by the handler, with its full stack trace.
+            if (!native && file(context).exists()) return
+            val trace = info.traceInputStream?.use { it.readBytes().take(512_000).toByteArray() }
+            val readable = trace?.let { bytes ->
+                String(bytes, Charsets.ISO_8859_1).split(Regex("[^\\x20-\\x7e]+")).filter { it.length >= 6 }.joinToString("\n")
+            }.orEmpty()
+            file(context).writeText(
+                "uptimeMs=0\n" +
+                    "DuoCord ${BuildConfig.VERSION_NAME} · Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · " +
+                    "${Build.MANUFACTURER} ${Build.MODEL} · ${if (native) "native crash" else "crash"}\n\n" +
+                    "${info.description.orEmpty()}\n\n" + readable.take(20_000),
+            )
+        }
+    }
+
     /** What the last run crashed with, if it did. It stays until [clear] (the user has seen it), so a crash that repeats
      *  before the dialog is answered never loses the details. */
     class Report(val details: String, val radio: Boolean, val atStartup: Boolean)

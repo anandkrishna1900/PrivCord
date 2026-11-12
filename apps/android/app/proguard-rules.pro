@@ -13,6 +13,13 @@
 
 # WebRTC's native library calls back into these classes by name.
 -keep class org.webrtc.** { *; }
+# WebRTC 150+ calls into Java through Chromium's jni_zero glue, looked up by name from native code. The library ships no
+# keep rules for it: without this, R8 renames or removes it and WebRTC aborts the process at start-up (no Java trace).
+-keep class org.jni_zero.** { *; }
+# Generated per app in Chromium builds, not shipped in the library; only referenced by a path WebRTC does not use.
+-dontwarn org.jni_zero.JniZeroJni
+# Any class with native methods: native code finds them by name.
+-keepclasseswithmembernames,includedescriptorclasses class * { native <methods>; }
 -dontwarn org.webrtc.**
 
 -keep class com.google.zxing.** { *; }
