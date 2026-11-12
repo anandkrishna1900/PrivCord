@@ -470,3 +470,8 @@ input[type='radio'] {
   background: var(--accent-fill);
   color: #fff;
 }
+img.brand-mark {
+  display: block;
+  flex: none;
+  object-fit: contain;
+}

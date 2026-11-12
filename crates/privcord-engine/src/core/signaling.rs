@@ -33,6 +33,10 @@ const MESH_RETRY_MS: i64 = 15_000;
 /// A direct link gets this long to come up (the dial starts the moment the message is sent) before the message is also
 /// handed to other members to pass on.
 const MESH_AFTER_MS: i64 = 10_000;
+/// Rounds of passing a message on before giving up on that route (direct delivery keeps retrying as always): about five
+/// minutes for text, three tries for a file (each is the whole file again, through other people's links).
+const MESH_MAX_ROUNDS_TEXT: u32 = 20;
+const MESH_MAX_ROUNDS_FILE: u32 = 3;
 
 #[derive(Default)]
 pub(super) struct SealedState {
@@ -40,7 +44,8 @@ pub(super) struct SealedState {
     /// (message, recipient) pairs already handed to a signaling service.
     relayed: HashSet<(MessageId, UserId)>,
     /// (message, member) pairs handed to other members to pass on, and when.
-    meshed: std::collections::HashMap<(MessageId, UserId), i64>,
+    /// (message, member) pairs handed to other members to pass on: when last, and how many rounds so far.
+    meshed: std::collections::HashMap<(MessageId, UserId), (i64, u32)>,
     seen: SeenSet,
 }
 
@@ -313,6 +318,16 @@ impl Core {
                 let Some(f) = payload.get("f") else { return };
                 match f.get("kind").and_then(Value::as_str) {
                     Some("file_offer") if f.get("groupId").is_some_and(|g| !g.is_null()) => {
+                        // A retry while the first copy is still arriving: keep the transfer we have.
+                        let arriving = privcord_domain::files::FileOffer::from_frame(f)
+                            .is_some_and(|o| {
+                                self.peers
+                                    .get(&from)
+                                    .is_some_and(|p| p.files.next_index(&o.message_id).is_some())
+                            });
+                        if arriving {
+                            return;
+                        }
                         self.peers
                             .entry(from.clone())
                             .or_insert_with(super::Peer::offline);
@@ -324,12 +339,13 @@ impl Core {
                         let Some(chunk) = privcord_domain::files::FileChunk::from_frame(f) else {
                             return;
                         };
-                        // The second helper's copy of a chunk we already have: skip it rather than spoil the transfer.
+                        // Only the chunk the transfer needs next goes in: the second helper's copy of one we have, or one
+                        // from an earlier attempt that overtook, is skipped rather than spoiling the transfer.
                         let next = self
                             .peers
                             .get(&from)
                             .and_then(|p| p.files.next_index(&chunk.message_id));
-                        if next.is_none_or(|n| chunk.index < n) {
+                        if next != Some(chunk.index) {
                             return;
                         }
                         self.relay_inbound = true;
@@ -368,7 +384,7 @@ impl Core {
                         .sealed
                         .meshed
                         .get(&(o.message_id.clone(), o.recipient.clone()))
-                        .is_none_or(|at| now - at >= MESH_RETRY_MS)
+                        .is_none_or(|(at, _)| now - at >= MESH_RETRY_MS)
             })
             .cloned()
             .collect();
@@ -383,43 +399,71 @@ impl Core {
                 continue;
             }
             let key = (entry.message_id.clone(), entry.recipient.clone());
-            let sent = if row.message.kind == MessageKind::Text {
-                let payload = json!({ "t": "msg", "id": row.message.message_id, "text": row.message.text,
-                    "at": row.message.client_created_at, "g": g.as_str() });
-                let Ok(blob) = self.seal_to(&entry.recipient, &payload) else {
-                    continue;
-                };
-                self.forward_via(&entry.recipient, &blob)
+            let (last, rounds) = self.sealed.meshed.get(&key).copied().unwrap_or((0, 0));
+            let is_text = row.message.kind == MessageKind::Text;
+            let max = if is_text {
+                MESH_MAX_ROUNDS_TEXT
+            } else {
+                MESH_MAX_ROUNDS_FILE
+            };
+            if rounds >= max || (!is_text && rounds > 0 && now - last < super::FILE_RETRY_AFTER_MS)
+            {
+                continue;
+            }
+            // Helpers: members of this same group we are linked to (the ones likely linked to the member too).
+            let helpers: Vec<UserId> = self
+                .groups
+                .as_ref()
+                .map(|c| c.recipients(g.as_str()))
+                .unwrap_or_default()
+                .iter()
+                .filter_map(|u| UserId::new(u.as_str()).ok())
+                .filter(|u| {
+                    *u != entry.recipient && self.peers.get(u).is_some_and(super::Peer::ready)
+                })
+                .take(2)
+                .collect();
+            if helpers.is_empty() {
+                continue;
+            }
+            let payloads: Vec<Value> = if is_text {
+                vec![
+                    json!({ "t": "msg", "id": row.message.message_id, "text": row.message.text,
+                    "at": row.message.client_created_at, "g": g.as_str() }),
+                ]
             } else {
                 // A file (voice note, photo, anything): its offer and every chunk, each sealed to the member, in order.
                 // Both helpers get the same sealed copies; the member keeps the first of each and skips repeats.
-                if self
-                    .sealed
-                    .meshed
-                    .get(&key)
-                    .is_some_and(|at| now - at < super::FILE_RETRY_AFTER_MS)
-                {
-                    continue;
-                }
                 let Some(frames) = self.outbox_frames(&entry.message_id) else {
                     continue;
                 };
-                let mut ok = true;
-                for f in frames {
-                    let Ok(blob) = self.seal_to(&entry.recipient, &json!({ "t": "frame", "f": f }))
-                    else {
-                        ok = false;
-                        break;
-                    };
-                    if !self.forward_via(&entry.recipient, &blob) {
-                        ok = false;
-                        break;
-                    }
-                }
-                ok
+                frames
+                    .into_iter()
+                    .map(|f| json!({ "t": "frame", "f": f }))
+                    .collect()
             };
+            let mut sent = true;
+            for payload in payloads {
+                let Ok(blob) = self.seal_to(&entry.recipient, &payload) else {
+                    sent = false;
+                    break;
+                };
+                let frame = GroupFrame::RelayBlob {
+                    blob: Box::new(blob),
+                    hops: 1,
+                }
+                .to_value();
+                let mut any = false;
+                for h in &helpers {
+                    any |= self.send_secure(h, &frame);
+                }
+                if !any {
+                    sent = false;
+                    break;
+                }
+            }
             if sent {
-                self.sealed.meshed.insert(key, now);
+                self.sealed.meshed.insert(key, (now, rounds + 1));
             }
         }
         let outbox = &self.outbox;

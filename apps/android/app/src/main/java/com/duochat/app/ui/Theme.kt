@@ -168,30 +168,14 @@ private fun parseColor(value: String): Color = try {
     Color(0xFF7A3E73)
 }
 
-/**
- * The mark: a plum tile (your private space) with an apricot seal in its corner. Drawn, so it follows the theme and
- * needs no image asset.
- */
+/** The app's icon, wherever the app shows its mark (onboarding, lock and loading screens). */
 @Composable
 fun BrandMark(size: Int = 56) {
-    val plum = LocalOwnFill.current
-    androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.size(size.dp)) {
-        androidx.compose.foundation.layout.Box(
-            androidx.compose.ui.Modifier.size((size * 0.86f).dp)
-                .background(plum, RoundedCornerShape((size * 0.28f).dp)),
-        ) {
-            androidx.compose.material3.Icon(
-                androidx.compose.material.icons.Icons.Filled.Lock, contentDescription = null, tint = Color.White,
-                modifier = androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.Center).size((size * 0.36f).dp),
-            )
-        }
-        androidx.compose.foundation.layout.Box(
-            androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.BottomEnd).size((size * 0.36f).dp)
-                .background(MaterialTheme.colorScheme.background, androidx.compose.foundation.shape.CircleShape)
-                .padding((size * 0.05f).dp)
-                .background(Apricot, androidx.compose.foundation.shape.CircleShape),
-        )
-    }
+    androidx.compose.foundation.Image(
+        painter = androidx.compose.ui.res.painterResource(R.drawable.app_icon),
+        contentDescription = null,
+        modifier = androidx.compose.ui.Modifier.size(size.dp),
+    )
 }
 
 /**

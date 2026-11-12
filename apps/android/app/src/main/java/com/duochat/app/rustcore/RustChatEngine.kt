@@ -35,7 +35,7 @@ import com.duochat.app.ble.bluetoothStatusFor
 import com.duochat.app.data.NetworkConfig
 import com.duochat.app.data.ReplyRef
 import com.duochat.app.data.filePreviewText
-import com.duochat.app.engine.ChatEngine
+import com.duochat.app.engine.SearchHit
 import com.duochat.app.engine.ChatEngineApi
 import com.duochat.app.engine.IncomingNotice
 import com.duochat.app.p2p.WebRtcTransport
@@ -1014,12 +1014,12 @@ class RustChatEngine(
     override suspend fun deleteMessage(messageId: String, everyone: Boolean) { call { deleteMessage(messageId, everyone) } }
     override suspend fun react(messageId: String, emoji: String) { call { react(messageId, emoji) } }
 
-    override fun search(query: String, limit: Int): List<ChatEngine.SearchHit> {
+    override fun search(query: String, limit: Int): List<SearchHit> {
         val e = engine ?: return emptyList()
         val s = last ?: return emptyList()
         return runCatching {
             e.search(query, limit.toUInt()).map { h ->
-                ChatEngine.SearchHit(
+                SearchHit(
                     h.messageId, h.conversation,
                     s.contacts.firstOrNull { it.uid == h.conversation }?.displayName
                         ?: s.groups.firstOrNull { it.id == h.conversation }?.name ?: h.conversation,

@@ -5,7 +5,7 @@ import { RELOCK_AFTER_MS, isLockEnabled } from './lib/appLock';
 import { useSettings } from './hooks/useSettings';
 import { ChatLayout } from './components/ChatLayout';
 import { RecoveryDialog } from './components/RecoveryDialogs';
-import { ShieldIcon } from './components/Icons';
+import { BrandMark } from './components/Avatar';
 
 export default function App() {
   const { settings, update } = useSettings();
@@ -35,9 +35,7 @@ export default function App() {
     return (
       <main className="loading-page">
         <div className="splash">
-          <div className="brand-lock large">
-            <ShieldIcon size={26} />
-          </div>
+          <BrandMark size={72} />
           <h1>DuoCord</h1>
           <p className="muted">Create your private identity to begin.</p>
         </div>

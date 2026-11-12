@@ -63,8 +63,7 @@ download the artifacts:
 | Artifact | What it is |
 |---|---|
 | `duochat-windows-unsigned` | Windows installer (unsigned, so SmartScreen warns you) |
-| `duochat-android-debug` | Android app, **classic** build: the original Kotlin engine |
-| `duochat-android-rust-preview` | Android app, **Rust** build ("DuoChat Rust", `com.duochat.app.rust`): every rule runs in the shared Rust engine. It installs next to the classic app with its own data, so trying it risks nothing |
+| `duochat-android` | Android app (`com.duochat.app`), running on the shared Rust engine: install `app-arm64-v8a-release.apk` (almost every phone; `armeabi-v7a` is for old 32-bit phones) |
 
 Android debug builds are signed with one fixed debug key (`apps/android/keystore/debug.keystore`, committed on
 purpose, protects nothing), so a newer build updates an older one in place. Building from source:
@@ -79,7 +78,7 @@ shells around it. The rules exist in three places today:
 |---|---|---|
 | **Rust engine** (the target) | `crates/` | Android "rust" build and the Windows app (its only engine) |
 | TypeScript protocol | `packages/protocol`, `apps/desktop/src/lib` | Desktop app |
-| Kotlin protocol | `apps/android/.../{data,security,engine,groups,p2p}` | Android "classic" build |
+| Kotlin protocol | `apps/android/.../{data,security,engine,groups,p2p}` | Nothing at runtime: the Android app runs the Rust engine; kept for its tests and as the reference it was ported from |
 
 The three are kept in step by shared test vectors (`docs/*-vectors.json`): the Rust crates both produce vectors
 the TypeScript tests open, and open vectors the TypeScript code produced. CI checks both directions.
@@ -172,7 +171,7 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-features --locked   # real-relay tests need Node (npm ci) and `pip install nostr-relay`
 ```
 
-Android (`apps/android`): `./gradlew :app:testClassicDebugUnitTest :app:assembleClassicDebug :app:assembleRustDebug`.
+Android (`apps/android`): `./gradlew :app:testDebugUnitTest :app:assembleRelease -Pduochat.ciSign=true` (one APK per phone CPU type; add `-Pduochat.emulator=true` for the x86_64 emulator).
 The Rust build needs the native library first: `cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -t x86 -o app/src/main/jniLibs build -p privcord-ffi --release`
 (Android NDK and `cargo-ndk`). CI does this for you.
 
@@ -191,7 +190,7 @@ The browser build uses a development store that is **not encrypted at rest** and
 | `crates/privcord-ffi` | UniFFI facade and the generated Kotlin bindings |
 | `packages/protocol` | Shared TypeScript protocol, unit-tested |
 | `apps/desktop` | React + Vite in a Tauri 2 shell (Rust: secure storage, SQLite, Bluetooth), plus the Playwright e2e suite |
-| `apps/android` | Kotlin + Jetpack Compose, "classic" and "rust" build flavors |
+| `apps/android` | Kotlin + Jetpack Compose on the Rust engine |
 | `relay` | Optional self-hosted signaling / store-and-forward relay (Node.js) |
 | `docs` | Architecture, operations and Rust-migration documentation |
 
@@ -210,7 +209,7 @@ The browser build uses a development store that is **not encrypted at rest** and
 | Rust engine | Unit and integration tests across all crates (cargo test in CI on Linux and Windows); shared vectors checked in both directions with TypeScript; signaling clients against the real relay and against an independent Nostr relay (`nostr-relay`) | Public Nostr relays |
 | Rust engine against the real desktop app | A built desktop app in headless Chromium and a separate Rust engine process talk over a simulated Bluetooth radio: pairing through the app's own dialog, messages both ways, receipts, nothing readable on the air (CI) | WebRTC, groups, files and channels against a live app; a real radio |
 | Android "rust" build | Compiles and packages in CI for four CPU types; on a real phone the native library self-test and an engine probe (identity, card, snapshot, Keystore round-trip) pass | **The chat screens on the Rust engine have not been run on a phone.** Messaging, Bluetooth, mesh, manual codes and channels are the likeliest to show bugs |
-| Android "classic" build | Compiles, unit tests, debug APK builds | The engine and screens on a device or emulator |
+| Android app | Compiles, unit tests, debug APK builds | The engine and screens on a device or emulator |
 | One-to-one messaging over WebRTC | Used on real hardware by the maintainer; automated e2e suite in real browsers | Two devices on different internet connections |
 | Groups and introductions | Protocol: 120+ unit tests, a 25-member simulation, offline and forged-event cases. Desktop: real browsers, a three-person introduction and a six-person group | **Android groups on a real phone**, groups larger than 6 on real connections |
 | Bluetooth and mesh | Link encryption and framing in code and on a simulated radio; mesh logic in simulation | **Any real Bluetooth radio**. Windows can only search, so a phone must be the other side |

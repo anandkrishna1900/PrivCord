@@ -1,6 +1,5 @@
 package com.duochat.app.ble
 
-import com.duochat.app.groups.TestPerson
 import com.duochat.app.security.Channels
 import com.duochat.app.security.SealedBlob
 import org.json.JSONObject

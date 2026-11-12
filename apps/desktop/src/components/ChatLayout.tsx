@@ -33,9 +33,8 @@ function Splash({ title, text, danger }: { title: string; text: string; danger?:
   return (
     <main className="loading-page">
       <div className="splash">
-        <div className={`brand-lock large ${danger ? 'danger' : ''}`}>
-          {danger ? <AlertIcon size={26} /> : <LoaderIcon size={26} className="spin" />}
-        </div>
+        <BrandMark size={72} />
+        {danger ? null : <LoaderIcon size={20} className="spin" />}
         <h1>{title}</h1>
         <p className="muted">{text}</p>
         {danger ? (

@@ -24,7 +24,7 @@ interface ChatEngineApi {
     fun clearAnswer()
     suspend fun deleteMessage(messageId: String, everyone: Boolean)
     suspend fun react(messageId: String, emoji: String)
-    fun search(query: String, limit: Int = 50): List<ChatEngine.SearchHit>
+    fun search(query: String, limit: Int = 50): List<SearchHit>
     suspend fun exportBackup(passphrase: String): Result<String>
     suspend fun importBackup(text: String, passphrase: String): Result<String>
     suspend fun joinChannel(raw: String, persist: Boolean = true): Result<String>
@@ -60,3 +60,9 @@ interface ChatEngineApi {
     fun refreshBluetooth()
     suspend fun connectBluetooth(uid: String, manual: Boolean = true): Result<Unit>
 }
+
+/** Something the user should hear about while the app is in the background. */
+class IncomingNotice(val id: String, val conversationId: String, val title: String, val body: String, val isMessage: Boolean = true)
+
+/** One message found by [ChatEngineApi.search]. */
+class SearchHit(val messageId: String, val conversationId: String, val conversationName: String, val senderName: String, val text: String, val at: Long)

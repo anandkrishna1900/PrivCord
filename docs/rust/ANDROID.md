@@ -1,9 +1,8 @@
 # Android: the Rust core inside the app
 
-**Status: the Rust build flavor ("DuoChat Rust") runs the chat screens on the Rust engine, as a preview next to the classic app.
-CI builds and unit-tests both flavors. The Rust flavor has been run on real phones only recently (and fixes from that are in);
-Bluetooth, the mesh, groups and long background use are not yet proven on hardware.** The classic flavor keeps the Kotlin
-engine (`ChatEngine.kt`) until the exit criteria in [M7_DESKTOP_PLAN.md](M7_DESKTOP_PLAN.md#retirement-m9) are met.
+**Status: the Android app (`com.duochat.app`) runs only the Rust engine; the separate "rust" flavor and the classic Kotlin
+engine build were removed. CI builds and unit-tests it. It has been run on real phones only lightly; Bluetooth, the mesh,
+groups and long background use are not yet proven on hardware.** The Kotlin engine (`ChatEngine.kt`) has been deleted.
 
 What stage 1 does:
 
@@ -15,7 +14,7 @@ What stage 1 does:
   "not available (...)" means the library for that CPU is missing from the APK.
 
 Building locally needs the Android NDK, `cargo-ndk` and the four Rust targets; otherwise download the APK from the CI
-run's `duochat-android-debug` artifact.
+run's `duochat-android` artifact.
 
 **Stage 2, first piece: the engine probe.** Settings > About > **Rust engine** starts a real Rust engine on the phone
 against a throwaway database and Keystore slot, creates an identity, reads its card and snapshot, checks the secret

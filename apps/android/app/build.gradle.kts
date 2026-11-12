@@ -50,8 +50,8 @@ android {
         versionCode = 1
         versionName = "0.1.0"
 
-        // The Rust core (crates/privcord-ffi) is built per phone CPU type into src/main/jniLibs (see docs/rust/ANDROID.md).
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86") }
+        // Only the languages the app speaks: drops the libraries' translations for every other language.
+        resourceConfigurations += listOf("en", "es", "fr")
 
         buildConfigString("CONVERSATION_ID", setting("duochat.conversationId", "duo"))
         buildConfigString("TURN_URL", setting("turn.url"))
@@ -83,9 +83,13 @@ android {
             isMinifyEnabled = false
         }
         release {
+            // CI test builds (-Pduochat.ciSign=true) use the committed debug key, so they update earlier test builds in
+            // place; a real release only ever uses the release key from the environment.
             signingConfig = signingConfigs.findByName("release")
-            // Minification is off on purpose: it has not been tested on a device (WebRTC, Room, reflection).
-            isMinifyEnabled = false
+                ?: if (project.findProperty("duochat.ciSign") == "true") signingConfigs.getByName("debug") else null
+            // R8 drops unused library code (most of the icon set) but renames nothing: see proguard-rules.pro.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -109,26 +113,27 @@ android {
 
     // Two builds from one codebase: "classic" is the original Kotlin engine; "rust" runs the shared Rust engine. The
     // rust build installs next to the classic one (its own app id and its own data), so trying it risks nothing.
-    flavorDimensions += "engine"
-    productFlavors {
-        create("classic") {
-            dimension = "engine"
-            buildConfigField("boolean", "RUST_ENGINE", "false")
-        }
-        create("rust") {
-            dimension = "engine"
-            applicationIdSuffix = ".rust"
-            versionNameSuffix = "-rust"
-            buildConfigField("boolean", "RUST_ENGINE", "true")
-        }
-    }
 
     buildFeatures {
         compose = true
         buildConfig = true
     }
 
+    // One APK per phone CPU type, each carrying only its own native libraries (the Rust core, from
+    // crates/privcord-ffi built into src/main/jniLibs, and WebRTC; see docs/rust/ANDROID.md). Almost every phone
+    // takes the arm64-v8a APK; armeabi-v7a is for old 32-bit phones. -Pduochat.emulator=true adds x86_64.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            if (project.findProperty("duochat.emulator") == "true") include("x86_64")
+            isUniversalApk = false
+        }
+    }
     packaging {
+        // Compressed native libraries: the APK download is about half the size; Android unpacks them once at install.
+        jniLibs { useLegacyPackaging = true }
         resources {
             excludes += setOf(
                 "META-INF/AL2.0",
