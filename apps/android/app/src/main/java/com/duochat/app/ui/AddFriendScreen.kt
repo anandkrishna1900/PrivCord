@@ -260,7 +260,7 @@ fun AddFriendScreen(
                             Spacer(Modifier.height(16.dp))
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                 androidx.compose.material3.FilledTonalButton(
-                                    onClick = { clipboard.setText(AnnotatedString(words)); wordsCopied = true },
+                                    onClick = { copySensitive(context, "DuoCord invite", words, clearAfterMs = 120_000); wordsCopied = true },
                                     modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                                     colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(
                                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,

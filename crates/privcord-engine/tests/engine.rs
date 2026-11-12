@@ -475,12 +475,28 @@ fn a_message_that_claims_another_sender_is_refused() {
         b.core
             .frame_received(&au, &chan.encrypt(&wrapped).unwrap().to_value().to_string());
     };
-    send("somebody-else", "m-forged");
-    send(au.as_str(), "m-honest");
+    // Message ids carry their author's tag (16 hex digits of a hash of the id): one under someone else's tag is refused
+    // even from the right sender, so nobody can take the id of a message another person is about to send.
+    let tag = |u: &UserId| {
+        let mut t = privcord_crypto::kdf::sha256_hex(format!("duocord-msg-v2|{u}").as_bytes());
+        t.truncate(16);
+        t
+    };
+    let honest = format!("{}-00000000000000000000000000000001", tag(&au));
+    send(
+        "somebody-else",
+        &format!("{}-00000000000000000000000000000002", tag(&au)),
+    );
+    send(
+        au.as_str(),
+        &format!("{}-00000000000000000000000000000003", tag(&bu)),
+    );
+    send(au.as_str(), "m-untagged");
+    send(au.as_str(), &honest);
     assert_eq!(texts(&b, &au), vec!["from someone"]);
     assert_eq!(
         b.core.snapshot().messages[0].1[0].message_id.as_str(),
-        "m-honest"
+        honest
     );
 }
 

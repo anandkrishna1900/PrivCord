@@ -272,17 +272,17 @@ impl Core {
                 });
             }
             Some("answer") => {
-                // An answer naming another offer than the one we are waiting on belongs to an attempt we replaced.
-                if let (Some(said), Some(Some(waiting))) = (
-                    text("o"),
-                    self.peers.get(&from).map(|p| p.offer_out.as_deref()),
-                ) {
-                    if said != waiting {
-                        return;
-                    }
+                // Only an answer to the offer we are waiting on counts, and only once: one naming another offer, none,
+                // or arriving when nothing is pending (a relay replaying an old answer) is ignored.
+                let waiting = self.peers.get(&from).and_then(|p| p.offer_out.as_deref());
+                if text("o").is_none() || text("o") != waiting {
+                    return;
                 }
                 if let (true, Some(sdp)) = (is_initiator(own.as_str(), from.as_str()), text("sdp"))
                 {
+                    if let Some(p) = self.peers.get_mut(&from) {
+                        p.offer_out = None;
+                    }
                     self.hub.publish(EngineEvent::SignalReceived {
                         peer: from,
                         message: SignalMessage::Answer(sdp.to_owned()),

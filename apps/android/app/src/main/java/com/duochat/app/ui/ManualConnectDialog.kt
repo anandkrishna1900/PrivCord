@@ -73,6 +73,7 @@ fun ManualConnectDialog(
     var status by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val clipboard = LocalClipboardManager.current
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     val scan = rememberQrScanner("Scan a DuoCord code") { contents ->
         if (mode == ManualMode.HOST) {
@@ -203,7 +204,7 @@ fun ManualConnectDialog(
                     }
                     if (offerCode.isNotBlank()) {
                         Spacer(Modifier.height(10.dp))
-                        CodeBlock(offerCode) { clipboard.setText(AnnotatedString(offerCode)) }
+                        CodeBlock(offerCode) { copySensitive(context, "DuoCord code", offerCode, clearAfterMs = 120_000) }
                         Spacer(Modifier.height(16.dp))
                         Text(
                             "2. Paste or scan the answer code your friend sends back.",
@@ -323,7 +324,7 @@ fun ManualConnectDialog(
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Spacer(Modifier.height(8.dp))
-                        CodeBlock(answerCode) { clipboard.setText(AnnotatedString(answerCode)) }
+                        CodeBlock(answerCode) { copySensitive(context, "DuoCord code", answerCode, clearAfterMs = 120_000) }
                     }
                 }
 
