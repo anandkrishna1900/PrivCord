@@ -197,6 +197,14 @@ jobs:
           for abi in arm64-v8a armeabi-v7a; do
             unzip -l apps/android/app/build/outputs/apk/release/app-$abi-release.apk | grep "lib/$abi/libprivcord_ffi.so"
           done
+      # R8 cannot see what native code reaches by name (JNI exports, class lookups); a miss crashes at run time, not
+      # here (WebRTC's org.jni_zero.JniZero did, on every launch). Check the shipped APKs.
+      - name: Native code still finds every Java class and method it needs
+        run: |
+          dexdump="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/dexdump"
+          for abi in arm64-v8a armeabi-v7a; do
+            python3 apps/android/tools/check_native_links.py apps/android/app/build/outputs/apk/release/app-$abi-release.apk "$dexdump"
+          done
       - uses: actions/upload-artifact@v7
         with:
           name: duochat-android
