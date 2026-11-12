@@ -50,6 +50,14 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -97,6 +105,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -405,6 +414,8 @@ private fun MessageList(
     }
     val scope = rememberCoroutineScope()
     val newest = remember(messages) { messages.asReversed() }
+    // Messages already here when the chat opened are drawn as they are; only ones that arrive while you watch animate in.
+    val initialIds = remember(convId) { messages.mapTo(HashSet()) { it.messageId } }
     val lastId = messages.lastOrNull()?.messageId
     // True while the view follows the newest message. Dragging away turns it off; coming back to the bottom turns it on.
     var pinned by remember(convId) { mutableStateOf(true) }
@@ -478,7 +489,20 @@ private fun MessageList(
                 val next = newest.getOrNull(index - 1)
                 val lastOfRun = next == null || next.senderId != message.senderId ||
                     formatDay(next.clientCreatedAt) != day || next.clientCreatedAt - message.clientCreatedAt >= 4 * 60_000
-                Column(Modifier.padding(top = if (grouped || showDay) 0.dp else 6.dp)) {
+                Column(
+                    Modifier
+                        // The rest of the chat makes room smoothly; a deleted or expired message fades away.
+                        .animateItem(
+                            fadeInSpec = null,
+                            placementSpec = androidx.compose.animation.core.spring(
+                                stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
+                                visibilityThreshold = androidx.compose.ui.unit.IntOffset.VisibilityThreshold,
+                            ),
+                            fadeOutSpec = androidx.compose.animation.core.tween(Motion.SMALL_OUT),
+                        )
+                        .arrive(play = index < 3 && message.messageId !in initialIds, fromStart = message.senderId != selfUid)
+                        .padding(top = if (grouped || showDay) 0.dp else 6.dp),
+                ) {
                     if (showDay) DaySeparator(day)
                     val own = message.senderId == selfUid
                     MessageBubble(
@@ -576,6 +600,41 @@ private fun MessageBubble(
     var menuOpen by remember { mutableStateOf(false) }
 
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    // Android 9 and older: the system "save as" screen (writing to shared folders there needs a storage permission).
+    var pendingSave by remember { mutableStateOf<ByteArray?>(null) }
+    val saveAs = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri: Uri? ->
+        val bytes = pendingSave
+        pendingSave = null
+        if (uri != null && bytes != null) scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: error("no stream") }.isSuccess
+            }
+            Toast.makeText(context, if (ok) "Saved" else "Could not save the file", Toast.LENGTH_SHORT).show()
+        }
+    }
+    val save: () -> Unit = {
+        scope.launch {
+            val f = loadFile(message.messageId)
+            if (f == null) {
+                Toast.makeText(context, "No longer stored on this phone", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val (meta, bytes) = f
+            when (val result = saveToDevice(context, meta.name, meta.mime, bytes)) {
+                null -> { pendingSave = bytes; saveAs.launch(meta.name) }
+                else -> Toast.makeText(
+                    context,
+                    result.fold({ "Saved to $it" }, { "Could not save the file" }),
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+        }
+    }
+    val openMenu = {
+        haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+        menuOpen = true
+    }
     // Corners: round on the outside; tighter where a bubble touches another one from the same person; a small tail on the
     // last bubble of a run, on the sender's side.
     val big = 20.dp
@@ -587,6 +646,7 @@ private fun MessageBubble(
         RoundedCornerShape(topEnd = big, bottomEnd = big, topStart = if (grouped) joined else big, bottomStart = if (lastOfRun) tail else joined)
     }
 
+    SwipeToReply(enabled = canReply && !message.deleted, onReply = { onReply(message) }) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (own) Arrangement.End else Arrangement.Start,
@@ -609,10 +669,7 @@ private fun MessageBubble(
                     else -> incoming
                 },
                 shape = shape,
-                modifier = Modifier.combinedClickable(onClick = {}, onLongClick = {
-                    haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                    menuOpen = true
-                }),
+                modifier = Modifier.combinedClickable(onClick = {}, onLongClick = openMenu),
             ) {
                 Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 9.dp, bottom = 7.dp)) {
                     if (showName) {
@@ -644,7 +701,7 @@ private fun MessageBubble(
                     if (message.deleted) {
                         Text("This message was deleted", style = MaterialTheme.typography.bodyMedium, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, color = bodyColor.copy(alpha = 0.7f))
                     } else if (message.type == MessageType.FILE && message.file != null) {
-                        FileContent(message, bodyColor, loadFile, progress)
+                        FileContent(message, bodyColor, loadFile, progress, onSave = save, onLongPress = openMenu)
                     } else {
                         Text(text = message.text, style = MaterialTheme.typography.bodyLarge, color = bodyColor)
                     }
@@ -701,6 +758,11 @@ private fun MessageBubble(
                         TextButton(onClick = { menuOpen = false; onReact(message.messageId, e) }, contentPadding = PaddingValues(6.dp), modifier = Modifier.widthIn(min = 36.dp)) { Text(e) }
                     }
                 }
+                if (message.type == MessageType.FILE && message.file != null && !message.deleted && progress == null) DropdownMenuItem(
+                    text = { Text("Save to device") },
+                    leadingIcon = { Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    onClick = { menuOpen = false; save() },
+                )
                 if (canReply && !message.deleted) DropdownMenuItem(
                     text = { Text("Reply") },
                     leadingIcon = { Icon(Icons.AutoMirrored.Filled.Reply, contentDescription = null, modifier = Modifier.size(18.dp)) },
@@ -731,49 +793,54 @@ private fun MessageBubble(
             }
         }
     }
+    }
 }
 
-/** A file: a preview for safe image types, a card with Save for everything else. */
+/**
+ * A file. Photos, videos and voice notes show only themselves (no name, no save button): holding the message opens its
+ * menu with "Save to device", and the full-screen photo viewer has the same under its ⋮. Any other file is a card with
+ * its name and size; tapping it saves it.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun FileContent(message: ChatMessage, color: Color, loadFile: suspend (String) -> Pair<FileMeta, ByteArray>?, progress: Float?) {
+private fun FileContent(
+    message: ChatMessage,
+    color: Color,
+    loadFile: suspend (String) -> Pair<FileMeta, ByteArray>?,
+    progress: Float?,
+    onSave: () -> Unit,
+    onLongPress: () -> Unit,
+) {
     val meta = message.file ?: return
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var pendingSave by remember { mutableStateOf<ByteArray?>(null) }
-    val saver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri: Uri? ->
-        val bytes = pendingSave
-        pendingSave = null
-        if (uri != null && bytes != null) {
-            scope.launch {
-                val ok = withContext(Dispatchers.IO) {
-                    runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: error("no stream") }.isSuccess
-                }
-                Toast.makeText(context, if (ok) "Saved" else "Could not save the file", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
     var viewing by remember { mutableStateOf(false) }
     // An incoming file shows while it is still arriving; load it again once it has all arrived.
     val arrived = progress == null
+    val isImage = isInlineImage(meta.mime)
+    val isVideo = isInlineVideo(meta.mime)
+    val isAudio = com.duochat.app.data.isInlineAudio(meta.mime)
+    // null = still loading; a failed decode falls back to the file card.
+    var imageFailed by remember(message.messageId) { mutableStateOf(false) }
     val image by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, message.messageId, arrived) {
-        if (!isInlineImage(meta.mime)) return@produceState
+        if (!isImage || !arrived) return@produceState
         value = withContext(Dispatchers.IO) { loadFile(message.messageId)?.second?.let { decodeUpright(it, 1200) } }
-    }
-    // Full-size copy, only decoded while the viewer is open.
-    val fullImage by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, viewing) {
-        if (!viewing) return@produceState
-        value = withContext(Dispatchers.IO) { loadFile(message.messageId)?.second?.let { decodeUpright(it, 2600) } }
+        if (value == null) imageFailed = true
     }
     // Video: decrypted to a short-lived cache file (the player needs a path), shown with a poster frame and
     // played in place when tapped. The file is deleted when the bubble leaves the screen.
     val videoFile by produceState<java.io.File?>(null, message.messageId, arrived) {
-        if (!isInlineVideo(meta.mime)) return@produceState
+        if (!isVideo || !arrived) return@produceState
         value = withContext(Dispatchers.IO) {
             val bytes = loadFile(message.messageId)?.second ?: return@withContext null
             java.io.File(context.cacheDir, "preview-${message.messageId}").also { it.writeBytes(bytes) }
         }
     }
-    androidx.compose.runtime.DisposableEffect(videoFile) { onDispose { videoFile?.delete() } }
+    // Capture the file this effect is for: reading `videoFile` inside onDispose would see the NEW file when the key
+    // changes (null -> file) and delete the preview the moment it was written.
+    androidx.compose.runtime.DisposableEffect(videoFile) {
+        val f = videoFile
+        onDispose { f?.delete() }
+    }
     val poster by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, videoFile) {
         val f = videoFile ?: return@produceState
         value = withContext(Dispatchers.IO) {
@@ -789,44 +856,38 @@ private fun FileContent(message: ChatMessage, color: Color, loadFile: suspend (S
         }
     }
     var playing by remember { mutableStateOf(false) }
+    val mediaShape = RoundedCornerShape(12.dp)
     Column {
-        image?.let {
-            Image(
-                bitmap = it, contentDescription = "Open ${meta.name}", contentScale = ContentScale.Fit,
-                modifier = Modifier.heightIn(max = 260.dp).clip(RoundedCornerShape(10.dp)).clickable { viewing = true },
-            )
-            Spacer(Modifier.height(6.dp))
-        }
-        if (viewing) {
-            androidx.compose.ui.window.Dialog(
-                onDismissRequest = { viewing = false },
-                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
-            ) {
-                Surface(color = Color.Black, modifier = Modifier.fillMaxSize()) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        val big = fullImage ?: image
-                        if (big != null) {
-                            Image(bitmap = big, contentDescription = meta.name, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize().clickable { viewing = false })
-                        } else {
-                            CircularProgressIndicator(color = Color.White)
-                        }
-                        Row(Modifier.align(Alignment.TopEnd).padding(12.dp)) {
-                            IconButton(onClick = {
-                                scope.launch {
-                                    val f = loadFile(message.messageId)
-                                    if (f == null) Toast.makeText(context, "No longer stored on this phone", Toast.LENGTH_SHORT).show()
-                                    else { pendingSave = f.second; saver.launch(f.first.name) }
-                                }
-                            }) { Icon(Icons.Filled.Download, contentDescription = "Save ${meta.name}", tint = Color.White) }
-                            IconButton(onClick = { viewing = false }) { Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color.White) }
-                        }
+        when {
+            isImage && !imageFailed -> {
+                // Space is held while the photo arrives or decodes, so the chat does not jump when it appears.
+                androidx.compose.animation.AnimatedContent(
+                    targetState = image,
+                    transitionSpec = { androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(Motion.SMALL_IN)) togetherWith androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(Motion.SMALL_OUT)) },
+                    contentKey = { it != null },
+                    label = "photo",
+                ) { bitmap ->
+                    if (bitmap == null) {
+                        Box(
+                            Modifier.size(width = 220.dp, height = 165.dp).clip(mediaShape).background(color.copy(alpha = 0.10f)),
+                            contentAlignment = Alignment.Center,
+                        ) { CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = color.copy(alpha = 0.7f)) }
+                    } else {
+                        Image(
+                            bitmap = bitmap, contentDescription = "Photo. Tap to open, hold for options", contentScale = ContentScale.Fit,
+                            modifier = Modifier.heightIn(max = 280.dp).clip(mediaShape)
+                                .combinedClickable(onClick = { viewing = true }, onLongClick = onLongPress),
+                        )
                     }
                 }
             }
-        }
-        videoFile?.let { file ->
-            Box(Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 260.dp).clip(RoundedCornerShape(10.dp)).background(Color.Black), contentAlignment = Alignment.Center) {
-                if (playing) {
+            isVideo -> Box(
+                Modifier.fillMaxWidth().heightIn(min = 140.dp, max = 280.dp).clip(mediaShape).background(Color.Black)
+                    .combinedClickable(onClick = { if (videoFile != null) playing = true }, onLongClick = onLongPress),
+                contentAlignment = Alignment.Center,
+            ) {
+                val file = videoFile
+                if (playing && file != null) {
                     androidx.compose.ui.viewinterop.AndroidView(
                         factory = { c ->
                             android.widget.VideoView(c).apply {
@@ -835,38 +896,114 @@ private fun FileContent(message: ChatMessage, color: Color, loadFile: suspend (S
                                 setOnPreparedListener { start() }
                             }
                         },
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 260.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp, max = 280.dp),
                     )
                 } else {
-                    poster?.let { Image(bitmap = it, contentDescription = "Video preview of ${meta.name}", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize()) }
-                    IconButton(onClick = { playing = true }) {
-                        Icon(Icons.Filled.PlayArrow, contentDescription = "Play video", tint = Color.White, modifier = Modifier.size(48.dp))
+                    poster?.let { Image(bitmap = it, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize()) }
+                    if (file == null) CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.dp, color = Color.White)
+                    else Surface(shape = CircleShape, color = Color.Black.copy(alpha = 0.45f), contentColor = Color.White) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = "Play video", modifier = Modifier.padding(10.dp).size(36.dp))
                     }
                 }
             }
-            Spacer(Modifier.height(6.dp))
-        }
-        if (com.duochat.app.data.isInlineAudio(meta.mime)) {
-            VoiceNote(message.messageId, arrived, meta.size, color, loadFile)
-            Spacer(Modifier.height(4.dp))
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.InsertDriveFile, contentDescription = null, tint = color, modifier = Modifier.size(28.dp))
-            Spacer(Modifier.width(8.dp))
-            Column(Modifier.weight(1f, fill = false)) {
-                Text(meta.name, style = MaterialTheme.typography.bodyMedium, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(formatBytes(meta.size), style = MaterialTheme.typography.labelSmall, color = color.copy(alpha = 0.75f))
-            }
-            IconButton(onClick = {
-                scope.launch {
-                    val f = loadFile(message.messageId)
-                    if (f == null) Toast.makeText(context, "No longer stored on this phone", Toast.LENGTH_SHORT).show()
-                    else { pendingSave = f.second; saver.launch(f.first.name) }
+            isAudio -> VoiceNote(message.messageId, arrived, meta.size, color, loadFile)
+            else -> Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clip(RoundedCornerShape(10.dp))
+                    .combinedClickable(onClick = onSave, onLongClick = onLongPress, onClickLabel = "Save ${meta.name}")
+                    .padding(vertical = 2.dp),
+            ) {
+                Icon(Icons.Filled.InsertDriveFile, contentDescription = null, tint = color, modifier = Modifier.size(28.dp))
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f, fill = false)) {
+                    Text(meta.name, style = MaterialTheme.typography.bodyMedium, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(formatBytes(meta.size), style = MaterialTheme.typography.labelSmall, color = color.copy(alpha = 0.75f))
                 }
-            }) { Icon(Icons.Filled.Download, contentDescription = "Save ${meta.name}", tint = color) }
+                Spacer(Modifier.width(8.dp))
+                Icon(Icons.Filled.Download, contentDescription = null, tint = color.copy(alpha = 0.8f), modifier = Modifier.size(20.dp))
+            }
         }
         if (progress != null) {
-            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp), color = color, trackColor = color.copy(alpha = 0.2f))
+            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp), color = color, trackColor = color.copy(alpha = 0.2f))
+        }
+    }
+    if (viewing) PhotoViewer(
+        preview = image,
+        load = { loadFile(message.messageId)?.second?.let { decodeUpright(it, 2600) } },
+        onSave = onSave,
+        onClose = { viewing = false },
+    )
+}
+
+/**
+ * The full-screen photo: grows in from a little smaller, pinch or double-tap to zoom, drag to look around when zoomed,
+ * tap to close. The ⋮ menu saves it to the phone.
+ */
+@Composable
+private fun PhotoViewer(
+    preview: androidx.compose.ui.graphics.ImageBitmap?,
+    load: suspend () -> androidx.compose.ui.graphics.ImageBitmap?,
+    onSave: () -> Unit,
+    onClose: () -> Unit,
+) {
+    // Full-size copy, decoded only while the viewer is open.
+    val full by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null) { value = withContext(Dispatchers.IO) { load() } }
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onClose,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    ) {
+        val shown = remember { androidx.compose.animation.core.MutableTransitionState(false) }.apply { targetState = true }
+        var scale by remember { mutableStateOf(1f) }
+        var offset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+        val shownScale by androidx.compose.animation.core.animateFloatAsState(scale, Motion.settle(), label = "zoom")
+        var menu by remember { mutableStateOf(false) }
+        Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+            androidx.compose.animation.AnimatedVisibility(
+                visibleState = shown,
+                enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(Motion.SMALL_IN)) +
+                    androidx.compose.animation.scaleIn(androidx.compose.animation.core.tween(Motion.SCREEN_IN, easing = Motion.Decelerate), initialScale = 0.9f),
+            ) {
+                val big = full ?: preview
+                if (big != null) {
+                    Image(
+                        bitmap = big, contentDescription = "Photo", contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize()
+                            .pointerInput(Unit) {
+                                detectTapGestures(
+                                    onTap = { if (scale > 1f) { scale = 1f; offset = androidx.compose.ui.geometry.Offset.Zero } else onClose() },
+                                    onDoubleTap = { if (scale > 1f) { scale = 1f; offset = androidx.compose.ui.geometry.Offset.Zero } else scale = 2.5f },
+                                )
+                            }
+                            .pointerInput(Unit) {
+                                detectTransformGestures { _, pan, zoom, _ ->
+                                    scale = (scale * zoom).coerceIn(1f, 5f)
+                                    offset = if (scale > 1f) offset + pan else androidx.compose.ui.geometry.Offset.Zero
+                                }
+                            }
+                            .graphicsLayer {
+                                scaleX = shownScale
+                                scaleY = shownScale
+                                translationX = offset.x
+                                translationY = offset.y
+                            },
+                    )
+                } else {
+                    CircularProgressIndicator(color = Color.White)
+                }
+            }
+            Row(Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.safeDrawing).padding(8.dp)) {
+                Box {
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More", tint = Color.White) }
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Save to device") },
+                            leadingIcon = { Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                            onClick = { menu = false; onSave() },
+                        )
+                    }
+                }
+                IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color.White) }
+            }
         }
     }
 }
@@ -934,6 +1071,9 @@ private fun Composer(
         }
     }
 
+    // Starting a reply (a swipe or the menu) puts the cursor in the field, ready to type.
+    val field = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(replyingTo?.messageId) { if (replyingTo != null) runCatching { field.requestFocus() } }
     var recorder by remember { mutableStateOf<android.media.MediaRecorder?>(null) }
     var recordFile by remember { mutableStateOf<java.io.File?>(null) }
     var recordStart by remember { mutableStateOf(0L) }
@@ -974,7 +1114,15 @@ private fun Composer(
 
     Surface(modifier = modifier, color = MaterialTheme.colorScheme.background) {
         Column(modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 10.dp)) {
-            if (replyingTo != null) {
+            // The reply bar slides open above the field; it keeps showing the last message while it slides shut.
+            var lastReply by remember { mutableStateOf(replyingTo) }
+            if (replyingTo != null) lastReply = replyingTo
+            androidx.compose.animation.AnimatedVisibility(
+                visible = replyingTo != null,
+                enter = androidx.compose.animation.expandVertically(Motion.settle(), expandFrom = Alignment.Bottom) + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(Motion.SMALL_IN)),
+                exit = androidx.compose.animation.shrinkVertically(androidx.compose.animation.core.tween(Motion.SMALL_OUT, easing = Motion.Accelerate), shrinkTowards = Alignment.Bottom) + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(Motion.SMALL_OUT)),
+            ) {
+                val replyingTo = lastReply ?: return@AnimatedVisibility
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp).clip(MaterialTheme.shapes.medium)
                         .background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(start = 14.dp),
@@ -991,10 +1139,27 @@ private fun Composer(
                     IconButton(onClick = onCancelReply) { Icon(Icons.Filled.Close, contentDescription = "Cancel reply") }
                 }
             }
-            error?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 6.dp))
+            var lastError by remember { mutableStateOf(error) }
+            if (error != null) lastError = error
+            androidx.compose.animation.AnimatedVisibility(
+                visible = error != null,
+                enter = androidx.compose.animation.expandVertically(Motion.settle()) + androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.shrinkVertically(androidx.compose.animation.core.tween(Motion.SMALL_OUT)) + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(Motion.SMALL_OUT)),
+            ) {
+                Text(lastError.orEmpty(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 6.dp))
             }
-            if (recorder != null) {
+            // Typing and recording swap places: the recording bar rises in, the field comes back when it ends.
+            androidx.compose.animation.AnimatedContent(
+                targetState = recorder != null,
+                transitionSpec = {
+                    (androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(Motion.SMALL_IN, delayMillis = 40)) +
+                        androidx.compose.animation.slideInVertically(Motion.settle()) { it / 2 }) togetherWith
+                        androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(Motion.SMALL_OUT))
+                },
+                modifier = Modifier.fillMaxWidth(),
+                label = "composer",
+            ) { isRecording ->
+            if (isRecording) {
                 // Recording: a red dot, how long it has run, cancel, and send.
                 var elapsed by remember { mutableStateOf(0L) }
                 LaunchedEffect(recordStart) {
@@ -1007,7 +1172,15 @@ private fun Composer(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 ) {
-                    Box(Modifier.padding(start = 12.dp).size(10.dp).clip(CircleShape).background(MaterialTheme.colorScheme.error))
+                    // The dot pulses while the microphone is live.
+                    val live by androidx.compose.animation.core.rememberInfiniteTransition(label = "live").animateFloat(
+                        initialValue = 1f, targetValue = 0.35f, label = "live",
+                        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+                            androidx.compose.animation.core.tween(700, easing = Motion.Standard),
+                            androidx.compose.animation.core.RepeatMode.Reverse,
+                        ),
+                    )
+                    Box(Modifier.padding(start = 12.dp).size(10.dp).graphicsLayer { alpha = live }.clip(CircleShape).background(MaterialTheme.colorScheme.error))
                     Spacer(Modifier.width(10.dp))
                     Text(
                         "%d:%02d".format(elapsed / 60, elapsed % 60),
@@ -1038,7 +1211,7 @@ private fun Composer(
                             if (error != null) error = null
                         }
                     },
-                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp).focusRequester(field),
                     placeholder = { Text(if (connected) "Message" else "Message (sent when you connect)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     maxLines = 6,
                     keyboardOptions = KeyboardOptions(
@@ -1059,7 +1232,8 @@ private fun Composer(
                 }
                 Spacer(Modifier.width(8.dp))
                 val showMic = text.isBlank() && !isChannel && !sending
-                if (showMic) {
+                androidx.compose.animation.AnimatedContent(targetState = showMic, transitionSpec = { Motion.swap() }, label = "send") { mic ->
+                if (mic) {
                     RoundAction(
                         onClick = {
                             if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) startRecording()
@@ -1074,6 +1248,8 @@ private fun Composer(
                         else Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null)
                     }
                 }
+                }
+            }
             }
             if (length > MAX_TEXT_LENGTH - 400) {
                 Text(
@@ -1090,15 +1266,21 @@ private fun Composer(
 /** The round primary button at the end of the composer (send, record). */
 @Composable
 private fun RoundAction(onClick: () -> Unit, enabled: Boolean, description: String, content: @Composable () -> Unit) {
-    val container = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
-    val tint = if (enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+    val container by androidx.compose.animation.animateColorAsState(
+        if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant, label = "action",
+    )
+    val tint by androidx.compose.animation.animateColorAsState(
+        if (enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), label = "actionInk",
+    )
+    val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     Surface(
         onClick = onClick,
         enabled = enabled,
         shape = CircleShape,
         color = container,
         contentColor = tint,
-        modifier = Modifier.size(48.dp).semantics { contentDescription = description },
+        interactionSource = interaction,
+        modifier = Modifier.size(48.dp).pressScale(interaction).semantics { contentDescription = description },
     ) {
         Box(contentAlignment = Alignment.Center) { content() }
     }
@@ -1254,15 +1436,19 @@ private fun VoiceNote(messageId: String, arrived: Boolean, size: Int, color: Col
     var position by remember { mutableStateOf(0L) }
     var duration by remember { mutableStateOf(0L) }
     androidx.compose.runtime.DisposableEffect(file) {
+        // Capture the file this effect is for. Reading `file` inside onDispose saw the NEW file when the key changed
+        // (null -> file), so the decrypted voice note was deleted the moment it was written: "can't be played".
+        val f = file
         onDispose {
             player?.release(); player = null; isPlaying = false
-            file?.delete()
+            f?.delete()
         }
     }
+    // Follows the playhead every frame while playing, so the bar glides instead of stepping.
     LaunchedEffect(isPlaying) {
         while (isPlaying) {
             player?.let { p -> position = p.currentPosition; if (p.duration > 0) duration = p.duration }
-            kotlinx.coroutines.delay(100)
+            androidx.compose.runtime.withFrameMillis { }
         }
     }
     fun toggle() {
@@ -1297,10 +1483,12 @@ private fun VoiceNote(messageId: String, arrived: Boolean, size: Int, color: Col
         ) {
             Box(contentAlignment = Alignment.Center) {
                 if (file == null) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = color)
-                else Icon(
-                    if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    contentDescription = if (isPlaying) "Pause voice note" else "Play voice note",
-                )
+                else androidx.compose.animation.AnimatedContent(targetState = isPlaying, transitionSpec = { Motion.swap() }, label = "play") { playingNow ->
+                    Icon(
+                        if (playingNow) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        contentDescription = if (playingNow) "Pause voice note" else "Play voice note",
+                    )
+                }
             }
         }
         Spacer(Modifier.width(10.dp))

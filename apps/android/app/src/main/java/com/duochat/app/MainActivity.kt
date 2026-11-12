@@ -40,6 +40,8 @@ import com.duochat.app.ui.FriendDetailsDialog
 import com.duochat.app.ui.GroupDetailsScreen
 import com.duochat.app.ui.HomeScreen
 import com.duochat.app.ui.LoadingScreen
+import com.duochat.app.ui.routeDepth
+import com.duochat.app.ui.screenTransition
 import com.duochat.app.ui.ManualConnectDialog
 import com.duochat.app.ui.NewGroupScreen
 import com.duochat.app.ui.NukeDialog
@@ -142,33 +144,55 @@ private fun RootScreen(viewModel: AppViewModel) {
         )
     }
 
-    when {
-        locked -> com.duochat.app.ui.LockScreen(onUnlocked = viewModel::unlock)
+    // Which screen is showing: the phase screens first, then the chat routes. Changing it animates (see Motion.kt).
+    // The opening animation (LoadingScreen) always gets a moment to play, even when the engine is ready at once.
+    var opened by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) { kotlinx.coroutines.delay(850); opened = true }
+    val screen = when {
+        locked -> "lock"
+        !opened -> "loading"
+        state == null || state.phase == EnginePhase.STOPPED || state.phase == EnginePhase.STARTING -> "loading"
+        state.phase == EnginePhase.NEEDS_IDENTITY -> "setup"
+        state.phase == EnginePhase.ERROR -> "error"
+        else -> route
+    }
+    val ready = routeDepth(screen) >= 0
+    if (ready && state != null) {
+        // A chat or group that no longer exists sends the user home instead of showing an empty screen.
+        if (!exists(state, route)) route = HOME
+        // One back handler for the whole app: group details go back to their chat, everything else home.
+        BackHandler(enabled = route != HOME) {
+            route = if (route.startsWith("group:")) "chat:" + route.removePrefix("group:") else HOME
+        }
+    }
+    val back = { route = HOME }
 
-        state == null || state.phase == EnginePhase.STOPPED || state.phase == EnginePhase.STARTING ->
-            LoadingScreen("Opening your encrypted local data…")
+    androidx.compose.animation.AnimatedContent(
+        targetState = screen,
+        transitionSpec = { screenTransition() },
+        contentKey = { it },
+        label = "screen",
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+    ) { shown ->
+        when {
+        shown == "lock" -> com.duochat.app.ui.LockScreen(onUnlocked = viewModel::unlock)
 
-        state.phase == EnginePhase.NEEDS_IDENTITY -> OnboardingScreen(onCreate = viewModel::createIdentity)
+        shown == "loading" -> LoadingScreen("Opening your encrypted local data…")
 
-        state.phase == EnginePhase.ERROR -> FatalScreen(
-            message = state.error ?: "The chat engine could not start.",
+        shown == "setup" -> OnboardingScreen(onCreate = viewModel::createIdentity)
+
+        shown == "error" -> FatalScreen(
+            message = state?.error ?: "The chat engine could not start.",
             onRetry = viewModel::startEngine,
         )
 
-        else -> {
-            // A chat or group that no longer exists sends the user home instead of showing an empty screen.
-            val missing = when {
-                route.startsWith("chat:") -> state.contacts.none { it.uid == openChatId } && state.groups.none { it.groupId == openChatId } &&
-                    state.channels.none { it.id == openChatId }
-                route.startsWith("group:") -> state.groups.none { it.groupId == route.removePrefix("group:") }
-                else -> false
-            }
-            if (missing) route = HOME
-            val back = { route = HOME }
+        // A screen on its way out can outlive its data (a chat removed, the engine restarting): draw nothing for it.
+        state == null || !exists(state, shown) -> androidx.compose.foundation.layout.Box(Modifier.fillMaxSize())
 
+        else -> {
+            val openChatId = shown.takeIf { it.startsWith("chat:") }?.removePrefix("chat:")
             when {
-                route == "add" -> {
-                    BackHandler(onBack = back)
+                shown == "add" -> {
                     AddFriendScreen(
                         state = state,
                         ownCard = viewModel::ownCard,
@@ -182,8 +206,7 @@ private fun RootScreen(viewModel: AppViewModel) {
                     )
                 }
 
-                route == "newgroup" -> {
-                    BackHandler(onBack = back)
+                shown == "newgroup" -> {
                     NewGroupScreen(
                         state = state,
                         onCreate = viewModel::createGroup,
@@ -192,9 +215,8 @@ private fun RootScreen(viewModel: AppViewModel) {
                     )
                 }
 
-                route.startsWith("group:") -> {
-                    val id = route.removePrefix("group:")
-                    BackHandler { route = "chat:$id" }
+                shown.startsWith("group:") -> {
+                    val id = shown.removePrefix("group:")
                     GroupDetailsScreen(
                         state = state,
                         groupId = id,
@@ -210,7 +232,6 @@ private fun RootScreen(viewModel: AppViewModel) {
                 }
 
                 openChatId != null -> {
-                    BackHandler(onBack = back)
                     val isGroup = state.groups.any { it.groupId == openChatId }
                     ChatScreen(
                         state = state,
@@ -253,7 +274,11 @@ private fun RootScreen(viewModel: AppViewModel) {
                     onOpenConversation = { route = "chat:$it" },
                 )
             }
+        }
+        }
+    }
 
+    if (ready && state != null) {
             if (channelsOpen) {
                 com.duochat.app.ui.ChannelsDialog(
                     channels = state.channels,
@@ -314,7 +339,28 @@ private fun RootScreen(viewModel: AppViewModel) {
                     onAcceptOffer = viewModel::acceptManualOffer,
                 )
             }
-        }
+    }
+
+    val crash by viewModel.crash.collectAsStateWithLifecycle()
+    crash?.let { notice ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = viewModel::dismissCrash,
+            title = { androidx.compose.material3.Text("DuoCord closed unexpectedly") },
+            text = {
+                androidx.compose.material3.Text(
+                    (if (notice.radioTurnedOff) "Bluetooth was turned off so the app could open. You can turn it back on in Settings. " else "") +
+                        "Copy the details and send them to whoever builds the app, so it can be fixed. They contain no messages or names.",
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+                    clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("DuoCord crash", notice.details))
+                    viewModel.dismissCrash()
+                }) { androidx.compose.material3.Text("Copy details") }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = viewModel::dismissCrash) { androidx.compose.material3.Text("OK") } },
+        )
     }
 
     if (nukeOpen || killSwitchReport != null) {
@@ -331,4 +377,13 @@ private fun RootScreen(viewModel: AppViewModel) {
             },
         )
     }
+}
+
+/** Whether the conversation or group a route points at still exists (other routes always do). */
+private fun exists(state: com.duochat.app.data.ChatState, route: String): Boolean = when {
+    route.startsWith("chat:") -> route.removePrefix("chat:").let { id ->
+        state.contacts.any { it.uid == id } || state.groups.any { it.groupId == id } || state.channels.any { it.id == id }
+    }
+    route.startsWith("group:") -> state.groups.any { it.groupId == route.removePrefix("group:") }
+    else -> true
 }

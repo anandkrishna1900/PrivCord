@@ -3,8 +3,6 @@ package com.duochat.app.ui
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.WindowInsets
-import android.app.Activity
-import android.view.WindowManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,7 +34,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,13 +42,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.duochat.app.security.Bip39
 
-private enum class Step { INTRO, SHOW, CONFIRM, RESTORE }
+/** [depth] orders the steps, so moving between them slides the right way. */
+private enum class Step(val depth: Int) { INTRO(0), SHOW(1), CONFIRM(2), RESTORE(1) }
 
 /**
  * First run: the 12-word recovery phrase is mandatory. There is no skip: the chat does not open until an
@@ -63,14 +60,6 @@ fun OnboardingScreen(onCreate: (phrase: String, passphrase: String, onResult: (R
     var phrase by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-
-    // The recovery phrase is shown on this screen: block screenshots and the recent-apps thumbnail.
-    val context = LocalContext.current
-    DisposableEffect(Unit) {
-        val window = (context as? Activity)?.window
-        window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
-    }
 
     fun finish(words: String, passphrase: String) {
         busy = true
@@ -92,8 +81,16 @@ fun OnboardingScreen(onCreate: (phrase: String, passphrase: String, onResult: (R
                 Spacer(Modifier.width(12.dp))
                 Text("DuoCord", style = MaterialTheme.typography.titleLarge)
             }
-            Spacer(Modifier.height(if (step == Step.INTRO) 56.dp else 28.dp))
-            when (step) {
+            val gap by androidx.compose.animation.core.animateDpAsState(if (step == Step.INTRO) 56.dp else 28.dp, Motion.settle(), label = "gap")
+            Spacer(Modifier.height(gap))
+            // Each step slides in from the side it comes from: onward from the end, back from the start.
+            androidx.compose.animation.AnimatedContent(
+                targetState = step,
+                transitionSpec = { Motion.slide(forward = targetState.depth >= initialState.depth) },
+                label = "setup",
+            ) { shown ->
+            Column {
+            when (shown) {
                 Step.INTRO -> {
                     Text("Talk to your people.\nNobody in between.", style = MaterialTheme.typography.displaySmall)
                     Spacer(Modifier.height(16.dp))
@@ -128,6 +125,8 @@ fun OnboardingScreen(onCreate: (phrase: String, passphrase: String, onResult: (R
                 Step.CONFIRM -> ConfirmPhrase(phrase, busy, error, onBack = { step = Step.SHOW }) { finish(phrase, "") }
 
                 Step.RESTORE -> RestorePhrase(busy, error, onBack = { step = Step.INTRO }) { words, pass -> finish(words, pass) }
+            }
+            }
             }
         }
     }

@@ -59,7 +59,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private var stateJob: Job? = null
     private var visible = false
 
+    /** Set when the last run crashed; the screen tells the user and offers the details to copy. */
+    private val _crash = MutableStateFlow<CrashNotice?>(null)
+    val crash: StateFlow<CrashNotice?> = _crash.asStateFlow()
+
+    class CrashNotice(val details: String, val radioTurnedOff: Boolean)
+
+    fun dismissCrash() { _crash.value = null }
+
     init {
+        // A crash in Bluetooth, or any crash while starting, would happen again on this launch: Bluetooth and the mesh
+        // go off first (before the engine starts them), so the app always opens again.
+        com.duochat.app.CrashLog.take(application)?.let { report ->
+            val s = settingsRepository.settings.value
+            val radioOn = s.mesh || s.network.bluetooth
+            val turnOff = radioOn && (report.radio || report.atStartup)
+            if (turnOff) settingsRepository.update { copy(mesh = false, network = network.copy(bluetooth = false)) }
+            _crash.value = CrashNotice(report.details, turnOff)
+        }
         attachEngine()
         com.duochat.app.engine.EngineHost.watchNetwork(application)
     }

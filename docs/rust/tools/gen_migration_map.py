@@ -90,7 +90,7 @@ rule(r"desktop/src/lib/hosted/e2e\.test\.ts", "End to end: two hosted engines on
 # ---- android
 rule(r"android/.*/ui/.*", "Compose screens", "UI", "UI", UI, "Stays")
 rule(r"android/.*/rustcore/.*\.kt", "Android adapters for the Rust engine (Keystore secret store, on-device probe)", "Platform adapter for engine ports", "Adapter", ADAPTER, "Stays")
-rule(r"android/.*/(MainActivity|DuoChatApp|AppConfig|RustCore)\.kt", "Android shell and the loader for the Rust core", "UI / platform", "UI", UI, "Stays")
+rule(r"android/.*/(MainActivity|DuoChatApp|AppConfig|RustCore|CrashLog)\.kt", "Android shell and the loader for the Rust core", "UI / platform", "UI", UI, "Stays")
 rule(r"android/.*/ble/(AndroidMeshRadio|BleEnvironment|BlePermissions|BleTransport|MeshRadio|SecureBleLink)\.kt", "Android Bluetooth radio, permissions, link", "BLE adapter", "Adapter", ADAPTER, "Stays")
 rule(r"android/.*/ble/BleFraming\.kt", "BLE chunk framing", "domain::ble", "Domain", PORTED, "M8", "docs/ble-vectors.json")
 rule(r"android/.*/ble/MeshNode\.kt", "Mesh flood logic", "domain::mesh", "Domain", PORTED, "M8")
