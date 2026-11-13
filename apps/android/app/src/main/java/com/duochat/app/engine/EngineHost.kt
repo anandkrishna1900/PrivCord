@@ -42,6 +42,33 @@ object EngineHost {
         app?.let { com.duochat.app.CrashLog.record(it, error, "engine (app kept running)", fatal = false) }
     }
 
+    /**
+     * Starts the chat engine for this process (the screen and the background service share it). Returns the one that
+     * is already running, if any.
+     */
+    @Synchronized
+    fun ensureStarted(app: Application): ChatEngineApi {
+        engine?.let { return it }
+        val settings = com.duochat.app.data.SettingsRepository(app)
+        val s = settings.settings.value
+        val newScope = newScope()
+        val created: ChatEngineApi = com.duochat.app.rustcore.RustChatEngine(
+            app = app,
+            scope = newScope,
+            conversationId = com.duochat.app.AppConfig.conversationId,
+            networkConfig = { settings.settings.value.network },
+            ownName = { settings.settings.value.displayName },
+            isMuted = { id -> id in settings.settings.value.mutedChats },
+            onNotify = { notice -> com.duochat.app.notifications.DuoNotifications.showNotice(app, notice, settings.settings.value) },
+            initialGroupOnly = s.groupOnly,
+        )
+        engine = created
+        if (s.mesh) created.setMeshEnabled(true)
+        startJob = newScope.launch { created.start() }
+        watchNetwork(app)
+        return created
+    }
+
     /** Stops the engine and everything it launched. */
     fun stop() {
         startJob?.cancel()

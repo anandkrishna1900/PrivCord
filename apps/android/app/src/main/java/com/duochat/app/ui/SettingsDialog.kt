@@ -290,23 +290,30 @@ SectionTitle("Appearance")
                     Spacer(Modifier.width(8.dp))
                     Text("Request notification permission")
                 }
+                val bgContext = LocalContext.current
                 ToggleRow(
                     "Keep running in the background",
-                    "Shows a small permanent notification and keeps DuoCord connected so messages arrive with the app closed. Uses some battery.",
+                    "Shows a small permanent notification and keeps DuoCord connected so messages arrive with the app closed, also after a restart. Uses some battery.",
                     settings.keepRunning,
-                ) { on -> onUpdateSettings { copy(keepRunning = on) } }
+                ) { on ->
+                    onUpdateSettings { copy(keepRunning = on) }
+                    // Without this the battery saver stops it within minutes on most phones: ask right away.
+                    if (on && !com.duochat.app.notifications.BackgroundHelp.batteryUnrestricted(bgContext)) {
+                        com.duochat.app.notifications.BackgroundHelp.askBatteryUnrestricted(bgContext)
+                    }
+                }
                 if (settings.keepRunning) {
-                    val batteryContext = LocalContext.current
-                    OutlinedButton(onClick = {
-                        runCatching {
-                            batteryContext.startActivity(
-                                android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
-                            )
-                        }
-                    }) { Text("Allow unrestricted battery use") }
+                    val unrestricted = com.duochat.app.notifications.BackgroundHelp.batteryUnrestricted(bgContext)
+                    OutlinedButton(onClick = { com.duochat.app.notifications.BackgroundHelp.askBatteryUnrestricted(bgContext) }) {
+                        Text(if (unrestricted) "Battery: unrestricted ✓" else "Allow unrestricted battery use")
+                    }
+                    OutlinedButton(onClick = { com.duochat.app.notifications.BackgroundHelp.openMakerBackgroundSettings(bgContext) }) {
+                        Text("Allow autostart (phone settings)")
+                    }
                     Text(
-                        "Some phone makers (Xiaomi, Oppo, Vivo, Samsung) still stop background apps. If messages are late, allow unrestricted battery use for DuoCord here.",
+                        "Vivo, Xiaomi, Oppo, Realme, OnePlus and Huawei phones also stop apps that are not allowed to " +
+                            "autostart. If messages only arrive when you open DuoCord, turn on autostart / background " +
+                            "running for DuoCord on the page this button opens.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

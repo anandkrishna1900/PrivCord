@@ -48,7 +48,8 @@ class SettingsRepository(context: Context) {
     private val prefs = context.applicationContext
         .getSharedPreferences("duochat.settings.v1", Context.MODE_PRIVATE)
 
-    private val _settings = MutableStateFlow(load())
+    // One copy for the whole process: the screen and the background service read and change the same settings.
+    private val _settings = synchronized(SettingsRepository) { shared ?: MutableStateFlow(load()).also { shared = it } }
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
 
     fun update(patch: AppSettings.() -> AppSettings) {
@@ -95,4 +96,9 @@ class SettingsRepository(context: Context) {
             ),
         )
     }
+
+    private companion object {
+        @Volatile var shared: MutableStateFlow<AppSettings>? = null
+    }
+
 }
