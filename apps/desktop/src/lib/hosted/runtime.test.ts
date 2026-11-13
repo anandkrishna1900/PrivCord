@@ -87,7 +87,7 @@ const blob = (): SealedBlob => ({
   v: 1, to: 'to', from: 'from', epk: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' }, iv: 'iv', ct: 'ct', sig: 'sig',
 }) as SealedBlob;
 
-function setup() {
+function setup(network: Record<string, unknown> = {}) {
   const b = fakeBridge();
   const transports: FakeTransport[] = [];
   net.state = 'connecting';
@@ -95,7 +95,7 @@ function setup() {
   let changed = 0;
   const runtime = new HostedRuntime({
     engine: new HostedEngine(b.bridge),
-    network: () => ({}) as never,
+    network: () => network as never,
     rtcConfig: () => ({}),
     changed: () => (changed += 1),
     createTransport: (_rtc, handlers) => {
@@ -158,6 +158,20 @@ describe('HostedRuntime dialing', () => {
     await flush();
     expect(sentSignals(t.calls).at(-1)).toEqual({ peer: 'ccc', kind: 'answer', sdp: 'ANSWER-SDP' });
     expect(t.transports.at(-1)!.answerFor).toBe('THEIR-OFFER');
+    t.runtime.stop();
+  });
+
+  it('makes no direct connection in private mode (Tor), whoever asks', async () => {
+    const t = setup({ torMode: true });
+    await t.runtime.attach();
+    t.emit('signal-subscribe', { mailbox: 'mb' });
+    t.hub.state = 'online';
+    t.emit('event', { DialRequested: { peer: 'bbb', initiator: true } });
+    t.emit('event', { SignalReceived: { peer: 'ccc', kind: 'Offer', sdp: 'THEIR-OFFER' } });
+    await flush();
+    expect(sentSignals(t.calls)).toHaveLength(0);
+    expect(t.transports).toHaveLength(0);
+    await expect(t.runtime.manualOffer('bbb')).rejects.toThrow(/private mode/);
     t.runtime.stop();
   });
 

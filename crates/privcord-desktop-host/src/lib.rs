@@ -230,6 +230,10 @@ impl DesktopHost {
                 unit(e.remove_group_member(text(args, "group")?, text(args, "uid")?))
             }
             "leave_group" => unit(e.leave_group(text(args, "group")?)),
+            "recreate_legacy_group" => Ok(json!(e
+                .recreate_legacy_group(text(args, "old_id")?)
+                .map_err(failed)?)),
+            "dismiss_legacy_group" => unit(e.dismiss_legacy_group(text(args, "old_id")?)),
             "rename_group" => unit(e.rename_group(text(args, "group")?, text(args, "name")?)),
             "send_group_message" => Ok(json!(e
                 .send_group_message(

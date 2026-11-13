@@ -96,6 +96,7 @@ export interface SnapshotJson {
   lookup_pending: boolean;
   queued: number;
   channel_people: { uid: string; name: string }[];
+  legacy_groups?: { old_id: string; name: string; members: string[]; missing: number }[];
 }
 
 /* ---- what the page knows that the engine does not ---- */
@@ -367,6 +368,12 @@ export function shapeState(s: SnapshotJson, ctx: ShapeContext): ChatState {
       : null,
     invite: s.invite ? { words: s.invite.words, expiresAt: s.invite.expires_at } : null,
     requests,
+    legacyGroups: (s.legacy_groups ?? []).map((g) => ({
+      oldId: g.old_id,
+      name: g.name,
+      members: g.members.map(nameOf),
+      missing: g.missing,
+    })),
     phase: ctx.phase,
     uid: me,
     contacts,

@@ -352,7 +352,7 @@ export class HostedRuntime {
   }
 
   private async dial(peer: string, initiator: boolean): Promise<void> {
-    if (this.stopped) return;
+    if (this.stopped || this.o.network().torMode) return; // private mode: messages go through the relays only
     this.maybeBluetooth(peer);
     const waiting = this.links.get(peer);
     if (waiting?.manual && !waiting.transport.isOpen) return; // a code is out: leave it alone
@@ -375,6 +375,8 @@ export class HostedRuntime {
   }
 
   private newLink(peer: string): Link {
+    // Private mode: a WebRTC connection would go around Tor and show our address, so there are none.
+    if (this.o.network().torMode) throw new Error('Direct connections are off in private mode (Tor).');
     this.closeLink(peer, false);
     const handlers: PeerTransportHandlers = {
       onOpen: () => void this.opened(peer),
@@ -402,6 +404,7 @@ export class HostedRuntime {
 
   private async onSignal(peer: string, kind: string, sdp: string | null): Promise<void> {
     this.heard.add(peer);
+    if (this.o.network().torMode) return; // private mode: no direct connections, so nothing to answer
     const manual = this.links.get(peer);
     if (manual?.manual && !manual.transport.isOpen && kind !== 'Answer') return;
     if (kind === 'Ready') {

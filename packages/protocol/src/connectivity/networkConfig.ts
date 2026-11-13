@@ -26,6 +26,8 @@ export interface NetworkConfig {
   transportMode?: TransportMode;
   /** Use the TURN relay built into this release (if it has one) when a direct connection is not possible. */
   builtinTurn?: boolean;
+  /** Private mode (set by the app at start, never saved): relays are reached through Tor, and no direct connections. */
+  torMode?: boolean;
 }
 
 export const DEFAULT_NOSTR_RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.primal.net'];

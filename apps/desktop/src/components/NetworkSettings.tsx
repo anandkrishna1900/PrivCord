@@ -10,7 +10,7 @@ import {
 } from '@duochat/protocol';
 import type { ChatState } from '../lib/engine';
 import type { ChatEngineApi } from '../lib/engineApi';
-import { BUILTIN_TURN, loadNetworkConfig, saveNetworkConfig } from '../lib/network';
+import { BUILTIN_TURN, loadNetworkConfig, saveNetworkConfig, setTorMode, torModeActive } from '../lib/network';
 import { CheckIcon, InfoIcon } from './Icons';
 
 const lines = (text: string) =>
@@ -241,6 +241,15 @@ export function NetworkSettings({ engine, state }: { engine: ChatEngineApi | nul
         hint="Hides your IP address from your friend. Slower, and needs a TURN server."
         checked={forceRelay}
         onChange={setForceRelay}
+      />
+      <Toggle
+        label="Private mode (Tor)"
+        hint="Connects to the relays through Tor (the Tor service must be running on port 9050) and makes no direct connections, so neither friends nor relays see your IP address. Messages arrive through the relays, more slowly. DuoCord restarts to apply this."
+        checked={torModeActive()}
+        onChange={(on) => {
+          if (!window.confirm(on ? 'Turn on private mode? DuoCord will restart.' : 'Turn off private mode? DuoCord will restart.')) return;
+          setTorMode(on).catch((e: unknown) => setProblems([`Could not change private mode: ${String((e as Error)?.message ?? e)}`]));
+        }}
       />
       <Toggle
         label="Store-and-forward relay (messages while your friend is offline)"
