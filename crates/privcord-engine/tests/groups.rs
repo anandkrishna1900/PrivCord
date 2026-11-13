@@ -246,7 +246,13 @@ fn outsiders_and_removed_members_cannot_post_and_groups_survive_a_restart() {
     let again = start("alice-2", storage, secure, clock, false);
     assert_eq!(again.core.snapshot().groups, before);
     // Bob restarted: a group he was removed from is not offered as one from before protocol v2 to make again.
-    let bob = start("bob-2", b.storage.clone(), b.secure.clone(), b.clock.clone(), false);
+    let bob = start(
+        "bob-2",
+        b.storage.clone(),
+        b.secure.clone(),
+        b.clock.clone(),
+        false,
+    );
     assert!(bob.core.snapshot().groups.is_empty());
     assert!(bob.core.snapshot().legacy_groups.is_empty());
 }
