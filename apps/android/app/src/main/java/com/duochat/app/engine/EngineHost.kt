@@ -22,6 +22,10 @@ object EngineHost {
     @Volatile private var scope: CoroutineScope? = null
     private var networkWatching = false
 
+    /** Whether the phone has a network at all (from the default-network callback; true until it says otherwise). */
+    @Volatile var online: Boolean = true
+        private set
+
     /** A fresh scope for a new engine (same dispatcher the screen's scope used). */
     fun newScope(): CoroutineScope {
         scope?.cancel()
@@ -54,9 +58,26 @@ object EngineHost {
         networkWatching = true
         runCatching {
             app.getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+                // Android reports the current network as soon as this is registered: only a change is a reason to reset.
+                private var current: Network? = null
+                private var lost = false
+
                 override fun onAvailable(network: Network) {
+                    online = true
+                    val changed = lost || (current != null && current != network)
+                    current = network
+                    lost = false
+                    if (!changed) return
                     val e = engine ?: return
                     scope?.launch { e.onNetworkAvailable() }
+                }
+
+                override fun onLost(network: Network) {
+                    if (network != current) return
+                    online = false
+                    // Coming back, on this network or another, counts as a change: everything is reset then.
+                    lost = true
+                    engine?.let { e -> scope?.launch { e.onNetworkAvailable() } }
                 }
             })
         }

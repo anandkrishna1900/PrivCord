@@ -784,6 +784,15 @@ class RustChatEngine(
             heardFrom.remove(c.uid)
             return null
         }
+        // No network at all: say so at once, not after several attempts that cannot work.
+        if (!com.duochat.app.engine.EngineHost.online) {
+            return com.duochat.app.data.Diagnosis(
+                "offline",
+                "This phone is offline. Messages wait here and go out as soon as it is back online" +
+                    (if (networkConfig().bluetooth) ", or over Bluetooth when ${c.displayName} is nearby." else "."),
+                emptyList(),
+            )
+        }
         val tried = attempts[c.uid] ?: return null
         val web = links[c.uid]
         val cfg = networkConfig()
@@ -1158,9 +1167,23 @@ class RustChatEngine(
      * A network came up (Android also reports this once at start-up). Only mailboxes whose sockets failed are reopened:
      * tearing down sockets that are online or still connecting would drop signals that are in flight.
      */
+    /**
+     * The phone moved to another network (Wi-Fi <-> mobile data, or back online). Sockets and half-made links on the old
+     * one may look alive for a while but go nowhere: reopen every relay socket, drop connections that never opened, and
+     * let every friend be dialed at once instead of after the retry delay. Open links are kept (they close themselves
+     * within seconds if their network really went away).
+     */
     override fun onNetworkAvailable() {
-        for ((mailbox, h) in hubs.entries.toList()) {
-            if (h.status() == SignalingStatus.ERROR) transport.signalSubscribe(mailbox)
+        for (mailbox in hubs.keys.toList()) transport.signalSubscribe(mailbox)
+        for ((peer, link) in links.entries.toList()) {
+            if (!link.isOpen && links.remove(peer, link)) {
+                link.close()
+                dialStartedAt.remove(peer)
+            }
+        }
+        scope.launch {
+            io { runCatching { engine?.resetDialBackoff(null) } }
+            requestRefresh()
         }
     }
 

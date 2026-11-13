@@ -184,6 +184,14 @@ class WebRtcTransport(
 
                 override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
                     iceState = state?.name?.lowercase()
+                    // The network under the link went away (Wi-Fi <-> mobile, out of range). A blip comes back within a
+                    // few seconds; if it has not, close now so the engine dials again over what is there, instead of
+                    // waiting out the 14 s silence that would otherwise end it.
+                    if (state == PeerConnection.IceConnectionState.DISCONNECTED) {
+                        mainHandler.postDelayed({
+                            if (!closedByUs && iceState == "disconnected") handlers.onClose()
+                        }, DISCONNECTED_GRACE_MS)
+                    }
                 }
 
                 override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
@@ -404,5 +412,7 @@ object PeerConnectionFactoryHolder {
             ?: throw IllegalStateException("WebRTC has not been initialized.")
 }
 
+/** How long a link may stay ICE-disconnected before it is given up (a short blip recovers well within this). */
+private const val DISCONNECTED_GRACE_MS = 4_000L
 private const val HIGH_WATER_BYTES = 1_000_000L
 private const val STALL_LIMIT_MS = 60_000L
