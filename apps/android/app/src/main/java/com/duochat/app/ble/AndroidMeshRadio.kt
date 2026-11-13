@@ -35,7 +35,7 @@ import java.util.UUID
  * only the phone with the smaller id connects out. At most [MAX_LINKS] links are kept.
  *
  * Unlike the contact-to-contact link (BleTransport), this one is open to strangers and not encrypted at the link
- * layer: the mesh only carries messages that are already end-to-end encrypted or signed (see MeshNode.kt).
+ * layer: the mesh only carries messages that are already end-to-end encrypted or signed (the Rust engine decides what to relay).
  */
 @SuppressLint("MissingPermission")
 class AndroidMeshRadio(private val context: Context) : MeshRadio {

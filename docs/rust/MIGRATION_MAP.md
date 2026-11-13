@@ -8,13 +8,13 @@ Status meanings: **Ported, tested** = the Rust implementation exists and is chec
 
 | Status | Files | Lines |
 |---|---:|---:|
-| Ported, tested | 70 | 10074 |
+| Ported, tested | 66 | 9787 |
 | Partly ported | 1 | 2173 |
 | Not yet ported | 0 | 0 |
 | Stays (UI) | 59 | 12847 |
-| Stays (platform adapter) | 53 | 11050 |
+| Stays (platform adapter) | 52 | 10452 |
 | Replaced by a library | 4 | 333 |
-| **All mapped files** | **187** | **36477** |
+| **All mapped files** | **182** | **35592** |
 
 Ported does not mean retired: the TypeScript and Kotlin versions stay in production until the apps call the Rust engine (M7 desktop, M8 Android) and the compatibility gates pass (PRD section 16).
 
@@ -136,8 +136,8 @@ Ported does not mean retired: the TypeScript and Kotlin versions stay in product
 
 | File | Lines | Main symbols | Current responsibility | Destination | Class | Status | Removal condition | Tests |
 |---|---:|---|---|---|---|---|---|---|
-| `apps/desktop/src-tauri/src/ble.rs` | 189 | `BleEvent`, `BleLink`, `max_chunk`, `write`, `disconnect`, `payload_size` +3 | Native BLE central | BLE adapter | Adapter | Stays (platform adapter) | Stays | n/a |
-| `apps/desktop/src-tauri/src/engine_host.rs` | 338 | `hex`, `unhex`, `KeyringSecure`, `load_identity`, `save_identity`, `delete_identity` +22 | Hosts the Rust engine in the shell: keyring secret store, events to the page | Desktop adapter + engine host | Adapter | Stays (platform adapter) | Stays; M7 seam (page not rewired yet) | n/a |
+| `apps/desktop/src-tauri/src/ble.rs` | 168 | `BleEvent`, `BleLink`, `max_chunk`, `write`, `disconnect`, `payload_size` +3 | Native BLE central | BLE adapter | Adapter | Stays (platform adapter) | Stays | n/a |
+| `apps/desktop/src-tauri/src/engine_host.rs` | 333 | `hex`, `unhex`, `KeyringSecure`, `load_identity`, `save_identity`, `delete_identity` +22 | Hosts the Rust engine in the shell: keyring secret store, events to the page | Desktop adapter + engine host | Adapter | Stays (platform adapter) | Stays; M7 seam (page not rewired yet) | n/a |
 | `apps/desktop/src-tauri/src/lib.rs` | 225 | `page_entry`, `secret_get`, `secret_set`, `secret_delete`, `BleState`, `unhex` +10 | Tauri shell: commands, keyring, notifications | Desktop adapter + engine host | Adapter | Stays (platform adapter) | Stays; hosts the engine from M7 | n/a |
 | `apps/desktop/src-tauri/src/main.rs` | 5 | `main` | Tauri shell: commands, keyring, notifications | Desktop adapter + engine host | Adapter | Stays (platform adapter) | Stays; hosts the engine from M7 | n/a |
 
@@ -156,7 +156,6 @@ Ported does not mean retired: the TypeScript and Kotlin versions stay in product
 | `apps/android/app/src/main/java/com/duochat/app/ble/BlePermissions.kt` | 39 | `BlePermissions`, `bleReconnectDelayMs`, `SafeRadioHandler` | Android Bluetooth radio, permissions, link | BLE adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ble/BleReliability.kt` | 74 | `ScanLimiter`, `Backoff`, `BusyRetry`, `BleTimeouts` | Android Bluetooth radio, permissions, link | BLE adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ble/BleTransport.kt` | 663 | `BleConstants`, `RawLink`, `BleTransport` | Android Bluetooth radio, permissions, link | BLE adapter | Adapter | Stays (platform adapter) | Stays | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/ble/MeshNode.kt` | 138 | `MeshPacket`, `MeshOutgoing`, `MeshHandled`, `MeshNode` | Mesh flood logic | domain::mesh | Domain | Ported, tested | M8 | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ble/MeshRadio.kt` | 25 | `MeshRadio` | Android Bluetooth radio, permissions, link | BLE adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/ble/SecureBleLink.kt` | 131 | `SecureBleLink` | Android Bluetooth radio, permissions, link | BLE adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/data/AutoBackup.kt` | 116 | `AutoBackup` | Android automatic backups: folder access and Keystore-held passphrase | Backup (platform side) | Adapter | Stays (platform adapter) | Stays | n/a |
@@ -166,7 +165,6 @@ Ported does not mean retired: the TypeScript and Kotlin versions stay in product
 | `apps/android/app/src/main/java/com/duochat/app/data/Models.kt` | 351 | `DeliveryState`, `TransportKind`, `needsDelivery`, `ChatMessage`, `OutboxRow`, `EnginePhase` +31 | Chat state models and the in-memory message store over Room | engine state (snapshot, events) and storage::SqliteStorage | Engine | Ported, tested | M8: the engine owns this state | engine and storage tests |
 | `apps/android/app/src/main/java/com/duochat/app/data/NetworkConfig.kt` | 197 | `TransportMode`, `TurnServer`, `SignalingConfig`, `NetworkConfig`, `TurnShare` | Domain rules duplicated from TypeScript | domain | Domain | Ported, tested | M8 | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/data/Preferences.kt` | 104 | `AppSettings`, `SettingsRepository` | App settings storage | UI state (stays) | UI | Stays (UI) | Stays | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/data/Privacy.kt` | 15 | `canStartDirect`, `acceptsDirect` | Domain rules duplicated from TypeScript | domain | Domain | Ported, tested | M8 | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/data/Social.kt` | 106 | `deleteFrame`, `reactFrame`, `parseDelete`, `ReactionEvent`, `parseReact`, `ReactionChip` +3 | Delete/react frames, backup | domain::social, crypto::backup | Domain/Crypto | Ported, tested | M8 | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/data/Themes.kt` | 68 | `ThemeDef`, `themeById`, `channel`, `mixColors`, `luminance`, `contrastRatio` +2 | Themes | UI | UI | Stays (UI) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/data/local/DuoDatabase.kt` | 358 | `MessageEntity`, `OutboxEntity`, `ContactEntity`, `KvEntity`, `GroupLogEntity`, `DuoDao` +1 | Room database | storage::SqliteStorage; privcord-import (Room importer, Keystore decryptor supplied by the app) | Storage | Ported, tested | M8: after the importer has run on every install | importer tests on generated Room v7 fixtures |
@@ -178,8 +176,6 @@ Ported does not mean retired: the TypeScript and Kotlin versions stay in product
 | `apps/android/app/src/main/java/com/duochat/app/notifications/StartOnBoot.kt` | 18 | `StartOnBoot` | Notifications and background service | Notifier adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/p2p/IceServers.kt` | 34 | `iceServers`, `builtinTurnServer` | ICE servers, WebRTC data channel | WebRTC adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/p2p/LinkTransport.kt` | 22 | `LinkTransport` | ICE servers, WebRTC data channel | WebRTC adapter | Adapter | Stays (platform adapter) | Stays | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/p2p/Liveness.kt` | 49 | `Liveness`, `LivenessMonitor` | Liveness probe | domain::link_policy, domain::signaling; engine::core (ping, dead-link timer) | Engine | Ported, tested | M8 | misc vectors; engine lifecycle tests |
-| `apps/android/app/src/main/java/com/duochat/app/p2p/PeerSession.kt` | 572 | `PeerSession` | WebRTC peer session (handshake, receipts, liveness and framing rules are in the engine) | crypto::peer_auth + engine; the WebRTC session itself is platform code | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/p2p/WebRtcTransport.kt` | 418 | `WebRtcTransport`, `PeerConnectionFactoryHolder` | ICE servers, WebRTC data channel | WebRTC adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/rustcore/KeystoreSecureStore.kt` | 124 | `KeystoreSecureStore` | Android adapters for the Rust engine (Keystore secret store, on-device probe) | Platform adapter for engine ports | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/rustcore/RustChatEngine.kt` | 1397 | `RustChatEngine` | Android adapters for the Rust engine (Keystore secret store, on-device probe) | Platform adapter for engine ports | Adapter | Stays (platform adapter) | Stays | n/a |
@@ -192,7 +188,6 @@ Ported does not mean retired: the TypeScript and Kotlin versions stay in product
 | `apps/android/app/src/main/java/com/duochat/app/security/ContactCard.kt` | 38 | `ContactCard`, `Contact`, `ContactCards` | Cryptography duplicated from TypeScript | crypto | Crypto | Ported, tested | M8 | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/security/EcKeys.kt` | 59 | `EcKeys` | Cryptography duplicated from TypeScript | crypto | Crypto | Ported, tested | M8 | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/security/IdentityCodec.kt` | 81 | `IdentityCodec` | Cryptography duplicated from TypeScript | crypto | Crypto | Ported, tested | M8 | n/a |
-| `apps/android/app/src/main/java/com/duochat/app/security/InviteCode.kt` | 85 | `InviteCode` | Cryptography duplicated from TypeScript | crypto | Crypto | Ported, tested | M8 | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/security/KillSwitch.kt` | 441 | `KillSwitchScope`, `KillSwitchMode`, `StepStatus`, `KillSwitchPlanStep`, `KillSwitchStepResult`, `KillSwitchReport` +8 | Emergency erase steps for Android (Keystore key, files, Room) | domain::killswitch + engine::core::privacy run the plan; these steps call Android APIs | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/security/LocalCrypto.kt` | 88 | `LocalCrypto` | Keystore identity storage, at-rest encryption, biometric lock | SecureStore adapter | Adapter | Stays (platform adapter) | Stays | n/a |
 | `apps/android/app/src/main/java/com/duochat/app/security/RecoveryIdentity.kt` | 116 | `RecoveryIdentity`, `P256` | Cryptography duplicated from TypeScript | crypto | Crypto | Ported, tested | M8 | n/a |
