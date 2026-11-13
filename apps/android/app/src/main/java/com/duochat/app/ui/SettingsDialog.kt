@@ -69,6 +69,7 @@ import com.duochat.app.data.BluetoothStatus
 import com.duochat.app.data.AppSettings
 import com.duochat.app.data.ChatState
 import com.duochat.app.data.NetworkConfig
+import com.duochat.app.data.hasTurn
 import com.duochat.app.data.SignalingConfig
 import com.duochat.app.data.TurnServer
 
@@ -473,11 +474,27 @@ SectionTitle("Appearance")
                     "Some networks block direct connections. The relay then passes the encrypted traffic on; it cannot read it.",
                     settings.network.builtinTurn,
                 ) { onUpdateSettings { copy(network = network.copy(builtinTurn = it)) } }
+                // Two levels of hiding this phone's address: from friends (a TURN relay carries every link), or from
+                // everyone (Tor; slower, no live links).
+                val turnAvailable = settings.network.hasTurn
                 ToggleRow(
-                    "Always use the relay",
-                    "Only use TURN. Hides your IP address from your friend; needs a TURN server.",
-                    settings.network.forceRelay,
+                    "Hide my IP address from friends",
+                    if (turnAvailable) {
+                        "Every connection goes through a relay (TURN), so friends only ever see the relay's address. " +
+                            "A little slower. The relay sees your address, not your messages."
+                    } else {
+                        "Needs a relay (TURN) server, and none is set up. Add one below, or use Private mode (Tor), which needs none."
+                    },
+                    settings.network.forceRelay && turnAvailable,
+                    enabled = turnAvailable && !settings.network.torMode,
                 ) { onUpdateSettings { copy(network = network.copy(forceRelay = it)) } }
+                ToggleRow(
+                    "Private mode (Tor): hide my IP from everyone",
+                    "Messages go only through Tor and the relays, so neither friends nor relays learn this phone's " +
+                        "address. Needs the free Orbot app running. Messages take a few seconds; live connections " +
+                        "and sending files are off. Bluetooth still works.",
+                    settings.network.torMode,
+                ) { onUpdateSettings { copy(network = network.copy(torMode = it)) } }
                 ToggleRow(
                     "Store-and-forward (messages while your friend is offline)",
                     "Sends each message, encrypted for your friend, to the relays above so it arrives when they come " +

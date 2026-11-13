@@ -7,6 +7,16 @@ import org.junit.Test
 
 class NetworkConfigTest {
     @Test
+    fun `tor mode survives a round trip, always relays messages, and is not written when off`() {
+        val on = NetworkConfig(torMode = true, storeForward = false)
+        val back = NetworkConfig.fromJson(on.toJson())
+        assertTrue(back.torMode)
+        assertTrue("Tor mode has no live link, so messages must go through the relays", back.relaysMessages)
+        assertTrue(!NetworkConfig().toJson().contains("torMode"))
+        assertTrue(!NetworkConfig().relaysMessages)
+    }
+
+    @Test
     fun `json round trip keeps stun turn and force relay`() {
         val config = NetworkConfig(
             stun = listOf("stun:stun.example.org:3478"),
