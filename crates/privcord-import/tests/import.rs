@@ -635,6 +635,29 @@ fn the_engine_opens_what_was_imported_and_carries_on() {
         core.file(&id).unwrap().unwrap().bytes.len() as u64,
         f["pngLen"].as_u64().unwrap()
     );
+    // A backup carries the old group, so a restore elsewhere still offers it.
+    let backup = core.export_backup("correct horse battery").unwrap();
+    let mut elsewhere = Core::new(Ports {
+        storage: privcord_ports::testing::MemoryStorage::new(),
+        secure: MemorySecureStore::new(),
+        transport: RecordingTransport::new(),
+        clock: FakeClock::at(1_700_000_400_000),
+        notifier: RecordingNotifier::new(),
+        entropy: Box::new(SeededEntropy::new("elsewhere")),
+    })
+    .unwrap();
+    elsewhere
+        .recover_identity(f["me"]["phrase"].as_str().unwrap(), "")
+        .unwrap();
+    elsewhere
+        .import_backup(&backup, "correct horse battery")
+        .unwrap();
+    let restored = elsewhere.snapshot().legacy_groups;
+    assert_eq!(restored.len(), 1);
+    assert_eq!(
+        (restored[0].name.as_str(), restored[0].members.len()),
+        ("Trip", 2)
+    );
     // One tap makes it again: same name, the same friends, its messages moved into it, and it is not offered again.
     let new_id = core.recreate_legacy_group(&old.old_id).unwrap();
     let snap = core.snapshot();

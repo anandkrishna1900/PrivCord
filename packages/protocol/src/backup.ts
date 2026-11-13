@@ -7,7 +7,7 @@ import { aesGcmDecrypt, aesGcmEncrypt, fromB64Url, randomBytes, toB64Url } from 
  */
 
 export const BACKUP_PREFIX = 'PRIVCORD-BACKUP1:';
-export const BACKUP_MIN_PASSPHRASE = 8;
+export const BACKUP_MIN_PASSPHRASE = 12;
 const ITERATIONS = 300_000;
 const AAD = new TextEncoder().encode('privcord-backup-v1');
 

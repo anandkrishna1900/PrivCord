@@ -81,6 +81,60 @@ impl Core {
         }
     }
 
+    /// For a backup: the old groups still waiting, as `[old id, name, [member ids]]`.
+    pub(super) fn legacy_groups_json(&self) -> Value {
+        Value::Array(
+            self.legacy_groups
+                .iter()
+                .map(|g| serde_json::json!([g.old_id, g.name, g.members]))
+                .collect(),
+        )
+    }
+
+    /// From a restored backup: old groups not already waiting (and not made again since) are offered again.
+    pub(super) fn merge_legacy_groups_json(&mut self, value: Option<&Value>) {
+        let Some(Value::Array(rows)) = value else {
+            return;
+        };
+        self.ensure_groups().ok();
+        let live: BTreeSet<String> = self
+            .groups
+            .as_ref()
+            .map(|g| {
+                g.my_groups()
+                    .into_iter()
+                    .map(|s| s.group_id.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut groups = self.legacy_groups.clone();
+        for row in rows {
+            let Ok((old_id, name, members)) =
+                serde_json::from_value::<(String, String, Vec<String>)>(row.clone())
+            else {
+                continue;
+            };
+            if live.contains(&old_id)
+                || groups.iter().any(|g| g.old_id == old_id)
+                || name.trim().is_empty()
+            {
+                continue;
+            }
+            groups.push(LegacyGroupView {
+                old_id,
+                name,
+                members: members
+                    .into_iter()
+                    .filter_map(|m| UserId::new(m).ok())
+                    .collect(),
+            });
+        }
+        if groups.len() != self.legacy_groups.len() {
+            self.save_legacy_groups(&groups);
+            self.legacy_groups = groups;
+        }
+    }
+
     /// Make an old group again: same name, every member who is still a friend, and its messages moved into the new
     /// group. Returns the new group's id.
     pub fn recreate_legacy_group(&mut self, old_id: &str) -> Result<String, ErrorCode> {

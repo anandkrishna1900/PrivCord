@@ -58,6 +58,6 @@ describe('encrypted backup', () => {
     expect(await openBackup(text, 'wrong passphrase!')).toBeNull();
     expect(await openBackup(text.slice(0, -6) + 'AAAAAA', 'correct horse battery')).toBeNull();
     expect(await openBackup('not a backup', 'correct horse battery')).toBeNull();
-    await expect(sealBackup(data, 'short')).rejects.toThrow(/at least 8/);
+    await expect(sealBackup(data, 'eleven char')).rejects.toThrow(/at least 12/);
   }, 30_000);
 });

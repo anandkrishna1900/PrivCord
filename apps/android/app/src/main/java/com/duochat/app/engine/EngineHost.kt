@@ -66,6 +66,15 @@ object EngineHost {
         if (s.mesh) created.setMeshEnabled(true)
         startJob = newScope.launch { created.start() }
         watchNetwork(app)
+        // Weekly automatic backups (when turned on): checked a minute after start and then every few hours, with the
+        // screen open or only the background service running.
+        newScope.launch(Dispatchers.IO) {
+            kotlinx.coroutines.delay(60_000)
+            while (true) {
+                runCatching { com.duochat.app.data.AutoBackup.runIfDue(app, { p -> created.exportBackup(p) }) }
+                kotlinx.coroutines.delay(6L * 3600 * 1000)
+            }
+        }
         return created
     }
 

@@ -63,7 +63,7 @@ export function friendly(error: unknown): string {
     ['GroupFull', 'That group is full.'],
     ['NotAdmin', 'Only the person who made the group can do that.'],
     ['BadFile', 'That file could not be sent.'],
-    ['WeakPassphrase', 'Use a longer passphrase (at least 8 characters).'],
+    ['WeakPassphrase', 'Use a longer passphrase (at least 12 characters).'],
     ['BackupUnreadable', 'That backup could not be opened. Check the passphrase and the file.'],
     ['BackupNotYours', 'That backup belongs to a different identity.'],
     ['Busy', 'The engine is busy. Try again in a moment.'],

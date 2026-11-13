@@ -110,15 +110,15 @@ function BackupControl({ engine }: { engine: ChatEngineApi | null }) {
       <input
         type="password"
         aria-label="Backup passphrase"
-        placeholder="Passphrase (at least 8 characters)"
+        placeholder="Passphrase (at least 12 characters)"
         value={pass}
         onChange={(event) => setPass(event.target.value)}
       />
       <div className="button-row">
-        <button type="button" className="button secondary small" disabled={busy || pass.length < 8} onClick={() => void backUp()}>
+        <button type="button" className="button secondary small" disabled={busy || pass.length < 12} onClick={() => void backUp()}>
           Save a backup
         </button>
-        <button type="button" className="button secondary small" disabled={busy || pass.length < 8} onClick={() => fileRef.current?.click()}>
+        <button type="button" className="button secondary small" disabled={busy || pass.length < 12} onClick={() => fileRef.current?.click()}>
           Restore from a file
         </button>
         <input

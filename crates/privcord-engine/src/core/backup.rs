@@ -10,8 +10,21 @@ use privcord_domain::{
     privacy::ContactTrust,
     MessageId,
 };
-use privcord_import::{backup::read_bundle, import, NoFiles, Source};
+use privcord_import::{backup::read_bundle, import, FileSource, Source};
 use serde_json::{json, Map, Value};
+
+/// File bytes a backup carries at most (newest files first): enough for months of photos and voice notes, small
+/// enough for a phone to build and read in memory.
+const BACKUP_FILE_BUDGET: usize = 50 * 1024 * 1024;
+
+/// The file bytes inside a backup, by message id (each is checked against its message's SHA-256 when restored).
+struct BackupFiles<'a>(Option<&'a Map<String, Value>>);
+
+impl FileSource for BackupFiles<'_> {
+    fn file(&self, message_id: &str) -> Option<Vec<u8>> {
+        privcord_domain::codec::decode(self.0?.get(message_id)?.as_str()?)
+    }
+}
 
 /// What a restore added.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,6 +154,29 @@ impl Core {
         }
         let mut ids: Vec<&MessageId> = self.messages.keys().collect();
         ids.sort();
+        // Photos, videos, voice notes and files: the newest first, as many as fit the budget.
+        let mut newest: Vec<_> = self
+            .messages
+            .values()
+            .filter(|m| {
+                m.message.kind == MessageKind::File && !self.deleted.contains(&m.message.message_id)
+            })
+            .collect();
+        newest.sort_by_key(|m| std::cmp::Reverse(m.message.client_created_at));
+        let mut files = Map::new();
+        let mut used = 0usize;
+        for m in newest {
+            if let Ok(Some(f)) = self.ports.storage.file(&m.message.message_id) {
+                if used + f.bytes.len() > BACKUP_FILE_BUDGET {
+                    continue;
+                }
+                used += f.bytes.len();
+                files.insert(
+                    m.message.message_id.to_string(),
+                    json!(privcord_domain::codec::encode(&f.bytes)),
+                );
+            }
+        }
         let data = json!({
             "v": 1,
             "uid": uid,
@@ -150,6 +186,8 @@ impl Core {
             "channels": self.channels.keys().collect::<Vec<_>>(),
             "blocked": self.muted.iter().collect::<Vec<_>>(),
             "messages": ids.into_iter().filter_map(|id| self.message_json(id)).collect::<Vec<_>>(),
+            "files": files,
+            "legacyGroups": self.legacy_groups_json(),
         });
         Ok(seal_backup(&data, passphrase, &mut *self.ports.entropy)?)
     }
@@ -182,13 +220,15 @@ impl Core {
         let report = import(
             &bundle,
             Source::Backup,
-            &NoFiles,
+            &BackupFiles(data.get("files").and_then(Value::as_object)),
             &owner_id,
             &*self.ports.storage,
             now,
         )
         .map_err(|_| ErrorCode::Storage)?;
         self.reload_from_storage()?;
+        // Groups from before protocol v2 that were still waiting to be made again come back as well.
+        self.merge_legacy_groups_json(data.get("legacyGroups"));
         self.hub.publish(EngineEvent::Restored);
         Ok(RestoreSummary {
             friends: report.contacts,

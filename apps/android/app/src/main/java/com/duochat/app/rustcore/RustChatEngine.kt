@@ -1024,6 +1024,9 @@ class RustChatEngine(
         is uniffi.privcord_ffi.FfiException.InviteNotFound -> "Could not find that invite. Check the words, or ask your friend to share it again."
         is uniffi.privcord_ffi.FfiException.InvalidInvite -> "That is not a valid invite. Check the words, or ask your friend to share it again."
         is uniffi.privcord_ffi.FfiException.NoSignaling -> "No connection service is set up, so six words cannot be looked up. Turn one on in Settings > Connection, or use the long invite."
+        is uniffi.privcord_ffi.FfiException.WeakPassphrase -> "Use a longer backup passphrase: at least 12 characters."
+        is uniffi.privcord_ffi.FfiException.BackupUnreadable -> "That backup could not be opened. Check the passphrase, or that it is a DuoCord backup."
+        is uniffi.privcord_ffi.FfiException.BackupNotYours -> "That backup belongs to a different account (another recovery phrase)."
         else -> t.message ?: "That did not work."
     }
 
