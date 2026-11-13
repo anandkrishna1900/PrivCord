@@ -1,0 +1,49 @@
+# Coverage-guided fuzzing of everything that reads untrusted input (cargo-fuzz, nightly). Not part of the workspace:
+#   cargo +nightly fuzz run <target> -- -max_total_time=60
+[package]
+name = "privcord-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde_json = "1"
+privcord-domain = { path = "../crates/privcord-domain" }
+privcord-crypto = { path = "../crates/privcord-crypto", features = ["test-support"] }
+privcord-ports = { path = "../crates/privcord-ports", features = ["testing"] }
+privcord-engine = { path = "../crates/privcord-engine" }
+
+# Its own workspace, so the main one (and its lockfile) never sees these.
+[workspace]
+
+[[bin]]
+name = "parsers"
+path = "fuzz_targets/parsers.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "text_decoders"
+path = "fuzz_targets/text_decoders.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ble_reassembly"
+path = "fuzz_targets/ble_reassembly.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "engine_untrusted"
+path = "fuzz_targets/engine_untrusted.rs"
+test = false
+doc = false
+bench = false
