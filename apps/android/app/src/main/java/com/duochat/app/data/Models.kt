@@ -225,6 +225,8 @@ data class ChatState(
     val invite: ActiveInvite? = null,
     /** People who used our words and wait for us to accept them. */
     val requests: List<InviteRequest> = emptyList(),
+    /** Groups from before the protocol update, which can be made again with one tap. */
+    val legacyGroups: List<LegacyGroup> = emptyList(),
     val answer: InviteAnswer? = null,
     val channels: List<ChannelView> = emptyList(),
     /** Phones currently linked over the Bluetooth mesh (0 when the mesh is off). */
@@ -344,3 +346,6 @@ fun createOutgoingMessage(senderId: String, text: String, replyTo: ReplyRef? = n
         replyTo = replyTo,
     )
 }
+
+/** A group from before the protocol update: its name, the friends who will be in it again, and how many others were. */
+data class LegacyGroup(val oldId: String, val name: String, val memberNames: List<String>, val missing: Int)

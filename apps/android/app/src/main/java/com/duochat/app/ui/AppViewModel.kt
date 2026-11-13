@@ -263,6 +263,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun createGroup(name: String, memberUids: List<String>, onResult: (Result<String>) -> Unit) =
         withEngine(onResult) { it.createGroup(name, memberUids) }
 
+    fun recreateLegacyGroup(oldId: String, onResult: (Result<String>) -> Unit) =
+        withEngine(onResult) { it.recreateLegacyGroup(oldId) }
+
+    fun dismissLegacyGroup(oldId: String) = withEngine({}) { it.dismissLegacyGroup(oldId) }
+
     fun addToGroup(groupId: String, uids: List<String>, onResult: (Result<Unit>) -> Unit) =
         withEngine(onResult) { it.addToGroup(groupId, uids) }
 

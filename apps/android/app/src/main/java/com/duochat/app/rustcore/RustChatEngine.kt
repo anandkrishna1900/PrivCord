@@ -931,6 +931,9 @@ class RustChatEngine(
                 },
                 invite = s.invite?.let { inv -> ActiveInvite(inv.words, inv.expiresAt) },
                 requests = s.requests.map { r -> InviteRequest(r.uid, r.name, r.safetyNumber) },
+                legacyGroups = s.legacyGroups.map { g ->
+                    com.duochat.app.data.LegacyGroup(g.oldId, g.name, g.members.map { m -> nameOf(s, m) }, g.missing.toInt())
+                },
                 answer = s.answer?.let { a ->
                     InviteAnswer(
                         a.uid, nameOf(s, a.uid),
@@ -1110,6 +1113,10 @@ class RustChatEngine(
     override suspend fun addToGroup(groupId: String, uids: List<String>): Result<Unit> = call { uids.forEach { addGroupMember(groupId, it) } }
     override suspend fun removeFromGroup(groupId: String, uid: String): Result<Unit> = call { removeGroupMember(groupId, uid) }
     override suspend fun leaveGroup(groupId: String): Result<Unit> = call { leaveGroup(groupId) }
+
+    override suspend fun recreateLegacyGroup(oldId: String): Result<String> = call { recreateLegacyGroup(oldId) }
+
+    override suspend fun dismissLegacyGroup(oldId: String): Result<Unit> = call { dismissLegacyGroup(oldId) }
     override suspend fun renameGroup(groupId: String, name: String): Result<Unit> = call { renameGroup(groupId, name) }
 
     private fun isGroup(id: String): Boolean = last?.groups?.any { it.id == id } == true

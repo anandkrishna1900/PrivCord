@@ -59,6 +59,7 @@ use zeroize::Zeroizing;
 mod backup;
 mod invites;
 mod keys;
+mod legacy_groups;
 mod privacy;
 mod signaling;
 mod social;
@@ -224,6 +225,7 @@ pub struct Core {
     invites: invites::InviteState,
     /// Protocol v2 keys for sealed blobs (ours and our contacts').
     keys: keys::KeyState,
+    legacy_groups: Vec<crate::api::LegacyGroupView>,
     sealed: signaling::SealedState,
     /// Channel mailboxes we are listening on (the adapter opens the sockets).
     channel_subscribed: HashSet<String>,
@@ -282,6 +284,7 @@ impl Core {
             mesh: MeshNode::default(),
             invites: invites::InviteState::default(),
             keys: keys::KeyState::default(),
+            legacy_groups: Vec::new(),
             sealed: signaling::SealedState::default(),
             channel_subscribed: HashSet::new(),
             channel_people: BTreeMap::new(),
@@ -1716,6 +1719,13 @@ impl Core {
         if let Some(bytes) = self.ports.storage.kv(KV_GROUPS)? {
             if let Ok(saved) = serde_json::from_slice::<BTreeMap<String, Vec<Value>>>(&bytes) {
                 coordinator.load(&saved);
+                // A group we are no longer in under our v2 id (its history may still half-load) counts as gone.
+                let live = coordinator
+                    .my_groups()
+                    .into_iter()
+                    .map(|g| g.group_id.clone())
+                    .collect();
+                self.remember_legacy_groups(&saved, &live);
             }
         }
         self.groups = Some(coordinator);
@@ -2870,6 +2880,7 @@ impl Core {
                 .map(|(u, n)| (u.clone(), n.clone()))
                 .collect(),
             files,
+            legacy_groups: self.legacy_groups.clone(),
         }
     }
 

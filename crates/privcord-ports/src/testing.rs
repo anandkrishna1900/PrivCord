@@ -165,6 +165,13 @@ impl Storage for MemoryStorage {
                         });
                     }
                 }
+                StorageOp::MoveConversation { from, to } => {
+                    for m in &mut next.messages {
+                        if &m.conversation == from {
+                            m.conversation = to.clone();
+                        }
+                    }
+                }
                 StorageOp::RenameUser { from, to } => {
                     if let Some(mut c) = next.contacts.remove(from) {
                         c.uid = to.clone();

@@ -277,6 +277,8 @@ private fun RootScreen(viewModel: AppViewModel) {
                     onSearch = viewModel::search,
                     onPanic = if (settings.panicWipe) ({ panic = true; nukeOpen = true }) else null,
                     onOpenConversation = { route = "chat:$it" },
+                    onRecreateGroup = { old -> viewModel.recreateLegacyGroup(old) { r -> r.onSuccess { route = "chat:$it" } } },
+                    onDismissOldGroup = viewModel::dismissLegacyGroup,
                 )
             }
         }

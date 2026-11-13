@@ -145,6 +145,11 @@ pub enum StorageOp {
         from: UserId,
         to: UserId,
     },
+    /// Every message of one conversation moves to another (an old group's history into the group made again).
+    MoveConversation {
+        from: ConversationId,
+        to: ConversationId,
+    },
 }
 
 /// Persistent state. `apply` is the only way to change it, and it is atomic: a crash or an error part-way leaves

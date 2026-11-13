@@ -219,6 +219,13 @@ pub enum GroupOp {
         name: String,
         members: Vec<UserId>,
     },
+    /// Make a group from before protocol v2 again (returns the new id).
+    RecreateLegacy {
+        old_id: String,
+    },
+    DismissLegacy {
+        old_id: String,
+    },
     Add {
         group: String,
         uid: UserId,
@@ -371,6 +378,10 @@ fn pump(core: &mut Core, cmd: Command) -> bool {
         Command::Group { op, reply } => drop(
             reply.send(match op {
                 GroupOp::Create { name, members } => core.create_group(&name, &members),
+                GroupOp::RecreateLegacy { old_id } => core.recreate_legacy_group(&old_id),
+                GroupOp::DismissLegacy { old_id } => {
+                    core.dismiss_legacy_group(&old_id).map(|()| String::new())
+                }
                 GroupOp::Add { group, uid } => {
                     core.add_group_member(&group, &uid).map(|()| String::new())
                 }

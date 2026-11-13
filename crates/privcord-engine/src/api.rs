@@ -108,6 +108,16 @@ pub struct AnswerView {
 }
 
 /// Everything a recreated UI needs, so it never depends on having seen every historical event.
+/// A group made before protocol v2, which can be made again with one tap (see `Core::recreate_legacy_group`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyGroupView {
+    /// Its old id: what to pass back, and where its messages are.
+    pub old_id: String,
+    pub name: String,
+    /// Who was in it at the end (v2 ids; only those who are still friends can be added again).
+    pub members: Vec<UserId>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Snapshot {
     /// Number of the last event this snapshot includes. Events after it have a higher number.
@@ -138,6 +148,8 @@ pub struct Snapshot {
     pub channel_people: Vec<(UserId, String)>,
     /// Type and size of every file message that is stored.
     pub files: Vec<(MessageId, privcord_ports::FileInfo)>,
+    /// Groups from before protocol v2, waiting to be made again or dismissed.
+    pub legacy_groups: Vec<LegacyGroupView>,
 }
 
 /// Something that happened. Each has a number; numbers rise by one, so a gap means events were missed.

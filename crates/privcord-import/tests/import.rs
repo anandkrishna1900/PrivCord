@@ -604,9 +604,28 @@ fn the_engine_opens_what_was_imported_and_carries_on() {
     let snap = core.snapshot();
     assert_eq!(snap.contacts.len(), 3);
     assert_eq!(snap.channels, ["town"]);
-    // Groups do not come over: their signed history names members by v1 ids, which v2 no longer accepts (accepting
-    // them is exactly what let a forged card claim someone's id). They are made again.
+    // Groups do not come over as they were: their signed history names members by v1 ids, which v2 no longer accepts
+    // (accepting them is exactly what let a forged card claim someone's id). Each is offered to be made again instead.
     assert!(snap.groups.is_empty());
+    assert_eq!(snap.legacy_groups.len(), 1);
+    let old = snap.legacy_groups[0].clone();
+    assert_eq!(old.name, "Trip");
+    assert_eq!(
+        old.members.len(),
+        2,
+        "the two other members, by their v2 ids"
+    );
+    assert!(old
+        .members
+        .iter()
+        .all(|m| snap.contacts.iter().any(|c| &c.uid == m)));
+    let old_chat =
+        ConversationId::Group(privcord_domain::GroupId::new(old.old_id.as_str()).unwrap());
+    let old_messages = snap
+        .messages
+        .iter()
+        .find(|(c, _)| *c == old_chat)
+        .map_or(0, |(_, v)| v.len());
     let total: usize = snap.messages.iter().map(|(_, v)| v.len()).sum();
     assert_eq!(total, 14);
     assert_eq!(snap.queued, 3, "unsent messages are still waiting");
@@ -616,6 +635,30 @@ fn the_engine_opens_what_was_imported_and_carries_on() {
         core.file(&id).unwrap().unwrap().bytes.len() as u64,
         f["pngLen"].as_u64().unwrap()
     );
+    // One tap makes it again: same name, the same friends, its messages moved into it, and it is not offered again.
+    let new_id = core.recreate_legacy_group(&old.old_id).unwrap();
+    let snap = core.snapshot();
+    assert!(snap.legacy_groups.is_empty());
+    let g = snap
+        .groups
+        .iter()
+        .find(|g| g.group_id == new_id)
+        .expect("the group again");
+    assert_eq!(g.name, "Trip");
+    assert_eq!(g.members.len(), 3);
+    let new_chat = ConversationId::Group(privcord_domain::GroupId::new(new_id.as_str()).unwrap());
+    let moved = snap
+        .messages
+        .iter()
+        .find(|(c, _)| *c == new_chat)
+        .map_or(0, |(_, v)| v.len());
+    assert!(old_messages > 0);
+    assert_eq!(
+        moved, old_messages,
+        "the old group's messages are in the new one"
+    );
+    core.send_group_message(&new_id, "back again", None)
+        .unwrap();
 }
 
 #[test]
