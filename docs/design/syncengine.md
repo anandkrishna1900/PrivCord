@@ -580,7 +580,7 @@ Each step ships with its tests and leaves the app working.
 
 | Step | State |
 |---|---|
-| 1. Background runner | Built: desktop tray (close to tray, start at sign-in, one instance); `privcord_domain::background` used by Android for Bluetooth mesh scanning. |
+| 1. Background runner | Built: desktop tray (close to tray, start at sign-in, one instance); the relay sockets are Rust (`privcord_desktop_host::native_signaling`, TLS through the OS, SOCKS for private mode), so closing the window really closes it and messages, sync and notifications go on in the tray; `privcord_domain::background` used by Android for Bluetooth mesh scanning. |
 | 2. Account and devices | Built in the engine: device keys, signed device list, migration of existing installs, linking handshake (`devices::link`). No linking screen yet. |
 | 3. Sync log | Built: `privcord_crypto::synclog` (entries, merge rules, clone detection, quarantine, fingerprint), simulated and fuzzed. |
 | 4. Self-mailbox | Built: `privcord_crypto::selfbox`, `core/sync.rs`. See below. |
@@ -599,5 +599,4 @@ Not yet:
 - **Delivery ticks.** The delivery ticks of your own messages are not synced.
 - **File bytes.** Only file metadata is synced; the bytes come with step 6.
 - **Delivery waiting for its sync copy.** A message delivered over a direct link in the second before the tick is ahead of its sync copy (step 5).
-- **The desktop page in the tray.** It stays alive, because it owns the relay sockets; moving the sockets into Rust is still to do.
 - **Relays only, between devices.** Devices exchange entries only through the relays; direct local Wi-Fi and Bluetooth sync is step 7.

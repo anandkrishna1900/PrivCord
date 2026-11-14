@@ -1,7 +1,10 @@
 //! The Rust engine, hosted in the shell (milestone M7). Nothing in the app calls this yet: it is the seam the page will use
 //! when `engine.ts` is rewired onto the engine (docs/rust/M7_DESKTOP_PLAN.md).
 //!
-//! The page keeps owning WebRTC and the relay sockets. It tells the engine what happened (`engine_invoke("link_up", ..)`,
+//! The page owns WebRTC. The relay sockets are the shell's own (`privcord_desktop_host::native_signaling`), so messages,
+//! sync and notifications go on with the window closed and DuoCord in the tray.
+//!
+//! (Earlier the page owned the relay sockets too.) It tells the engine what happened (`engine_invoke("link_up", ..)`,
 //! `"frame_received"`, `"signal_blob"`) and listens for what the engine wants done, as Tauri events:
 //!
 //! | event                          | payload                                   | page should                                   |
@@ -14,7 +17,8 @@
 //! | `privcord://signal-put`        | `{ mailbox, blob, kind, ttlSec }`         | publish the blob to the relays                |
 //! | `privcord://notify`            | `{ conversation, sender, preview }`       | show a notification                           |
 
-use privcord_desktop_host::DesktopHost;
+use privcord_desktop_host::{native_signaling::NativeSignaling, DesktopHost};
+use privcord_domain::signaling::PutKind;
 use privcord_ffi::{
     DatabaseKeyRead, NotifierCallbacks, SecureStoreCallbacks, SignalKind, TransportCallbacks,
 };
@@ -71,8 +75,12 @@ impl SecureStoreCallbacks for KeyringSecure {
             return DatabaseKeyRead::Unavailable;
         };
         match entry.get_password() {
-            Ok(text) => unhex(&text).map_or(DatabaseKeyRead::Missing, |key| DatabaseKeyRead::Found { key }),
-            Err(keyring::Error::NoEntry | keyring::Error::BadEncoding(_)) => DatabaseKeyRead::Missing,
+            Ok(text) => unhex(&text).map_or(DatabaseKeyRead::Missing, |key| {
+                DatabaseKeyRead::Found { key }
+            }),
+            Err(keyring::Error::NoEntry | keyring::Error::BadEncoding(_)) => {
+                DatabaseKeyRead::Missing
+            }
             Err(_) => DatabaseKeyRead::Unavailable,
         }
     }
@@ -84,14 +92,116 @@ impl SecureStoreCallbacks for KeyringSecure {
     }
 }
 
-/// Everything the engine wants the outside world to do goes to the page as an event.
+/// The relay sockets, started with the engine.
+static NATIVE: std::sync::OnceLock<NativeSignaling> = std::sync::OnceLock::new();
+/// Peers the page has an open link with (it reports `link_up` / `link_down`): when the window goes, they are all down.
+static LINKED: Mutex<std::collections::BTreeSet<String>> =
+    Mutex::new(std::collections::BTreeSet::new());
+
+fn host_of(app: &AppHandle) -> Option<Arc<DesktopHost>> {
+    let state = app.state::<EngineState>();
+    let guard = state.0.lock().ok()?;
+    guard.as_ref().map(|r| r.host.clone())
+}
+
+fn native(app: &AppHandle) -> &'static NativeSignaling {
+    NATIVE.get_or_init(|| {
+        let (blobs, status) = (app.clone(), app.clone());
+        NativeSignaling::start(
+            Arc::new(move |mailbox, blob| {
+                if let Some(host) = host_of(&blobs) {
+                    let _ =
+                        host.invoke("signal_blob", &json!({ "mailbox": mailbox, "blob": blob }));
+                }
+            }),
+            Arc::new(move |online| {
+                SIGNAL_ONLINE.store(online, Ordering::Relaxed);
+                let _ = status.emit("privcord://signal-status", json!({ "online": online }));
+            }),
+        )
+    })
+}
+
+/// Network settings and notification choices, saved so a start in the tray (no page yet) has them.
+fn saved_network_path(app: &AppHandle) -> Option<std::path::PathBuf> {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|d| d.join("network.json"))
+}
+
+fn apply_network(app: &AppHandle, saved: &Value) {
+    let network = saved.get("network").and_then(Value::as_str).unwrap_or("{}");
+    let socks = crate::tor_active().then(|| crate::TOR_PROXY.to_owned());
+    native(app).configure(network, socks);
+}
+
+/// The page hands over its network settings (the same JSON it keeps) and notification choices.
+#[tauri::command]
+pub fn engine_network(
+    app: AppHandle,
+    network: String,
+    notify: bool,
+    previews: bool,
+) -> Result<(), String> {
+    let saved = json!({ "network": network, "notify": notify, "previews": previews });
+    if let Some(path) = saved_network_path(&app) {
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        std::fs::write(&path, saved.to_string()).map_err(|e| e.to_string())?;
+    }
+    apply_network(&app, &saved);
+    // Started at sign-in: the page was only needed to start the engine. Now that the relays are set up, its window
+    // goes, and DuoCord sits in the tray with only Rust running.
+    if std::env::args().any(|a| a == crate::HIDDEN_ARG)
+        && !HIDDEN_START_DONE.swap(true, Ordering::Relaxed)
+    {
+        if let Some(w) = app
+            .get_webview_window("main")
+            .filter(|w| !w.is_visible().unwrap_or(true))
+        {
+            let _ = w.destroy();
+        }
+    }
+    Ok(())
+}
+
+static HIDDEN_START_DONE: AtomicBool = AtomicBool::new(false);
+
+fn saved_network(app: &AppHandle) -> Option<Value> {
+    let text = std::fs::read_to_string(saved_network_path(app)?).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+/// The window is gone (DuoCord stays in the tray): its WebRTC links went with it.
+pub fn page_closed(app: &AppHandle) {
+    let peers: Vec<String> = LINKED
+        .lock()
+        .map(|mut l| std::mem::take(&mut *l).into_iter().collect())
+        .unwrap_or_default();
+    if let Some(host) = host_of(app) {
+        for peer in peers {
+            let _ = host.invoke("link_down", &json!({ "peer": peer }));
+        }
+    }
+}
+
+fn has_page(app: &AppHandle) -> bool {
+    app.get_webview_window("main").is_some()
+}
+
+/// Everything the engine wants the outside world to do: links go to the page, relay traffic to the shell's sockets.
 struct PageTransport(AppHandle);
 
 impl TransportCallbacks for PageTransport {
     fn send(&self, peer: String, frame: String) -> bool {
-        self.0
-            .emit("privcord://frame", json!({ "peer": peer, "frame": frame }))
-            .is_ok()
+        // No window, no links: say so, so nothing counts as sent over a link that is gone.
+        has_page(&self.0)
+            && self
+                .0
+                .emit("privcord://frame", json!({ "peer": peer, "frame": frame }))
+                .is_ok()
     }
 
     // Bluetooth mesh neighbours are not hosted on the desktop (Windows can only scan).
@@ -103,35 +213,26 @@ impl TransportCallbacks for PageTransport {
         let _ = self.0.emit("privcord://close", json!({ "peer": peer }));
     }
 
-    /// What the page last reported about its relay sockets. When they are down the engine hands connection setup and
-    /// receipts to mutual contacts instead of a relay put that can only wait and fail.
+    /// Whether the relay sockets are online. When they are down the engine hands connection setup and receipts to
+    /// mutual contacts instead of a relay put that can only wait and fail.
     fn signal_available(&self) -> bool {
-        SIGNAL_ONLINE.load(Ordering::Relaxed)
+        native(&self.0).online()
     }
 
     fn signal_subscribe(&self, mailbox: String) -> bool {
-        self.0
-            .emit("privcord://signal-subscribe", json!({ "mailbox": mailbox }))
-            .is_ok()
+        native(&self.0).subscribe(&mailbox)
     }
 
     fn signal_unsubscribe(&self, mailbox: String) {
-        let _ = self
-            .0
-            .emit("privcord://signal-unsubscribe", json!({ "mailbox": mailbox }));
+        native(&self.0).unsubscribe(&mailbox);
     }
 
     fn signal_put(&self, mailbox: String, blob: String, kind: SignalKind, ttl_sec: u32) -> bool {
         let kind = match kind {
-            SignalKind::Live => "live",
-            SignalKind::Stored => "stored",
+            SignalKind::Live => PutKind::Sig,
+            SignalKind::Stored => PutKind::Msg,
         };
-        self.0
-            .emit(
-                "privcord://signal-put",
-                json!({ "mailbox": mailbox, "blob": blob, "kind": kind, "ttlSec": ttl_sec }),
-            )
-            .is_ok()
+        native(&self.0).put(&mailbox, &blob, kind, ttl_sec)
     }
 }
 
@@ -139,10 +240,32 @@ struct PageNotifier(AppHandle);
 
 impl NotifierCallbacks for PageNotifier {
     fn message_received(&self, conversation: String, sender: String, preview: String) {
-        let _ = self.0.emit(
-            "privcord://notify",
-            json!({ "conversation": conversation, "sender": sender, "preview": preview }),
-        );
+        if has_page(&self.0) {
+            // The page knows names and whether that chat is on screen.
+            let _ = self.0.emit(
+                "privcord://notify",
+                json!({ "conversation": conversation, "sender": sender, "preview": preview }),
+            );
+            return;
+        }
+        // In the tray: a notification from the shell, with the person's choices.
+        let saved = saved_network(&self.0).unwrap_or(Value::Null);
+        if saved.get("notify").and_then(Value::as_bool) == Some(false) {
+            return;
+        }
+        let body = if saved.get("previews").and_then(Value::as_bool) == Some(false) {
+            "Open DuoCord to read it.".to_owned()
+        } else {
+            preview
+        };
+        use tauri_plugin_notification::NotificationExt;
+        let _ = self
+            .0
+            .notification()
+            .builder()
+            .title("New message")
+            .body(body)
+            .show();
     }
 }
 
@@ -168,10 +291,16 @@ fn running(state: &State<'_, EngineState>) -> Result<Arc<DesktopHost>, String> {
 /// Whether the page's relay sockets are online (`engine_signal_status`). False until the page says otherwise.
 static SIGNAL_ONLINE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// The page reports whether its relay sockets are online.
+/// Kept for older pages: the relay sockets are the shell's now, and their status comes from them.
 #[tauri::command]
 pub fn engine_signal_status(online: bool) {
-    SIGNAL_ONLINE.store(online, Ordering::Relaxed);
+    let _ = online;
+}
+
+/// Whether the relay sockets are online now (a page that opens late asks instead of waiting for a change).
+#[tauri::command]
+pub fn engine_signal_online(app: AppHandle) -> bool {
+    native(&app).online()
 }
 
 /// Starts run one at a time: two calls racing (a remount, a reload) must not both open engine.db and both run an engine.
@@ -183,8 +312,6 @@ pub async fn engine_start(app: AppHandle, state: State<'_, EngineState>) -> Resu
         .get_or_init(|| tauri::async_runtime::Mutex::new(()))
         .lock()
         .await;
-    // A new page reports its sockets afresh; until then, nothing is known to be online.
-    SIGNAL_ONLINE.store(false, Ordering::Relaxed);
     if state
         .0
         .lock()
@@ -201,7 +328,7 @@ pub async fn engine_start(app: AppHandle, state: State<'_, EngineState>) -> Resu
         let _ = std::fs::remove_file(dir.join(old));
     }
     let db = dir.join("engine.db");
-    let (a, b) = (app.clone(), app.clone());
+    let (a, b, app_for_network) = (app.clone(), app.clone(), app.clone());
     let host = tauri::async_runtime::spawn_blocking(move || {
         DesktopHost::start(
             &db.to_string_lossy(),
@@ -228,6 +355,10 @@ pub async fn engine_start(app: AppHandle, state: State<'_, EngineState>) -> Resu
         .0
         .lock()
         .map_err(|_| "engine state is poisoned".to_owned())? = Some(Running { host, stop });
+    // Started in the tray with no page yet: the relays from last time.
+    if let Some(saved) = saved_network(&app_for_network) {
+        apply_network(&app_for_network, &saved);
+    }
     Ok(())
 }
 
@@ -240,6 +371,18 @@ pub async fn engine_invoke(
     args: Value,
 ) -> Result<Value, String> {
     let host = running(&state)?;
+    if let (Some(peer), Ok(mut linked)) = (args.get("peer").and_then(Value::as_str), LINKED.lock())
+    {
+        match command.as_str() {
+            "link_up" => {
+                linked.insert(peer.to_owned());
+            }
+            "link_down" => {
+                linked.remove(peer);
+            }
+            _ => {}
+        }
+    }
     tauri::async_runtime::spawn_blocking(move || host.invoke(&command, &args))
         .await
         .map_err(|e| e.to_string())?

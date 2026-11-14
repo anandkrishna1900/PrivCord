@@ -81,6 +81,8 @@ export function loadSettings(): AppSettings {
 
 export function saveSettings(settings: AppSettings): void {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  // The shell shows notifications while the window is closed: it needs these choices.
+  void import('./network').then((n) => n.pushNativeConfig({ enabled: settings.notificationsEnabled, previews: settings.notificationPreviews }));
 }
 
 export function resolvedTheme(mode: ThemeMode): 'dark' | 'light' {

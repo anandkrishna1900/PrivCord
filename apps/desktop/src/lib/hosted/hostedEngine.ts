@@ -40,7 +40,7 @@ export interface HostedDeps {
   /** The identity the app holds. If the engine reports a different one, starting stops with a clear message. */
   expectedUid?: string;
   /** Tests replace the WebRTC links and relay sockets. */
-  runtimeOverrides?: Partial<Pick<RuntimeOptions, 'createTransport' | 'createHub' | 'createBle' | 'now'>>;
+  runtimeOverrides?: Partial<Pick<RuntimeOptions, 'createTransport' | 'createHub' | 'createBle' | 'now' | 'nativeSignaling'>>;
 }
 
 /** The credential-store key the shell keeps the engine's identity under (see `engine_host.rs`). */

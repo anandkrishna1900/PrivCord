@@ -2,17 +2,17 @@
 //! opens it again or quits, the app can start at login (hidden, in the tray), and a second launch only brings the
 //! first window forward.
 //!
-//! ponytail: the page stays alive while hidden, because the relay sockets and WebRTC links live in it. Tearing the
-//! page down in the tray needs native sockets for the engine's relay clients (docs/design/syncengine.md, step 4).
+//! Closing the window really closes it (the web page and its memory go); the engine, its relay sockets and
+//! notifications are Rust and keep running. The tray icon builds the window again.
 
 use std::path::PathBuf;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, Runtime, WindowEvent};
+use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_autostart::ManagerExt;
 
 /// Passed by the login item, so the app starts in the tray instead of opening a window.
-pub const HIDDEN_ARG: &str = "--hidden";
+pub const HIDDEN_ARG: &str = crate::HIDDEN_ARG;
 
 fn flag<R: Runtime>(app: &AppHandle<R>, name: &str) -> Option<PathBuf> {
     app.path().app_data_dir().ok().map(|d| d.join(name))
@@ -37,11 +37,14 @@ fn has_flag<R: Runtime>(app: &AppHandle<R>, name: &str) -> bool {
 }
 
 /// Closing the window keeps DuoCord running in the tray unless the person turned that off.
-fn close_to_tray<R: Runtime>(app: &AppHandle<R>) -> bool {
+pub fn close_to_tray<R: Runtime>(app: &AppHandle<R>) -> bool {
     !has_flag(app, "close-quits")
 }
 
-pub fn show_main<R: Runtime>(app: &AppHandle<R>) {
+pub fn show_main(app: &AppHandle) {
+    if app.get_webview_window("main").is_none() {
+        let _ = crate::open_window(app, false);
+    }
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
         let _ = w.show();
@@ -49,8 +52,8 @@ pub fn show_main<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-/// Builds the tray icon and makes closing the main window hide it.
-pub fn install<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
+/// Builds the tray icon. (Closing the window keeps the app running: see the exit handler in `lib.rs`.)
+pub fn install(app: &AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "Open DuoCord", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit DuoCord", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open, &quit])?;
@@ -77,19 +80,6 @@ pub fn install<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         tray = tray.icon(icon.clone());
     }
     tray.build(app)?;
-
-    if let Some(window) = app.get_webview_window("main") {
-        let handle = app.clone();
-        let hider = window.clone();
-        window.on_window_event(move |event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                if close_to_tray(&handle) {
-                    api.prevent_close();
-                    let _ = hider.hide();
-                }
-            }
-        });
-    }
     Ok(())
 }
 

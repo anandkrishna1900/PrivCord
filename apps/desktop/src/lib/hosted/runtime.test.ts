@@ -87,7 +87,7 @@ const blob = (): SealedBlob => ({
   v: 1, to: 'to', from: 'from', epk: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' }, iv: 'iv', ct: 'ct', sig: 'sig',
 }) as SealedBlob;
 
-function setup(network: Record<string, unknown> = {}) {
+function setup(network: Record<string, unknown> = {}, extra: Partial<ConstructorParameters<typeof HostedRuntime>[0]> = {}) {
   const b = fakeBridge();
   const transports: FakeTransport[] = [];
   net.state = 'connecting';
@@ -108,6 +108,7 @@ function setup(network: Record<string, unknown> = {}) {
       hubs.push(h);
       return h;
     },
+    ...extra,
   });
   runtime.setOwnUid('aaa'); // lower than 'bbb': we are the initiator towards 'bbb'
   // `hub` is the hub of the mailbox the test subscribes to ('mb'); `state` moves every relay on or off line at once.
@@ -158,6 +159,26 @@ describe('HostedRuntime dialing', () => {
     await flush();
     expect(sentSignals(t.calls).at(-1)).toEqual({ peer: 'ccc', kind: 'answer', sdp: 'ANSWER-SDP' });
     expect(t.transports.at(-1)!.answerFor).toBe('THEIR-OFFER');
+    t.runtime.stop();
+  });
+
+  it('with the shell owning the relay sockets, opens none and dials once the shell says they are online', async () => {
+    let created = 0;
+    const t = setup({}, { nativeSignaling: async () => false, createHub: () => ((created += 1), new FakeHub()) });
+    await t.runtime.attach();
+    t.runtime.setOwnUid('aaa');
+    await flush();
+    expect(created).toBe(0);
+    t.emit('event', { DialRequested: { peer: 'bbb', initiator: true } });
+    await flush();
+    expect(sentSignals(t.calls)).toHaveLength(0);
+
+    t.emit('signal-status', { online: true });
+    expect(t.runtime.signalingStatus()).toBe('online');
+    t.emit('event', { DialRequested: { peer: 'bbb', initiator: true } });
+    await flush();
+    expect(sentSignals(t.calls)).toEqual([{ peer: 'bbb', kind: 'offer', sdp: 'OFFER-SDP' }]);
+    expect(created).toBe(0);
     t.runtime.stop();
   });
 

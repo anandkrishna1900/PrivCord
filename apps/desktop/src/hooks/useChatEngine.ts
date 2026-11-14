@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ChatEngine, type ChatState } from '../lib/engine';
+import { pushNativeConfig } from '../lib/network';
 import type { ChatEngineApi } from '../lib/engineApi';
 import { hostedEngineEnabled } from '../lib/hosted/enable';
 import { startHostedEngine } from '../lib/hosted/start';
@@ -47,6 +48,9 @@ export function useChatEngine(): UseChatEngine {
         setEngine(hosted);
         unsubscribe = hosted.subscribe(setState);
         await hosted.start();
+        // The shell's relay sockets get the settings once the engine runs (and, after a start at sign-in, the hidden
+        // window can then go).
+        await pushNativeConfig();
         return;
       }
       const store = new LocalStore();
