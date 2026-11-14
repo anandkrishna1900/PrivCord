@@ -16,6 +16,7 @@ pub mod ble;
 pub mod canonical;
 pub mod card;
 pub mod channel;
+pub mod devices;
 pub mod e2ee;
 pub mod error;
 pub mod group;

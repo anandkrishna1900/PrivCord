@@ -57,6 +57,7 @@ use std::{
 use zeroize::Zeroizing;
 
 mod backup;
+mod devices;
 mod invites;
 mod keys;
 mod legacy_groups;
@@ -226,6 +227,9 @@ pub struct Core {
     /// Protocol v2 keys for sealed blobs (ours and our contacts').
     keys: keys::KeyState,
     legacy_groups: Vec<crate::api::LegacyGroupView>,
+    /// This install's device id and the account's device list (`core/devices.rs`).
+    device_id: Option<String>,
+    device_list: Option<privcord_crypto::devices::DeviceList>,
     sealed: signaling::SealedState,
     /// Channel mailboxes we are listening on (the adapter opens the sockets).
     channel_subscribed: HashSet<String>,
@@ -285,6 +289,8 @@ impl Core {
             invites: invites::InviteState::default(),
             keys: keys::KeyState::default(),
             legacy_groups: Vec::new(),
+            device_id: None,
+            device_list: None,
             sealed: signaling::SealedState::default(),
             channel_subscribed: HashSet::new(),
             channel_people: BTreeMap::new(),
@@ -389,6 +395,7 @@ impl Core {
             .storage
             .kv(KV_GROUP_ONLY)?
             .is_some_and(|v| v == b"1");
+        self.ensure_devices()?;
         self.ensure_groups()?;
         if let Some(bytes) = self.ports.storage.kv(KV_CHANNELS)? {
             if let Ok(names) = serde_json::from_slice::<Vec<String>>(&bytes) {
