@@ -139,6 +139,31 @@ fn phone_and_laptop_catch_up_with_each_other_without_ever_being_online_together(
     laptop.online(&mut relay);
     assert_eq!(phone.core.sync_devices().len(), 1);
     assert_eq!(laptop.core.sync_devices().len(), 1);
+    // The two device lists (each install started its own) were merged and signed with the account key: one list,
+    // both devices, the same on both.
+    let (pl, ll) = (
+        phone.core.device_list().unwrap().clone(),
+        laptop.core.device_list().unwrap().clone(),
+    );
+    assert_eq!(pl.active().count(), 2);
+    // More rounds do not keep re-signing: the list settles.
+    for _ in 0..3 {
+        phone.online(&mut relay);
+        laptop.online(&mut relay);
+    }
+    assert_eq!(
+        phone.core.device_list().unwrap().version,
+        laptop.core.device_list().unwrap().version
+    );
+    assert_eq!(
+        phone.core.device_list().unwrap().version,
+        pl.version.max(ll.version),
+        "no merge loop"
+    );
+    assert_eq!(
+        pl.active().map(|d| d.id.clone()).collect::<Vec<_>>(),
+        ll.active().map(|d| d.id.clone()).collect::<Vec<_>>()
+    );
 
     // On the phone: a new friend and two messages. Then the phone goes away.
     let (card, fran) = friend(&clock);

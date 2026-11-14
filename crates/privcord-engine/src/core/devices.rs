@@ -16,7 +16,7 @@ use privcord_crypto::{
 use zeroize::Zeroizing;
 
 const KV_DEVICE_KEYS: &str = "devices.self";
-const KV_DEVICE_LIST: &str = "devices.list";
+pub(super) const KV_DEVICE_LIST: &str = "devices.list";
 /// The name the first device gets until the person names it.
 const FIRST_NAME: &str = "This device";
 

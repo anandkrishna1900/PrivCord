@@ -242,13 +242,43 @@ impl DeviceList {
         }
         for old in &self.devices {
             let new = next.get(&old.id).ok_or(DeviceError::Rewritten)?;
-            let same = new.sign == old.sign && new.dh == old.dh && new.added_at == old.added_at;
-            let removal_kept = old.removed_at.is_none() || new.removed_at == old.removed_at;
+            let same = new.sign == old.sign && new.dh == old.dh && new.added_at <= old.added_at;
+            let removal_kept = old.removed_at.is_none()
+                || new.removed_at.is_some_and(|r| Some(r) <= old.removed_at);
             if !same || !removal_kept {
                 return Err(DeviceError::Rewritten);
             }
         }
         Ok(())
+    }
+
+    /// Two lists of the same account that do not extend each other (an install restored from the recovery phrase
+    /// started its own): every device of both, with removals kept, signed as one list newer than either. Only a holder
+    /// of the account key can make it; every other device accepts it because it extends the list it had.
+    pub fn merged(&self, other: &DeviceList, account: &Identity) -> Result<Self, DeviceError> {
+        if self.account != other.account || account.uid()?.to_string() != self.account {
+            return Err(DeviceError::BadSignature);
+        }
+        let mut devices = self.devices.clone();
+        for theirs in &other.devices {
+            match devices.iter_mut().find(|d| d.id == theirs.id) {
+                Some(mine) => {
+                    if mine.sign != theirs.sign || mine.dh != theirs.dh {
+                        return Err(DeviceError::Rewritten);
+                    }
+                    mine.added_at = mine.added_at.min(theirs.added_at);
+                    mine.removed_at = match (mine.removed_at, theirs.removed_at) {
+                        (Some(a), Some(b)) => Some(a.min(b)),
+                        (a, b) => a.or(b),
+                    };
+                }
+                None => devices.push(theirs.clone()),
+            }
+        }
+        if devices.iter().filter(|d| d.active()).count() > MAX_DEVICES {
+            return Err(DeviceError::TooMany);
+        }
+        Self::signed(account, self.version.max(other.version) + 1, devices)
     }
 
     pub fn to_json(&self) -> String {
@@ -751,6 +781,46 @@ mod tests {
             .with_added(&account, DeviceEntry::new(&ident(), "W", 1).unwrap())
             .unwrap();
         assert_eq!(v3.accepts(&dropped, &a, &d), Err(DeviceError::Rewritten));
+    }
+
+    #[test]
+    fn forked_lists_are_merged_by_the_account_and_both_sides_accept_the_merge() {
+        let (account, phone, laptop, tablet) = (ident(), ident(), ident(), ident());
+        let (a, d) = (account.sign_public(), account.dh_public());
+        // The phone's list gained a tablet; a laptop restored from the phrase started its own list.
+        let phones = DeviceList::first(&account, &phone, "Phone", 1)
+            .unwrap()
+            .with_added(&account, DeviceEntry::new(&tablet, "Tablet", 2).unwrap())
+            .unwrap();
+        let laptops = DeviceList::first(&account, &laptop, "Laptop", 3).unwrap();
+        assert!(phones.accepts(&laptops, &a, &d).is_err());
+        let merged = laptops.merged(&phones, &account).unwrap();
+        assert_eq!(merged.active().count(), 3);
+        assert_eq!(merged.version, 3);
+        phones.accepts(&merged, &a, &d).unwrap();
+        laptops.accepts(&merged, &a, &d).unwrap();
+        let ids = |l: &DeviceList| {
+            l.devices
+                .iter()
+                .map(|d| d.id.clone())
+                .collect::<std::collections::BTreeSet<_>>()
+        };
+        assert_eq!(
+            ids(&merged),
+            ids(&phones.merged(&laptops, &account).unwrap()),
+            "the same devices from either side"
+        );
+
+        // A removal on either side survives the merge.
+        let tablet_id = phones.devices[1].id.clone();
+        let removed = phones.with_removed(&account, &tablet_id, 9).unwrap();
+        let merged2 = removed.merged(&merged, &account).unwrap();
+        assert!(!merged2.get(&tablet_id).unwrap().active());
+        removed.accepts(&merged2, &a, &d).unwrap();
+        merged.accepts(&merged2, &a, &d).unwrap();
+
+        // Someone without the account key cannot make one.
+        assert!(laptops.merged(&phones, &ident()).is_err());
     }
 
     #[test]

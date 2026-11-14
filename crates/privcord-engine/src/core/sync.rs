@@ -26,7 +26,7 @@ use privcord_crypto::{
     card::ContactCard,
     devices::DeviceList,
     identity::Identity,
-    selfbox::SelfBox,
+    selfbox::{device_inbox, open_from_device, seal_to_device, signed_by, SelfBox, SyncKey},
     synclog::{kind, Entry, Replica, Summary, Writer},
 };
 use privcord_domain::{blob::SealedBlob, signaling::PutKind, ConversationId, MessageId, UserId};
@@ -45,6 +45,10 @@ const KV_WRITER: &str = "sync.writer";
 const KV_INDEX: &str = "sync.index";
 const KV_LISTS: &str = "sync.lists";
 const KV_PUSHED: &str = "sync.pushed";
+/// The account's sync key (not the account key): `{ "v": version, "key": base64 }`.
+const KV_SYNC_KEY: &str = "sync.key";
+/// A device without the sync key asks the others for it this often.
+const ASK_KEY_EVERY_MS: i64 = 10 * 60 * 1000;
 /// Set on an install that restored an existing account from its recovery phrase.
 const KV_JOINED: &str = "sync.joined";
 /// Contacts and groups are not merge-rule kinds of the log; the engine applies them (unknown kinds pass through).
@@ -184,6 +188,11 @@ pub(super) struct SyncState {
     pushed: u64,
     /// How many events of each group were last put in the log.
     group_counts: BTreeMap<String, usize>,
+    /// The account's sync key; `None` on a linked device until another device of the account hands it over.
+    key: Option<SyncKey>,
+    /// This device's inbox (where the sync key is handed over) is being listened on.
+    inbox: Option<String>,
+    last_ask: i64,
 }
 
 struct NoFiles;
@@ -244,6 +253,25 @@ impl Core {
             }
         }
         let pushed = self.kv_json(KV_PUSHED).unwrap_or(0);
+        // The sync key: stored, or (a holder of the account key) derived; a linked device waits to be given it.
+        let mut key = self.kv_json::<Value>(KV_SYNC_KEY).and_then(|v| {
+            let version = u32::try_from(v.get("v")?.as_u64()?).ok()?;
+            SyncKey::from_bytes(
+                version,
+                &privcord_domain::codec::decode(v.get("key")?.as_str()?)?,
+            )
+        });
+        if key.is_none() {
+            if let Some(account) = &self.identity {
+                let derived = SyncKey::from_account(account)?;
+                Self::store_key(&*self.ports.storage, &derived);
+                key = Some(derived);
+            }
+        }
+        // The other devices of this account's own list.
+        if let Some(list) = &self.device_list {
+            others.extend(list.active().map(|d| d.id.clone()).filter(|d| d != &id));
+        }
         let group_counts = self
             .kv_json::<BTreeMap<String, Vec<Value>>>(super::KV_GROUPS)
             .unwrap_or_default()
@@ -261,8 +289,32 @@ impl Core {
             last_answer: i64::MIN / 2,
             pushed,
             group_counts,
+            key,
+            inbox: None,
+            last_ask: i64::MIN / 2,
         });
         Ok(())
+    }
+
+    fn store_key(storage: &dyn privcord_ports::Storage, key: &SyncKey) {
+        let value =
+            json!({ "v": key.version, "key": privcord_domain::codec::encode(&key.to_bytes()) });
+        let _ = storage.apply(&[StorageOp::SetKv {
+            key: KV_SYNC_KEY.into(),
+            value: value.to_string().into_bytes(),
+        }]);
+    }
+
+    /// The account's public keys, which every device has (device lists and posts are checked against them).
+    fn account_public(
+        &self,
+    ) -> Option<(
+        privcord_domain::blob::PublicJwk,
+        privcord_domain::blob::PublicJwk,
+    )> {
+        self.identity
+            .as_ref()
+            .map(|a| (a.sign_public(), a.dh_public()))
     }
 
     /// Other devices of this account seen so far (none until another install of it shows up).
@@ -393,13 +445,21 @@ impl Core {
     /// Posts `payload` to this week's self-mailbox.
     fn post_self(&mut self, payload: &Value) -> bool {
         let now = self.now();
-        let Some(account) = self.identity.as_ref() else {
+        let (Some(s), Some(own)) = (self.sync.as_ref(), self.device_id.clone()) else {
             return false;
         };
-        let Ok([this_week, _]) = SelfBox::current(account, now) else {
+        let Some(key) = s.key.as_ref() else {
             return false;
         };
-        let Ok(blob) = this_week.seal(account, payload, &mut *self.ports.entropy) else {
+        let Ok([this_week, _]) = SelfBox::current(key, now) else {
+            return false;
+        };
+        // Signed by this device; the payload says which device that is.
+        let mut payload = payload.clone();
+        if let Some(o) = payload.as_object_mut() {
+            o.insert("device".into(), json!(own));
+        }
+        let Ok(blob) = this_week.seal(&s.device, &payload, &mut *self.ports.entropy) else {
             return false;
         };
         self.ports
@@ -460,17 +520,24 @@ impl Core {
     /// Runs every engine tick, before the store-and-forward pass.
     pub(super) fn tick_sync(&mut self) {
         self.record();
-        if self.sync.is_none() || self.identity.is_none() {
+        if self.sync.is_none() {
             return;
         }
         if !self.ports.transport.signal_available() {
             if let Some(s) = self.sync.as_mut() {
                 s.subscribed.clear();
+                s.inbox = None;
             }
             return;
         }
         let now = self.now();
-        let labels: Vec<String> = match self.identity.as_ref().map(|a| SelfBox::current(a, now)) {
+        self.tick_inbox(now);
+        let labels: Vec<String> = match self
+            .sync
+            .as_ref()
+            .and_then(|s| s.key.as_ref())
+            .map(|k| SelfBox::current(k, now))
+        {
             Some(Ok(boxes)) => boxes.iter().map(|b| b.label.clone()).collect(),
             _ => return,
         };
@@ -532,29 +599,35 @@ impl Core {
 
     /// Is this mailbox one of our self-mailboxes?
     pub(super) fn is_self_mailbox(&self, mailbox: &str) -> bool {
-        self.sync
-            .as_ref()
-            .is_some_and(|s| s.subscribed.iter().any(|l| l == mailbox))
+        self.sync.as_ref().is_some_and(|s| {
+            s.subscribed.iter().any(|l| l == mailbox) || s.inbox.as_deref() == Some(mailbox)
+        })
     }
 
     /// A blob arrived on our self-mailbox.
     pub(super) fn sync_blob(&mut self, mailbox: &str, blob: &SealedBlob) {
         let now = self.now();
-        let Some(account) = self.identity.as_ref() else {
+        if self.sync.as_ref().and_then(|s| s.inbox.as_deref()) == Some(mailbox) {
+            self.inbox_blob(blob);
+            return;
+        }
+        let Some(key) = self.sync.as_ref().and_then(|s| s.key.clone()) else {
             return;
         };
-        let Ok(boxes) = SelfBox::current(account, now) else {
+        let Ok(boxes) = SelfBox::current(&key, now) else {
             return;
         };
         let Some(payload) = boxes
             .iter()
             .find(|b| b.label == mailbox)
-            .and_then(|b| b.open(account, blob))
+            .and_then(|b| b.open(blob))
         else {
             return;
         };
-        // The author's device list, checked against the account's keys.
-        let (sign, dh) = (account.sign_public(), account.dh_public());
+        // The author's device list, checked against the account's keys, and the post signed by that device in it.
+        let Some((sign, dh)) = self.account_public() else {
+            return;
+        };
         let Some(text) = payload.get("list").and_then(Value::as_str) else {
             return;
         };
@@ -562,6 +635,13 @@ impl Core {
             return;
         };
         if list.verify(&sign, &dh).is_err() {
+            return;
+        }
+        let author = payload
+            .get("device")
+            .and_then(Value::as_str)
+            .and_then(|d| list.get(d));
+        if !author.is_some_and(|d| d.active() && signed_by(blob, d)) {
             return;
         }
         if self.learn_list(&list, text) {
@@ -665,30 +745,198 @@ impl Core {
         }]);
     }
 
-    /// Remembers another install's device list. Returns whether it named a device we did not know.
+    /// Another device's copy of the account's device list (already checked against the account's keys). A newer
+    /// list that extends ours replaces it; two lists that fork (an install restored from the recovery phrase started
+    /// its own) are merged and signed by a device holding the account key. Returns whether a device we did not know
+    /// appeared.
     fn learn_list(&mut self, list: &DeviceList, text: &str) -> bool {
-        let own = self.device_id.clone().unwrap_or_default();
-        let Some(s) = self.sync.as_mut() else {
+        let Some((sign, dh)) = self.account_public() else {
             return false;
         };
-        let ids: Vec<String> = list
-            .devices
-            .iter()
-            .map(|d| d.id.clone())
-            .filter(|d| d != &own)
-            .collect();
-        if ids.iter().all(|d| s.others.contains(d)) {
+        let Some(current) = self.device_list.clone() else {
             return false;
+        };
+        // The same devices, signed separately (two holders of the account key merged at once): both sides keep the same
+        // one, chosen without signing anything new, so merges never go back and forth.
+        let same_devices = |a: &DeviceList, b: &DeviceList| {
+            let key = |l: &DeviceList| {
+                let mut v: Vec<(String, Option<i64>)> = l
+                    .devices
+                    .iter()
+                    .map(|d| (d.id.clone(), d.removed_at))
+                    .collect();
+                v.sort();
+                v
+            };
+            key(a) == key(b)
+        };
+        let next = if current.accepts(list, &sign, &dh).is_ok() {
+            Some(list.clone())
+        } else if list.accepts(&current, &sign, &dh).is_ok() || list == &current {
+            None
+        } else if same_devices(list, &current) {
+            (list.version > current.version
+                || (list.version == current.version && list.sig < current.sig))
+                .then(|| list.clone())
+        } else if let Some(merged) = self
+            .identity
+            .as_ref()
+            .and_then(|a| current.merged(list, a).ok())
+        {
+            Some(merged)
+        } else {
+            // A fork this device cannot sign a merge for: trust its devices until a holder of the account key does.
+            if let Some(s) = self.sync.as_mut() {
+                s.replica.vouch(list);
+                s.lists.push(text.to_owned());
+                let value = serde_json::to_vec(&s.lists).unwrap_or_default();
+                let _ = self.ports.storage.apply(&[StorageOp::SetKv {
+                    key: KV_LISTS.into(),
+                    value,
+                }]);
+            }
+            None
+        };
+        let own = self.device_id.clone().unwrap_or_default();
+        let before: BTreeSet<String> = self
+            .sync
+            .as_ref()
+            .map(|s| s.others.clone())
+            .unwrap_or_default();
+        if let Some(next) = next {
+            let _ = self.ports.storage.apply(&[StorageOp::SetKv {
+                key: super::devices::KV_DEVICE_LIST.into(),
+                value: next.to_json().into_bytes(),
+            }]);
+            if let Some(s) = self.sync.as_mut() {
+                s.replica.set_devices(next.clone());
+                s.others
+                    .extend(next.active().map(|d| d.id.clone()).filter(|d| d != &own));
+            }
+            self.device_list = Some(next);
         }
-        s.replica.vouch(list);
-        s.others.extend(ids);
-        s.lists.push(text.to_owned());
-        let value = serde_json::to_vec(&s.lists).unwrap_or_default();
-        let _ = self.ports.storage.apply(&[StorageOp::SetKv {
-            key: KV_LISTS.into(),
-            value,
-        }]);
-        true
+        if let Some(s) = self.sync.as_mut() {
+            s.others
+                .extend(list.active().map(|d| d.id.clone()).filter(|d| d != &own));
+            return s.others.len() > before.len();
+        }
+        false
+    }
+
+    /* ---------------------------------------------------------------- the device inbox (handing over the sync key) */
+
+    /// Listens on this device's inbox, and (a device without the sync key) asks the other devices for it.
+    fn tick_inbox(&mut self, now: i64) {
+        let Some(own) = self.device_id.clone() else {
+            return;
+        };
+        let label = device_inbox(&own);
+        if self
+            .sync
+            .as_ref()
+            .is_some_and(|s| s.inbox.as_deref() != Some(label.as_str()))
+            && self.ports.transport.signal_subscribe(&label).is_ok()
+        {
+            if let Some(s) = self.sync.as_mut() {
+                s.inbox = Some(label);
+            }
+        }
+        let asking = self
+            .sync
+            .as_ref()
+            .is_some_and(|s| s.key.is_none() && now - s.last_ask >= ASK_KEY_EVERY_MS);
+        if !asking {
+            return;
+        }
+        let (Some(list), Some(s)) = (self.device_list.clone(), self.sync.as_mut()) else {
+            return;
+        };
+        s.last_ask = now;
+        let payload = json!({ "t": "need-key", "list": list.to_json() });
+        for d in list.active().filter(|d| d.id != own) {
+            self.put_to_device(d, &payload);
+        }
+    }
+
+    fn put_to_device(&mut self, to: &privcord_crypto::devices::DeviceEntry, payload: &Value) {
+        let Some(s) = self.sync.as_ref() else { return };
+        let Ok(blob) = seal_to_device(&s.device, to, payload, &mut *self.ports.entropy) else {
+            return;
+        };
+        let _ = self.ports.transport.signal_put(
+            &device_inbox(&to.id),
+            &blob.encode(),
+            PutKind::Msg,
+            RELAY_TTL_SEC,
+        );
+    }
+
+    /// Something another device of this account sealed to this device.
+    fn inbox_blob(&mut self, blob: &SealedBlob) {
+        let (Some(list), Some(own)) = (self.device_list.clone(), self.device_id.clone()) else {
+            return;
+        };
+        let Some(own_entry) = list.get(&own).cloned() else {
+            return;
+        };
+        // The sender is a device of the account's list (by the id its keys give it).
+        let sender = list.active().find(|d| {
+            privcord_crypto::identity::uid_from_keys(&d.sign, &d.dh)
+                .is_ok_and(|u| u.as_str() == blob.from)
+        });
+        let Some(sender) = sender.cloned() else {
+            return;
+        };
+        let Some(payload) = self
+            .sync
+            .as_ref()
+            .and_then(|s| open_from_device(blob, &s.device, &own_entry, &sender))
+        else {
+            return;
+        };
+        match payload.get("t").and_then(Value::as_str) {
+            Some("need-key") => {
+                let Some(key) = self.sync.as_ref().and_then(|s| s.key.clone()) else {
+                    return;
+                };
+                let reply = json!({
+                    "t": "sync-key",
+                    "v": key.version,
+                    "key": privcord_domain::codec::encode(&key.to_bytes()),
+                    "list": list.to_json(),
+                });
+                self.put_to_device(&sender, &reply);
+            }
+            Some("sync-key") => {
+                let version = payload
+                    .get("v")
+                    .and_then(Value::as_u64)
+                    .and_then(|v| u32::try_from(v).ok());
+                let bytes = payload
+                    .get("key")
+                    .and_then(Value::as_str)
+                    .and_then(privcord_domain::codec::decode);
+                let Some(key) = version
+                    .zip(bytes)
+                    .and_then(|(v, b)| SyncKey::from_bytes(v, &b))
+                else {
+                    return;
+                };
+                let newer = self
+                    .sync
+                    .as_ref()
+                    .is_some_and(|s| s.key.as_ref().is_none_or(|k| k.version < key.version));
+                if newer {
+                    Self::store_key(&*self.ports.storage, &key);
+                    if let Some(s) = self.sync.as_mut() {
+                        s.key = Some(key);
+                        // Listen on the new key's mailbox from the next tick.
+                        s.subscribed.clear();
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 
     /// Another device said how far it has each log: send what it lacks, and ask for what we lack.
