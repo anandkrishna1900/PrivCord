@@ -79,6 +79,7 @@ rule(r"desktop/src/(components|hooks)/.*", "React components and hooks", "UI", "
 rule(r"desktop/src/(App|main|config|vite-env)\.tsx?|desktop/src/vite-env\.d\.ts", "App shell", "UI", "UI", UI, "Stays")
 # ---- tauri
 rule(r"src-tauri/src/(lib|main)\.rs", "Tauri shell: commands, keyring, notifications", "Desktop adapter + engine host", "Adapter", ADAPTER, "Stays; hosts the engine from M7")
+rule(r"src-tauri/src/tray\.rs", "Tray icon, close to tray, start at login, one instance", "Desktop adapter", "Adapter", ADAPTER, "Stays")
 rule(r"src-tauri/src/ble\.rs", "Native BLE central", "BLE adapter", "Adapter", ADAPTER, "Stays")
 rule(r"src-tauri/src/engine_host\.rs", "Hosts the Rust engine in the shell: keyring secret store, events to the page", "Desktop adapter + engine host", "Adapter", ADAPTER, "Stays; M7 seam (page not rewired yet)")
 rule(r"desktop/src/lib/engineBridge(\.test)?\.ts", "Page side of the hosted engine: ordered inbound calls, Busy retry, Tauri events", "Desktop adapter + engine host", "Adapter", ADAPTER, "Stays; M7 seam (page not rewired yet)")
@@ -102,6 +103,7 @@ rule(r"android/.*/data/Preferences\.kt", "App settings storage", "UI state (stay
 rule(r"android/.*/data/Themes\.kt", "Themes", "UI", "UI", UI, "Stays")
 rule(r"android/.*/data/local/DuoDatabase\.kt", "Room database", "storage::SqliteStorage; privcord-import (Room importer, Keystore decryptor supplied by the app)", "Storage", PORTED, "M8: after the importer has run on every install", "importer tests on generated Room v7 fixtures")
 rule(r"android/.*/engine/ChatEngineApi\.kt", "The interface the screens use to talk to a chat engine (the Rust engine)", "Platform seam (stays)", "Adapter", ADAPTER, "Stays")
+rule(r"android/.*/engine/BackgroundPolicy\.kt", "Reports battery, network and screen state to the shared background policy and passes its decision on", "domain::background (decision); platform adapter (reading the phone)", "Adapter", ADAPTER, "Stays")
 rule(r"android/.*/engine/EngineHost\.kt", "Keeps the running engine in the process so it outlives the screen", "Platform seam (stays)", "Adapter", ADAPTER, "Stays")
 rule(r"android/.*/notifications/.*", "Notifications and background service", "Notifier adapter", "Adapter", ADAPTER, "Stays")
 rule(r"android/.*/p2p/(IceServers|LinkTransport|WebRtcTransport)\.kt", "ICE servers, WebRTC data channel", "WebRTC adapter", "Adapter", ADAPTER, "Stays")

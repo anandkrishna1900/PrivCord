@@ -6,7 +6,7 @@ import type { AppSettings, ThemeMode } from '../lib/settings';
 import { ACCENTS } from '../lib/settings';
 import { THEMES, themeVars } from '../lib/themes';
 import { ensureNotificationPermission } from '../lib/notifications';
-import { config } from '../config';
+import { config, isTauri } from '../config';
 import { Modal } from './Modal';
 import { NetworkSettings } from './NetworkSettings';
 import { AlertIcon, CheckIcon, KeyIcon, TrashIcon } from './Icons';
@@ -20,6 +20,48 @@ const SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: 'security', label: 'Security' },
   { id: 'about', label: 'About' },
 ];
+
+interface BackgroundSettings {
+  closeToTray: boolean;
+  startAtLogin: boolean;
+}
+
+/** Desktop only: keep running in the tray when the window closes, and start at sign-in (in the tray). */
+function BackgroundToggles() {
+  const [value, setValue] = useState<BackgroundSettings | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void import('@tauri-apps/api/core')
+      .then(({ invoke }) => invoke<BackgroundSettings>('background_settings'))
+      .then(setValue)
+      .catch(() => setValue(null));
+  }, []);
+  if (!value) return null;
+  const change = (command: string, key: keyof BackgroundSettings, on: boolean) => {
+    setError(null);
+    void import('@tauri-apps/api/core')
+      .then(({ invoke }) => invoke(command, { on }))
+      .then(() => setValue({ ...value, [key]: on }))
+      .catch((e: unknown) => setError(String((e as Error)?.message ?? e)));
+  };
+  return (
+    <>
+      <Toggle
+        label="Keep running in the tray"
+        description="Closing the window keeps DuoCord running in the tray, so messages still arrive and notify you. Quit from the tray icon."
+        checked={value.closeToTray}
+        onChange={(on) => change('set_close_to_tray', 'closeToTray', on)}
+      />
+      <Toggle
+        label="Start when you sign in"
+        description="Starts DuoCord in the tray when you sign in to your computer."
+        checked={value.startAtLogin}
+        onChange={(on) => change('set_start_at_login', 'startAtLogin', on)}
+      />
+      {error ? <p className="small" role="alert">{error}</p> : null}
+    </>
+  );
+}
 
 function Toggle({
   checked,
@@ -370,7 +412,7 @@ export function SettingsDialog({
             )}
             <Toggle
               label="Notifications"
-              description="Show a system notification for new messages while the app is open."
+              description="Show a system notification for new messages while DuoCord is running, also from the tray."
               checked={settings.notificationsEnabled}
               onChange={(value) => {
                 updateSettings({ notificationsEnabled: value });
@@ -384,6 +426,7 @@ export function SettingsDialog({
               onChange={(value) => updateSettings({ notificationPreviews: value })}
               disabled={!settings.notificationsEnabled}
             />
+            {isTauri() ? <BackgroundToggles /> : null}
           </section>
         ) : null}
 

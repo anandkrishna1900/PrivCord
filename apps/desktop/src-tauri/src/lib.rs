@@ -2,6 +2,8 @@
 mod ble;
 #[cfg(desktop)]
 mod engine_host;
+#[cfg(desktop)]
+mod tray;
 
 const SERVICE: &str = "com.duochat.desktop";
 
@@ -175,18 +177,36 @@ fn open_main_window(app: &tauri::App) -> tauri::Result<()> {
         .ok_or_else(|| tauri::Error::WindowNotFound)?;
     #[allow(unused_mut)]
     let mut builder = tauri::WebviewWindowBuilder::from_config(handle, &config)?;
+    // Started at login: stay in the tray until the person opens the window.
+    #[cfg(desktop)]
+    if std::env::args().any(|a| a == tray::HIDDEN_ARG) {
+        builder = builder.visible(false);
+    }
     #[cfg(desktop)]
     if tor_flag(handle).is_some_and(|f| f.exists()) {
         TOR_MODE.store(true, std::sync::atomic::Ordering::Relaxed);
         builder = builder.proxy_url(tauri::Url::parse(TOR_PROXY).expect("valid proxy url"));
     }
     builder.build()?;
+    #[cfg(desktop)]
+    tray::install(handle)?;
     Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // One copy at a time: a second launch brings the first window forward (it must be the first plugin).
+    #[cfg(desktop)]
+    let builder = builder
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            tray::show_main(app)
+        }))
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![tray::HIDDEN_ARG]),
+        ));
+    let builder = builder
         .plugin(tauri_plugin_notification::init())
         .setup(|app| Ok(open_main_window(app)?));
     #[cfg(desktop)]
@@ -200,6 +220,9 @@ pub fn run() {
         secret_delete,
         tor_mode,
         set_tor_mode,
+        tray::background_settings,
+        tray::set_close_to_tray,
+        tray::set_start_at_login,
         ble_commands::ble_capabilities,
         ble_commands::ble_connect,
         ble_commands::ble_write,
