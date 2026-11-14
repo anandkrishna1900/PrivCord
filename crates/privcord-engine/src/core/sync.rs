@@ -47,8 +47,12 @@ const KV_LISTS: &str = "sync.lists";
 const KV_PUSHED: &str = "sync.pushed";
 /// Set on an install that restored an existing account from its recovery phrase.
 const KV_JOINED: &str = "sync.joined";
-/// Contacts are not a merge-rule kind of the log; they are applied by the engine (unknown kinds pass through).
+/// Contacts and groups are not merge-rule kinds of the log; the engine applies them (unknown kinds pass through).
 const KIND_CONTACT: &str = "contact";
+/// One group's signed events (membership, name): merged event by event, each one checked again.
+const KIND_GROUP: &str = "group";
+/// Set once this install has put the history it had before sync into its log.
+const KV_BACKFILLED: &str = "sync.backfilled";
 const SETTING_MUTED: &str = "muted";
 const HELLO_EVERY_MS: i64 = 10 * 60 * 1000;
 /// An answer to a hello is sent at most this often (several devices may ask at once).
@@ -91,6 +95,13 @@ impl Recorder {
     fn quiet(&self, on: bool) {
         self.quiet.store(on, Ordering::SeqCst);
     }
+
+    /// Queues changes as if they had just been stored (the history that predates sync).
+    fn push(&self, ops: Vec<StorageOp>) {
+        if let Ok(mut q) = self.queue.lock() {
+            q.extend(ops);
+        }
+    }
 }
 
 impl Storage for Recorder {
@@ -109,7 +120,13 @@ impl Storage for Recorder {
                 | StorageOp::DeleteMessage(_)
                 | StorageOp::SetReaction { .. }
                 | StorageOp::PutContact(_) => true,
-                StorageOp::SetKv { key, .. } => key == super::social::KV_MUTED,
+                StorageOp::SetKv { key, .. } => {
+                    key == super::social::KV_MUTED || key == super::KV_GROUPS
+                }
+                // A message read here (the engine decides below whether it was someone else's).
+                StorageOp::SetDelivery {
+                    read_at: Some(_), ..
+                } => true,
                 _ => false,
             })
             .cloned()
@@ -165,6 +182,8 @@ pub(super) struct SyncState {
     last_answer: i64,
     /// Our own entries up to this number have been posted.
     pushed: u64,
+    /// How many events of each group were last put in the log.
+    group_counts: BTreeMap<String, usize>,
 }
 
 struct NoFiles;
@@ -225,6 +244,12 @@ impl Core {
             }
         }
         let pushed = self.kv_json(KV_PUSHED).unwrap_or(0);
+        let group_counts = self
+            .kv_json::<BTreeMap<String, Vec<Value>>>(super::KV_GROUPS)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(id, events)| (id, events.len()))
+            .collect();
         self.sync = Some(SyncState {
             device,
             writer,
@@ -235,6 +260,7 @@ impl Core {
             last_hello: i64::MIN / 2,
             last_answer: i64::MIN / 2,
             pushed,
+            group_counts,
         });
         Ok(())
     }
@@ -296,12 +322,40 @@ impl Core {
                         items.push((KIND_CONTACT, v));
                     }
                 }
+                StorageOp::SetKv { key, value } if key == super::KV_GROUPS => {
+                    let groups: BTreeMap<String, Vec<Value>> =
+                        serde_json::from_slice(&value).unwrap_or_default();
+                    for (id, events) in groups {
+                        let known = self
+                            .sync
+                            .as_ref()
+                            .and_then(|s| s.group_counts.get(&id))
+                            .copied();
+                        if known == Some(events.len()) {
+                            continue;
+                        }
+                        if let Some(s) = self.sync.as_mut() {
+                            s.group_counts.insert(id.clone(), events.len());
+                        }
+                        items.push((KIND_GROUP, json!({ "id": id, "events": events })));
+                    }
+                }
                 StorageOp::SetKv { value, .. } => {
                     let list: Value = serde_json::from_slice(&value).unwrap_or(json!([]));
                     items.push((
                         kind::SETTING,
                         json!({ "key": SETTING_MUTED, "value": list }),
                     ));
+                }
+                StorageOp::SetDelivery { id, .. } => {
+                    // Only messages from someone else count as read; our own messages' ticks are not synced.
+                    let theirs = self
+                        .messages
+                        .get(&id)
+                        .is_some_and(|m| Some(&m.message.sender_id) != self.uid.as_ref());
+                    if theirs {
+                        items.push((kind::SEEN, json!({ "target": id })));
+                    }
                 }
                 _ => {}
             }
@@ -511,7 +565,9 @@ impl Core {
             return;
         }
         if self.learn_list(&list, text) {
-            // A device we did not know: tell it about us, so it starts posting what it writes.
+            // A device we did not know: tell it about us, so it starts posting what it writes, and give it our history.
+            self.backfill();
+            self.record();
             self.post_hello();
         }
         match payload.get("t").and_then(Value::as_str) {
@@ -536,6 +592,69 @@ impl Core {
             }
             _ => {}
         }
+    }
+
+    /// Puts what this install held before sync into its log, once: contacts, groups, messages (newest first), their
+    /// reactions, deletions and read marks. Runs when another device of the account first shows up, so that device
+    /// gets the whole history, not only what changes from now on.
+    fn backfill(&mut self) {
+        if matches!(self.ports.storage.kv(KV_BACKFILLED), Ok(Some(_))) {
+            return;
+        }
+        let mut ops: Vec<StorageOp> = self
+            .contacts
+            .values()
+            .map(|c| StorageOp::PutContact(c.stored.clone()))
+            .collect();
+        if let Ok(Some(value)) = self.ports.storage.kv(super::KV_GROUPS) {
+            if let Some(s) = self.sync.as_mut() {
+                s.group_counts.clear();
+            }
+            ops.push(StorageOp::SetKv {
+                key: super::KV_GROUPS.into(),
+                value,
+            });
+        }
+        let mut rows: Vec<&StoredMessage> = self
+            .messages
+            .values()
+            .filter(|m| !matches!(m.conversation, ConversationId::Channel(_)))
+            .collect();
+        rows.sort_by_key(|m| std::cmp::Reverse(m.message.client_created_at));
+        for m in rows {
+            let id = m.message.message_id.clone();
+            ops.push(StorageOp::InsertMessage(m.clone()));
+            if self.deleted.contains(&id) {
+                ops.push(StorageOp::Tombstone(id.clone()));
+            }
+            if m.message.read_at.is_some() {
+                ops.push(StorageOp::SetDelivery {
+                    id: id.clone(),
+                    state: m.message.delivery_state,
+                    read_at: m.message.read_at,
+                });
+            }
+            for (uid, emoji) in self.reactions.get(&id).into_iter().flatten() {
+                ops.push(StorageOp::SetReaction {
+                    message_id: id.clone(),
+                    uid: uid.clone(),
+                    emoji: Some(emoji.clone()),
+                });
+            }
+        }
+        if let Ok(list) =
+            serde_json::to_vec(&self.muted.iter().map(UserId::as_str).collect::<Vec<_>>())
+        {
+            ops.push(StorageOp::SetKv {
+                key: super::social::KV_MUTED.into(),
+                value: list,
+            });
+        }
+        self.recorder.push(ops);
+        let _ = self.ports.storage.apply(&[StorageOp::SetKv {
+            key: KV_BACKFILLED.into(),
+            value: b"1".to_vec(),
+        }]);
     }
 
     /// Marks this install as joining an account that already exists (restored from the recovery phrase).
@@ -638,6 +757,7 @@ impl Core {
         let mut contacts = Vec::new();
         let mut touched: BTreeSet<String> = BTreeSet::new();
         let mut muted: Option<Value> = None;
+        let mut groups: Vec<(String, Vec<Value>)> = Vec::new();
         for e in entries {
             match e.kind.as_str() {
                 kind::MESSAGE => {
@@ -652,6 +772,19 @@ impl Core {
                     }
                 }
                 KIND_CONTACT => contacts.push(e.body.clone()),
+                KIND_GROUP => {
+                    if let (Some(id), Some(events)) = (
+                        e.body.get("id").and_then(Value::as_str),
+                        e.body.get("events").and_then(Value::as_array),
+                    ) {
+                        groups.push((id.to_owned(), events.clone()));
+                    }
+                }
+                kind::SEEN => {
+                    if let Some(id) = e.body.get("target").and_then(Value::as_str) {
+                        touched.insert(id.to_owned());
+                    }
+                }
                 kind::SETTING
                     if e.body.get("key").and_then(Value::as_str) == Some(SETTING_MUTED) =>
                 {
@@ -678,9 +811,49 @@ impl Core {
                 );
             }
         }
+        // Groups: each event is checked again and added to what this install has (never replacing it).
+        if !groups.is_empty() {
+            let mut saved: BTreeMap<String, Vec<Value>> =
+                self.kv_json(super::KV_GROUPS).unwrap_or_default();
+            for (id, events) in groups {
+                let mut log = privcord_crypto::group::GroupLog::new(&id);
+                for e in saved.get(&id).into_iter().flatten().chain(events.iter()) {
+                    let _ = log.add(e);
+                }
+                let all: Vec<Value> = log
+                    .all()
+                    .iter()
+                    .map(privcord_crypto::group::GroupEvent::to_value)
+                    .collect();
+                if !all.is_empty() {
+                    if let Some(s) = self.sync.as_mut() {
+                        s.group_counts.insert(id.clone(), all.len());
+                    }
+                    saved.insert(id, all);
+                }
+            }
+            if let Ok(value) = serde_json::to_vec(&saved) {
+                let _ = self.ports.storage.apply(&[StorageOp::SetKv {
+                    key: super::KV_GROUPS.into(),
+                    value,
+                }]);
+            }
+        }
         // Deletes and reactions, as the merged state has them, for every message these entries touched (in any
         // order: a reaction that came before its message is applied now that the message is here).
         let mut ops: Vec<StorageOp> = Vec::new();
+        // Unread messages as storage has them now (just imported ones included), read once.
+        let unread: std::collections::HashMap<MessageId, privcord_domain::message::DeliveryState> =
+            self.ports
+                .storage
+                .messages()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|m| {
+                    m.message.read_at.is_none() && touched.contains(m.message.message_id.as_str())
+                })
+                .map(|m| (m.message.message_id, m.message.delivery_state))
+                .collect();
         if let Some(s) = self.sync.as_ref() {
             let state = s.replica.state();
             for id in &touched {
@@ -694,6 +867,15 @@ impl Core {
                 if state.is_hidden(id) {
                     ops.push(StorageOp::DeleteMessage(mid));
                     continue;
+                }
+                if state.is_seen(id) {
+                    if let Some(delivery) = unread.get(&mid) {
+                        ops.push(StorageOp::SetDelivery {
+                            id: mid.clone(),
+                            state: *delivery,
+                            read_at: Some(now),
+                        });
+                    }
                 }
                 for (by, emoji) in state.reactions_raw(id) {
                     if let Ok(uid) = UserId::new(by.as_str()) {

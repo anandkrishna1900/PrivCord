@@ -281,6 +281,8 @@ pub struct State {
     edits: BTreeMap<String, Lww<String>>,
     deleted: BTreeSet<String>,
     hidden: BTreeSet<String>,
+    /// Messages read on some device: read everywhere (risk 21).
+    seen: BTreeSet<String>,
     reactions: BTreeMap<(String, String), Lww<Option<String>>>,
     read: BTreeMap<String, Hlc>,
     settings: BTreeMap<String, Lww<Value>>,
@@ -292,6 +294,7 @@ pub mod kind {
     pub const EDIT: &str = "edit";
     pub const DELETE: &str = "delete";
     pub const HIDE: &str = "hide";
+    pub const SEEN: &str = "seen";
     pub const REACT: &str = "react";
     pub const READ: &str = "read";
     pub const SETTING: &str = "setting";
@@ -346,6 +349,9 @@ impl State {
             }
             kind::DELETE => {
                 self.deleted.insert(id_field(b, "target")?.to_owned());
+            }
+            kind::SEEN => {
+                self.seen.insert(id_field(b, "target")?.to_owned());
             }
             kind::HIDE => {
                 self.hidden.insert(id_field(b, "target")?.to_owned());
@@ -426,6 +432,10 @@ impl State {
 
     pub fn is_deleted(&self, message: &str) -> bool {
         self.deleted.contains(message)
+    }
+
+    pub fn is_seen(&self, message: &str) -> bool {
+        self.seen.contains(message)
     }
 
     pub fn is_hidden(&self, message: &str) -> bool {

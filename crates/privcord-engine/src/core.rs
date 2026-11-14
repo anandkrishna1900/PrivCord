@@ -89,7 +89,7 @@ const DIAL_GRACE_MS: i64 = 8_000;
 const RECONNECT_ON_SEND_AFTER_MS: i64 = 30_000;
 const KV_DEVICE_ID: &str = "device_id";
 const KV_GROUP_ONLY: &str = "settings.group_only";
-const KV_GROUPS: &str = "groups.v1";
+pub(super) const KV_GROUPS: &str = "groups.v1";
 const KV_CHANNELS: &str = "channels.v1";
 const KV_CHANNEL_PEOPLE: &str = "channel.people.v1";
 /// Channel authors whose names we remember at most.

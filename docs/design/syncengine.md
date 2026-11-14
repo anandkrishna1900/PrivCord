@@ -587,16 +587,16 @@ Each step ships with its tests and leaves the app working.
 
 What step 4 does today:
 
-- **Recording.** Every change stored in the engine that matters gets an entry: messages sent or received (not open-channel posts), deletes for everyone and for me, reactions, contacts, mutes. The storage port is wrapped, so a new code path cannot forget to sync.
+- **Recording.** Every change stored in the engine that matters gets an entry: messages sent or received (not open-channel posts), deletes for everyone and for me, reactions, contacts, mutes, read marks (once read on one device, read on all) and group membership (each group's signed events, merged event by event). The storage port is wrapped, so a new code path cannot forget to sync.
+- **History from before sync.** When an install first meets another device of the account, it puts everything it already had (contacts, groups, messages newest first, reactions, deletions, read marks, mutes) into its log once.
 - **Posting.** Entries go to the self-mailbox on the relays the person has configured, before the store-and-forward pass of the same tick.
 - **Catching up.** Hellos and answers carry exactly the missing entries; entries are applied the way a restored backup is, and nothing is sent to friends twice.
 - **Who syncs.** Today that is installs of one account restored from the recovery phrase: their device lists vouch for each other. A lone install posts nothing.
-- **Tested:** phone and laptop never online together, a restart, a stranger on the relay.
+- **Tested:** phone and laptop never online together, a restart, a stranger on the relay, and a laptop restored a day later getting the phone's earlier history (a friend's message, a reply, a reaction, a group), with a read mark going back to the phone.
 
 Not yet:
 
-- **Read marks and delivery ticks.** Unread state and delivery ticks are not synced.
-- **Groups.** Group membership is not synced (group messages are, as rows).
+- **Delivery ticks.** The delivery ticks of your own messages are not synced.
 - **File bytes.** Only file metadata is synced; the bytes come with step 6.
 - **Delivery waiting for its sync copy.** A message delivered over a direct link in the second before the tick is ahead of its sync copy (step 5).
 - **The desktop page in the tray.** It stays alive, because it owns the relay sockets; moving the sockets into Rust is still to do.

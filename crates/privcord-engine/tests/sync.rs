@@ -317,3 +317,84 @@ fn a_restarted_install_carries_on_its_log_without_reusing_a_number() {
         laptop.core.sync_fingerprint()
     );
 }
+
+#[test]
+fn history_from_before_sync_groups_and_read_marks_reach_a_restored_install() {
+    let clock = FakeClock::at(1_700_000_000_000);
+    let mut relay = Relay::default();
+    let mut phone = Device::new("phone", &clock);
+    let phrase = phone.core.create_identity().unwrap();
+    let mut fran = Device::new("fran", &clock);
+    fran.core.create_identity().unwrap();
+    let fran_uid = fran.core.own_uid().unwrap().clone();
+    let phone_card = phone.core.own_card(Some("Pat")).unwrap();
+    let fran_card = fran.core.own_card(Some("Fran")).unwrap();
+    phone
+        .core
+        .add_contact(&fran_card, ContactTrust::Verified)
+        .unwrap();
+    fran.core
+        .add_contact(&phone_card, ContactTrust::Verified)
+        .unwrap();
+
+    // Fran writes while the phone is away; the relay keeps it (store and forward), the phone picks it up.
+    fran.core.set_store_forward(true).unwrap();
+    fran.core
+        .send_message(phone.core.own_uid().unwrap(), "hello phone", None)
+        .unwrap();
+    fran.online(&mut relay);
+    phone.online(&mut relay);
+    assert_eq!(phone.texts(), ["hello phone"]);
+
+    // The phone's history before any other device exists: a reply, a reaction, a group.
+    phone.core.send_message(&fran_uid, "reply", None).unwrap();
+    let hello = phone.message_id("hello phone");
+    phone.core.react(&hello, "😂").unwrap();
+    phone
+        .core
+        .create_group("Trip", std::slice::from_ref(&fran_uid))
+        .unwrap();
+    phone.online(&mut relay);
+
+    // Much later a laptop is restored from the phrase and meets the phone through the relay.
+    clock.advance(86_400_000);
+    let mut laptop = Device::new("laptop", &clock);
+    laptop.core.recover_identity(&phrase, "").unwrap();
+    laptop.online(&mut relay);
+    phone.online(&mut relay);
+    laptop.online(&mut relay);
+
+    let snap = laptop.core.snapshot();
+    assert!(
+        snap.contacts.iter().any(|c| c.uid == fran_uid),
+        "the friend"
+    );
+    assert_eq!(laptop.texts(), ["hello phone", "reply"], "the messages");
+    assert!(snap.groups.iter().any(|g| g.name == "Trip"), "the group");
+    assert!(
+        snap.reactions
+            .iter()
+            .any(|(id, r)| id == &hello && r.iter().any(|(_, e)| e == "😂")),
+        "the reaction"
+    );
+
+    // Read on the laptop, read on the phone (and nothing new for Fran: the laptop already told her nothing twice).
+    let unread = |d: &Device| {
+        d.core
+            .snapshot()
+            .messages
+            .into_iter()
+            .flat_map(|(_, v)| v)
+            .filter(|m| m.text == "hello phone" && m.read_at.is_none())
+            .count()
+    };
+    assert_eq!(unread(&laptop), 1);
+    laptop.core.mark_read(&fran_uid).unwrap();
+    laptop.online(&mut relay);
+    phone.online(&mut relay);
+    assert_eq!(unread(&phone), 0, "read on the laptop, read on the phone");
+    assert_eq!(
+        phone.core.sync_fingerprint(),
+        laptop.core.sync_fingerprint()
+    );
+}
