@@ -282,7 +282,7 @@ jobs:
         working-directory: fuzz
         run: |
           python3 seed_corpus.py ../docs corpus
-          for t in parsers text_decoders ble_reassembly engine_untrusted; do
+          for t in parsers text_decoders ble_reassembly engine_untrusted sync_log; do
             mkdir -p corpus/$t
             cargo +nightly fuzz run $t corpus/$t -- -max_total_time=60 -rss_limit_mb=2048
           done

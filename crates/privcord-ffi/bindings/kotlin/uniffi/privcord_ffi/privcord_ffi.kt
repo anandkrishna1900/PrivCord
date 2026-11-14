@@ -1042,6 +1042,8 @@ internal open class UniffiVTableCallbackInterfaceTransportCallbacks(
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1250,6 +1252,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_privcord_ffi_fn_method_transportcallbacks_signal_put(`ptr`: Pointer,`mailbox`: RustBuffer.ByValue,`blob`: RustBuffer.ByValue,`kind`: RustBuffer.ByValue,`ttlSec`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    fun uniffi_privcord_ffi_fn_func_background_plan(`state`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_func_core_version(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_func_import_legacy_android(`oldDbPath`: RustBuffer.ByValue,`decryptor`: Pointer,`newDbPath`: RustBuffer.ByValue,`ownUid`: RustBuffer.ByValue,`files`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1370,6 +1374,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_privcord_ffi_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_privcord_ffi_checksum_func_background_plan(
+    ): Short
     fun uniffi_privcord_ffi_checksum_func_core_version(
     ): Short
     fun uniffi_privcord_ffi_checksum_func_import_legacy_android(
@@ -1545,6 +1551,9 @@ private fun uniffiCheckContractApiVersion(lib: UniffiLib) {
 
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: UniffiLib) {
+    if (lib.uniffi_privcord_ffi_checksum_func_background_plan() != 60086.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_privcord_ffi_checksum_func_core_version() != 14917.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1828,6 +1837,29 @@ inline fun <T : Disposable?, R> T.use(block: (T) -> R) =
  * @suppress
  * */
 object NoPointer
+
+/**
+ * @suppress
+ */
+public object FfiConverterUByte: FfiConverter<UByte, Byte> {
+    override fun lift(value: Byte): UByte {
+        return value.toUByte()
+    }
+
+    override fun read(buf: ByteBuffer): UByte {
+        return lift(buf.get())
+    }
+
+    override fun lower(value: UByte): Byte {
+        return value.toByte()
+    }
+
+    override fun allocationSize(value: UByte) = 1UL
+
+    override fun write(value: UByte, buf: ByteBuffer) {
+        buf.put(value.toByte())
+    }
+}
 
 /**
  * @suppress
@@ -5159,6 +5191,45 @@ public object FfiConverterTypeAnswerDto: FfiConverterRustBuffer<AnswerDto> {
 
 
 
+/**
+ * What may run in the background (`privcord_domain::background`).
+ */
+data class BackgroundPlanDto (
+    var `internetSync`: kotlin.Boolean, 
+    var `bulk`: kotlin.Boolean, 
+    var `bleScan`: BleScanDto
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeBackgroundPlanDto: FfiConverterRustBuffer<BackgroundPlanDto> {
+    override fun read(buf: ByteBuffer): BackgroundPlanDto {
+        return BackgroundPlanDto(
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterTypeBleScanDto.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: BackgroundPlanDto) = (
+            FfiConverterBoolean.allocationSize(value.`internetSync`) +
+            FfiConverterBoolean.allocationSize(value.`bulk`) +
+            FfiConverterTypeBleScanDto.allocationSize(value.`bleScan`)
+    )
+
+    override fun write(value: BackgroundPlanDto, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`internetSync`, buf)
+            FfiConverterBoolean.write(value.`bulk`, buf)
+            FfiConverterTypeBleScanDto.write(value.`bleScan`, buf)
+    }
+}
+
+
+
 data class ChannelPersonDto (
     var `uid`: kotlin.String, 
     var `name`: kotlin.String
@@ -5298,6 +5369,60 @@ public object FfiConverterTypeConversationDto: FfiConverterRustBuffer<Conversati
             FfiConverterSequenceTypeMessageDto.write(value.`messages`, buf)
             FfiConverterOptionalTypeLastMessageDto.write(value.`last`, buf)
             FfiConverterUInt.write(value.`unread`, buf)
+    }
+}
+
+
+
+/**
+ * What the platform knows about the device right now.
+ */
+data class DeviceStateDto (
+    /**
+     * 0–100, or none for a device with no battery.
+     */
+    var `batteryPercent`: kotlin.UByte?, 
+    var `charging`: kotlin.Boolean, 
+    var `network`: NetworkKindDto, 
+    var `dataSaver`: kotlin.Boolean, 
+    var `powerSaver`: kotlin.Boolean, 
+    var `foreground`: kotlin.Boolean
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeDeviceStateDto: FfiConverterRustBuffer<DeviceStateDto> {
+    override fun read(buf: ByteBuffer): DeviceStateDto {
+        return DeviceStateDto(
+            FfiConverterOptionalUByte.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterTypeNetworkKindDto.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: DeviceStateDto) = (
+            FfiConverterOptionalUByte.allocationSize(value.`batteryPercent`) +
+            FfiConverterBoolean.allocationSize(value.`charging`) +
+            FfiConverterTypeNetworkKindDto.allocationSize(value.`network`) +
+            FfiConverterBoolean.allocationSize(value.`dataSaver`) +
+            FfiConverterBoolean.allocationSize(value.`powerSaver`) +
+            FfiConverterBoolean.allocationSize(value.`foreground`)
+    )
+
+    override fun write(value: DeviceStateDto, buf: ByteBuffer) {
+            FfiConverterOptionalUByte.write(value.`batteryPercent`, buf)
+            FfiConverterBoolean.write(value.`charging`, buf)
+            FfiConverterTypeNetworkKindDto.write(value.`network`, buf)
+            FfiConverterBoolean.write(value.`dataSaver`, buf)
+            FfiConverterBoolean.write(value.`powerSaver`, buf)
+            FfiConverterBoolean.write(value.`foreground`, buf)
     }
 }
 
@@ -6133,6 +6258,40 @@ public object FfiConverterTypeAnswerState: FfiConverterRustBuffer<AnswerState> {
     override fun allocationSize(value: AnswerState) = 4UL
 
     override fun write(value: AnswerState, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * How hard the platform should look for Bluetooth neighbours.
+ */
+
+enum class BleScanDto {
+    
+    OFF,
+    LOW_POWER,
+    BALANCED;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeBleScanDto: FfiConverterRustBuffer<BleScanDto> {
+    override fun read(buf: ByteBuffer) = try {
+        BleScanDto.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: BleScanDto) = 4UL
+
+    override fun write(value: BleScanDto, buf: ByteBuffer) {
         buf.putInt(value.ordinal + 1)
     }
 }
@@ -7516,6 +7675,40 @@ public object FfiConverterTypeLinkState : FfiConverterRustBuffer<LinkState>{
 
 
 
+/**
+ * The device's network, as the platform sees it.
+ */
+
+enum class NetworkKindDto {
+    
+    NONE,
+    UNMETERED,
+    METERED;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeNetworkKindDto: FfiConverterRustBuffer<NetworkKindDto> {
+    override fun read(buf: ByteBuffer) = try {
+        NetworkKindDto.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: NetworkKindDto) = 4UL
+
+    override fun write(value: NetworkKindDto, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
 
 enum class PathKind {
     
@@ -7650,6 +7843,38 @@ public object FfiConverterTypeWipeStatus: FfiConverterRustBuffer<WipeStatus> {
 }
 
 
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalUByte: FfiConverterRustBuffer<kotlin.UByte?> {
+    override fun read(buf: ByteBuffer): kotlin.UByte? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterUByte.read(buf)
+    }
+
+    override fun allocationSize(value: kotlin.UByte?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterUByte.allocationSize(value)
+        }
+    }
+
+    override fun write(value: kotlin.UByte?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterUByte.write(value, buf)
+        }
+    }
+}
 
 
 
@@ -8302,6 +8527,18 @@ public object FfiConverterSequenceTypeWipeStepDto: FfiConverterRustBuffer<List<W
         }
     }
 }
+        /**
+         * The same background decision on every platform: the platform reports the device, the core decides.
+         */ fun `backgroundPlan`(`state`: DeviceStateDto): BackgroundPlanDto {
+            return FfiConverterTypeBackgroundPlanDto.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_func_background_plan(
+        FfiConverterTypeDeviceStateDto.lower(`state`),_status)
+}
+    )
+    }
+    
+
         /**
          * Version of the Rust core inside this build.
          */ fun `coreVersion`(): kotlin.String {

@@ -66,6 +66,11 @@ export interface RuntimeOptions {
   /** A Bluetooth link, or null when this computer has no Bluetooth the app can use. */
   createBle?: (handlers: BleHandlers) => Promise<BleLike | null>;
   now?: () => number;
+  /**
+   * The desktop shell owns the relay sockets (so they run with the window closed): the page opens none, and learns
+   * whether they are online from the shell (`signal-status` events, and this for the state when the page opens).
+   */
+  nativeSignaling?: () => Promise<boolean>;
 }
 
 const OFFER_TIMEOUT_MS = 25_000;
@@ -98,6 +103,8 @@ const PATH_NAMES: Record<string, PathName> = {
 export class HostedRuntime {
   private readonly links = new Map<string, Link>();
   private readonly hubs = new Map<string, RelayHub>();
+  /** With the shell's relay sockets: whether they are online. */
+  private nativeOnline = false;
   private readonly attempts = new Map<string, number>();
   private readonly heard = new Set<string>();
   private readonly ble = new Map<string, BleLike>();
@@ -120,7 +127,7 @@ export class HostedRuntime {
   constructor(private readonly o: RuntimeOptions) {}
 
   setOwnUid(uid: string): void {
-    if (uid && uid !== this.ownUid) void this.listenOnOwnMailbox(uid);
+    if (uid && uid !== this.ownUid && !this.o.nativeSignaling) void this.listenOnOwnMailbox(uid);
     this.ownUid = uid;
   }
 
@@ -156,6 +163,13 @@ export class HostedRuntime {
     });
     await on('signal-unsubscribe', (p: { mailbox: string }) => this.unsubscribeMailbox(p.mailbox));
     await on('signal-put', (p: { mailbox: string; blob: string; kind: string; ttlSec: number }) => void this.put(p));
+    if (this.o.nativeSignaling) {
+      await on('signal-status', (p: { online: boolean }) => {
+        this.nativeOnline = p.online === true;
+        this.o.changed();
+      });
+      this.nativeOnline = await this.o.nativeSignaling().catch(() => false);
+    }
     // Dial everyone the moment the relays come online instead of waiting out the engine's retry delay.
     this.watcher = setInterval(() => this.checkOnline(), 1_000);
   }
@@ -175,6 +189,7 @@ export class HostedRuntime {
   /* ------------------------------------------------------------------ what the screens ask about */
 
   signalingStatus(): SignalingStatus {
+    if (this.o.nativeSignaling) return this.nativeOnline ? 'online' : 'connecting';
     const states = [...this.hubs.values()].map((h) => h.status());
     if (states.includes('online')) return 'online';
     if (states.includes('connecting')) return 'connecting';
@@ -195,6 +210,8 @@ export class HostedRuntime {
 
   /** The network settings changed: reopen the relay sockets of every mailbox with the new settings. */
   reloadNetwork(): void {
+    // With the shell's sockets, saving the settings already handed them over (network.ts).
+    if (this.o.nativeSignaling) return;
     for (const mailbox of [...this.hubs.keys()]) this.subscribe(mailbox);
   }
 

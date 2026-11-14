@@ -2,6 +2,8 @@
 mod ble;
 #[cfg(desktop)]
 mod engine_host;
+#[cfg(desktop)]
+mod tray;
 
 const SERVICE: &str = "com.duochat.desktop";
 
@@ -137,11 +139,16 @@ mod ble_commands {
 /// Private mode: the window was opened through Tor's SOCKS proxy (127.0.0.1:9050), so every relay connection goes
 /// through Tor and the page makes no direct (WebRTC) connections. Read once at start; changing it restarts the app.
 static TOR_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-const TOR_PROXY: &str = "socks5://127.0.0.1:9050";
+pub(crate) const TOR_PROXY: &str = "socks5://127.0.0.1:9050";
 
 fn tor_flag(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     use tauri::Manager;
     app.path().app_data_dir().ok().map(|d| d.join("tor-mode"))
+}
+
+/// Private mode is on for this run (the window and the relay sockets go through Tor).
+pub(crate) fn tor_active() -> bool {
+    TOR_MODE.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 #[tauri::command]
@@ -165,8 +172,23 @@ fn set_tor_mode(app: tauri::AppHandle, on: bool) -> Result<(), String> {
 }
 
 fn open_main_window(app: &tauri::App) -> tauri::Result<()> {
-    let handle = app.handle();
-    let config = app
+    // Started at login: stay in the tray until the person opens the window.
+    let hidden = std::env::args().any(|a| a == HIDDEN_ARG);
+    if tor_flag(app.handle()).is_some_and(|f| f.exists()) {
+        TOR_MODE.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    open_window(app.handle(), hidden)?;
+    #[cfg(desktop)]
+    tray::install(app.handle())?;
+    Ok(())
+}
+
+/// Passed by the login item, so the app starts in the tray instead of opening a window.
+pub(crate) const HIDDEN_ARG: &str = "--hidden";
+
+/// Builds the main window (at start, and again from the tray after it was closed).
+pub(crate) fn open_window(handle: &tauri::AppHandle, hidden: bool) -> tauri::Result<()> {
+    let config = handle
         .config()
         .app
         .windows
@@ -174,19 +196,40 @@ fn open_main_window(app: &tauri::App) -> tauri::Result<()> {
         .cloned()
         .ok_or_else(|| tauri::Error::WindowNotFound)?;
     #[allow(unused_mut)]
-    let mut builder = tauri::WebviewWindowBuilder::from_config(handle, &config)?;
+    let mut builder = tauri::WebviewWindowBuilder::from_config(handle, &config)?.visible(!hidden);
     #[cfg(desktop)]
-    if tor_flag(handle).is_some_and(|f| f.exists()) {
-        TOR_MODE.store(true, std::sync::atomic::Ordering::Relaxed);
+    if TOR_MODE.load(std::sync::atomic::Ordering::Relaxed) {
         builder = builder.proxy_url(tauri::Url::parse(TOR_PROXY).expect("valid proxy url"));
     }
-    builder.build()?;
+    let window = builder.build()?;
+    #[cfg(desktop)]
+    {
+        let app = handle.clone();
+        window.on_window_event(move |event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                engine_host::page_closed(&app);
+            }
+        });
+    }
+    #[cfg(not(desktop))]
+    let _ = window;
     Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // One copy at a time: a second launch brings the first window forward (it must be the first plugin).
+    #[cfg(desktop)]
+    let builder = builder
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            tray::show_main(app)
+        }))
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![tray::HIDDEN_ARG]),
+        ));
+    let builder = builder
         .plugin(tauri_plugin_notification::init())
         .setup(|app| Ok(open_main_window(app)?));
     #[cfg(desktop)]
@@ -200,6 +243,9 @@ pub fn run() {
         secret_delete,
         tor_mode,
         set_tor_mode,
+        tray::background_settings,
+        tray::set_close_to_tray,
+        tray::set_start_at_login,
         ble_commands::ble_capabilities,
         ble_commands::ble_connect,
         ble_commands::ble_write,
@@ -209,7 +255,9 @@ pub fn run() {
         engine_host::engine_stop,
         engine_host::engine_seed_identity,
         engine_host::engine_erase,
-        engine_host::engine_signal_status
+        engine_host::engine_signal_status,
+        engine_host::engine_signal_online,
+        engine_host::engine_network
     ]);
     #[cfg(not(desktop))]
     let builder = builder.invoke_handler(tauri::generate_handler![
@@ -220,6 +268,21 @@ pub fn run() {
         set_tor_mode
     ]);
     builder
-        .run(tauri::generate_context!())
-        .expect("error while running DuoChat");
+        .build(tauri::generate_context!())
+        .expect("error while running DuoChat")
+        .run(|app, event| {
+            // Closing the window keeps DuoCord running in the tray (the engine and its relay sockets are Rust), unless
+            // the person turned that off. Quit from the tray exits with a code and is let through.
+            #[cfg(desktop)]
+            if let tauri::RunEvent::ExitRequested {
+                api, code: None, ..
+            } = event
+            {
+                if tray::close_to_tray(app) {
+                    api.prevent_exit();
+                }
+            }
+            #[cfg(not(desktop))]
+            let _ = (app, event);
+        });
 }

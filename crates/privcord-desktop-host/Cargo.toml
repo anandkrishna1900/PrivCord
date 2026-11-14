@@ -10,12 +10,22 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[features]
+# TLS for wss:// relays through the operating system's TLS (Schannel, Security.framework, OpenSSL). The desktop app
+# turns it on; tests against a local ws:// relay do not need it.
+tls = ["tungstenite/native-tls"]
+
 [dependencies]
 privcord-ffi = { path = "../privcord-ffi", features = ["serde"] }
+privcord-engine = { path = "../privcord-engine" }
+privcord-domain = { path = "../privcord-domain" }
+privcord-crypto = { path = "../privcord-crypto" }
+tungstenite = "0.30"
 serde.workspace = true
 base64.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
 tempfile = "3"
+privcord-crypto = { path = "../privcord-crypto", features = ["test-support"] }
 base64.workspace = true

@@ -5,6 +5,7 @@
 //! protocol package (`packages/protocol`) that this crate replaces, and is checked against its test vectors
 //! (`docs/*-vectors.json`) in `tests/`.
 
+pub mod background;
 pub mod ble;
 pub mod blob;
 pub mod channel;

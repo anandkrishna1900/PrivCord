@@ -15,14 +15,15 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # The Rust engine, hosted in the shell (milestone M7; docs/rust/M7_DESKTOP_PLAN.md).
-privcord-desktop-host = { path = "../../../crates/privcord-desktop-host" }
+privcord-desktop-host = { path = "../../../crates/privcord-desktop-host", features = ["tls"] }
 privcord-ffi = { path = "../../../crates/privcord-ffi" }
+privcord-domain = { path = "../../../crates/privcord-domain" }
 
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
@@ -32,6 +33,13 @@ keyring = { version = "3", features = ["sync-secret-service"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
+
+# The tray (close to tray, start at login, one window at a time).
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies.tauri-plugin-single-instance]
+version = "2"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies.tauri-plugin-autostart]
+version = "2"
 
 # Bluetooth LE central (desktop only). UNTESTED on hardware; see docs/BLE_TRANSPORT.md.
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

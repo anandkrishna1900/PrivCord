@@ -11,6 +11,8 @@
 //! It reuses `privcord-ffi`'s `PrivcordEngine`, so the desktop and Android apps run exactly the same engine surface.
 //! Commands are added here as the page moves onto the engine; an unknown command is an error, never a silent no-op.
 
+pub mod native_signaling;
+
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use privcord_ffi::{
     LinkKind, NotifierCallbacks, PathKind, PrivcordEngine, SecureStoreCallbacks, SignalKindDto,

@@ -25,5 +25,12 @@ export async function startHostedEngine(identity: DeviceIdentity): Promise<Hoste
     expectedUid: identity.uid,
     identity,
     context: config.conversationId,
+    // The shell's relay sockets (they keep running with the window closed).
+    runtimeOverrides: {
+      nativeSignaling: async () => {
+        const { invoke } = await import('@tauri-apps/api/core');
+        return (await invoke<boolean>('engine_signal_online')) === true;
+      },
+    },
   });
 }

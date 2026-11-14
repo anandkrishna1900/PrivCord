@@ -55,6 +55,27 @@ export function loadNetworkConfig(): NetworkConfig {
 export function saveNetworkConfig(config: NetworkConfig): void {
   const { torMode: _ignored, ...saved } = config;
   localStorage.setItem(KEY, JSON.stringify(saved));
+  void pushNativeConfig();
+}
+
+/**
+ * The desktop shell owns the relay sockets and shows notifications in the tray: it gets the network settings (as saved
+ * here) and the notification choices, and keeps them for a start in the tray. Nothing happens outside the app.
+ */
+export async function pushNativeConfig(notify?: { enabled: boolean; previews: boolean }): Promise<void> {
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const { torMode: _ignored, ...network } = loadNetworkConfig();
+    let prefs = notify;
+    if (!prefs) {
+      const { loadSettings } = await import('./settings');
+      const s = loadSettings();
+      prefs = { enabled: s.notificationsEnabled, previews: s.notificationPreviews };
+    }
+    await invoke('engine_network', { network: JSON.stringify(network), notify: prefs.enabled, previews: prefs.previews });
+  } catch {
+    // Not in the desktop app (browser preview, tests).
+  }
 }
 
 export function rtcConfigFor(config: NetworkConfig): RTCConfiguration {

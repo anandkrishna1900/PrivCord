@@ -66,6 +66,7 @@ object EngineHost {
         if (s.mesh) created.setMeshEnabled(true)
         startJob = newScope.launch { created.start() }
         watchNetwork(app)
+        BackgroundPolicy.watch(app)
         // Weekly automatic backups (when turned on): checked a minute after start and then every few hours, with the
         // screen open or only the background service running.
         newScope.launch(Dispatchers.IO) {
@@ -100,6 +101,7 @@ object EngineHost {
 
                 override fun onAvailable(network: Network) {
                     online = true
+                    BackgroundPolicy.refresh()
                     val changed = lost || (current != null && current != network)
                     current = network
                     lost = false
@@ -111,6 +113,7 @@ object EngineHost {
                 override fun onLost(network: Network) {
                     if (network != current) return
                     online = false
+                    BackgroundPolicy.refresh()
                     // Coming back, on this network or another, counts as a change: everything is reset then.
                     lost = true
                     engine?.let { e -> scope?.launch { e.onNetworkAvailable() } }

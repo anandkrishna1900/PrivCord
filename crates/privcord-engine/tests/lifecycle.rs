@@ -999,7 +999,8 @@ fn after_a_link_offline_messages_are_sealed_post_quantum_to_one_time_keys_and_v1
     for (m, blob, _) in &blobs {
         b.core.signal_blob(m, blob);
     }
-    let got: Vec<String> = b
+    // Both were sent in the same (fake-clock) millisecond, so their order is up to their random ids.
+    let mut got: Vec<String> = b
         .core
         .snapshot()
         .messages
@@ -1007,7 +1008,10 @@ fn after_a_link_offline_messages_are_sealed_post_quantum_to_one_time_keys_and_v1
         .flat_map(|(_, v)| v)
         .map(|m| m.text)
         .collect();
-    assert_eq!(got, texts);
+    got.sort();
+    let mut want: Vec<String> = texts.iter().map(ToString::to_string).collect();
+    want.sort();
+    assert_eq!(got, want);
 
     // A classic (v1) blob from Alice is refused now that the two have exchanged keys: nobody can force the old protocol.
     let secrets = a.secure.load_identity().unwrap().unwrap();

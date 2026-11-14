@@ -47,3 +47,9 @@ path = "fuzz_targets/engine_untrusted.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "sync_log"
+path = "fuzz_targets/sync_log.rs"
+test = false
+doc = false

@@ -1838,3 +1838,68 @@ pub fn self_test() -> String {
 fn serde_json_probe() -> serde_json::Value {
     serde_json::json!({ "probe": "self-test" })
 }
+
+/* ------------------------------------------------------------------ background policy */
+
+/// The device's network, as the platform sees it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum NetworkKindDto {
+    None,
+    Unmetered,
+    Metered,
+}
+
+/// How hard the platform should look for Bluetooth neighbours.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum BleScanDto {
+    Off,
+    LowPower,
+    Balanced,
+}
+
+/// What the platform knows about the device right now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct DeviceStateDto {
+    /// 0–100, or none for a device with no battery.
+    pub battery_percent: Option<u8>,
+    pub charging: bool,
+    pub network: NetworkKindDto,
+    pub data_saver: bool,
+    pub power_saver: bool,
+    pub foreground: bool,
+}
+
+/// What may run in the background (`privcord_domain::background`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct BackgroundPlanDto {
+    pub internet_sync: bool,
+    pub bulk: bool,
+    pub ble_scan: BleScanDto,
+}
+
+/// The same background decision on every platform: the platform reports the device, the core decides.
+#[uniffi::export]
+pub fn background_plan(state: DeviceStateDto) -> BackgroundPlanDto {
+    use privcord_domain::background::{plan, BleScan, DeviceState, NetworkKind};
+    let p = plan(DeviceState {
+        battery_percent: state.battery_percent.map(|b| b.min(100)),
+        charging: state.charging,
+        network: match state.network {
+            NetworkKindDto::None => NetworkKind::None,
+            NetworkKindDto::Unmetered => NetworkKind::Unmetered,
+            NetworkKindDto::Metered => NetworkKind::Metered,
+        },
+        data_saver: state.data_saver,
+        power_saver: state.power_saver,
+        foreground: state.foreground,
+    });
+    BackgroundPlanDto {
+        internet_sync: p.internet_sync,
+        bulk: p.bulk,
+        ble_scan: match p.ble_scan {
+            BleScan::Off => BleScanDto::Off,
+            BleScan::LowPower => BleScanDto::LowPower,
+            BleScan::Balanced => BleScanDto::Balanced,
+        },
+    }
+}

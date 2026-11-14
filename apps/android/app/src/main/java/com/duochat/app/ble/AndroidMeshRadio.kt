@@ -83,9 +83,21 @@ class AndroidMeshRadio(private val context: Context) : MeshRadio {
 
     private var wanted = false
 
+    /** The shared background policy changed how hard to scan (screen on/off, battery, power saver). */
+    private val policyChanged: () -> Unit = {
+        handler.post {
+            if (started) {
+                runCatching { manager?.adapter?.bluetoothLeScanner?.stopScan(scanCallback) }
+                scanCallback = null
+                startScan()
+            }
+        }
+    }
+
     override fun start(listener: MeshRadio.Listener) {
         wanted = true
         this.listener = listener
+        com.duochat.app.engine.BackgroundPolicy.addListener(policyChanged)
         handler.post {
             watchAdapter()
             tryStart()
@@ -154,6 +166,7 @@ class AndroidMeshRadio(private val context: Context) : MeshRadio {
 
     override fun stop() {
         wanted = false
+        com.duochat.app.engine.BackgroundPolicy.removeListener(policyChanged)
         handler.post {
             adapterWatch?.let { runCatching { context.unregisterReceiver(it) } }
             adapterWatch = null
@@ -255,6 +268,13 @@ class AndroidMeshRadio(private val context: Context) : MeshRadio {
 
     private fun startScan() {
         val scanner = manager?.adapter?.bluetoothLeScanner ?: return
+        // How hard to scan is the shared background policy's call; "off" means only advertising and the server stay up,
+        // so neighbours that scan can still find this phone.
+        val mode = when (com.duochat.app.engine.BackgroundPolicy.plan.bleScan) {
+            uniffi.privcord_ffi.BleScanDto.OFF -> return
+            uniffi.privcord_ffi.BleScanDto.LOW_POWER -> ScanSettings.SCAN_MODE_LOW_POWER
+            uniffi.privcord_ffi.BleScanDto.BALANCED -> ScanSettings.SCAN_MODE_BALANCED
+        }
         val wait = ScanLimiter.shared.reserve(System.currentTimeMillis())
         if (wait > 0) {
             val turn = ++scanWaitTurn
@@ -262,7 +282,7 @@ class AndroidMeshRadio(private val context: Context) : MeshRadio {
             return
         }
         val filter = ScanFilter.Builder().setServiceUuid(ParcelUuid(SERVICE)).build()
-        val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_BALANCED).build()
+        val settings = ScanSettings.Builder().setScanMode(mode).build()
         val callback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
                 val theirId = result.scanRecord?.getManufacturerSpecificData(COMPANY_ID) ?: return

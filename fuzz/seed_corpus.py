@@ -41,4 +41,13 @@ for s in strings:
     if len(b) < 64_000:
         put("text_decoders", b)
         put("engine_untrusted", bytes([0]) + b)
+# The sync log: one entry per line, "kind body".
+sync_seeds = [
+    'message {"id":"m1","conv":"c","text":"hi"}\nreact {"target":"m1","by":"u","emoji":"x"}\nedit {"target":"m1","text":"hey"}',
+    'read {"conv":"c","upto":{"wall":5,"count":0}}\nsetting {"key":"mute:u","value":true}\ndelete {"target":"m1"}\nhide {"target":"m2"}',
+    'poll {"q":"?"}\nmessage {"id":"","conv":"c"}\nreact {"target":"m","by":"u","emoji":7}',
+]
+for seed in sync_seeds:
+    put("sync_log", seed.encode())
+
 print({p.name: len(list(p.iterdir())) for p in out.iterdir()})

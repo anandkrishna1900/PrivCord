@@ -66,6 +66,17 @@ class MainActivity : FragmentActivity() {
             }
         }
     }
+
+    // On screen or not is one of the inputs of the shared background policy (how hard Bluetooth scans, for one).
+    override fun onStart() {
+        super.onStart()
+        com.duochat.app.engine.BackgroundPolicy.setForeground(true)
+    }
+
+    override fun onStop() {
+        com.duochat.app.engine.BackgroundPolicy.setForeground(false)
+        super.onStop()
+    }
 }
 
 // Where the user is, as plain text so it survives process death and rotation:
