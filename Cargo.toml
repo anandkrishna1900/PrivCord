@@ -71,3 +71,12 @@ strip = true
 opt-level = 3
 [profile.dev.package.blake2]
 opt-level = 3
+# P-256 signing and checking: the sync-log simulations sign and verify thousands of entries.
+[profile.dev.package.p256]
+opt-level = 3
+[profile.dev.package.primeorder]
+opt-level = 3
+[profile.dev.package.elliptic-curve]
+opt-level = 3
+[profile.dev.package.crypto-bigint]
+opt-level = 3

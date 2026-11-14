@@ -25,7 +25,8 @@ fuzz_target!(|data: &[u8]| {
 });
 
 fn account() -> &'static privcord_crypto::identity::Identity {
-    static ACCOUNT: std::sync::OnceLock<privcord_crypto::identity::Identity> = std::sync::OnceLock::new();
+    static ACCOUNT: std::sync::OnceLock<privcord_crypto::identity::Identity> =
+        std::sync::OnceLock::new();
     ACCOUNT.get_or_init(|| {
         let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
         privcord_crypto::identity::Identity::from_phrase(phrase, "").expect("test phrase")
