@@ -464,9 +464,50 @@ fn backups_match_typescript() {
     .unwrap();
     assert_eq!(open_backup(&s2, "p\u{00e1}ssword long"), Some(data.clone()));
     assert_eq!(
-        seal_backup(&data, "short", &mut SeededEntropy::new("b3")).unwrap_err(),
-        CryptoError::WeakPassphrase(8)
+        seal_backup(&data, "elevenchars", &mut SeededEntropy::new("b3")).unwrap_err(),
+        CryptoError::WeakPassphrase(12)
     );
+}
+
+#[test]
+fn backups_are_argon2id_now_and_a_crafted_file_cannot_demand_unbounded_work() {
+    use privcord_crypto::backup::seal_backup_v1;
+    let data = json!({ "v": 1, "uid": "u", "messages": ["héllo"] });
+    let sealed = seal_backup(
+        &data,
+        "correct horse battery",
+        &mut SeededEntropy::new("a2"),
+    )
+    .unwrap();
+    let body: serde_json::Value = serde_json::from_slice(
+        &privcord_domain::codec::decode(sealed.strip_prefix(BACKUP_PREFIX).unwrap()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        (body["v"].as_u64(), body["kdf"].as_str()),
+        (Some(2), Some("argon2id"))
+    );
+    assert_eq!(
+        open_backup(&sealed, "correct horse battery"),
+        Some(data.clone())
+    );
+    assert!(open_backup(&sealed, "correct horse batterY").is_none());
+    // Older (v1, PBKDF2) backups still open.
+    let old = seal_backup_v1(
+        &data,
+        "correct horse battery",
+        &mut SeededEntropy::new("a1"),
+    )
+    .unwrap();
+    assert_eq!(open_backup(&old, "correct horse battery"), Some(data));
+    // A file asking for 8 GiB of memory is refused before any work is done.
+    let mut greedy = body.clone();
+    greedy["m"] = json!(8u64 * 1024 * 1024);
+    let text = format!(
+        "{BACKUP_PREFIX}{}",
+        privcord_domain::codec::encode(greedy.to_string().as_bytes())
+    );
+    assert!(open_backup(&text, "correct horse battery").is_none());
 }
 
 #[test]

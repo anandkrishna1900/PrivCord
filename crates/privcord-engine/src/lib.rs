@@ -13,7 +13,7 @@ pub mod signaling;
 
 pub use api::{
     AnswerStatus, AnswerView, ContactView, ConversationSummary, DeliveryDetail, EngineEvent,
-    GroupView, InviteView, LastMessage, RequestView, SignalMessage, Snapshot,
+    GroupView, InviteView, LastMessage, LegacyGroupView, RequestView, SignalMessage, Snapshot,
 };
 pub use core::{Core, LinkSecurity, Ports};
 pub use core::{InvitePreview, RestoreSummary, SearchHit};

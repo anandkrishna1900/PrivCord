@@ -599,6 +599,20 @@ pub struct SnapshotDto {
     pub queued: u64,
     /// The name each person gave in a public channel (they are not contacts).
     pub channel_people: Vec<ChannelPersonDto>,
+    /// Groups from before protocol v2 that can be made again with one tap.
+    pub legacy_groups: Vec<LegacyGroupDto>,
+}
+
+/// A group from before protocol v2: its name and who was in it (their names, for friends who are still friends).
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct LegacyGroupDto {
+    pub old_id: String,
+    pub name: String,
+    /// Friends who will be in it again.
+    pub members: Vec<String>,
+    /// People who were in it but are not friends any more (they cannot be added back from here).
+    pub missing: u32,
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
@@ -1002,6 +1016,19 @@ impl PrivcordEngine {
         Ok(())
     }
 
+    /// Make a group from before protocol v2 again, with its friends and its messages. Returns the new group's id.
+    pub fn recreate_legacy_group(&self, old_id: String) -> Result<String, FfiError> {
+        Ok(pollster::block_on(
+            self.handle.group(GroupOp::RecreateLegacy { old_id }),
+        )?)
+    }
+
+    /// Stop offering a group from before protocol v2.
+    pub fn dismiss_legacy_group(&self, old_id: String) -> Result<(), FfiError> {
+        pollster::block_on(self.handle.group(GroupOp::DismissLegacy { old_id }))?;
+        Ok(())
+    }
+
     pub fn remove_group_member(&self, group: String, uid: String) -> Result<(), FfiError> {
         let uid = user(&uid)?;
         pollster::block_on(self.handle.group(GroupOp::Remove { group, uid }))?;
@@ -1387,6 +1414,8 @@ impl PrivcordEngine {
                 )
             })
             .collect();
+        let friends: std::collections::BTreeSet<String> =
+            s.contacts.iter().map(|c| c.uid.to_string()).collect();
         Ok(SnapshotDto {
             seq: s.seq,
             own_uid: s.own_uid.map(|u| u.to_string()),
@@ -1495,6 +1524,20 @@ impl PrivcordEngine {
                 .map(|(u, n)| ChannelPersonDto {
                     uid: u.to_string(),
                     name: n.clone(),
+                })
+                .collect(),
+            legacy_groups: s
+                .legacy_groups
+                .iter()
+                .map(|g| {
+                    let (friends, others): (Vec<_>, Vec<_>) =
+                        g.members.iter().partition(|u| friends.contains(u.as_str()));
+                    LegacyGroupDto {
+                        old_id: g.old_id.clone(),
+                        name: g.name.clone(),
+                        members: friends.into_iter().map(ToString::to_string).collect(),
+                        missing: u32::try_from(others.len()).unwrap_or(u32::MAX),
+                    }
                 })
                 .collect(),
         })

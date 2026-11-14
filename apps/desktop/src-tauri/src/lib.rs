@@ -42,7 +42,6 @@ fn secret_delete(key: String) -> Result<(), String> {
     }
 }
 
-
 /// Bluetooth LE bridge (central role only). UNTESTED on hardware; see docs/BLE_TRANSPORT.md.
 #[cfg(desktop)]
 mod ble_commands {
@@ -91,13 +90,20 @@ mod ble_commands {
         accept_tags_hex: Vec<String>,
         timeout_secs: u64,
     ) -> Result<usize, String> {
-        let tags = accept_tags_hex.iter().map(|t| unhex(t)).collect::<Result<Vec<_>, _>>()?;
+        let tags = accept_tags_hex
+            .iter()
+            .map(|t| unhex(t))
+            .collect::<Result<Vec<_>, _>>()?;
         let sink: Sink = Arc::new(move |event| {
             let payload = match event {
-                BleEvent::Open { max_chunk } => serde_json::json!({ "kind": "open", "maxChunk": max_chunk }),
+                BleEvent::Open { max_chunk } => {
+                    serde_json::json!({ "kind": "open", "maxChunk": max_chunk })
+                }
                 BleEvent::Chunk(data) => serde_json::json!({ "kind": "chunk", "data": hex(&data) }),
                 BleEvent::Close => serde_json::json!({ "kind": "close" }),
-                BleEvent::Error(message) => serde_json::json!({ "kind": "error", "message": message }),
+                BleEvent::Error(message) => {
+                    serde_json::json!({ "kind": "error", "message": message })
+                }
             };
             let _ = app.emit("duochat://ble", payload);
         });
@@ -105,7 +111,8 @@ mod ble_commands {
         if let Some(old) = slot.take() {
             old.disconnect().await;
         }
-        let link = scan_and_connect(tags, Duration::from_secs(timeout_secs.clamp(5, 120)), sink).await?;
+        let link =
+            scan_and_connect(tags, Duration::from_secs(timeout_secs.clamp(5, 120)), sink).await?;
         let max_chunk = link.max_chunk();
         *slot = Some(link);
         Ok(max_chunk)
@@ -127,10 +134,61 @@ mod ble_commands {
     }
 }
 
+/// Private mode: the window was opened through Tor's SOCKS proxy (127.0.0.1:9050), so every relay connection goes
+/// through Tor and the page makes no direct (WebRTC) connections. Read once at start; changing it restarts the app.
+static TOR_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+const TOR_PROXY: &str = "socks5://127.0.0.1:9050";
+
+fn tor_flag(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    use tauri::Manager;
+    app.path().app_data_dir().ok().map(|d| d.join("tor-mode"))
+}
+
+#[tauri::command]
+fn tor_mode() -> bool {
+    TOR_MODE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Saves private mode and restarts so the window is opened with (or without) the proxy.
+#[tauri::command]
+fn set_tor_mode(app: tauri::AppHandle, on: bool) -> Result<(), String> {
+    let flag = tor_flag(&app).ok_or("no app data folder")?;
+    if on {
+        if let Some(dir) = flag.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(&flag, b"1").map_err(|e| e.to_string())?;
+    } else if flag.exists() {
+        std::fs::remove_file(&flag).map_err(|e| e.to_string())?;
+    }
+    app.restart()
+}
+
+fn open_main_window(app: &tauri::App) -> tauri::Result<()> {
+    let handle = app.handle();
+    let config = app
+        .config()
+        .app
+        .windows
+        .first()
+        .cloned()
+        .ok_or_else(|| tauri::Error::WindowNotFound)?;
+    #[allow(unused_mut)]
+    let mut builder = tauri::WebviewWindowBuilder::from_config(handle, &config)?;
+    #[cfg(desktop)]
+    if tor_flag(handle).is_some_and(|f| f.exists()) {
+        TOR_MODE.store(true, std::sync::atomic::Ordering::Relaxed);
+        builder = builder.proxy_url(tauri::Url::parse(TOR_PROXY).expect("valid proxy url"));
+    }
+    builder.build()?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
-        .plugin(tauri_plugin_notification::init());
+        .plugin(tauri_plugin_notification::init())
+        .setup(|app| Ok(open_main_window(app)?));
     #[cfg(desktop)]
     let builder = builder
         .manage(ble_commands::BleState::default())
@@ -140,6 +198,8 @@ pub fn run() {
         secret_get,
         secret_set,
         secret_delete,
+        tor_mode,
+        set_tor_mode,
         ble_commands::ble_capabilities,
         ble_commands::ble_connect,
         ble_commands::ble_write,
@@ -155,7 +215,9 @@ pub fn run() {
     let builder = builder.invoke_handler(tauri::generate_handler![
         secret_get,
         secret_set,
-        secret_delete
+        secret_delete,
+        tor_mode,
+        set_tor_mode
     ]);
     builder
         .run(tauri::generate_context!())

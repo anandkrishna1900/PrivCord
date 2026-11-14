@@ -97,6 +97,8 @@ fun HomeScreen(
     onSearch: (String) -> List<com.duochat.app.engine.SearchHit> = { emptyList() },
     onPanic: (() -> Unit)? = null,
     onOpenConversation: (String) -> Unit = {},
+    onRecreateGroup: (String) -> Unit = {},
+    onDismissOldGroup: (String) -> Unit = {},
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf(Filter.ALL) }
@@ -136,6 +138,7 @@ fun HomeScreen(
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).statusBarsPadding().imePadding()) {
             Header(onOpenSettings = onOpenSettings, onPanic = onPanic)
             state.notice?.let { Notice(it, onClearNotice) }
+            state.legacyGroups.forEach { g -> OldGroup(g, onRecreate = { onRecreateGroup(g.oldId) }, onDismiss = { onDismissOldGroup(g.oldId) }) }
             if (state.chats.isEmpty()) {
                 EmptyHome(onAddFriend, onChannels)
                 return@Column
@@ -269,6 +272,36 @@ private fun Notice(text: String, onClear: () -> Unit) {
         Row(Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(vertical = 8.dp))
             IconButton(onClick = onClear) { Icon(Icons.Filled.Close, contentDescription = "Dismiss", modifier = Modifier.size(18.dp)) }
+        }
+    }
+}
+
+/** A group from before the protocol update: make it again in one tap (same name, its friends, its messages). */
+@Composable
+private fun OldGroup(g: com.duochat.app.data.LegacyGroup, onRecreate: () -> Unit, onDismiss: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+    ) {
+        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp)) {
+            Text("\u201c${g.name}\u201d needs to be made again", style = MaterialTheme.typography.titleSmall)
+            val who = when {
+                g.memberNames.isEmpty() -> "None of its members are your friends any more."
+                else -> "With ${g.memberNames.joinToString(", ")}" +
+                    (if (g.missing > 0) " (${g.missing} other${if (g.missing == 1) "" else "s"} who ${if (g.missing == 1) "isn't a friend" else "aren't friends"} can be added later)" else "") +
+                    ". Its messages come along."
+            }
+            Text(
+                "After the security update, groups from before it have to be made again. $who",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onDismiss) { Text("Dismiss") }
+                if (g.memberNames.isNotEmpty()) TextButton(onClick = onRecreate) { Text("Make it again") }
+            }
         }
     }
 }

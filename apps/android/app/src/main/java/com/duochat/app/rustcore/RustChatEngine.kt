@@ -33,6 +33,8 @@ import com.duochat.app.ble.BleTransport
 import com.duochat.app.ble.MeshRadio
 import com.duochat.app.ble.bluetoothStatusFor
 import com.duochat.app.data.NetworkConfig
+import com.duochat.app.data.relaysMessages
+import com.duochat.app.data.hasTurn
 import com.duochat.app.data.ReplyRef
 import com.duochat.app.data.filePreviewText
 import com.duochat.app.engine.SearchHit
@@ -346,6 +348,7 @@ class RustChatEngine(
                 publish(snapshot)
             }
             startPump(started)
+            watchTor()
             inboundJob = scope.launch(Dispatchers.IO) { for (op in inbound) handleInbound(started, op) }
             watchSignaling()
             refreshJob = scope.launch {
@@ -355,7 +358,7 @@ class RustChatEngine(
                 }
             }
             runCatching { withContext(Dispatchers.IO) { started.setGroupOnly(groupOnly) } }
-            runCatching { withContext(Dispatchers.IO) { started.setStoreForward(networkConfig().storeForward) } }
+            runCatching { withContext(Dispatchers.IO) { started.setStoreForward(networkConfig().relaysMessages) } }
             requestRefresh()
         } catch (error: Throwable) {
             if (!stopped) _state.update { it.copy(phase = EnginePhase.ERROR, error = error.message ?: "Startup failed.") }
@@ -396,6 +399,29 @@ class RustChatEngine(
             runCatching { e?.close() }
         }.also { it.start() }
         _state.update { it.copy(phase = EnginePhase.STOPPED) }
+    }
+
+    /** Whether Orbot answers, checked every few seconds while Tor mode is on (for the chat's explanation). */
+    @Volatile private var torRunning = false
+
+    private fun watchTor() {
+        scope.launch(Dispatchers.IO) {
+            var was: Boolean? = null
+            while (!stopped) {
+                if (networkConfig().torMode) {
+                    torRunning = com.duochat.app.signaling.torIsRunning()
+                    if (torRunning != was) {
+                        was = torRunning
+                        // Orbot just started: open the sockets now instead of waiting for their retry.
+                        if (torRunning) for (mailbox in hubs.keys.toList()) transport.signalSubscribe(mailbox)
+                        requestRefresh()
+                    }
+                } else {
+                    was = null
+                }
+                delay(5_000)
+            }
+        }
     }
 
     private fun startPump(e: PrivcordEngine) {
@@ -492,6 +518,8 @@ class RustChatEngine(
         val mode = networkConfig().transportMode
         if (mode != TransportMode.INTERNET_ONLY) tryBluetooth(peer)
         if (mode == TransportMode.BLUETOOTH_ONLY) return
+        // Tor mode: never a direct connection (it would show this phone's address); messages go through the relays.
+        if (networkConfig().torMode) return
         if (hubStatus() != SignalingStatus.ONLINE) {
             // The relays are not up yet, so this try could not have worked. Do not let it count against the retry delay:
             // the engine asks again at its next tick, and the watcher below dials the moment the relays are online.
@@ -784,6 +812,35 @@ class RustChatEngine(
             heardFrom.remove(c.uid)
             return null
         }
+        if (networkConfig().torMode) {
+            return com.duochat.app.data.Diagnosis(
+                if (torRunning) "tor" else "tor-down",
+                if (torRunning) {
+                    "Private mode: messages go through Tor and the relays, so nobody sees this phone's address. They take a few seconds; files and live connections are off."
+                } else {
+                    "Tor isn't running, so nothing is sent (Private mode never goes around it). Open Orbot and start it."
+                },
+                if (torRunning) emptyList() else listOf(com.duochat.app.data.DiagnosisAction.OPEN_CONNECTION_SETTINGS),
+            )
+        }
+        // "Hide my IP" with no relay to hide behind: every link fails (it never falls back to a direct one). Say why.
+        if (networkConfig().forceRelay && !networkConfig().hasTurn) {
+            return com.duochat.app.data.Diagnosis(
+                "relay-missing",
+                "\"Hide my IP address from friends\" is on, but no relay (TURN) server is set up, so no connection can be made. " +
+                    "Add one in Settings > Connection, turn that switch off, or use Private mode (Tor).",
+                listOf(com.duochat.app.data.DiagnosisAction.OPEN_CONNECTION_SETTINGS),
+            )
+        }
+        // No network at all: say so at once, not after several attempts that cannot work.
+        if (!com.duochat.app.engine.EngineHost.online) {
+            return com.duochat.app.data.Diagnosis(
+                "offline",
+                "This phone is offline. Messages wait here and go out as soon as it is back online" +
+                    (if (networkConfig().bluetooth) ", or over Bluetooth when ${c.displayName} is nearby." else "."),
+                emptyList(),
+            )
+        }
         val tried = attempts[c.uid] ?: return null
         val web = links[c.uid]
         val cfg = networkConfig()
@@ -795,7 +852,7 @@ class RustChatEngine(
                 localCandidates = web?.lastCandidates,
                 iceState = web?.iceState,
                 hasTurn = cfg.turn.isNotEmpty(),
-                storeForward = cfg.storeForward,
+                storeForward = cfg.relaysMessages,
             ),
             c.displayName,
         )
@@ -922,6 +979,9 @@ class RustChatEngine(
                 },
                 invite = s.invite?.let { inv -> ActiveInvite(inv.words, inv.expiresAt) },
                 requests = s.requests.map { r -> InviteRequest(r.uid, r.name, r.safetyNumber) },
+                legacyGroups = s.legacyGroups.map { g ->
+                    com.duochat.app.data.LegacyGroup(g.oldId, g.name, g.members.map { m -> nameOf(s, m) }, g.missing.toInt())
+                },
                 answer = s.answer?.let { a ->
                     InviteAnswer(
                         a.uid, nameOf(s, a.uid),
@@ -964,6 +1024,9 @@ class RustChatEngine(
         is uniffi.privcord_ffi.FfiException.InviteNotFound -> "Could not find that invite. Check the words, or ask your friend to share it again."
         is uniffi.privcord_ffi.FfiException.InvalidInvite -> "That is not a valid invite. Check the words, or ask your friend to share it again."
         is uniffi.privcord_ffi.FfiException.NoSignaling -> "No connection service is set up, so six words cannot be looked up. Turn one on in Settings > Connection, or use the long invite."
+        is uniffi.privcord_ffi.FfiException.WeakPassphrase -> "Use a longer backup passphrase: at least 12 characters."
+        is uniffi.privcord_ffi.FfiException.BackupUnreadable -> "That backup could not be opened. Check the passphrase, or that it is a DuoCord backup."
+        is uniffi.privcord_ffi.FfiException.BackupNotYours -> "That backup belongs to a different account (another recovery phrase)."
         else -> t.message ?: "That did not work."
     }
 
@@ -1101,6 +1164,10 @@ class RustChatEngine(
     override suspend fun addToGroup(groupId: String, uids: List<String>): Result<Unit> = call { uids.forEach { addGroupMember(groupId, it) } }
     override suspend fun removeFromGroup(groupId: String, uid: String): Result<Unit> = call { removeGroupMember(groupId, uid) }
     override suspend fun leaveGroup(groupId: String): Result<Unit> = call { leaveGroup(groupId) }
+
+    override suspend fun recreateLegacyGroup(oldId: String): Result<String> = call { recreateLegacyGroup(oldId) }
+
+    override suspend fun dismissLegacyGroup(oldId: String): Result<Unit> = call { dismissLegacyGroup(oldId) }
     override suspend fun renameGroup(groupId: String, name: String): Result<Unit> = call { renameGroup(groupId, name) }
 
     private fun isGroup(id: String): Boolean = last?.groups?.any { it.id == id } == true
@@ -1150,17 +1217,32 @@ class RustChatEngine(
 
     /** Settings changed: the sockets follow the new settings, so reopen every mailbox. */
     override fun reloadNetwork() {
-        scope.launch { call { setStoreForward(networkConfig().storeForward) } }
+        scope.launch { call { setStoreForward(networkConfig().relaysMessages) } }
+        if (networkConfig().torMode) {
+            // Turning Tor mode on ends every internet link at once: they already show this phone's address.
+            for ((peer, link) in links.entries.toList()) if (links.remove(peer, link)) link.close()
+            dialStartedAt.clear()
+        }
         for (mailbox in hubs.keys.toList()) transport.signalSubscribe(mailbox)
     }
 
     /**
-     * A network came up (Android also reports this once at start-up). Only mailboxes whose sockets failed are reopened:
-     * tearing down sockets that are online or still connecting would drop signals that are in flight.
+     * The phone moved to another network (Wi-Fi <-> mobile data, or back online). Sockets and half-made links on the old
+     * one may look alive for a while but go nowhere: reopen every relay socket, drop connections that never opened, and
+     * let every friend be dialed at once instead of after the retry delay. Open links are kept (they close themselves
+     * within seconds if their network really went away).
      */
     override fun onNetworkAvailable() {
-        for ((mailbox, h) in hubs.entries.toList()) {
-            if (h.status() == SignalingStatus.ERROR) transport.signalSubscribe(mailbox)
+        for (mailbox in hubs.keys.toList()) transport.signalSubscribe(mailbox)
+        for ((peer, link) in links.entries.toList()) {
+            if (!link.isOpen && links.remove(peer, link)) {
+                link.close()
+                dialStartedAt.remove(peer)
+            }
+        }
+        scope.launch {
+            io { runCatching { engine?.resetDialBackoff(null) } }
+            requestRefresh()
         }
     }
 
@@ -1195,6 +1277,7 @@ class RustChatEngine(
     }
 
     private fun manualTransport(): WebRtcTransport {
+        check(!networkConfig().torMode) { "Connection codes make a direct link, which Tor mode turns off. Turn Tor mode off in Settings > Connection to use them." }
         manual.transport?.close()
         manual.pending.clear()
         manual.bound = null

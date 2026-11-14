@@ -9,6 +9,12 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Android 14+: the background service is a messaging service (no daily time limit, unlike data sync). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
+    <!-- Start the background service again after a reboot or an app update, when it was on. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- One-tap "let DuoCord run in the background" prompt (otherwise the battery saver stops it). -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- Bluetooth LE transport. Android 12+ runtime permissions. -->
@@ -62,8 +68,17 @@
 
         <service
             android:name=".notifications.DuoBackgroundService"
-            android:foregroundServiceType="dataSync"
+            android:foregroundServiceType="dataSync|remoteMessaging"
             android:exported="false" />
+
+        <receiver
+            android:name=".notifications.StartOnBoot"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

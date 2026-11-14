@@ -63,7 +63,7 @@ export function friendly(error: unknown): string {
     ['GroupFull', 'That group is full.'],
     ['NotAdmin', 'Only the person who made the group can do that.'],
     ['BadFile', 'That file could not be sent.'],
-    ['WeakPassphrase', 'Use a longer passphrase (at least 8 characters).'],
+    ['WeakPassphrase', 'Use a longer passphrase (at least 12 characters).'],
     ['BackupUnreadable', 'That backup could not be opened. Check the passphrase and the file.'],
     ['BackupNotYours', 'That backup belongs to a different identity.'],
     ['Busy', 'The engine is busy. Try again in a moment.'],
@@ -232,7 +232,7 @@ export class HostedChatEngine implements ChatEngineApi {
       await this.engine.start();
       const name = this.deps.ownName();
       if (name) await this.engine.call('set_display_name', { name }).catch(() => undefined);
-      await this.engine.call('set_store_forward', { value: this.deps.network().storeForward }).catch(() => undefined);
+      await this.engine.call('set_store_forward', { value: this.deps.network().storeForward || this.deps.network().torMode === true }).catch(() => undefined);
       this.card = (await this.engine.call<string>('own_card', { name: name || null }).catch(() => '')) ?? '';
       await this.refresh();
       const own = this.snapshot?.own_uid ?? null;
@@ -527,6 +527,20 @@ export class HostedChatEngine implements ChatEngineApi {
     return this.group('remove_group_member', { group: groupId, uid });
   }
 
+  async recreateLegacyGroup(oldId: string): Promise<string> {
+    try {
+      const id = await this.engine.call<string>('recreate_legacy_group', { old_id: oldId });
+      this.scheduleRefresh();
+      return id;
+    } catch (e) {
+      throw new Error(friendly(e));
+    }
+  }
+
+  dismissLegacyGroup(oldId: string): Promise<void> {
+    return this.group('dismiss_legacy_group', { old_id: oldId });
+  }
+
   leaveGroup(groupId: string): Promise<void> {
     return this.group('leave_group', { group: groupId });
   }
@@ -575,7 +589,7 @@ export class HostedChatEngine implements ChatEngineApi {
 
   reloadNetwork(): void {
     this.runtime?.reloadNetwork();
-    void this.engine.call('set_store_forward', { value: this.deps.network().storeForward }).catch(() => undefined);
+    void this.engine.call('set_store_forward', { value: this.deps.network().storeForward || this.deps.network().torMode === true }).catch(() => undefined);
   }
 
   enableStoreForward(): void {

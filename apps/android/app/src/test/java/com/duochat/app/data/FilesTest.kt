@@ -108,25 +108,6 @@ class FilesTest {
         assertEquals(0 to false, exifTransform(0))
         assertEquals(0 to false, exifTransform(99))
     }
-
-    /** The 7-person case from the product rules: A opted out and paired only with C and F. */
-    @Test
-    fun `group-only opt-out leaves only manual pairs able to message`() {
-        val people = listOf("A", "B", "C", "D", "E", "F", "G")
-        val optedOut = setOf("A")
-        val paired = setOf(setOf("A", "C"), setOf("A", "F"))
-        fun trust(me: String, other: String) = if (setOf(me, other) in paired) ContactTrust.VERIFIED else ContactTrust.INTRODUCED
-        fun dm(x: String, y: String) = canStartDirect(trust(x, y), x in optedOut, y in optedOut) && acceptsDirect(trust(y, x), y in optedOut)
-        for (o in people.filter { it != "A" }) {
-            val expected = o == "C" || o == "F"
-            assertEquals("$o->A", expected, dm(o, "A"))
-            assertEquals("A->$o", expected, dm("A", o))
-        }
-        for (x in people.filter { it != "A" }) for (y in people.filter { it != "A" && it != x }) assertTrue("$x->$y", dm(x, y))
-        assertTrue(canStartDirect(ContactTrust.VERIFIED, true, true))
-        assertFalse(canStartDirect(ContactTrust.INTRODUCED, false, true))
-        assertTrue(canStartDirect(ContactTrust.INTRODUCED, false, null))
-    }
 }
 
 /** Every assertion compares Kotlin against values the TypeScript code produced (docs/file-vectors.json). */
@@ -179,65 +160,11 @@ class FileVectorsTest {
     }
 
     @Test
-    fun `the privacy rule gives the same answers as TypeScript for every combination`() {
-        val rows = v.getJSONArray("privacy")
-        for (i in 0 until rows.length()) {
-            val r = rows.getJSONObject(i)
-            val trust = ContactTrust.fromWire(r.getString("trust"))
-            val peer = if (r.isNull("peer")) null else r.getBoolean("peer")
-            assertEquals(r.toString(), r.getBoolean("canStart"), canStartDirect(trust, r.getBoolean("mine"), peer))
-            assertEquals(r.toString(), r.getBoolean("accepts"), acceptsDirect(trust, r.getBoolean("mine")))
-        }
-    }
-
-    @Test
     fun `a TypeScript reply frame is understood and its long quote was cut to 120 characters`() {
         val frame = v.getJSONObject("reply").getJSONObject("frame")
         val reply = ReplyRef.fromJson(frame.getJSONObject("replyTo"))!!
         assertEquals(MAX_REPLY_PREVIEW, reply.preview.length)
         assertEquals(v.getJSONObject("reply").getString("preview"), reply.preview)
-    }
-}
-
-/** Six-word invite codes against the TypeScript implementation (docs/file-vectors.json). */
-class InviteVectorsTest {
-    private val v: JSONObject by lazy {
-        val f = listOf("../../../docs/file-vectors.json", "../../docs/file-vectors.json", "docs/file-vectors.json").map(::File).first { it.exists() }
-        JSONObject(f.readText(Charsets.UTF_8)).getJSONObject("invite")
-    }
-
-    private fun words() = v.getJSONArray("words").let { a -> List(a.length()) { a.getString(it) } }
-
-    @Test
-    fun `the same words give the same mailbox as TypeScript`() {
-        val rv = com.duochat.app.security.InviteCode.derive(words())
-        assertEquals(v.getString("mailbox"), rv.mailbox)
-    }
-
-    @Test
-    fun `Kotlin opens the card a TypeScript phone published`() {
-        val rv = com.duochat.app.security.InviteCode.derive(words())
-        val j = v.getJSONObject("blob")
-        val blob = com.duochat.app.security.Seal.decode(
-            com.duochat.app.security.SignatureCodec.base64UrlEncode(j.toString().toByteArray(Charsets.UTF_8)),
-        )!!
-        val m = com.duochat.app.security.InviteCode.open(rv, blob)!!
-        assertEquals(com.duochat.app.security.InviteCode.Kind.CARD, m.kind)
-        assertEquals(v.getString("uid"), m.contact.uid)
-        assertEquals("Ivy", m.contact.card.name)
-        // wrong words and a tampered blob do not open
-        assertNull(com.duochat.app.security.InviteCode.open(com.duochat.app.security.InviteCode.derive(listOf("abandon", "ability", "able", "about", "above", "absent")), blob))
-    }
-
-    @Test
-    fun `words parse from messy typing and bad input is refused`() {
-        val w = words()
-        assertEquals(w, com.duochat.app.security.InviteCode.parse(w.joinToString(" - ").uppercase()))
-        assertNull(com.duochat.app.security.InviteCode.parse(w.take(5).joinToString(" ")))
-        assertNull(com.duochat.app.security.InviteCode.parse((w.take(5) + "notaword").joinToString(" ")))
-        val fresh = com.duochat.app.security.InviteCode.newWords()
-        assertEquals(6, fresh.size)
-        assertEquals(fresh, com.duochat.app.security.InviteCode.parse(fresh.joinToString(" ")))
     }
 }
 

@@ -206,6 +206,15 @@ export interface InviteAnswer {
   error?: string;
 }
 
+export interface LegacyGroup {
+  oldId: string;
+  name: string;
+  /** Names of friends who will be in it again. */
+  members: string[];
+  /** People who were in it but are not friends any more. */
+  missing: number;
+}
+
 export interface ChatState {
   channels: ChannelView[];
   answer: InviteAnswer | null;
@@ -213,6 +222,8 @@ export interface ChatState {
   invite: { words: string; expiresAt: number } | null;
   /** People who used our words and are waiting for us to accept them. */
   requests: InviteRequest[];
+  /** Groups from before protocol v2 that must be made again (hosted engine only). */
+  legacyGroups?: LegacyGroup[];
   phase: EnginePhase;
   uid: string;
   contacts: ContactView[];

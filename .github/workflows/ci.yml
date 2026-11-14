@@ -265,6 +265,33 @@ jobs:
           name: android-launch-logcat
           path: android-launch-logcat.txt
 
+  fuzz:
+    name: Fuzz everything that reads untrusted input
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+      # Seeds from the test vectors (real cards, sealed blobs and frames), so the fuzzers start past the parsers' first
+      # checks. 60 s per target here; run longer locally with -max_total_time.
+      - name: Fuzz each target for a minute
+        working-directory: fuzz
+        run: |
+          python3 seed_corpus.py ../docs corpus
+          for t in parsers text_decoders ble_reassembly engine_untrusted; do
+            mkdir -p corpus/$t
+            cargo +nightly fuzz run $t corpus/$t -- -max_total_time=60 -rss_limit_mb=2048
+          done
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-crash
+          path: fuzz/artifacts
+
   windows-installer:
     name: Windows installer (unsigned) build
     runs-on: windows-latest

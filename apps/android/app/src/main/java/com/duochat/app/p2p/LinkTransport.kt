@@ -4,7 +4,7 @@ import com.duochat.app.data.ConnectionPath
 
 /**
  * One way of carrying the JSON frames to the paired friend: the WebRTC data channel or the Bluetooth LE link.
- * PeerSession runs the same identity handshake over whichever is open.
+ * The Rust engine runs the same identity handshake over whichever is open.
  */
 interface LinkTransport {
     val isOpen: Boolean

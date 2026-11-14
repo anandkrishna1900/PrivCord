@@ -47,6 +47,8 @@ export interface ChatEngineApi {
   addGroupMember(groupId: string, uid: string): Promise<void>;
   removeGroupMember(groupId: string, uid: string): Promise<void>;
   leaveGroup(groupId: string): Promise<void>;
+  recreateLegacyGroup?(oldId: string): Promise<string>;
+  dismissLegacyGroup?(oldId: string): Promise<void>;
   renameGroup(groupId: string, name: string): Promise<void>;
 
   joinChannel(raw: string, persist?: boolean): Promise<string>;

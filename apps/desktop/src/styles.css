@@ -3597,3 +3597,14 @@ input[type='checkbox'] {
   top: calc(100% + 4px);
   bottom: auto;
 }
+
+.legacy-group {
+  margin: 8px 12px;
+  padding: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  display: grid;
+  gap: 8px;
+}
+.legacy-group p { margin: 0; }
+.legacy-group-actions { display: flex; gap: 8px; }

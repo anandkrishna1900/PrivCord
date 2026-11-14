@@ -458,6 +458,13 @@ fn apply_op(tx: &rusqlite::Transaction<'_>, op: &StorageOp) -> Result<(), Storag
                 }
             }
         }
+        StorageOp::MoveConversation { from, to } => {
+            tx.execute(
+                "UPDATE messages SET conversation = ?2 WHERE conversation = ?1",
+                params![conversation_key(from), conversation_key(to)],
+            )
+            .map_err(rej)?;
+        }
         StorageOp::RenameUser { from, to } => {
             let (old, new) = (from.as_str(), to.as_str());
             let (old_chat, new_chat) = (

@@ -73,6 +73,7 @@ export function ChatLayout({
   const [replying, setReplying] = useState<UiMessage | null>(null);
   const [query, setQuery] = useState('');
   const [focusId, setFocusId] = useState<string | null>(null);
+  const [legacyError, setError] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const loadFile = useCallback((id: string) => engine?.getFile(id) ?? Promise.resolve(null), [engine]);
 
@@ -223,6 +224,37 @@ export function ChatLayout({
           </button>
         </div>
 
+        {(state.legacyGroups ?? []).map((g) => (
+          <div key={g.oldId} className="legacy-group" role="group" aria-label={`Old group ${g.name}`}>
+            <strong>{g.name}</strong>
+            <p className="muted small">
+              This group is from an older version and needs to be made again.
+              {g.members.length > 0 ? ` It will include ${g.members.join(', ')}.` : ''}
+              {g.missing > 0 ? ` ${g.missing} former member${g.missing === 1 ? ' is' : 's are'} no longer a friend.` : ''}
+            </p>
+            {legacyError ? <p className="small" role="alert">{legacyError}</p> : null}
+            <div className="legacy-group-actions">
+              <button
+                type="button"
+                className="button ink"
+                onClick={() => {
+                  engine?.recreateLegacyGroup?.(g.oldId).then(open, (e: unknown) => setError(String((e as Error)?.message ?? e)));
+                }}
+              >
+                Make it again
+              </button>
+              <button
+                type="button"
+                className="button secondary"
+                onClick={() => {
+                  engine?.dismissLegacyGroup?.(g.oldId).catch((e: unknown) => setError(String((e as Error)?.message ?? e)));
+                }}
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        ))}
         {hasChats ? (
           <div className="search-box">
             <input

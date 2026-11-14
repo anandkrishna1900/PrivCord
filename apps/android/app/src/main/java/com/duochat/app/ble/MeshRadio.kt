@@ -2,7 +2,7 @@ package com.duochat.app.ble
 
 /**
  * The radio under the Bluetooth mesh: keeps links to whatever nearby phones are also running PrivCord's mesh and
- * moves JSON packets between them. [MeshNode] decides what to do with the packets; this only carries them.
+ * moves JSON packets between them. The Rust engine decides what to do with the packets; this only carries them.
  * A fake implementation makes the engine testable without hardware.
  */
 interface MeshRadio {

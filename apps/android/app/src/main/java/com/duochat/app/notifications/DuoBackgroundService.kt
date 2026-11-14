@@ -30,11 +30,20 @@ class DuoBackgroundService : Service() {
         // never crash the app, and it must not repeat on every launch: give up and switch the setting off.
         try {
             val notification = buildForegroundNotification()
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-            } else {
-                startForeground(NOTIFICATION_ID, notification)
+            when {
+                // "Remote messaging" is the type for chat apps: unlike "data sync" (stopped after six hours a day from
+                // Android 15), it has no daily limit and may start after a reboot.
+                Build.VERSION.SDK_INT >= 34 -> startForeground(
+                    NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING,
+                )
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> startForeground(
+                    NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+                )
+                else -> startForeground(NOTIFICATION_ID, notification)
             }
+            // After the system killed the process (or after a reboot) nothing else starts the engine: this service does,
+            // so messages keep arriving with no screen open.
+            runCatching { com.duochat.app.engine.EngineHost.ensureStarted(application) }
         } catch (_: Throwable) {
             runCatching { com.duochat.app.data.SettingsRepository(applicationContext).update { copy(keepRunning = false) } }
             stopSelf()
@@ -43,10 +52,12 @@ class DuoBackgroundService : Service() {
         return START_STICKY
     }
 
-    /** Android 15 stops "data sync" services after about six hours: stop cleanly and start again. */
+    /**
+     * Only "data sync" (Android 10 to 13) has a time limit. Starting again from the background is not allowed then, so
+     * stop cleanly; the engine keeps running until the system ends the process, and the next start brings it back.
+     */
     override fun onTimeout(startId: Int, fgsType: Int) {
         stopSelf(startId)
-        runCatching { start(applicationContext) }
     }
 
     private fun ensureForegroundNotificationChannel() {

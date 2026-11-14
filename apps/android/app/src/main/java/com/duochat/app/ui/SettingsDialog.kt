@@ -69,6 +69,7 @@ import com.duochat.app.data.BluetoothStatus
 import com.duochat.app.data.AppSettings
 import com.duochat.app.data.ChatState
 import com.duochat.app.data.NetworkConfig
+import com.duochat.app.data.hasTurn
 import com.duochat.app.data.SignalingConfig
 import com.duochat.app.data.TurnServer
 
@@ -289,23 +290,30 @@ SectionTitle("Appearance")
                     Spacer(Modifier.width(8.dp))
                     Text("Request notification permission")
                 }
+                val bgContext = LocalContext.current
                 ToggleRow(
                     "Keep running in the background",
-                    "Shows a small permanent notification and keeps DuoCord connected so messages arrive with the app closed. Uses some battery.",
+                    "Shows a small permanent notification and keeps DuoCord connected so messages arrive with the app closed, also after a restart. Uses some battery.",
                     settings.keepRunning,
-                ) { on -> onUpdateSettings { copy(keepRunning = on) } }
+                ) { on ->
+                    onUpdateSettings { copy(keepRunning = on) }
+                    // Without this the battery saver stops it within minutes on most phones: ask right away.
+                    if (on && !com.duochat.app.notifications.BackgroundHelp.batteryUnrestricted(bgContext)) {
+                        com.duochat.app.notifications.BackgroundHelp.askBatteryUnrestricted(bgContext)
+                    }
+                }
                 if (settings.keepRunning) {
-                    val batteryContext = LocalContext.current
-                    OutlinedButton(onClick = {
-                        runCatching {
-                            batteryContext.startActivity(
-                                android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
-                            )
-                        }
-                    }) { Text("Allow unrestricted battery use") }
+                    val unrestricted = com.duochat.app.notifications.BackgroundHelp.batteryUnrestricted(bgContext)
+                    OutlinedButton(onClick = { com.duochat.app.notifications.BackgroundHelp.askBatteryUnrestricted(bgContext) }) {
+                        Text(if (unrestricted) "Battery: unrestricted ✓" else "Allow unrestricted battery use")
+                    }
+                    OutlinedButton(onClick = { com.duochat.app.notifications.BackgroundHelp.openMakerBackgroundSettings(bgContext) }) {
+                        Text("Allow autostart (phone settings)")
+                    }
                     Text(
-                        "Some phone makers (Xiaomi, Oppo, Vivo, Samsung) still stop background apps. If messages are late, allow unrestricted battery use for DuoCord here.",
+                        "Vivo, Xiaomi, Oppo, Realme, OnePlus and Huawei phones also stop apps that are not allowed to " +
+                            "autostart. If messages only arrive when you open DuoCord, turn on autostart / background " +
+                            "running for DuoCord on the page this button opens.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -473,11 +481,27 @@ SectionTitle("Appearance")
                     "Some networks block direct connections. The relay then passes the encrypted traffic on; it cannot read it.",
                     settings.network.builtinTurn,
                 ) { onUpdateSettings { copy(network = network.copy(builtinTurn = it)) } }
+                // Two levels of hiding this phone's address: from friends (a TURN relay carries every link), or from
+                // everyone (Tor; slower, no live links).
+                val turnAvailable = settings.network.hasTurn
                 ToggleRow(
-                    "Always use the relay",
-                    "Only use TURN. Hides your IP address from your friend; needs a TURN server.",
-                    settings.network.forceRelay,
+                    "Hide my IP address from friends",
+                    if (turnAvailable) {
+                        "Every connection goes through a relay (TURN), so friends only ever see the relay's address. " +
+                            "A little slower. The relay sees your address, not your messages."
+                    } else {
+                        "Needs a relay (TURN) server, and none is set up. Add one below, or use Private mode (Tor), which needs none."
+                    },
+                    settings.network.forceRelay && turnAvailable,
+                    enabled = turnAvailable && !settings.network.torMode,
                 ) { onUpdateSettings { copy(network = network.copy(forceRelay = it)) } }
+                ToggleRow(
+                    "Private mode (Tor): hide my IP from everyone",
+                    "Messages go only through Tor and the relays, so neither friends nor relays learn this phone's " +
+                        "address. Needs the free Orbot app running. Messages take a few seconds; live connections " +
+                        "and sending files are off. Bluetooth still works.",
+                    settings.network.torMode,
+                ) { onUpdateSettings { copy(network = network.copy(torMode = it)) } }
                 ToggleRow(
                     "Store-and-forward (messages while your friend is offline)",
                     "Sends each message, encrypted for your friend, to the relays above so it arrives when they come " +

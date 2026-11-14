@@ -45,6 +45,7 @@ p256 = { version = "0.14", features = ["ecdsa", "ecdh", "arithmetic"] }
 k256 = { version = "0.14", default-features = false, features = ["schnorr", "arithmetic", "std"] }
 bip39 = "3"
 # ML-KEM-768 (FIPS 203), post-quantum half of the hybrid key exchange; driven with seeds from our own entropy.
+argon2 = { version = "0.5", default-features = false, features = ["alloc"] }
 ml-kem = { version = "0.2", features = ["deterministic", "zeroize"] }
 getrandom = "0.2"
 unicode-normalization = "0.1"
@@ -64,3 +65,9 @@ privcord-import = { path = "crates/privcord-import", default-features = false }
 lto = true
 codegen-units = 1
 strip = true
+
+# Argon2 (backup passphrases) is ~50x slower unoptimised; tests and debug builds would crawl.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3

@@ -26,6 +26,12 @@ data class NetworkConfig(
     val transportMode: TransportMode = TransportMode.AUTOMATIC,
     /** Use the TURN relay built into this release (if it has one) when a direct connection is not possible. */
     val builtinTurn: Boolean = true,
+    /**
+     * Maximum privacy: the relays are reached only through Tor (Orbot's SOCKS proxy on this phone), and no direct
+     * connection is ever made, so nobody (friends, relays) learns this phone's IP address. Messages go through the
+     * relays (store-and-forward), so they take seconds; live connections and file sending are off. Bluetooth still works.
+     */
+    val torMode: Boolean = false,
 ) {
     fun toJson(): String {
         val json = JSONObject()
@@ -57,6 +63,7 @@ data class NetworkConfig(
             .put("bluetooth", bluetooth)
         // Written only when switched off, so saved settings and the shared vectors stay as they were.
         if (!builtinTurn) json.put("builtinTurn", false)
+        if (torMode) json.put("torMode", true)
 
         if (transportMode != TransportMode.AUTOMATIC) {
             json.put("transportMode", transportMode.name)
@@ -149,6 +156,7 @@ data class NetworkConfig(
                     bluetooth = json.opt("bluetooth") != false,
                     transportMode = mode,
                     builtinTurn = json.opt("builtinTurn") != false,
+                    torMode = json.opt("torMode") == true,
                 )
             } catch (_: Exception) {
                 fallback
@@ -181,3 +189,9 @@ object TurnShare {
         return TurnServer(urls, name, cred)
     }
 }
+
+/** Store-and-forward as the engine should run it: Tor mode has no live connection, so it always needs it. */
+val NetworkConfig.relaysMessages: Boolean get() = storeForward || torMode
+
+/** Whether a TURN relay is available at all (needed to hide the IP address from friends without Tor). */
+val NetworkConfig.hasTurn: Boolean get() = turn.isNotEmpty() || (builtinTurn && com.duochat.app.p2p.hasBuiltinTurn)

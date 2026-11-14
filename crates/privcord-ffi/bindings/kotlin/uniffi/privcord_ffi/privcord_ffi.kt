@@ -1038,6 +1038,10 @@ internal open class UniffiVTableCallbackInterfaceTransportCallbacks(
 
 
 
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1112,6 +1116,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_method_privcordengine_delete_message(`ptr`: Pointer,`messageId`: RustBuffer.ByValue,`everyone`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_dismiss_legacy_group(`ptr`: Pointer,`oldId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_dismiss_request(`ptr`: Pointer,`uid`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_export_backup(`ptr`: Pointer,`passphrase`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1154,6 +1160,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_recover_identity(`ptr`: Pointer,`phrase`: RustBuffer.ByValue,`passphrase`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_privcord_ffi_fn_method_privcordengine_recreate_legacy_group(`ptr`: Pointer,`oldId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_privcord_ffi_fn_method_privcordengine_remove_contact(`ptr`: Pointer,`uid`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_privcord_ffi_fn_method_privcordengine_remove_group_member(`ptr`: Pointer,`group`: RustBuffer.ByValue,`uid`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1396,6 +1404,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_delete_message(
     ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_dismiss_legacy_group(
+    ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_dismiss_request(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_export_backup(
@@ -1437,6 +1447,8 @@ internal interface UniffiLib : Library {
     fun uniffi_privcord_ffi_checksum_method_privcordengine_react(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_recover_identity(
+    ): Short
+    fun uniffi_privcord_ffi_checksum_method_privcordengine_recreate_legacy_group(
     ): Short
     fun uniffi_privcord_ffi_checksum_method_privcordengine_remove_contact(
     ): Short
@@ -1584,6 +1596,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_delete_message() != 55350.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_dismiss_legacy_group() != 40634.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_dismiss_request() != 31153.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1645,6 +1660,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_recover_identity() != 65257.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_recreate_legacy_group() != 55448.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_privcord_ffi_checksum_method_privcordengine_remove_contact() != 13126.toShort()) {
@@ -3044,6 +3062,11 @@ public interface PrivcordEngineInterface {
      */
     fun `deleteMessage`(`messageId`: kotlin.String, `everyone`: kotlin.Boolean)
     
+    /**
+     * Stop offering a group from before protocol v2.
+     */
+    fun `dismissLegacyGroup`(`oldId`: kotlin.String)
+    
     fun `dismissRequest`(`uid`: kotlin.String)
     
     /**
@@ -3126,6 +3149,11 @@ public interface PrivcordEngineInterface {
     fun `react`(`messageId`: kotlin.String, `emoji`: kotlin.String)
     
     fun `recoverIdentity`(`phrase`: kotlin.String, `passphrase`: kotlin.String)
+    
+    /**
+     * Make a group from before protocol v2 again, with its friends and its messages. Returns the new group's id.
+     */
+    fun `recreateLegacyGroup`(`oldId`: kotlin.String): kotlin.String
     
     /**
      * Forget a friend and their chat. Refused while they share a group with you.
@@ -3475,6 +3503,21 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
     
 
     
+    /**
+     * Stop offering a group from before protocol v2.
+     */
+    @Throws(FfiException::class)override fun `dismissLegacyGroup`(`oldId`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_dismiss_legacy_group(
+        it, FfiConverterString.lower(`oldId`),_status)
+}
+    }
+    
+    
+
+    
     @Throws(FfiException::class)override fun `dismissRequest`(`uid`: kotlin.String)
         = 
     callWithPointer {
@@ -3772,6 +3815,22 @@ open class PrivcordEngine: Disposable, AutoCloseable, PrivcordEngineInterface {
 }
     }
     
+    
+
+    
+    /**
+     * Make a group from before protocol v2 again, with its friends and its messages. Returns the new group's id.
+     */
+    @Throws(FfiException::class)override fun `recreateLegacyGroup`(`oldId`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_privcord_ffi_fn_method_privcordengine_recreate_legacy_group(
+        it, FfiConverterString.lower(`oldId`),_status)
+}
+    }
+    )
+    }
     
 
     
@@ -5505,6 +5564,55 @@ public object FfiConverterTypeLastMessageDto: FfiConverterRustBuffer<LastMessage
 
 
 
+/**
+ * A group from before protocol v2: its name and who was in it (their names, for friends who are still friends).
+ */
+data class LegacyGroupDto (
+    var `oldId`: kotlin.String, 
+    var `name`: kotlin.String, 
+    /**
+     * Friends who will be in it again.
+     */
+    var `members`: List<kotlin.String>, 
+    /**
+     * People who were in it but are not friends any more (they cannot be added back from here).
+     */
+    var `missing`: kotlin.UInt
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeLegacyGroupDto: FfiConverterRustBuffer<LegacyGroupDto> {
+    override fun read(buf: ByteBuffer): LegacyGroupDto {
+        return LegacyGroupDto(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterSequenceString.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: LegacyGroupDto) = (
+            FfiConverterString.allocationSize(value.`oldId`) +
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterSequenceString.allocationSize(value.`members`) +
+            FfiConverterUInt.allocationSize(value.`missing`)
+    )
+
+    override fun write(value: LegacyGroupDto, buf: ByteBuffer) {
+            FfiConverterString.write(value.`oldId`, buf)
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterSequenceString.write(value.`members`, buf)
+            FfiConverterUInt.write(value.`missing`, buf)
+    }
+}
+
+
+
 data class MessageDto (
     var `id`: kotlin.String, 
     var `sender`: kotlin.String, 
@@ -5842,7 +5950,11 @@ data class SnapshotDto (
     /**
      * The name each person gave in a public channel (they are not contacts).
      */
-    var `channelPeople`: List<ChannelPersonDto>
+    var `channelPeople`: List<ChannelPersonDto>, 
+    /**
+     * Groups from before protocol v2 that can be made again with one tap.
+     */
+    var `legacyGroups`: List<LegacyGroupDto>
 ) {
     
     companion object
@@ -5867,6 +5979,7 @@ public object FfiConverterTypeSnapshotDto: FfiConverterRustBuffer<SnapshotDto> {
             FfiConverterBoolean.read(buf),
             FfiConverterULong.read(buf),
             FfiConverterSequenceTypeChannelPersonDto.read(buf),
+            FfiConverterSequenceTypeLegacyGroupDto.read(buf),
         )
     }
 
@@ -5883,7 +5996,8 @@ public object FfiConverterTypeSnapshotDto: FfiConverterRustBuffer<SnapshotDto> {
             FfiConverterOptionalTypeAnswerDto.allocationSize(value.`answer`) +
             FfiConverterBoolean.allocationSize(value.`lookupPending`) +
             FfiConverterULong.allocationSize(value.`queued`) +
-            FfiConverterSequenceTypeChannelPersonDto.allocationSize(value.`channelPeople`)
+            FfiConverterSequenceTypeChannelPersonDto.allocationSize(value.`channelPeople`) +
+            FfiConverterSequenceTypeLegacyGroupDto.allocationSize(value.`legacyGroups`)
     )
 
     override fun write(value: SnapshotDto, buf: ByteBuffer) {
@@ -5900,6 +6014,7 @@ public object FfiConverterTypeSnapshotDto: FfiConverterRustBuffer<SnapshotDto> {
             FfiConverterBoolean.write(value.`lookupPending`, buf)
             FfiConverterULong.write(value.`queued`, buf)
             FfiConverterSequenceTypeChannelPersonDto.write(value.`channelPeople`, buf)
+            FfiConverterSequenceTypeLegacyGroupDto.write(value.`legacyGroups`, buf)
     }
 }
 
@@ -7988,6 +8103,34 @@ public object FfiConverterSequenceTypeGroupMemberDto: FfiConverterRustBuffer<Lis
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeGroupMemberDto.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeLegacyGroupDto: FfiConverterRustBuffer<List<LegacyGroupDto>> {
+    override fun read(buf: ByteBuffer): List<LegacyGroupDto> {
+        val len = buf.getInt()
+        return List<LegacyGroupDto>(len) {
+            FfiConverterTypeLegacyGroupDto.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<LegacyGroupDto>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeLegacyGroupDto.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<LegacyGroupDto>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeLegacyGroupDto.write(it, buf)
         }
     }
 }

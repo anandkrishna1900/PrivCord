@@ -1,7 +1,7 @@
 //! The Rust-made vectors in `docs/rust-vectors.json`, built deterministically (test support only).
 
 use crate::{
-    backup::seal_backup,
+    backup::seal_backup_v1,
     card::ContactCard,
     channel::{derive_channel, seal_channel_message},
     e2ee::{
@@ -57,7 +57,8 @@ pub fn build() -> Result<Value, crate::CryptoError> {
     )?;
 
     let backup_data = json!({ "v": 1, "uid": "uid-rust", "messages": ["héllo backup ✓"] });
-    let backup = seal_backup(&backup_data, "correct horse battery", &mut rng)?;
+    // v1: the TypeScript code reads only v1 (the apps write v2, which the Rust tests cover).
+    let backup = seal_backup_v1(&backup_data, "correct horse battery", &mut rng)?;
 
     // A legacy WebRTC handshake between the two, made by the Rust implementation.
     let exp = |i: &Identity| -> Result<Expected, CryptoError> {

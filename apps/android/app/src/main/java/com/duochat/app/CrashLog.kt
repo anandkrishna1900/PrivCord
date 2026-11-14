@@ -83,6 +83,12 @@ object CrashLog {
     fun take(context: Context): Report? {
         val f = file(context)
         if (!f.exists()) return null
+        // Written by the version this update replaced: its bug may well be fixed here, so it is not shown as current.
+        val installed = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime }.getOrDefault(0L)
+        if (f.lastModified() < installed) {
+            f.delete()
+            return null
+        }
         val text = runCatching { f.readText() }.getOrNull()
         if (text.isNullOrBlank()) return null
         val first = text.lineSequence().firstOrNull().orEmpty()

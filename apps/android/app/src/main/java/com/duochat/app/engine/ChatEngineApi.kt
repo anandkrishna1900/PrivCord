@@ -43,6 +43,12 @@ interface ChatEngineApi {
     suspend fun addToGroup(groupId: String, uids: List<String>): Result<Unit>
     suspend fun removeFromGroup(groupId: String, uid: String): Result<Unit>
     suspend fun leaveGroup(groupId: String): Result<Unit>
+
+    /** Make a group from before the protocol update again (same name, its friends, its messages). Returns its new id. */
+    suspend fun recreateLegacyGroup(oldId: String): Result<String>
+
+    /** Stop offering a group from before the protocol update. */
+    suspend fun dismissLegacyGroup(oldId: String): Result<Unit>
     suspend fun renameGroup(groupId: String, name: String): Result<Unit>
     suspend fun send(conversationId: String, rawText: String, replyToId: String? = null): Result<Unit>
     suspend fun sendFile(conversationId: String, rawName: String, mime: String, bytes: ByteArray, replyToId: String? = null): Result<Unit>

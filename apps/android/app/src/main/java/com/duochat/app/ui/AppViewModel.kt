@@ -123,27 +123,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** (Re)starts the chat engine. Also used by the "Try again" button. */
     fun startEngine() {
         stopEngine()
-        val application = getApplication<Application>()
-        val scope = com.duochat.app.engine.EngineHost.newScope()
-        // The Rust engine is the only engine (the Kotlin one is no longer built into the app).
-        val created: com.duochat.app.engine.ChatEngineApi = com.duochat.app.rustcore.RustChatEngine(
-            app = application,
-            scope = scope,
-            conversationId = AppConfig.conversationId,
-            networkConfig = { settingsRepository.settings.value.network },
-            ownName = { settingsRepository.settings.value.displayName },
-            isMuted = { id -> id in settingsRepository.settings.value.mutedChats },
-            onNotify = { notice -> DuoNotifications.showNotice(application, notice, settingsRepository.settings.value) },
-            initialGroupOnly = settingsRepository.settings.value.groupOnly,
-        )
-        engine = created
+        // The same starter the background service uses, so either can bring the engine up.
+        val created = com.duochat.app.engine.EngineHost.ensureStarted(getApplication())
         if (visible) created.setVisible(true)
-        if (settingsRepository.settings.value.mesh) created.setMeshEnabled(true)
         if (settingsRepository.settings.value.keepRunning) applyKeepRunning(true)
         stateJob = viewModelScope.launch {
             created.state.collect { _chat.value = it }
         }
-        com.duochat.app.engine.EngineHost.startJob = scope.launch { created.start() }
     }
 
     private fun stopEngine() {
@@ -262,6 +248,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun createGroup(name: String, memberUids: List<String>, onResult: (Result<String>) -> Unit) =
         withEngine(onResult) { it.createGroup(name, memberUids) }
+
+    fun recreateLegacyGroup(oldId: String, onResult: (Result<String>) -> Unit) =
+        withEngine(onResult) { it.recreateLegacyGroup(oldId) }
+
+    fun dismissLegacyGroup(oldId: String) = withEngine({}) { it.dismissLegacyGroup(oldId) }
 
     fun addToGroup(groupId: String, uids: List<String>, onResult: (Result<Unit>) -> Unit) =
         withEngine(onResult) { it.addToGroup(groupId, uids) }

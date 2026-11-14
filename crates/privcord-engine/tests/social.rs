@@ -428,6 +428,11 @@ fn a_backup_restores_friends_groups_channels_messages_reactions_and_deletes_with
         .unwrap();
     clock.advance(5);
     let gone = a.core.send_message(&b.uid, "delete me", None).unwrap();
+    let photo: Vec<u8> = (0u8..=255).cycle().take(40_000).collect();
+    let pic = a
+        .core
+        .send_file(&b.uid, "beach.jpg", "image/jpeg", photo.clone(), None)
+        .unwrap();
     pump(&mut a, &mut b);
     b.core.react(&m1, "\u{1F44D}").unwrap();
     pump(&mut a, &mut b);
@@ -435,8 +440,9 @@ fn a_backup_restores_friends_groups_channels_messages_reactions_and_deletes_with
     a.core.set_muted(&b.uid, true).unwrap();
 
     assert_eq!(
-        a.core.export_backup("short"),
-        Err(ErrorCode::WeakPassphrase)
+        a.core.export_backup("eleven char"),
+        Err(ErrorCode::WeakPassphrase),
+        "backups need at least 12 characters"
     );
     let backup = a.core.export_backup("correct horse battery").unwrap();
     assert!(backup.starts_with("PRIVCORD-BACKUP1:") && !backup.contains("hello bob"));
@@ -467,6 +473,8 @@ fn a_backup_restores_friends_groups_channels_messages_reactions_and_deletes_with
     assert_eq!(snap.muted, [b.uid.clone()]);
     assert_eq!(snap.deleted, std::slice::from_ref(&gone));
     assert_eq!(snap.reactions.len(), 1);
+    // Photos and files come back too, byte for byte.
+    assert_eq!(fresh.core.file(&pic).unwrap().unwrap().bytes, photo);
     assert!(snap
         .messages
         .iter()

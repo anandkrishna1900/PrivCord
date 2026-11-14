@@ -19,16 +19,42 @@ export const BUILTIN_TURN: TurnServer | null = (() => {
 
 const KEY = 'duochat.network.v1';
 
-export function loadNetworkConfig(): NetworkConfig {
+/** Whether this window was opened through Tor (private mode); read from the app once at start. */
+let torActive = false;
+
+export async function loadTorMode(): Promise<boolean> {
   try {
-    return parseNetworkConfig(localStorage.getItem(KEY));
+    const { invoke } = await import('@tauri-apps/api/core');
+    torActive = (await invoke<boolean>('tor_mode')) === true;
   } catch {
-    return structuredClone(DEFAULT_NETWORK_CONFIG);
+    torActive = false;
   }
+  return torActive;
+}
+
+export function torModeActive(): boolean {
+  return torActive;
+}
+
+/** Turns private mode on or off. The app restarts to apply it. */
+export async function setTorMode(on: boolean): Promise<void> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('set_tor_mode', { on });
+}
+
+export function loadNetworkConfig(): NetworkConfig {
+  let config: NetworkConfig;
+  try {
+    config = parseNetworkConfig(localStorage.getItem(KEY));
+  } catch {
+    config = structuredClone(DEFAULT_NETWORK_CONFIG);
+  }
+  return torActive ? { ...config, torMode: true } : config;
 }
 
 export function saveNetworkConfig(config: NetworkConfig): void {
-  localStorage.setItem(KEY, JSON.stringify(config));
+  const { torMode: _ignored, ...saved } = config;
+  localStorage.setItem(KEY, JSON.stringify(saved));
 }
 
 export function rtcConfigFor(config: NetworkConfig): RTCConfiguration {
