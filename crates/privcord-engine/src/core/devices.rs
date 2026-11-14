@@ -45,6 +45,7 @@ impl Core {
         let (Some(account), Some(key)) = (self.identity.as_ref(), self.device_keys_key()) else {
             self.device_id = None;
             self.device_list = None;
+            self.sync = None;
             return Ok(());
         };
         let mut ops = Vec::new();
@@ -89,8 +90,12 @@ impl Core {
         if !ops.is_empty() {
             self.ports.storage.apply(&ops)?;
         }
+        let same_device = self.device_id.as_deref() == Some(id.as_str()) && self.sync.is_some();
         self.device_id = Some(id);
         self.device_list = Some(list);
+        if !same_device {
+            self.ensure_sync(device)?;
+        }
         Ok(())
     }
 

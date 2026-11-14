@@ -424,6 +424,23 @@ impl State {
             .collect()
     }
 
+    pub fn is_deleted(&self, message: &str) -> bool {
+        self.deleted.contains(message)
+    }
+
+    pub fn is_hidden(&self, message: &str) -> bool {
+        self.hidden.contains(message)
+    }
+
+    /// Every reaction recorded for a message, removed ones (`None`) included, whether the message has arrived or not.
+    pub fn reactions_raw(&self, message: &str) -> Vec<(String, Option<String>)> {
+        self.reactions
+            .range((message.to_owned(), String::new())..)
+            .take_while(|((m, _), _)| m == message)
+            .map(|((_, by), r)| (by.clone(), r.value.clone()))
+            .collect()
+    }
+
     pub fn read_upto(&self, conv: &str) -> Option<Hlc> {
         self.read.get(conv).copied()
     }
@@ -500,6 +517,9 @@ struct Stream {
 #[derive(Debug, Clone)]
 pub struct Replica {
     devices: DeviceList,
+    /// Devices vouched for by another list of the same account (an install restored from the phrase keeps its own
+    /// list until device lists are merged).
+    vouched: BTreeMap<String, crate::devices::DeviceEntry>,
     streams: BTreeMap<(String, u32), Stream>,
     frozen: BTreeSet<String>,
     // ponytail: the log is kept in memory here; the engine keeps it in its database.
@@ -520,6 +540,7 @@ impl Replica {
     pub fn new(devices: DeviceList) -> Self {
         Self {
             devices,
+            vouched: BTreeMap::new(),
             streams: BTreeMap::new(),
             frozen: BTreeSet::new(),
             log: BTreeMap::new(),
@@ -534,6 +555,15 @@ impl Replica {
     /// A newer device list (already checked with [`DeviceList::accepts`]).
     pub fn set_devices(&mut self, devices: DeviceList) {
         self.devices = devices;
+    }
+
+    /// Trusts the devices of another list of this account. The caller has verified it against the account's keys.
+    pub fn vouch(&mut self, list: &DeviceList) {
+        for d in &list.devices {
+            if self.devices.get(&d.id).is_none() {
+                self.vouched.insert(d.id.clone(), d.clone());
+            }
+        }
     }
 
     pub fn state(&self) -> &State {
@@ -612,7 +642,11 @@ impl Replica {
         {
             return Err(Refused::TooLarge);
         }
-        let device = self.devices.get(&e.device).ok_or(Refused::UnknownDevice)?;
+        let device = self
+            .devices
+            .get(&e.device)
+            .or_else(|| self.vouched.get(&e.device))
+            .ok_or(Refused::UnknownDevice)?;
         let sig = codec::decode(&e.sig).ok_or(Refused::BadSignature)?;
         let payload = e.signed_bytes().map_err(|_| Refused::Malformed)?;
         if !verify_signature(&device.sign, &sig, &payload) {

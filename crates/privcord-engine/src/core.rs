@@ -64,6 +64,7 @@ mod legacy_groups;
 mod privacy;
 mod signaling;
 mod social;
+mod sync;
 
 pub use backup::RestoreSummary;
 pub use social::SearchHit;
@@ -230,6 +231,10 @@ pub struct Core {
     /// This install's device id and the account's device list (`core/devices.rs`).
     device_id: Option<String>,
     device_list: Option<privcord_crypto::devices::DeviceList>,
+    /// The sync log and self-mailbox (`core/sync.rs`), once there is an identity.
+    sync: Option<sync::SyncState>,
+    /// The storage port as wrapped by the sync recorder.
+    recorder: Arc<sync::Recorder>,
     sealed: signaling::SealedState,
     /// Channel mailboxes we are listening on (the adapter opens the sockets).
     channel_subscribed: HashSet<String>,
@@ -270,7 +275,10 @@ impl Core {
     }
 
     /// Like `new`, with the conversation context used by the legacy handshake (the apps' `conversationId` setting).
-    pub fn new_with_context(ports: Ports, context: &str) -> Result<Self, ErrorCode> {
+    pub fn new_with_context(mut ports: Ports, context: &str) -> Result<Self, ErrorCode> {
+        // Every change stored from here on passes the sync recorder (core/sync.rs).
+        let recorder = Arc::new(sync::Recorder::new(ports.storage.clone()));
+        ports.storage = recorder.clone();
         let mut core = Self {
             ports,
             identity: None,
@@ -291,6 +299,8 @@ impl Core {
             legacy_groups: Vec::new(),
             device_id: None,
             device_list: None,
+            sync: None,
+            recorder,
             sealed: signaling::SealedState::default(),
             channel_subscribed: HashSet::new(),
             channel_people: BTreeMap::new(),
@@ -488,7 +498,10 @@ impl Core {
             CryptoError::InvalidPhrase => ErrorCode::InvalidPhrase,
             other => other.into(),
         })?;
-        self.adopt(identity)
+        self.adopt(identity)?;
+        // This install joins an account that may already have a device: it says hello to it (core/sync.rs).
+        self.mark_joined();
+        Ok(())
     }
 
     fn identity(&self) -> Result<&Identity, ErrorCode> {
@@ -1666,6 +1679,8 @@ impl Core {
         self.pending_group.expire(now);
         self.request_dials(now);
         self.tick_invites();
+        // Before the store-and-forward pass: a message's sync copy goes up no later than the message does.
+        self.tick_sync();
         self.tick_sealed();
         self.tick_group_mesh();
         self.tick_channels();

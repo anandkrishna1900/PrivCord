@@ -1362,6 +1362,7 @@ dependencies = [
  "privcord-import",
  "privcord-ports",
  "privcord-storage",
+ "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",

@@ -33,6 +33,7 @@ pub mod rng;
 pub mod safety;
 pub mod seal;
 pub mod secure_channel;
+pub mod selfbox;
 pub mod synclog;
 #[cfg(any(test, feature = "test-support"))]
 pub mod vectors;

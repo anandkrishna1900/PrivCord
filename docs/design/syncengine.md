@@ -1,6 +1,6 @@
 # Sync engine: one account on several devices, with no server
 
-Status: **design, approved for writing; not yet implemented.**
+Status: **steps 1–4 built; steps 5–10 to come.** See [§16](#16-what-is-built) for exactly what runs today.
 Scope: the Rust engine (`crates/privcord-*`). Android, Windows, macOS and Linux get it through thin platform adapters, as
 they get the rest of the engine. The TypeScript engine (browser preview) does not sync (risk 128).
 
@@ -575,3 +575,29 @@ Each step ships with its tests and leaves the app working.
 8. **Snapshots:** snapshots and pruning, `LostMarker`, `Correction`.
 9. **Device removal:** removal and key rotation, wipe, the 90-day rule.
 10. **Extras:** quick reply from notifications, scheduled send, desktop automatic backups, usage screen.
+
+## 16. What is built
+
+| Step | State |
+|---|---|
+| 1. Background runner | Built: desktop tray (close to tray, start at sign-in, one instance); `privcord_domain::background` used by Android for Bluetooth mesh scanning. |
+| 2. Account and devices | Built in the engine: device keys, signed device list, migration of existing installs, linking handshake (`devices::link`). No linking screen yet. |
+| 3. Sync log | Built: `privcord_crypto::synclog` (entries, merge rules, clone detection, quarantine, fingerprint), simulated and fuzzed. |
+| 4. Self-mailbox | Built: `privcord_crypto::selfbox`, `core/sync.rs`. See below. |
+
+What step 4 does today:
+
+- **Recording.** Every change stored in the engine that matters gets an entry: messages sent or received (not open-channel posts), deletes for everyone and for me, reactions, contacts, mutes. The storage port is wrapped, so a new code path cannot forget to sync.
+- **Posting.** Entries go to the self-mailbox on the relays the person has configured, before the store-and-forward pass of the same tick.
+- **Catching up.** Hellos and answers carry exactly the missing entries; entries are applied the way a restored backup is, and nothing is sent to friends twice.
+- **Who syncs.** Today that is installs of one account restored from the recovery phrase: their device lists vouch for each other. A lone install posts nothing.
+- **Tested:** phone and laptop never online together, a restart, a stranger on the relay.
+
+Not yet:
+
+- **Read marks and delivery ticks.** Unread state and delivery ticks are not synced.
+- **Groups.** Group membership is not synced (group messages are, as rows).
+- **File bytes.** Only file metadata is synced; the bytes come with step 6.
+- **Delivery waiting for its sync copy.** A message delivered over a direct link in the second before the tick is ahead of its sync copy (step 5).
+- **The desktop page in the tray.** It stays alive, because it owns the relay sockets; moving the sockets into Rust is still to do.
+- **Relays only, between devices.** Devices exchange entries only through the relays; direct local Wi-Fi and Bluetooth sync is step 7.

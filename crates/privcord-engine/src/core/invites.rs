@@ -475,6 +475,11 @@ impl Core {
         let Some(own) = self.identity.as_ref().map(|i| i.sign_public()) else {
             return;
         };
+        // Another device of this account left us sync entries.
+        if self.is_self_mailbox(mailbox) {
+            self.sync_blob(mailbox, &blob);
+            return;
+        }
         // A message in a public channel we joined, carried by the signaling service.
         if self.channels.values().any(|k| k.mailbox == mailbox) {
             self.accept_channel_blob(&blob);

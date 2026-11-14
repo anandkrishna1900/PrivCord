@@ -45,7 +45,7 @@ fn delivery_str(d: DeliveryState) -> &'static str {
 }
 
 impl Core {
-    fn contact_json(c: &StoredContactState) -> Value {
+    pub(super) fn contact_json(c: &StoredContactState) -> Value {
         let card = &c.contact.card;
         let mut card_json =
             json!({ "v": 1, "sign": card.sign, "dh": card.dh, "proof": card.proof });
@@ -82,6 +82,12 @@ impl Core {
 
     fn message_json(&self, id: &MessageId) -> Option<Value> {
         let m = self.messages.get(id)?;
+        Some(self.row_json(m))
+    }
+
+    /// One stored message in the backup format (also what the sync log carries).
+    pub(super) fn row_json(&self, m: &privcord_ports::StoredMessage) -> Value {
+        let id = &m.message.message_id;
         let msg = &m.message;
         let mut o = Map::new();
         o.insert("messageId".into(), json!(msg.message_id));
@@ -142,7 +148,7 @@ impl Core {
         if !pending.is_empty() {
             o.insert("recipients".into(), Value::Object(pending));
         }
-        Some(Value::Object(o))
+        Value::Object(o)
     }
 
     /// A passphrase-protected copy of friends, groups, channels, muted people and messages.
